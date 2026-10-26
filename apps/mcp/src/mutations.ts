@@ -50,6 +50,8 @@ export interface CreateOpenSlackGovernedMutationPortOptions {
   readonly compileWorkflow: (
     input: OpenSlackGovernedPlanCompilerInput,
   ) => CreateCanonicalGovernedPlanInput | Promise<CreateCanonicalGovernedPlanInput>;
+  /** Synchronous host notification after the service returns its durable confirmation result; never a model callback. */
+  readonly onConfirmed?: (record: GovernedPlanRecord) => void;
 }
 
 const NOMINAL_PORTS = new WeakSet<object>();
@@ -158,7 +160,8 @@ export function createOpenSlackGovernedMutationPort(
     throw new TypeError('Governed mutation port options must be host-owned.');
   }
   const descriptors = Object.getOwnPropertyDescriptors(options);
-  const expected = ['authority', 'compileScenario', 'compileWorkflow', 'service'];
+  const expected = ['authority', 'compileScenario', 'compileWorkflow', 'service',
+    ...(Object.hasOwn(descriptors, 'onConfirmed') ? ['onConfirmed'] : [])];
   if (
     Reflect.ownKeys(descriptors).length !== expected.length ||
     Reflect.ownKeys(descriptors).some(
@@ -177,6 +180,10 @@ export function createOpenSlackGovernedMutationPort(
   const compileWorkflow = descriptors.compileWorkflow!.value;
   assertHostFunction(compileScenario, 'compileScenario');
   assertHostFunction(compileWorkflow, 'compileWorkflow');
+  const onConfirmed: CreateOpenSlackGovernedMutationPortOptions['onConfirmed'] = descriptors.onConfirmed?.value;
+  if (onConfirmed !== undefined && (typeof onConfirmed !== 'function' || utilTypes.isProxy(onConfirmed))) {
+    throw new TypeError('onConfirmed must be a host-owned non-Proxy function.');
+  }
 
   const preview = async (
     inputValue: Readonly<Record<string, unknown>>,
@@ -216,7 +223,10 @@ export function createOpenSlackGovernedMutationPort(
       invocationValue: OpenSlackGovernedMutationInvocation,
     ) => {
       const control = invocation(invocationValue);
-      return service.confirm(tokenInput(inputValue), boundAuthority, control);
+      return service.confirm(tokenInput(inputValue), boundAuthority, control).then(record => {
+        onConfirmed?.(record);
+        return record;
+      });
     },
     cancel: (
       inputValue: Readonly<Record<string, unknown>>,

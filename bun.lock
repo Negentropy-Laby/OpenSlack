@@ -77,6 +77,7 @@
       "version": "0.2.0",
       "dependencies": {
         "@modelcontextprotocol/sdk": "1.29.0",
+        "@openslack/agent-runtime": "workspace:*",
         "@openslack/collaboration": "workspace:*",
         "@openslack/github": "workspace:*",
         "@openslack/kernel": "workspace:*",
@@ -289,6 +290,9 @@
     "packages/workflows": {
       "name": "@openslack/workflows",
       "version": "0.2.0",
+      "bin": {
+        "openslack-workflow-runner": "./dist/workflow-runner-worker-bin.js",
+      },
       "dependencies": {
         "@openslack/agent-runtime": "workspace:*",
         "@openslack/collaboration": "workspace:*",

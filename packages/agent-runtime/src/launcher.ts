@@ -18,7 +18,8 @@ import { buildPermissionProfile, validatePermissionProfile } from './permissions
 import { createRunRecorder } from './recorder.js';
 import type { AgentRunStore } from './run-store.js';
 import { generateRunId } from './run-store.js';
-import type { AgentExecutionAdapter } from './adapter.js';
+import type { AgentExecutionAdapter, AdapterExecutionContext } from './adapter.js';
+import type { BridgeProcessAdapterOptions } from './bridge-adapter.js';
 import { ToolGuard } from './adapter.js';
 import type { BridgeMode } from './bridge-factory.js';
 import { createBridgeAdapter } from './bridge-factory.js';
@@ -51,6 +52,7 @@ import {
 } from './provider-usage-evidence.js';
 import type { ProviderAttemptPort, ProviderAttemptReservation } from './provider-attempt-port.js';
 import { createProviderAttemptBoundary } from './internal/provider-attempt-boundary.js';
+import { createDeepSeekHarnessProvider, type DeepSeekHarnessDeployment } from './deepseek-harness-provider.js';
 
 export interface OpenAICompatibleRuntimeHostOptions extends OpenAICompatibleRuntimeOptions {
   fetchImpl?: typeof fetch;
@@ -76,6 +78,12 @@ export interface LauncherOptions {
   bridgeMode?: BridgeMode;
   /** Instance-scoped provider registry. Defaults to an opt-in Aby registration. */
   providerRegistry?: ProviderRegistry;
+  /** Trusted, opt-in SDK deployment; not an agent-config or MCP override. */
+  deepSeekHarness?: DeepSeekHarnessDeployment;
+  /** Required for Harness: current task/principal/delegation checks before native tool effects. */
+  harnessToolAuthorization?: BridgeProcessAdapterOptions['authorizeTool'];
+  /** Required host-owned validation before a Harness result may reach recorder.complete. */
+  harnessResultAcceptance?: (context: AdapterExecutionContext, data: unknown) => Promise<void>;
   /**
    * Resolves provider-specific process bridge configuration. Defaults to the
    * OpenSlack local resolver, which uses OPENSLACK_ABY_ROOT or
@@ -136,6 +144,8 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
       rootDir,
       options.openAICompatible,
       providerAttemptPort,
+      options.deepSeekHarness,
+      options.harnessToolAuthorization,
     );
 
   const recorder = createRunRecorder(runStore, rootDir);
@@ -201,6 +211,9 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
     let providerResolution: ProviderResolution;
     try {
       providerResolution = resolveProvider(resolvedConfig);
+      if (providerResolution.providerId === 'deepseek-harness' && !options.harnessResultAcceptance) {
+        throw new RuntimeMisconfiguredError('DeepSeek Harness requires host-owned acceptance before execution.');
+      }
     } catch (error) {
       const runtimeError = normalizeRuntimeResolutionError(error);
       runtimeError.runId = runId;
@@ -254,7 +267,7 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
       resolvedConfig.isolation === 'worktree' ||
       agentOptions.isolation === 'worktree' ||
       isImplementer ||
-      (isAbyBridgeRun && isWriteCapable) ||
+      ((isAbyBridgeRun || providerResolution.providerId === 'deepseek-harness') && isWriteCapable) ||
       (isOpenAICompatibleRun && permissionProfile.allowedTools.includes('repo.apply_patch'));
 
     if (needsWorktree) {
@@ -339,6 +352,10 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
       }
 
       if (agentOptions.schema) assertAgentResultSchema(adapterResult.data, agentOptions.schema);
+      if (providerResolution.providerId === 'deepseek-harness') {
+        await options.harnessResultAcceptance!(executionContext, adapterResult.data);
+        abortController.signal.throwIfAborted();
+      }
 
       // Complete run with adapter-provided token usage
       recorder.complete(
@@ -446,7 +463,15 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
       // Dirty-state-aware worktree cleanup: preserve worktrees with
       // uncommitted changes so real work is never destroyed by an
       // automatic cleanup sweep.
-      if (worktreePath) {
+      if (worktreePath && providerResolution.providerId === 'deepseek-harness') {
+        // Harness shutdown can leave unknown child effects. Preserve even apparently clean trees;
+        // neither a signal nor a failed dirty check grants cleanup authority.
+        const branchName = worktreeBranchName ?? `agent/${resolvedConfig.agentId}/run-${runId}/${runId}`;
+        runStore.updateRun(runId, { worktreeHandoff: {
+          worktreePath, branchName, reason: 'Harness execution retained for acceptance and read-only reconciliation.',
+          preservedAt: new Date().toISOString(),
+        } });
+      } else if (worktreePath) {
         try {
           const { checkDirty, cleanupWorktree } = await import('@openslack/runtime');
           const dirtyResult = checkDirty(worktreePath);
@@ -730,8 +755,11 @@ function createDefaultProviderRegistry(
   rootDir?: string,
   openAICompatible?: OpenAICompatibleRuntimeHostOptions,
   providerAttemptPort?: ProviderAttemptPort,
+  deepSeekHarness?: DeepSeekHarnessDeployment,
+  harnessToolAuthorization?: BridgeProcessAdapterOptions['authorizeTool'],
 ): ProviderRegistry {
   const registry = new ProviderRegistry();
+  registry.register(createDeepSeekHarnessProvider(deepSeekHarness, harnessToolAuthorization, availableMcpServers));
   registry.register({
     id: 'aby',
     resolve(config) {

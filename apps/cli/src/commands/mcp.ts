@@ -1,4 +1,5 @@
 import { Command, Option } from 'commander';
+import { createConfiguredHarnessTaskHost, type HarnessTaskHost } from '@openslack/agent-runtime/internal/harness';
 import {
   normalizeGraphServiceOrigin,
   type GraphReadAuthorityPort,
@@ -51,6 +52,8 @@ export interface McpCommandDependencies {
     options: BindLocalHumanSubjectOptions,
   ) => LocalHumanAttestationStatus;
   readonly createServer?: typeof createOpenSlackMcpServer;
+  /** Opt-in host owned by this command's lifetime; provisioned by the embedding application, never by MCP flags. */
+  readonly harnessTaskHost?: HarnessTaskHost;
 }
 
 interface McpServeOptions {
@@ -59,6 +62,7 @@ interface McpServeOptions {
   readonly principalRef?: string;
   readonly humanPrincipal?: string;
   readonly workspaceId?: string;
+  readonly harnessWorkerBinding?: string;
   readonly graphReadMirrorOrigin?: string;
   readonly graphReadMirrorNetwork?: 'loopback' | 'internal';
   readonly graphReadCanaryBackend?: 'go' | 'ts-local';
@@ -403,6 +407,7 @@ async function createProfileContext(
       provider: 'cli',
       ...(options.workspaceId === undefined ? {} : { workspaceIdAssertion: options.workspaceId }),
       ...(governanceAuthority === undefined ? {} : { governanceAuthority }),
+      ...(dependencies.harnessTaskHost === undefined ? {} : { harnessTaskHost: dependencies.harnessTaskHost }),
     });
     const graphReadMirror = bindGraphReadMirror(dependencies, options);
     return createContext({
@@ -505,6 +510,7 @@ export function mcpCommands(dependencies: McpCommandDependencies): Command {
       'Assert the separately mapped human principal for human-attested',
     )
     .option('--workspace-id <workspace-id>', 'Assert the canonical workspace ID')
+    .option('--harness-worker-binding <file>', 'Use a host-created per-run callback binding; requires a configured agent-bound Harness deployment')
     .option(
       '--graph-read-mirror-origin <origin>',
       'Mirror Graph query/explain reads to one exact credential-free Go service origin',
@@ -619,20 +625,36 @@ export function mcpCommands(dependencies: McpCommandDependencies): Command {
     .action(async (options: McpServeOptions) => {
       let server: OpenSlackMcpServer | undefined;
       try {
-        const context = await createProfileContext(dependencies, options);
-        server = (dependencies.createServer ?? createOpenSlackMcpServer)(context);
+        if (options.harnessWorkerBinding !== undefined && options.profile !== 'agent-bound') {
+          throw new McpProfileArgumentError('Harness callbacks require agent-bound.');
+        }
+        const taskHost = options.profile === 'agent-bound' && options.principalRef
+          ? dependencies.harnessTaskHost ?? createConfiguredHarnessTaskHost(dependencies.workspaceRoot, options.principalRef, options.harnessWorkerBinding)
+          : undefined;
+        const configured = taskHost ? { ...dependencies, harnessTaskHost: taskHost } : dependencies;
+        const context = await createProfileContext(configured, options);
+        const createServer = dependencies.createServer ?? createOpenSlackMcpServer;
+        server = taskHost
+          ? createServer(context, {}, { closeOwnedResources: async () => {
+              const receipt = await taskHost.close(10_000);
+              if (!receipt.stopped) throw new Error('Harness shutdown is unconfirmed; preserve and reconcile affected runs');
+            } })
+          : createServer(context);
 
         const close = async (): Promise<void> => {
           try {
             await server?.close();
-          } finally {
             process.exitCode = 0;
+          } catch {
+            console.error('OPENSLACK_MCP_SHUTDOWN_UNCONFIRMED: preserve task evidence and reconcile before retrying.');
+            process.exitCode = 1;
           }
         };
         process.once('SIGINT', close);
         process.once('SIGTERM', close);
         try {
           await server.serveStdio();
+          await server.whenClosed;
         } finally {
           process.off('SIGINT', close);
           process.off('SIGTERM', close);

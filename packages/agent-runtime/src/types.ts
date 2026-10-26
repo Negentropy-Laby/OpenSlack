@@ -109,6 +109,28 @@ export interface AgentRunState {
    * was cleaned up normally or no worktree was used.
    */
   worktreeHandoff?: WorktreeHandoff;
+  /** Optional task-host data. Historical runs without this field remain unchanged. */
+  harnessExecution?: HarnessExecutionBinding;
+}
+
+/** Canonical task binding; lifecycle status remains AgentRunState.status. */
+export interface HarnessExecutionBinding {
+  schema: 'openslack.harness_execution.v1';
+  taskId: string;
+  requestHash: string;
+  principalHash: string;
+  baseline: string;
+  acceptance: 'pending' | 'verified' | 'rejected' | 'indeterminate';
+  summary: string;
+  evidenceRefs: string[];
+  /** Bounded per-run report idempotency, not a task index or another state store. */
+  reports: Record<string, string>;
+  /** Committed only after the host's visible activity anchor has been published. */
+  visible?: boolean;
+  /** Recorded by the host only after the prepared executor confirms owned process exit. */
+  processExit?: 'confirmed';
+  /** Cancellation intent only; never proof of process or descendant termination. */
+  stopRequestedAt?: string;
 }
 
 export interface AgentRunEvent {

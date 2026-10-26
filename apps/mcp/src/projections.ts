@@ -361,6 +361,16 @@ export function projectToolData(name: OpenSlackReadToolName, value: unknown): Ro
         generatedAt: text(item.generatedAt),
         events: rows(item.events, 100).map(event),
         evidenceRefs: texts(item.evidenceRefs, 50),
+        ...(item.execution && typeof item.execution === 'object' ? {
+          execution: {
+            taskId: text(row(item.execution).taskId),
+            runId: text(row(item.execution).runId),
+            status: text(row(item.execution).status),
+            acceptance: text(row(item.execution).acceptance),
+            summary: text(row(item.execution).summary),
+            evidenceRefs: texts(row(item.execution).evidenceRefs, 128),
+          },
+        } : {}),
       };
     case 'openslack_get_workflow_progress':
       return workflow(item);

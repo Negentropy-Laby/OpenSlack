@@ -17,6 +17,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@openslack/agent-runtime": "workspace:*",
     "@modelcontextprotocol/sdk": "1.29.0",
     "@openslack/collaboration": "workspace:*",
     "@openslack/github": "workspace:*",

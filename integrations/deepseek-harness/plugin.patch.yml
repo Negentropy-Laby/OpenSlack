@@ -1,0 +1,5 @@
+# Explicitly enabled and configured by the administrator; installing never grants task authority.
+- insert:
+    - id: openslack-readonly
+      name: '@openslack/deepseek-harness-plugin/readonly'
+      disabled: true

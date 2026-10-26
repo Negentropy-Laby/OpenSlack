@@ -6,7 +6,7 @@ authority: canonical
 audience:
   - contributors
 owner: architecture
-updated: 2026-07-28
+updated: 2026-10-26
 sources:
   - docs/reference/document-path-migration-v1.yaml
 ---
@@ -114,6 +114,116 @@ the transport, performs a bounded Chat Completions tool loop, requires valid
 provider-reported token usage, and charges usage after every response. A workflow
 result schema is validated before the run can be recorded as complete.
 
+## Opt-in DeepSeek Harness tasks
+
+`deepseek-harness` uses the same Agent Run Bridge with the OpenSlack-owned external
+package at `integrations/deepseek-harness` (see its
+[installation and trust contract](../../../integrations/deepseek-harness/README.md)).
+It targets unmodified Harness `22ddee3792402c3e70ec5f86a63c3e3e895a2f60`,
+SDK/dsh `0.2.1-rc.3`, and Node `24.18.1`; no Harness source or installation patches
+are runtime dependencies. The old patched experiment remains historical only.
+Host task composition is exported only at the exact
+`@openslack/agent-runtime/internal/harness` subpath, outside the sealed worker's
+default provider module closure.
+It does not replace Aby, add MCP tools, enable a TypeScript Workflow writer, or
+grant approval/merge/release authority. The existing MCP preview and confirmation
+tools route two reviewed targets: `harness.task.dispatch` accepts only an existing
+approved `taskId` and a correlation `requestId`; `harness.task.report` records the
+bound run's progress and evidence, never acceptance or completion.
+Harness-only principals need neither `scenario.instantiate` nor a locked Scenario
+Pack. Harness plans do not load or bind unrelated Scenario locks or initialize
+their instance store. Scenario/Contract-to-Delivery paths retain their own explicit
+capability, sealed-definition and storage checks; this separation grants nothing
+to those actions.
+
+The CLI discovers an administrator-provisioned
+`.openslack.local/harness/deployment.json` only for `mcp serve --profile agent-bound`.
+An absent file leaves the existing profile unchanged. Provisioning is a separate
+step after implementation; developers do not bootstrap an identity or supply
+credentials to test this integration. The file uses `HarnessDeploymentFile` from
+[the owning module](../../../packages/agent-runtime/src/harness-deployment.ts).
+The configured host explicitly disables the RunStore's legacy startup sweep and
+rejects linked canonical storage; it does not clean historical temporary evidence.
+It fixes the principal's original UID/provider/runtime run ID, model route,
+existing SDK home, independently bound Harness/plugin build roots, Node binary
+version/hash, and digests of already approved
+local workspace-task descriptors. Descriptors live under the approved identity
+workspace's `.openslack.local/harness/tasks/`; dispatch cannot supply their paths,
+prompts, file grants, verification definitions, or identity.
+
+The file-based CLI composition runs in its approved primary identity workspace;
+it rejects a different identity/read-model root. Actual task execution uses a new
+isolated worktree at the approved commit and never copies identity or credentials.
+An application using GitHub/claim-backed tasks must supply a live formal task and
+lease source through `createHarnessTaskAuthority`; the local workspace-task format
+explicitly rejects claim-required tasks rather than waiving their lease.
+
+The host binds the verifier, nonsecret SDK profile and launch overlay, model
+deployment, original Harness public runtime artifacts, exact external plugin
+entries and callback modules into the approved task. Only the two approved code
+roots' exact registered public files may be mounted, not arbitrary external paths.
+Unsupported external/dynamic plugin mounts or SDK package overrides fail closed.
+The worker's per-run callback binding is checked against the live canonical run;
+the caller cannot turn an arbitrary run ID or environment variable into authority.
+Runtime identities and execution run IDs remain distinct.
+
+Admission uses exclusive per-task routing records and canonical pending runs.
+Harness run updates publish complete, fsynced snapshots by rename; a failed
+publication retains its private temporary as evidence. Strict readers still
+reject inode, mode, size and version drift. The task host may re-observe only a
+typed conflict for the same run, at most three complete reads; its existing
+admission-observation window never re-admits or re-executes work. Corruption,
+links, invalid identity and oversized records remain hard failures.
+Same-key/same-input requests return the original run, while input drift or an
+uncertain publication returns a conflict or indeterminate result without replay.
+The visible activity anchor must be confirmed before a normal receipt is returned.
+For MCP dispatch, preparation waits until the governed confirmation is durably
+recorded. An unconfirmed or historical admission cannot activate an executor.
+`openslack_get_activity({objectKind: 'workflow', objectId: runId})` exposes an
+optional bounded, redacted `execution` projection only through an already visible
+anchor. Its reader never constructs or repairs a RunStore.
+
+Harness uses separate caller and worker scopes. Confirmation bearers stay in a
+private in-memory vault; model-visible confirm/cancel accept only `planId`.
+The caller dispatches one approved task and queries its returned run. The worker
+receives exact native file grants and current-task reports, with no Shell, PTC,
+plugin management or recursive dispatch. File effects recheck production
+principal/task permissions through the SDK owner before action, while the existing
+filesystem observation/version policy remains authoritative.
+`buildHarnessTaskPermissionProfile` adds only explicitly requested Harness callback
+capabilities; it does not widen the permission baselines of other providers.
+
+The per-launch overlay disables the original STDIO server and mounts the external
+SDK host, which delegates standard requests to the public SDK server/transport.
+Its native MCP owner holds raw definitions privately and directly awaits stop.
+The peer observes the SDK's actual spawned child through Node's public experimental
+`child_process` diagnostics channel, without SDK private fields or monkey patches.
+Missing or ambiguous observation fails closed. Generation-bound prepare-shutdown
+precedes standard ACK and actual child-close evidence; SDK cleanup never sends a
+lazy-start request after failed initialization.
+
+The peer waits for a completed Session turn, managed work and SDK shutdown;
+OpenSlack also confirms peer process exit. None of prompt enqueue, idle, heartbeat,
+exit code alone or a model report constitutes acceptance. Host-owned text checks
+require an acknowledged clean SDK shutdown receipt; forced SDK termination or
+unconfirmed native MCP process disposal remains indeterminate. Text checks then
+inspect the approved baseline, HEAD, index, modes, deletions, renames and all new
+files, then verify expected bytes and report evidence before `recorder.complete`.
+Acceptance writes a bounded receipt with file and tool-evidence digests. A final
+synchronous version guard rejects artifact drift after authority awaits. Recovery
+uses `reconcileHarnessTask` with `inspectHarnessTaskExecution`: it reads that receipt,
+the canonical run, current authority, deployment and retained workspace without
+constructing an SDK, repairing locks or changing historical records. An unknown
+exit or mismatched evidence stays indeterminate.
+Unsupported strict token/cost/turn/effort requirements are rejected, and absent
+usage stays unknown. Disconnect/cancellation stops owned work, preserves artifacts
+and records uncertainty; reconnection does not prompt, resume or redispatch.
+
+Keyless fixtures do not qualify a real principal, credential service, model route,
+native Windows deployment or hosted CI. Those are separate deployment checks after
+the implementation is ready. No default profile or identity is installed by this
+documentation.
+
 ## OpenSlack-owned Tool Plane
 
 `AdapterExecutionContext.toolExecutor` is required. The first production tool
@@ -173,7 +283,9 @@ The launcher checks:
 - an `openai-compatible` run can call `repo.apply_patch` → create worktree
 
 Worktree creation uses `createWorktree()` from `@openslack/runtime`.
-Cleanup happens in `finally` block.
+Cleanup happens in `finally` for existing providers under their existing rules.
+Harness worktrees are always preserved for acceptance and reconciliation, including
+apparently clean trees and unknown dirty-state results.
 
 ## MCP Scope
 
@@ -200,7 +312,7 @@ Phase 1 (current): Check and declare only.
 Run the agent-runtime test suite:
 
 ```bash
-bun test packages/agent-runtime/src/__tests__/
+bunx vitest run packages/agent-runtime/src/__tests__/
 ```
 
 Key test files:

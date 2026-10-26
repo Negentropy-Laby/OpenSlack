@@ -56,6 +56,7 @@ describe('mcp command', () => {
       '--principal-ref',
       '--human-principal',
       '--workspace-id',
+      '--harness-worker-binding',
       '--graph-read-mirror-origin',
       '--graph-read-mirror-network',
       '--graph-read-canary-backend',

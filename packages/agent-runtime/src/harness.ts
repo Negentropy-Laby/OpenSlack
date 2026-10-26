@@ -1,0 +1,14 @@
+/** Host-only task composition. Kept outside the default provider/worker module closure. */
+export { HarnessTaskHost } from './harness-task-host.js';
+export { hashHarnessInput, HarnessAdmissionError } from './harness-admission.js';
+export type { HarnessTaskHostOptions, ApprovedHarnessTask, PreparedHarnessExecution, HarnessTaskReport, HarnessAcceptance } from './harness-task-host.js';
+export { createHarnessTaskAuthority } from './harness-task-authority.js';
+export type { HarnessTaskAuthorityOptions, HarnessApprovedTaskSource } from './harness-task-authority.js';
+export { createHarnessTaskExecution, inspectHarnessTaskExecution, hashHarnessRuntimeArtifacts, hashHarnessDeployment, harnessPublicRuntimeEntries } from './harness-task-execution.js';
+export { createConfiguredHarnessTaskHost } from './harness-deployment.js';
+export { buildHarnessTaskPermissionProfile } from './harness-permissions.js';
+export { hashHarnessPluginArtifacts, hashHarnessNodeExecutable } from './harness-artifacts.js';
+export { reconcileHarnessTask } from './harness-reconciliation.js';
+export type { HarnessReconciliationOptions, HarnessRecoveryObservation } from './harness-reconciliation.js';
+export type { HarnessDeploymentFile, HarnessWorkspaceTaskFile } from './harness-deployment.js';
+export type { HarnessTaskExecutionOptions, HarnessTextVerification } from './harness-task-execution.js';

@@ -153,6 +153,8 @@ export type {
   ProviderTransport,
 } from './provider-registry.js';
 export { ProviderRegistry, ProviderRegistryError, inferProviderId } from './provider-registry.js';
+export { createDeepSeekHarnessProvider } from './deepseek-harness-provider.js';
+export type { DeepSeekHarnessDeployment } from './deepseek-harness-provider.js';
 
 export type {
   ExternalCommandAdapterOptions,

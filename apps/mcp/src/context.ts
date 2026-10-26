@@ -1,5 +1,6 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 import { workflowReadMetadata } from './workflow-read-metadata.js';
+import { readHarnessExecutionProjection } from './harness-execution.js';
 import { existsSync, lstatSync, realpathSync, statSync } from 'node:fs';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import {
@@ -1361,10 +1362,13 @@ export function createDefaultOpenSlackReadModelPorts(
       if (objectKind) filter.objectKind = objectKind as EventFilter['objectKind'];
       if (objectId) filter.objectId = objectId;
       const events = filterEvents(eventsForWindow(rootDir, sinceHours), filter).slice(0, limit);
+      const execution = objectKind === 'workflow' && objectId
+        ? readHarnessExecutionProjection(rootDir, objectId, events) : undefined;
       return {
         generatedAt: new Date().toISOString(),
         events: events.map(eventDto),
         evidenceRefs: events.map(eventEvidence),
+        ...(execution ? { execution } : {}),
       };
     },
     workflowProgress: async ({ runId }) => {

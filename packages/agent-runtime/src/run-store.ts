@@ -5,6 +5,7 @@ import {
   readFileSync,
   lstatSync,
   fstatSync,
+  fsyncSync,
   openSync,
   closeSync,
   readSync,
@@ -85,6 +86,15 @@ export interface ReadRunStateSnapshotOptions {
   maxBytes?: number;
 }
 
+/** A rejected snapshot, never partial data. A caller may only re-observe the same canonical run. */
+export class RunStateSnapshotChangedError extends Error {
+  readonly code = 'RUN_STATE_SNAPSHOT_CHANGED';
+  constructor(readonly runId: string) {
+    super(`Run metadata for ${runId} changed during read.`);
+    this.name = 'RunStateSnapshotChangedError';
+  }
+}
+
 /**
  * Read one persisted run without constructing a store or running maintenance.
  *
@@ -112,13 +122,11 @@ export function readRunStateSnapshot(
   const descriptor = openSync(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
   try {
     const before = fstatSync(descriptor, { bigint: true });
-    if (
-      before.dev !== entry.dev ||
-      before.ino !== entry.ino ||
-      before.mode !== entry.mode ||
-      before.size > BigInt(maxBytes)
-    ) {
+    if (before.size > BigInt(maxBytes)) {
       throw new Error(`Run metadata for ${runId} exceeds the read bound.`);
+    }
+    if (before.dev !== entry.dev || before.ino !== entry.ino || before.mode !== entry.mode) {
+      throw new RunStateSnapshotChangedError(runId);
     }
     const buffer = Buffer.alloc(maxBytes + 1);
     let bytesRead = 0;
@@ -138,7 +146,7 @@ export function readRunStateSnapshot(
       before.mode !== after.mode ||
       BigInt(bytesRead) !== after.size
     ) {
-      throw new Error(`Run metadata for ${runId} changed during read.`);
+      throw new RunStateSnapshotChangedError(runId);
     }
     let parsed: AgentRunState;
     try {
@@ -198,9 +206,9 @@ export function sweepOrphanRunTempFiles(
   return removed;
 }
 
-export function createRunStore(rootDir?: string): AgentRunStore {
+export function createRunStore(rootDir?: string, options: { sweepOrphans?: boolean } = {}): AgentRunStore {
   const baseDir = getRunsBaseDir(rootDir);
-  sweepOrphanRunTempFiles(rootDir);
+  if (options.sweepOrphans !== false) sweepOrphanRunTempFiles(rootDir);
 
   function buildState(request: AgentRunRequest): AgentRunState {
     const now = new Date().toISOString();
@@ -327,7 +335,16 @@ export function createRunStore(rootDir?: string): AgentRunStore {
         );
       }
 
-      writeFileSync(metaPath, JSON.stringify(updated, null, 2), 'utf-8');
+      if (existing.harnessExecution || updated.harnessExecution) {
+        // Harness has independent process readers. Publish a complete snapshot;
+        // never expose a truncate/partial-JSON window. Retain an unpublished
+        // temporary on failure as evidence; maintenance-free hosts do not sweep it.
+        const temporary = `${metaPath}.${process.pid}-${Math.random().toString(36).slice(2)}.tmp`;
+        const file = openSync(temporary, 'wx', 0o600);
+        try { writeFileSync(file, JSON.stringify(updated, null, 2)); fsyncSync(file); }
+        finally { closeSync(file); }
+        renameSync(temporary, metaPath);
+      } else writeFileSync(metaPath, JSON.stringify(updated, null, 2), 'utf-8');
 
       return updated;
     },

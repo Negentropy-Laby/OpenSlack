@@ -10,6 +10,7 @@ export default defineConfig({
     projects: [
       'packages/*',
       'apps/*',
+      'integrations/deepseek-harness',
       'scripts/release',
       'scripts/public-pack',
       'scripts/live-capstone',

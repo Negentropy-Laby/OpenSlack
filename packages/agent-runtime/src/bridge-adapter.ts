@@ -7,6 +7,7 @@
  */
 
 import { spawn, type ChildProcess } from 'node:child_process';
+import { TextDecoder } from 'node:util';
 import type {
   AgentExecutionAdapter,
   AdapterExecutionContext,
@@ -62,6 +63,12 @@ export interface BridgeProcessAdapterOptions {
   abyRoot?: string;
   /** List of available MCP server names for capability negotiation. */
   availableMcpServers?: string[];
+  /** Require a matching frame identity and confirmed child exit before returning. */
+  confirmProcessExit?: boolean;
+  /** Grace per shutdown phase when exit confirmation is required. */
+  exitGraceMs?: number;
+  /** Live host authorization for a peer's pre-effect tool request; absence always rejects it. */
+  authorizeTool?: (context: AdapterExecutionContext, toolName: string, input: unknown) => Promise<void>;
 }
 
 /**
@@ -90,9 +97,20 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
   private envelopeQueue: BridgeEnvelope[] = [];
   private stderrBuffer = '';
   private abortListener: (() => void) | null = null;
+  private exitPromise: Promise<{ code: number | null; signal: NodeJS.Signals | null }> | null = null;
+  private exitReceipt: { code: number | null; signal: NodeJS.Signals | null } | null = null;
+  private responseDecoder: TextDecoder;
+  private inboundFailure: BridgeAdapterError | null = null;
+  private terminalFrames = 0;
+
+  /** Last observed OS process exit, not merely a signal request. */
+  get processExitReceipt() {
+    return this.exitReceipt ? { ...this.exitReceipt } : null;
+  }
 
   constructor(options: BridgeProcessAdapterOptions) {
     this.options = options;
+    this.responseDecoder = new TextDecoder('utf-8', { fatal: options.confirmProcessExit === true });
   }
 
   // ---------------------------------------------------------------------------
@@ -122,6 +140,11 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
 
     const sessionId = `bridge-${config.runId}`;
     this.processExited = false;
+    this.exitReceipt = null;
+    this.responseBuffer = '';
+    this.responseDecoder = new TextDecoder('utf-8', { fatal: this.options.confirmProcessExit === true });
+    this.inboundFailure = null;
+    this.terminalFrames = 0;
     this.envelopeQueue = [];
     this.stderrBuffer = '';
     this.sessionMachine = new BridgeSessionStateMachine(sessionId);
@@ -157,7 +180,11 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
     this.pendingReject = null;
     this.envelopeQueue = [];
 
-    this.killProcess();
+    if (this.options.confirmProcessExit) {
+      await this.confirmExit();
+    } else {
+      this.killProcess();
+    }
     return 'shutdown';
   }
 
@@ -171,7 +198,7 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
     }
 
     const json = JSON.stringify(envelope);
-    if (json.length > (this.options.maxEnvelopeSizeBytes ?? MAX_ENVELOPE_SIZE_BYTES)) {
+    if (Buffer.byteLength(json) > (this.options.maxEnvelopeSizeBytes ?? MAX_ENVELOPE_SIZE_BYTES)) {
       throw new BridgeAdapterError('envelope_malformed', 'Envelope exceeds maximum size');
     }
 
@@ -198,6 +225,12 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
   // ---------------------------------------------------------------------------
 
   async execute<T>(context: AdapterExecutionContext): Promise<AdapterExecutionResult<T>> {
+    let deadline: AbortSignal | undefined;
+    let executionError: Error | undefined;
+    if (this.options.confirmProcessExit) {
+      deadline = AbortSignal.timeout(this.options.timeoutMs ?? ABY_BRIDGE_RUNTIME_LIMITS.timeoutMs.default);
+      context = { ...context, signal: context.signal ? AbortSignal.any([context.signal, deadline]) : deadline };
+    }
     const {
       prompt,
       runId,
@@ -271,6 +304,7 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
     };
 
     try {
+      context.signal?.throwIfAborted();
       if (context.signal) {
         this.abortListener = () => {
           lifecycle.onBridgeProgress('agent_cancel_requested', { runId, reason: 'AbortSignal' });
@@ -284,6 +318,7 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
       }
       // Open session (spawns process + handshake)
       const sessionState = await this.openSession(sessionConfig);
+      context.signal?.throwIfAborted();
       const sessionId = this.sessionMachine!.id;
       lifecycle.onSessionOpen(sessionId, { sessionState });
 
@@ -304,6 +339,7 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
         }),
       );
 
+      context.signal?.throwIfAborted();
       await this.sendEnvelope(this.sessionMachine!.id, execEnvelope);
 
       // Multi-envelope event loop: process intermediate envelopes until
@@ -318,7 +354,8 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
         // Track elapsed time so the total budget is shared across all
         // envelopes, not multiplied per envelope.
         const elapsed = Date.now() - startTime;
-        const remaining = Math.max(totalTimeoutMs - elapsed, 1000); // min 1s for final envelope
+        const remaining = totalTimeoutMs - elapsed;
+        if (remaining <= 0) throw new BridgeAdapterError('timeout', 'Bridge total deadline exceeded');
         const envelope = await this.waitForResponse(remaining);
 
         // Validate every incoming envelope
@@ -328,6 +365,10 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
             'envelope_malformed',
             validation.error ?? 'Invalid envelope',
           );
+        }
+        if (this.options.confirmProcessExit &&
+          (envelope.sessionId !== sessionId || envelope.correlationId !== runId)) {
+          throw new BridgeAdapterError('envelope_malformed', 'Bridge frame belongs to another run');
         }
 
         // Permission guard on every inbound envelope
@@ -365,6 +406,27 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
           case 'tool_request': {
             const tp = envelope.payload as Record<string, unknown>;
             const toolName = (tp.toolName as string) ?? 'unknown';
+            if (tp.phase === 'authorize') {
+              let allowed = false;
+              try {
+                context.signal?.throwIfAborted();
+                toolGuard.check(toolName);
+                if (!this.options.authorizeTool || typeof tp.authorizationRequestId !== 'string') {
+                  throw new Error('Live authorization port is not configured');
+                }
+                await this.authorizePeerTool(context, toolName, structuredClone(tp.input));
+                context.signal?.throwIfAborted();
+                allowed = true;
+              } catch {
+                // Return no principal, path or upstream exception text to the untrusted caller.
+              }
+              await this.sendEnvelope(sessionId, buildBridgeEnvelope(sessionId, runId, 'tool_response', {
+                authorizationRequestId: tp.authorizationRequestId, allowed,
+              }));
+              recorder.progress(runId, { step: 'harness_tool_authorization', toolName, allowed });
+              if (!allowed) throw new BridgeAdapterError('permission_denied', 'Live host tool authorization denied');
+              break;
+            }
             // Validate worktree boundary on tool events
             if (worktreeConfig) {
               const wtCheck = worktreeGuard.validateToolEvent(toolName, tp, worktreeConfig);
@@ -433,6 +495,13 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
               toolStats?: Record<string, unknown>;
               events?: Array<{ kind: string; payload: unknown }>;
             };
+            if (this.options.confirmProcessExit && (!Object.hasOwn(payload, 'data') ||
+              (payload.tokenUsage !== undefined && (!Number.isSafeInteger(payload.tokenUsage) || payload.tokenUsage < 0)))) {
+              throw new BridgeAdapterError('envelope_malformed', 'Bridge complete requires data and valid observed usage');
+            }
+            if (this.options.confirmProcessExit) recorder.progress(runId, {
+              step: 'harness_usage', status: payload.tokenUsage === undefined ? 'unknown' : 'observed',
+            });
 
             // Reconcile any events reported in the complete payload
             if (payload.events && Array.isArray(payload.events)) {
@@ -442,7 +511,7 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
             }
 
             finalResult = {
-              data: payload.data ?? ({} as T),
+              data: this.options.confirmProcessExit ? payload.data as T : payload.data ?? ({} as T),
               tokenUsage: payload.tokenUsage,
             };
             break;
@@ -478,9 +547,12 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
         tokenUsage: finalResult.tokenUsage,
       };
     } catch (err) {
+      executionError = deadline?.aborted
+        ? new BridgeAdapterError('timeout', 'Bridge total deadline exceeded')
+        : err instanceof Error ? err : new BridgeAdapterError('unknown', 'Bridge execution failed');
       const sessionId = this.sessionMachine?.id ?? 'unknown';
-      const errorKind = err instanceof BridgeAdapterError ? err.kind : 'unknown';
-      const errorMessage = err instanceof Error ? err.message : String(err);
+      const errorKind = executionError instanceof BridgeAdapterError ? executionError.kind : 'unknown';
+      const errorMessage = executionError.message;
 
       lifecycle.onSessionError({
         kind: errorKind,
@@ -488,7 +560,7 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
         sessionId,
       });
 
-      throw err;
+      throw executionError;
     } finally {
       // Post-session worktree validation: record boundary evidence only.
       // Dirty-state detection and worktree cleanup are the launcher's
@@ -503,9 +575,28 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
       }
       // Always close session
       if (this.sessionMachine) {
-        await this.closeSession(this.sessionMachine.id).catch(() => {
-          // Ignore cleanup errors
-        });
+        if (this.options.confirmProcessExit) {
+          // An unconfirmed exit invalidates success, even after a complete frame.
+          try { await this.closeSession(this.sessionMachine.id); }
+          catch (shutdownError) {
+            if (!executionError) throw shutdownError;
+            if (executionError instanceof BridgeAdapterError) {
+              executionError.shutdownEvidence = { exit: this.processExitReceipt, clean: false };
+            }
+            throw executionError;
+          }
+          const expired = deadline?.aborted || Date.now() - startTime >= (this.options.timeoutMs ?? ABY_BRIDGE_RUNTIME_LIMITS.timeoutMs.default);
+          if (!executionError && (expired || context.signal?.aborted)) {
+            const error = new BridgeAdapterError(expired ? 'timeout' : 'unknown',
+              expired ? 'Bridge total deadline exceeded during shutdown' : 'Bridge invocation cancelled during shutdown');
+            error.shutdownEvidence = { exit: this.processExitReceipt, clean: true };
+            throw error;
+          }
+        } else {
+          await this.closeSession(this.sessionMachine.id).catch(() => {
+            // Preserve the legacy Aby cleanup contract.
+          });
+        }
       }
     }
   }
@@ -531,6 +622,13 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
 
     return new Promise((resolve, reject) => {
       this.process = spawn(command, args, spawnOpts);
+      const child = this.process;
+      this.exitPromise = new Promise((settle) => {
+        child.once('close', (code, signal) => {
+          this.exitReceipt = { code, signal };
+          settle(this.exitReceipt);
+        });
+      });
 
       this.process.on('error', (err) => {
         reject(
@@ -553,6 +651,14 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
 
       // Handle process exit — set flag so future waitForResponse calls detect it
       this.process.on('close', (code, signal) => {
+        try {
+          this.responseBuffer += this.responseDecoder.decode();
+          if (this.options.confirmProcessExit && this.responseBuffer.trim()) {
+            this.inboundFailure = new BridgeAdapterError('envelope_malformed', 'Truncated Bridge frame');
+          }
+        } catch {
+          this.inboundFailure = new BridgeAdapterError('envelope_malformed', 'Invalid UTF-8 Bridge output');
+        }
         this.processExited = true;
         if (this.pendingReject) {
           this.pendingReject(
@@ -581,6 +687,14 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
       this.options.handshakeTimeoutMs ?? ABY_BRIDGE_RUNTIME_LIMITS.handshakeTimeoutMs.default,
     );
 
+    if (this.options.confirmProcessExit) {
+      const validation = validateBridgeEnvelope(response);
+      if (!validation.valid || response.sessionId !== sessionId ||
+          response.correlationId !== config.runId) {
+        throw new BridgeAdapterError('handshake_failed', 'Bridge handshake identity mismatch');
+      }
+    }
+
     if (response.kind !== 'handshake_response') {
       throw new BridgeAdapterError(
         'handshake_failed',
@@ -598,17 +712,23 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
   }
 
   private handleStdoutChunk(chunk: Buffer): void {
-    this.responseBuffer += chunk.toString('utf-8');
+    try { this.responseBuffer += this.responseDecoder.decode(chunk, { stream: true }); }
+    catch { this.rejectInbound(new BridgeAdapterError('envelope_malformed', 'Invalid UTF-8 Bridge output')); return; }
 
     // Process complete lines (JSONL)
     const lines = this.responseBuffer.split('\n');
     this.responseBuffer = lines.pop() ?? ''; // Keep incomplete line
+    if (this.options.confirmProcessExit && Buffer.byteLength(this.responseBuffer) > (this.options.maxEnvelopeSizeBytes ?? MAX_ENVELOPE_SIZE_BYTES)) {
+      this.rejectInbound(new BridgeAdapterError('envelope_malformed', 'Unterminated Bridge frame exceeds maximum size'));
+      return;
+    }
 
     for (const line of lines) {
       if (!line.trim()) continue;
 
       // Inbound envelope size limit — prevents OOM from malicious runtimes
-      if (line.length > (this.options.maxEnvelopeSizeBytes ?? MAX_ENVELOPE_SIZE_BYTES)) {
+      if (Buffer.byteLength(line) > (this.options.maxEnvelopeSizeBytes ?? MAX_ENVELOPE_SIZE_BYTES)) {
+        if (this.options.confirmProcessExit) this.rejectInbound(new BridgeAdapterError('envelope_malformed', 'Inbound envelope exceeds maximum size'));
         if (this.pendingReject) {
           this.pendingReject(
             new BridgeAdapterError('envelope_malformed', 'Inbound envelope exceeds maximum size'),
@@ -621,6 +741,13 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
 
       try {
         const envelope = JSON.parse(line) as BridgeEnvelope;
+        if (this.options.confirmProcessExit) {
+          if (envelope.kind === 'complete' || envelope.kind === 'error') this.terminalFrames++;
+          if (this.terminalFrames > 1 || this.envelopeQueue.length >= 256) {
+            this.rejectInbound(new BridgeAdapterError('envelope_malformed', 'Duplicate terminal or excessive queued Bridge frames'));
+            continue;
+          }
+        }
         // Queue-based processing: if a waiter exists, resolve immediately;
         // otherwise enqueue for the next waitForResponse call
         if (this.pendingResponse) {
@@ -636,6 +763,7 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
           this.envelopeQueue.push(envelope);
         }
       } catch {
+        if (this.options.confirmProcessExit) this.rejectInbound(new BridgeAdapterError('envelope_malformed', 'Invalid JSON in Bridge output'));
         // Invalid JSON line — record as malformed
         if (this.pendingReject) {
           this.pendingReject(
@@ -650,7 +778,20 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
     }
   }
 
+  private rejectInbound(error: BridgeAdapterError): void {
+    this.inboundFailure ??= error;
+    this.pendingReject?.(this.inboundFailure);
+    this.pendingReject = null;
+    this.pendingResponse = null;
+    if (this.responseTimer) clearTimeout(this.responseTimer);
+    this.responseTimer = null;
+  }
+
   private waitForResponse(timeoutMs: number): Promise<BridgeEnvelope> {
+    if (this.inboundFailure) return Promise.reject(this.inboundFailure);
+    if (this.options.confirmProcessExit && this.envelopeQueue.length > 0) {
+      return Promise.resolve(this.envelopeQueue.shift()!);
+    }
     // Check if process already exited before waiting
     if (this.processExited) {
       return Promise.reject(
@@ -705,8 +846,65 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
     return lines.length > 0 ? lines.join(' | ') : undefined;
   }
 
+  private async confirmExit(): Promise<void> {
+    const child = this.process;
+    const exited = this.exitPromise;
+    if (!child || !exited) return;
+    child.stdin?.end();
+    const grace = this.options.exitGraceMs ?? 5_000;
+    const wait = async (): Promise<boolean> => {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        return await Promise.race([
+          exited.then(() => true),
+          new Promise<boolean>((resolve) => { timer = setTimeout(() => resolve(false), grace); }),
+        ]);
+      } finally {
+        if (timer) clearTimeout(timer);
+      }
+    };
+    let forced = false;
+    if (!await wait()) {
+      forced = true;
+      child.kill('SIGTERM');
+      if (!await wait()) {
+        child.kill('SIGKILL');
+        if (!await wait()) {
+          throw new BridgeAdapterError('process_crash', 'Bridge exit and side effects remain unknown');
+        }
+      }
+    }
+    this.process = null;
+    if (this.inboundFailure) throw this.inboundFailure;
+    if (forced || this.exitReceipt?.code !== 0 || this.exitReceipt.signal !== null) {
+      throw new BridgeAdapterError('process_crash', 'Bridge did not confirm a clean owned shutdown');
+    }
+  }
+
+  private async authorizePeerTool(context: AdapterExecutionContext, toolName: string, input: unknown): Promise<void> {
+    const signal = context.signal;
+    let aborted: (() => void) | undefined;
+    try {
+      const check = this.options.authorizeTool!(context, toolName, input);
+      if (!signal) return await check;
+      signal.throwIfAborted();
+      await Promise.race([check, new Promise<never>((_resolve, reject) => {
+        aborted = () => reject(signal.reason);
+        signal.addEventListener('abort', aborted, { once: true });
+      })]);
+    } finally {
+      if (signal && aborted) signal.removeEventListener('abort', aborted);
+    }
+  }
+
   private killProcess(): void {
     const proc = this.process;
+    if (this.options.confirmProcessExit) {
+      // Keep the process reference and exit listener until closeSession observes exit.
+      proc?.stdin?.end();
+      proc?.kill('SIGTERM');
+      return;
+    }
     this.process = null;
 
     if (proc && !proc.killed) {
@@ -728,6 +926,8 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
 export class BridgeAdapterError extends Error {
   readonly kind: BridgeErrorKind;
   readonly stderrSummary?: string;
+  /** Orthogonal exit facts retained without replacing the original failure. */
+  shutdownEvidence?: { exit: { code: number | null; signal: NodeJS.Signals | null } | null; clean: boolean };
 
   constructor(kind: BridgeErrorKind, message: string, stderrSummary?: string) {
     super(message);

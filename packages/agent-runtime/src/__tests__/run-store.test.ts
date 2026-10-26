@@ -3,6 +3,8 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  openSync,
+  closeSync,
   readFileSync,
   rmSync,
   utimesSync,
@@ -102,6 +104,24 @@ describe('createRunStore', () => {
     expect(found!.agentId).toBe('test-agent');
   });
 
+  it('publishes Harness updates atomically while preserving a previously opened complete snapshot', () => {
+    const store = createRunStore(root, { sweepOrphans: false });
+    const request = makeRequest();
+    store.createRun(request);
+    store.updateRun(request.runId, { harnessExecution: {
+      schema: 'openslack.harness_execution.v1', taskId: 'TASK-1', requestHash: 'a'.repeat(64),
+      principalHash: 'b'.repeat(64), baseline: 'c'.repeat(40), acceptance: 'pending', summary: 'pending', evidenceRefs: [], reports: {}, visible: true,
+    } });
+    const path = join(root, '.openslack.local/agents/runs', request.runId, 'run.json');
+    const before = readFileSync(path);
+    const descriptor = openSync(path, 'r');
+    try {
+      store.updateRun(request.runId, { status: 'running' });
+      expect(readFileSync(descriptor)).toEqual(before);
+      expect(readRunStateSnapshot(request.runId, root)?.status).toBe('running');
+    } finally { closeSync(descriptor); }
+  });
+
   it('reads a bounded snapshot without sweeping stale atomic-write evidence', () => {
     const store = createRunStore(root);
     store.createRun(makeRequest());
@@ -112,6 +132,16 @@ describe('createRunStore', () => {
 
     expect(readRunStateSnapshot('RUN-20260101-TEST1234', root)?.agentId).toBe('test-agent');
     expect(readFileSync(stale, 'utf8')).toBe('stale evidence');
+  });
+
+  it('lets an explicitly maintenance-free writer preserve historical temporary evidence', () => {
+    createRunStore(root).createRun(makeRequest());
+    const stale = join(root, '.openslack.local/agents/runs/RUN-20260101-TEST1234/run.json.stale.tmp');
+    writeFileSync(stale, 'historical bytes');
+    utimesSync(stale, new Date(0), new Date(0));
+    const store = createRunStore(root, { sweepOrphans: false });
+    expect(store.getRun('RUN-20260101-TEST1234')?.status).toBe('pending');
+    expect(readFileSync(stale, 'utf8')).toBe('historical bytes');
   });
 
   it('rejects oversized state before parsing it', () => {
