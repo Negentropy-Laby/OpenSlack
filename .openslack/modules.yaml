@@ -1,5 +1,5 @@
 schema: openslack.modules.v2
-vitest_tests: 8189
+vitest_tests: 8190
 vitest_files: 564
 # Collected Vitest cases; module counts cover their declared packages and may overlap.
 modules:
