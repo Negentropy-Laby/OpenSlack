@@ -58,6 +58,17 @@ jobs:
           node-version: '24.18.1'
           package-manager-cache: false
 
+      - name: Canonicalize Windows validation temporary paths
+        if: ${{ matrix.target == 'windows-x64' }}
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import { appendFileSync, realpathSync } from 'node:fs';
+          import { tmpdir } from 'node:os';
+          const canonical = realpathSync.native(tmpdir());
+          appendFileSync(process.env.GITHUB_ENV, `TEMP=${canonical}\nTMP=${canonical}\n`);
+          NODE
+
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
           repository: deepseek-ai/deepseek-harness

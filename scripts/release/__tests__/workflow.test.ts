@@ -1,7 +1,20 @@
-import { readFileSync, readdirSync } from 'node:fs';
-import { resolve } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import {
+  lstatSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+} from 'node:fs';
+import { join, resolve } from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { describe, expect, it, onTestFinished } from 'vitest';
 import { parse } from 'yaml';
+import {
+  testProcessEnvironment,
+  testTemporaryDirectory,
+} from '../../testing/process-fixture.mjs';
 
 const workflow = readFileSync(
   resolve(import.meta.dirname, '..', '..', '..', '.github', 'workflows', 'openslack-release.yml'),
@@ -10,6 +23,45 @@ const workflow = readFileSync(
 const build = readFileSync(resolve(import.meta.dirname, '..', 'build.ts'), 'utf-8');
 
 describe('native release workflow integrity', () => {
+  it('canonicalizes the existing Windows temporary directory before native validation', () => {
+    const steps = parse(workflow).jobs.build.steps;
+    const index = steps.findIndex(
+      (step: { name?: string }) => step.name === 'Canonicalize Windows validation temporary paths',
+    );
+    expect(index).toBeGreaterThan(
+      steps.findIndex((step: { uses?: string }) => step.uses?.startsWith('actions/setup-node@')),
+    );
+    expect(index).toBeLessThan(
+      steps.findIndex(
+        (step: { name?: string }) =>
+          step.name === 'Prepare original Harness artifacts and public declarations',
+      ),
+    );
+    const step = steps[index];
+    expect(step.if).toBe("${{ matrix.target == 'windows-x64' }}");
+    expect(step.shell).toBe('bash');
+    const program = /^node --input-type=module <<'NODE'\n([\s\S]+)\nNODE\n?$/.exec(step.run)?.[1];
+    expect(program).toBeTypeOf('string');
+    const root = testTemporaryDirectory('openslack-ci-temp-');
+    onTestFinished(() => rmSync(root, { recursive: true, force: true }));
+    const target = join(root, 'physical temporary directory with spaces');
+    const alias = join(root, 'temporary alias');
+    mkdirSync(target);
+    symlinkSync(target, alias, process.platform === 'win32' ? 'junction' : 'dir');
+    const output = join(root, 'github-env');
+    const result = spawnSync(process.execPath, ['--input-type=module', '-e', program!], {
+      env: { ...testProcessEnvironment(), TEMP: alias, TMP: alias, TMPDIR: alias, GITHUB_ENV: output },
+      encoding: 'utf8',
+      timeout: 20_000,
+    });
+    expect(result.error).toBeUndefined();
+    expect(result.status, result.stdout + result.stderr).toBe(0);
+    const canonical = realpathSync.native(target);
+    expect(readFileSync(output, 'utf8')).toBe(`TEMP=${canonical}\nTMP=${canonical}\n`);
+    expect(lstatSync(alias).isSymbolicLink()).toBe(true);
+    expect(readdirSync(target)).toEqual([]);
+  });
+
   it('pins every Bun setup and its local types to the reviewed toolchain', () => {
     const root = resolve(import.meta.dirname, '../../..');
     const manifest = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8'));
