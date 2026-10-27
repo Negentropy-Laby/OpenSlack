@@ -31,7 +31,9 @@ export function createOwnedSdk(config: OwnedSdkOptions): TaskSdk {
     try {
       if (!initialized) return Object.freeze({ pid: -1, code: null, signal: null,
         terminationRequested: false, shutdownAcknowledged: false, resourcesStopped: false })
-      const result = await sdk.client.request('openslack/prepare-shutdown', { generation: config.generation, deadlineAt: deadline }, shutdownRemaining(deadline))
+      const result = await sdk.client.request('openslack/prepare-shutdown', {
+        generation: config.generation, remainingMs: shutdownRemaining(deadline),
+      }, shutdownRemaining(deadline))
       if (!result || typeof result !== 'object' || !('generation' in result) || result.generation !== config.generation ||
         !('resources' in result) || !Array.isArray(result.resources) || result.resources.length !== (config.requireMcp ? 1 : 0) ||
         result.resources.some(item => !isCleanExit(item))) throw new Error('SDK owned-resource stop is unknown')
@@ -44,7 +46,7 @@ export function createOwnedSdk(config: OwnedSdkOptions): TaskSdk {
         // close() is a public non-lazy cleanup, unlike session/wait or shutdown.
         // Invoke it even after the deadline, but never restart the close budget.
         const cleanup = sdk.close()
-        if (Date.now() < deadline) await withinShutdown(deadline, () => cleanup)
+        if (performance.now() < deadline) await withinShutdown(deadline, () => cleanup)
         else { void cleanup.catch(() => {}); throw new Error('SDK cleanup exceeded the owned shutdown deadline') }
       } finally { observed.dispose() }
     }

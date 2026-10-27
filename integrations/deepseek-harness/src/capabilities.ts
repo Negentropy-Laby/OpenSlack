@@ -4,6 +4,7 @@ import type { ProcessExitReceipt } from './process-observer.ts'
 export interface OpenSlackConnection {
   readonly connected: boolean
   tool(name: string): ToolDefinition | undefined
+  /** Reuses an existing same-process performance.now() deadline, never a UTC/wire timestamp. */
   stop(deadlineAt?: number): Promise<ProcessExitReceipt>
 }
 declare module '@deepseek-ai/cordis' {

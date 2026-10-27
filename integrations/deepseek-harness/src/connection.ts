@@ -10,7 +10,7 @@ import { isCleanExit, OwnedProcessObservation, requireSupportedNode } from './pr
 import type { ProcessExitReceipt } from './process-observer.ts'
 import { isAbsolute } from 'node:path'
 import { statSync } from 'node:fs'
-import { shutdownDeadline, shutdownRemaining, withinShutdown } from './shutdown.ts'
+import { adoptShutdownDeadline, shutdownRemaining, withinShutdown } from './shutdown.ts'
 
 export const name = 'openslack-native-connection'
 export const inject = ['tools']
@@ -68,7 +68,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     tool: toolName => tools.get(toolName),
     stop(deadlineAt) {
       stopped ??= (async () => {
-        const deadline = shutdownDeadline(deadlineAt)
+        const deadline = adoptShutdownDeadline(deadlineAt)
         closing = true
         invalidate()
         try {
@@ -90,7 +90,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     // Never retain upstream stderr: JSON-RPC errors can contain bearer material.
     // The public stream exists before connect; drain it during initialize too.
     transport.stderr?.on('data', () => {})
-    const startupDeadline = Date.now() + config.timeoutMs
+    const startupDeadline = performance.now() + config.timeoutMs
     await withinShutdown(startupDeadline, () => client.connect(transport, { timeout: config.timeoutMs }))
     observed.assertCaptured(transport.pid)
     if (lost) throw new Error('OpenSlack MCP disconnected during startup')

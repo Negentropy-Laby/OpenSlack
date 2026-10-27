@@ -243,6 +243,15 @@ Missing or ambiguous observation fails closed. Generation-bound prepare-shutdown
 precedes standard ACK and actual child-close evidence; SDK cleanup never sends a
 lazy-start request after failed initialization.
 
+Cleanup clock readings never cross a process boundary. A private generation-bound
+prepare carries only integer `remainingMs` in `1..24000`, not UTC or another
+process's `performance.now()` value. The sender retains its original local
+24-second outer bound; the receiver establishes one local monotonic deadline,
+reused by nested stops, repeated prepare, standard ACK, flush and disposal.
+Late completion cannot renew it. UTC execution cutoffs and task/claim leases
+remain unchanged, as do the 25-second grace / 5-second force / 30-second envelope
+and independent actual-exit requirements.
+
 Every Bridge provider validates UTF-8, run/session identity, payload and terminal
 ordering. Wire validation is independent of the provider's trusted exit policy.
 Harness alone negotiates `chunked-json.v1`: frames remain at most 1 MiB, with

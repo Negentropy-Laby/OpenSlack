@@ -9,7 +9,7 @@ import { requireSupportedNode } from './process-observer.ts'
 import type { ProcessExitReceipt } from './process-observer.ts'
 import type {} from './capabilities.ts'
 import { assertRuntimeBindings } from './runtime-bindings.ts'
-import { shutdownDeadline, withinShutdown } from './shutdown.ts'
+import { shutdownBudget, shutdownDeadline, shutdownRemaining, withinShutdown } from './shutdown.ts'
 import { assertEligibilityRestriction, readEligibilityRestriction } from './scope-evidence.ts'
 import type {} from '@deepseek-ai/dsh-llm'
 
@@ -59,17 +59,22 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     if (closing || !['openslack/tool-authorize', 'openslack/tool-evidence-result'].includes(method) || signal.aborted) return Promise.reject(new Error('SDK host authorization unavailable'))
     return transport.request(method, structuredClone(params), signal)
   })
-  const prepare = (deadlineAt?: number) => prepared ??= (async () => {
-    closeDeadline = shutdownDeadline(deadlineAt)
-    closing = true
-    ctx.emit('openslack/closing')
-    await withinShutdown(closeDeadline, () => server.shutdown())
-    const resources: ProcessExitReceipt[] = []
-    const connection = ctx.get('openslackConnection')
-    if (config.mcp && !connection) throw new Error('Required OpenSlack MCP owner is missing')
-    if (connection) resources.push(await withinShutdown(closeDeadline, () => connection.stop(closeDeadline)))
-    return { resources }
-  })()
+  const prepare = (remainingMs?: number) => {
+    // Validate even a repeated private request, without renewing prepared's
+    // original local deadline. Standard shutdown/disposal only reuse it.
+    if (remainingMs !== undefined) shutdownBudget(remainingMs)
+    return prepared ??= (async () => {
+      closeDeadline = shutdownDeadline(remainingMs)
+      closing = true
+      ctx.emit('openslack/closing')
+      await withinShutdown(closeDeadline, () => server.shutdown())
+      const resources: ProcessExitReceipt[] = []
+      const connection = ctx.get('openslackConnection')
+      if (config.mcp && !connection) throw new Error('Required OpenSlack MCP owner is missing')
+      if (connection) resources.push(await withinShutdown(closeDeadline, () => connection.stop(closeDeadline)))
+      return { resources }
+    })()
+  }
   const finishExit = () => exitTask ??= (async () => {
     try {
       await prepared
@@ -80,15 +85,17 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   })()
   transport.onRequest(async (method, params) => {
     if (method === 'openslack/prepare-shutdown') {
-      if (params?.generation !== config.generation || Object.keys(params).some(key => !['generation', 'deadlineAt'].includes(key)) ||
-        (params.deadlineAt !== undefined && typeof params.deadlineAt !== 'number')) {
+      if (params?.generation !== config.generation || Object.keys(params).some(key => !['generation', 'remainingMs'].includes(key)) ||
+        typeof params.remainingMs !== 'number') {
         throw new Error('Unrelated SDK shutdown request')
       }
-      return { generation: config.generation, ...await prepare(params.deadlineAt as number | undefined) }
+      const result = await prepare(params.remainingMs)
+      shutdownRemaining(closeDeadline!)
+      return { generation: config.generation, ...result }
     }
     if (method === 'shutdown') {
       await prepare()
-      const result = await server.handleRequest(method, params)
+      const result = await withinShutdown(closeDeadline!, () => server.handleRequest(method, params))
       setImmediate(() => { void finishExit() })
       return result
     }

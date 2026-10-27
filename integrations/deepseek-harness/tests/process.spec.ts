@@ -91,9 +91,18 @@ describe('built peer and actual SDK lifecycle (keyless)', () => {
   }, 10_000);
   it.each(['linked', 'packed', 'mismatched-peer'] as const)('%s package authorizes before native effects, waits for SDK exit, and retains a readable Session', async (installation) => {
     const root = mkdtempSync(join(tmpdir(), 'openslack-sdk-process-'))
+    const safeFailure: { stage: string; installation: string; peerExit?: { pid: number | null; code: number | null; signal: string | null; terminationRequested: boolean };
+      stderrBytes: number; frameKinds: string[]; observedToolResults: number; sdkShutdownReceipt: null } = {
+      stage: 'fixture-prepare', installation, stderrBytes: 0, frameKinds: [], observedToolResults: 0, sdkShutdownReceipt: null,
+    }
     onTestFinished(({ task }) => {
       if (task.result?.state === 'pass') rmSync(root, { recursive: true, force: true })
-      else console.error(`Keyless SDK failure retained at ${root}`)
+      else {
+        // Only known phases, public frame kinds and actual exit facts: never
+        // persist an upstream error message, raw frame payload or bearer.
+        writeFileSync(join(root, 'peer-failure-summary.json'), JSON.stringify(safeFailure), { flag: 'wx' })
+        console.error(JSON.stringify({ code: 'KEYLESS_PEER_EXIT_OR_ASSERTION_FAILED', fixture: root, ...safeFailure }))
+      }
     })
     const source = fileURLToPath(new URL('../', import.meta.url))
     let installSpec: string | undefined
@@ -162,14 +171,14 @@ describe('built peer and actual SDK lifecycle (keyless)', () => {
       execFileSync(process.execPath, [join(fixture.repository, 'node_modules/typescript/bin/tsc'), '-p', config],
         { cwd: consumer, stdio: 'pipe', timeout: 60_000 })
     }
+    safeFailure.stage = 'peer-start'
     const child = spawn(process.execPath, [join(fixture.pluginRoot, 'dist/startup.js'), '--harness-root', fixture.repository,
       '--home', fixture.home, '--agent', 'approved', '--provider', 'openslack-fixture', '--model', 'fixture',
       '--patch', fixture.patch, '--binding', fixture.binding, '--timeout-ms', '120000', '--start-eligibility-json',
       JSON.stringify({ runId: 'RUN-TEST', generation: 'fixture-g1', restriction: { mode: 'not_applicable' } })], { stdio: 'pipe', env: { PATH: process.env.PATH } })
     onTestFinished(() => { if (child.exitCode === null) child.kill('SIGKILL') })
     const frames: Array<{ kind: string; payload: Record<string, unknown> }> = []
-    let errors = ''
-    child.stderr.on('data', (data: Buffer) => { errors += data.toString() })
+    child.stderr.on('data', (data: Buffer) => { safeFailure.stderrBytes += data.length })
     const lines = createInterface({ input: child.stdout })
     const send = (kind: string, payload: object) => child.stdin.write(`${JSON.stringify({
       protocolVersion: '2025-06-03', sessionId: 'bridge-RUN-TEST', correlationId: 'RUN-TEST',
@@ -178,6 +187,11 @@ describe('built peer and actual SDK lifecycle (keyless)', () => {
     lines.on('line', (line) => {
       const frame = JSON.parse(line) as { kind: string; payload: Record<string, unknown> }
       frames.push(frame)
+      const known = ['handshake_response', 'run_started', 'tool_request', 'tool_response', 'complete', 'error']
+      safeFailure.frameKinds.push(known.includes(frame.kind) ? frame.kind : 'unrecognized')
+      safeFailure.stage = frame.kind === 'complete' ? 'terminal-complete' : frame.kind === 'error' ? 'terminal-error'
+        : frame.kind === 'run_started' ? 'task-started' : safeFailure.stage
+      if (frame.kind === 'tool_response' && frame.payload.phase === 'observed') safeFailure.observedToolResults++
       if (frame.kind === 'handshake_response') send('run_request', {
         runId: 'RUN-TEST', agentId: 'approved', worktreePath: fixture.workspace, model: 'fixture',
         allowedTools: ['Read', 'Write', 'Edit'], deniedTools: [],
@@ -192,7 +206,10 @@ describe('built peer and actual SDK lifecycle (keyless)', () => {
     })
     const exited = new Promise<number | null>((resolve, reject) => {
       child.once('error', reject)
-      child.once('close', (code) => { resolve(code) })
+      child.once('close', (code, signal) => {
+        safeFailure.peerExit = { pid: child.pid ?? null, code, signal, terminationRequested: child.killed }
+        resolve(code)
+      })
     })
     send('handshake_request', { protocolVersion: '2025-06-03' })
     const code = await exited
@@ -203,7 +220,7 @@ describe('built peer and actual SDK lifecycle (keyless)', () => {
       expect(readFileSync(join(fixture.workspace, 'fixture.txt'), 'utf8')).toBe('before')
       return
     }
-    expect(code, errors).toBe(0)
+    expect(code, JSON.stringify(safeFailure)).toBe(0)
     expect(frames.at(-1)).toMatchObject({ kind: 'complete', payload: { data: 'verified fixture output', usage: 'observed', tokenUsage: 33 } })
     expect(readFileSync(join(fixture.workspace, 'fixture.txt'), 'utf8')).toBe('after')
     const requests = readFileSync(join(root, 'requests.jsonl'), 'utf8')

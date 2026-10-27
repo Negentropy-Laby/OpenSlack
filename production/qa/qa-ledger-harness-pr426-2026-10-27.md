@@ -231,3 +231,58 @@ P2 after-Draft Agent Runtime/QA follow-up, not an implemented change or a blocke
 for this batch's scoped core repair. This short handoff leaves S09's earlier
 Pending boundary and all historical failures intact; it closes no qualification,
 real-model or human-acceptance gate.
+
+## S10 — Shutdown clock-domain repair after f0 hosted validation
+
+Baseline `f0f9b39ffe43c6e39332dc5eaf638f1df2e67c65`, tree
+`558ee22bdf0e55a95980cb9e06235b15da9024ce`: the original attempt ended
+8 success / 1 Windows failure / 1 tag-only skip, not all green. Its Windows
+selection recorded 169 PASS / 2 FAIL / 1 platform SKIP: packed peer exit 1 and
+the readonly SDK caller RPC `Invalid owned-resource shutdown deadline`.
+The actual default checkout was merge `5e45b9653b240d7db1a0ff9c8bd2122f95393707`
+with the same source tree, not the same commit/build metadata. The bot
+[CI handoff](https://github.com/Negentropy-Laby/OpenSlack/pull/426#issuecomment-6432089032)
+and `CI426-REPAIR51-WINDOWS-FAILURE-R1.json` (SHA-256
+`60355dde06914d930a9e68bfd380f9807c7445f07539a0d6ad126db311d0f7ba`)
+retain the failures; blocked Windows archive/smoke is NotRun, not the tag skip.
+
+Original paired sender/receiver readings and the exact rejecting predicate are
+absent. `CI426-SHUTDOWN-CLOCK-OBSERVATION-R1.json` (SHA-256
+`55fcd148d9cc3d3e218beefdb480d31bbc8b3acc64e075b2e280ae539a1ad94a`)
+separately observed Native Node 24.18.1: 1,024 samples, 389 old-guard rejections,
+with the child reading one millisecond earlier in those rejections. This proves
+mechanism reachability, not the original CI cause. Packed exit 1, its relation
+to the readonly RPC and historical U01 remain unexplained.
+
+The seven-path repair is exactly `SHUTDOWN-MONOTONIC-DELTA-R2.json`
+(2,009 bytes, SHA-256 `45dba723297c34569acc617fe50834ab99b32ab0260e300aca4c4a211b02f746`).
+Cleanup uses process-local `performance.now()`; private generation-bound
+`remainingMs` is an integer in `1..24000`. The sender retains its original
+24-second outer bound; receiver/nested owners, repeated prepare and standard ACK
+reuse their first local deadline, with late results rejected. UTC execution/
+claim eligibility, actual exit evidence and 25-second grace / 5-second force /
+30-second total remain unchanged. No Harness/Aby patch or authority was added.
+
+| Evidence | Actual result and boundary |
+| --- | --- |
+| `SHUTDOWN-MONOTONIC-SOURCE-R2` | 23 source-level PASS (shutdown 19, connection 4), matching 137-path source snapshot; not built-SDK qualification. |
+| `CI426-SHUTDOWN-LINUX-PREP-R1-HANDOFF.json` | Three formal builds and one five-file selection: 40 PASS, zero FAIL/SKIP/unhandled diagnostics; 3,029 sources, 5,597 artifacts and Git/Harness stable. SHA-256 `fcdc6099cb4123f4838227760f717dada58d34c70f2cf70e98b659dedd9c1abf`. |
+| `CI426-SHUTDOWN-NATIVE-TARGETED-SUMMARY-R1.json` | Actual Windows: 23 unit/connection + 1 packed + 13 SDK/lifecycle + 1 MCP = 38 distinct file/fullname PASS, duplicates 0. Each group exited 0/null with 3,029 source / 5,597 artifact / Git / Harness stability. The 10/1/29 omitted names are deselections, not platform skips or executed cases. Index SHA-256 `ba86b3d613fff8bc3aafcc2f922034bbc047020f9ab5e56ce96da43667dd1c82`. |
+| `PEER-QA-51-SHUTDOWN-MONOTONIC-REVIEW-R1.md` | Independent scoped static sufficiency ADEQUATE, not execution or whole-51 closure. SHA-256 `a8bc34bafc0847584e0eac5fcb67e0b8e470981991ca2c2ea98523a1a5050582`. |
+
+The Native MCP receipt spans 02:48:20.007Z–02:52:47.473Z on 2026-10-27
+(selected case 257,119.4674 ms); original task/child/test/cleanup budgets remain.
+Native plugin/Harness/callback bindings are separately retained in that index;
+Linux callback identity is not substituted. Native task-only public pnpm PATH
+and checksum-enforced Go cache preparation corrections preserve their initial
+setup/network FAILs; metadata ENOBUFS executed zero cases. No retroactive SDK
+receipt, tested TGZ digest, proxy recovery or hosted-cause evidence is invented.
+
+This append preserves the original 37,653-byte ledger prefix, all 51 rows and
+S09 history. Accepted ADR-0003 remains unchanged at SHA-256
+`90e25063fbea23a4db08b9a6a5dc82ff9129b6558010fd0a7693a10e9878e90b`.
+Formal inventory/status collection, a fresh full-candidate run and same-head CI
+need their own receipts; 23/40/38 are not summed into a whole-suite result.
+U01, the stated nonblocking P2 follow-ups, real approved-subject/model Windows/
+WSL execution and human acceptance retain their prior boundaries. #426 remains
+open Draft: no approval, merge, release, automatic redispatch or provisioning.
