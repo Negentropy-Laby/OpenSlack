@@ -6,6 +6,15 @@ import * as Connection from '../src/connection.ts';
 import type { ToolRunContext } from '@deepseek-ai/dsh-tools';
 
 describe('externally owned native MCP over a real server process', () => {
+  it('drains a full pre-initialize stderr pipe before awaiting the public MCP handshake', async () => {
+    const ctx = new Context();
+    onTestFinished(() => ctx.fiber.dispose());
+    await mountAgentLoopTestDependencies(ctx, { workingDirectory: true });
+    await ctx.plugin(Connection, { mode: 'read-only', workspaceRoot: fileURLToPath(new URL('.', import.meta.url)),
+      cliModule: fileURLToPath(new URL('./fixtures/mcp-server-stderr.js', import.meta.url)), timeoutMs: 5_000 });
+    expect(ctx.openslackConnection.connected).toBe(true);
+    expect(await ctx.openslackConnection.stop()).toMatchObject({ code: 0, signal: null, terminationRequested: false });
+  }, 10_000);
   it.each(['read-only', 'task'] as const)('connects %s, keeps raw task writes private, and observes clean process close', async mode => {
     const ctx = new Context();
     onTestFinished(() => ctx.fiber.dispose());

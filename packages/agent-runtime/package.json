@@ -13,6 +13,10 @@
     "./internal/harness": {
       "types": "./dist/harness.d.ts",
       "import": "./dist/harness.js"
+    },
+    "./internal/bridge-wire": {
+      "types": "./dist/bridge-wire.d.ts",
+      "import": "./dist/bridge-wire.js"
     }
   },
   "scripts": {
@@ -21,6 +25,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@openslack/core": "workspace:*",
     "@openslack/credentials": "workspace:*",
     "@openslack/kernel": "workspace:*",
     "@openslack/workspace": "workspace:*",

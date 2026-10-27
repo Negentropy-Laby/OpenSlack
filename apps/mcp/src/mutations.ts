@@ -1,4 +1,6 @@
 import { types as utilTypes } from 'node:util';
+import { AsyncLocalStorage } from 'node:async_hooks';
+import { randomUUID } from 'node:crypto';
 import {
   assertGovernedPlanService,
   createGovernedPlanCompiler,
@@ -52,7 +54,13 @@ export interface CreateOpenSlackGovernedMutationPortOptions {
   ) => CreateCanonicalGovernedPlanInput | Promise<CreateCanonicalGovernedPlanInput>;
   /** Synchronous host notification after the service returns its durable confirmation result; never a model callback. */
   readonly onConfirmed?: (record: GovernedPlanRecord) => void;
+  /** Always observes durable readback after confirmation/cancellation, including partial failure. */
+  readonly onConfirmationSettled?: (planId: string, outcome: Readonly<{ operation: 'confirm' | 'cancel'; attemptId: string; failed: boolean; failureCode?: string; aborted: boolean }>) => void | Promise<void>;
 }
+
+const mutationAttempts = new AsyncLocalStorage<string>();
+/** Correlation only, never authority; available solely inside the host's actual service invocation. */
+export function currentGovernedMutationAttempt(): string | undefined { return mutationAttempts.getStore(); }
 
 const NOMINAL_PORTS = new WeakSet<object>();
 const SAFE_AUTHORITY = /^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,255}$/;
@@ -161,7 +169,8 @@ export function createOpenSlackGovernedMutationPort(
   }
   const descriptors = Object.getOwnPropertyDescriptors(options);
   const expected = ['authority', 'compileScenario', 'compileWorkflow', 'service',
-    ...(Object.hasOwn(descriptors, 'onConfirmed') ? ['onConfirmed'] : [])];
+    ...(Object.hasOwn(descriptors, 'onConfirmed') ? ['onConfirmed'] : []),
+    ...(Object.hasOwn(descriptors, 'onConfirmationSettled') ? ['onConfirmationSettled'] : [])];
   if (
     Reflect.ownKeys(descriptors).length !== expected.length ||
     Reflect.ownKeys(descriptors).some(
@@ -184,6 +193,22 @@ export function createOpenSlackGovernedMutationPort(
   if (onConfirmed !== undefined && (typeof onConfirmed !== 'function' || utilTypes.isProxy(onConfirmed))) {
     throw new TypeError('onConfirmed must be a host-owned non-Proxy function.');
   }
+  const onSettled: CreateOpenSlackGovernedMutationPortOptions['onConfirmationSettled'] = descriptors.onConfirmationSettled?.value;
+  if (onSettled !== undefined && (typeof onSettled !== 'function' || utilTypes.isProxy(onSettled))) throw new TypeError('onConfirmationSettled must be host-owned.');
+  const settle = async (operation: 'confirm' | 'cancel', request: ReturnType<typeof tokenInput>, control: ReturnType<typeof invocation>,
+    action: () => Promise<GovernedPlanRecord>): Promise<GovernedPlanRecord> => {
+    const attemptId = randomUUID();
+    let result: GovernedPlanRecord;
+    try { result = await mutationAttempts.run(attemptId, action); }
+    catch (error) {
+      const failureCode = error && typeof error === 'object' && 'code' in error && typeof error.code === 'string' ? error.code : undefined;
+      try { await onSettled?.(request.planId, { operation, attemptId, failed: true, aborted: control.signal.aborted, ...(failureCode ? { failureCode } : {}) }); }
+      catch (secondary) { throw new AggregateError([error, secondary], 'Governed execution and settlement both failed.', { cause: error }); }
+      throw error;
+    }
+    await onSettled?.(request.planId, { operation, attemptId, failed: false, aborted: control.signal.aborted });
+    return result;
+  };
 
   const preview = async (
     inputValue: Readonly<Record<string, unknown>>,
@@ -223,10 +248,11 @@ export function createOpenSlackGovernedMutationPort(
       invocationValue: OpenSlackGovernedMutationInvocation,
     ) => {
       const control = invocation(invocationValue);
-      return service.confirm(tokenInput(inputValue), boundAuthority, control).then(record => {
+      const request = tokenInput(inputValue);
+      return settle('confirm', request, control, () => service.confirm(request, boundAuthority, control).then(record => {
         onConfirmed?.(record);
         return record;
-      });
+      }));
     },
     cancel: (
       inputValue: Readonly<Record<string, unknown>>,
@@ -236,7 +262,8 @@ export function createOpenSlackGovernedMutationPort(
       if (control.signal.aborted || Date.now() >= Date.parse(control.deadlineAt)) {
         throw new Error('GOVERNED_MUTATION_ABORTED_BEFORE_CANCEL');
       }
-      return service.cancel(tokenInput(inputValue), boundAuthority);
+      const request = tokenInput(inputValue);
+      return settle('cancel', request, control, () => service.cancel(request, boundAuthority));
     },
     get: (planId: string) => service.get(planId),
   });

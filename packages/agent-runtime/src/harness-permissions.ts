@@ -2,10 +2,10 @@ import { buildPermissionProfile, validatePermissionProfile } from './permissions
 import { normalizeToolNames } from './tool-name.js';
 import type { AgentPermissionProfile, ResolvedAgentConfig } from './types.js';
 import { PermissionDeniedError } from './types.js';
+import { HARNESS_CALLBACK_TOOLS } from './bridge-wire.js';
 
 const native = ['Read', 'Write', 'Edit'];
-const callbacks = ['openslack_get_activity', 'openslack_preview_workflow', 'openslack_confirm_plan', 'openslack_cancel_plan']
-  .map(name => `mcp.openslack.${name}`);
+const callbacks: readonly string[] = Object.values(HARNESS_CALLBACK_TOOLS).map(tool => tool.bridge);
 
 /** Explicit worker capability declaration, not principal authority. Existing provider baselines remain unchanged. */
 export function buildHarnessTaskPermissionProfile(config: ResolvedAgentConfig): AgentPermissionProfile {

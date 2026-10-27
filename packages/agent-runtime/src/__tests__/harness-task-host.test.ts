@@ -132,7 +132,7 @@ describe('canonical Harness task lifecycle (keyless host fixtures)', () => {
     const hostModule = new URL('../../dist/harness-task-host.js', import.meta.url).href;
     const storeModule = new URL('../../dist/run-store.js', import.meta.url).href;
     const source = `import { HarnessTaskHost } from ${JSON.stringify(hostModule)};
-      import { createRunStore } from ${JSON.stringify(storeModule)};
+      import { createRunStore, RunStateSnapshotChangedError } from ${JSON.stringify(storeModule)};
       import { appendFileSync } from 'node:fs';
       import { join } from 'node:path';
       const root = process.argv[1], task = JSON.parse(process.argv[2]);
@@ -144,8 +144,13 @@ describe('canonical Harness task lifecycle (keyless host fixtures)', () => {
         }, accept: async () => ({ outcome: 'verified', summary: 'fixture', evidenceRefs: [] }) }) });
       const receipt = await host.dispatch(task.taskId, 'request-' + process.pid);
       const deadline = Date.now() + 5000;
-      while (host.read(receipt.runId)?.status !== 'completed') {
+      for (;;) {
         if (Date.now() >= deadline) throw new Error('No completed canonical fixture');
+        try {
+          if (host.read(receipt.runId)?.status === 'completed') break;
+        } catch (error) {
+          if (!(error instanceof RunStateSnapshotChangedError) || error.runId !== receipt.runId) throw error;
+        }
         await new Promise(resolve => setTimeout(resolve, 10));
       }
       if (!(await host.close(1000)).stopped) throw new Error('Fixture host did not stop');
@@ -177,10 +182,11 @@ describe('canonical Harness task lifecycle (keyless host fixtures)', () => {
   });
 
   it('records only current-task reports, deduplicates them, and never lets reports accept the task', async () => {
-    const { host, options, execute, accept } = setup();
+    const { host, options, execute } = setup();
     const gate = deferred();
-    vi.mocked(options.prepare).mockImplementation(async () => { await gate.promise; return { execute, accept }; });
+    execute.mockImplementation(async () => { await gate.promise; return { data: { answer: 'fixture' }, exitConfirmed: true }; });
     const { runId } = await host.dispatch('TASK-1', 'admit');
+    await vi.waitFor(() => expect(execute).toHaveBeenCalledOnce());
     const worker = new HarnessTaskHost({ ...options, callbackRunId: runId });
     hosts.push(worker);
     const report = { runId, reportId: 'report-1', summary: 'progress', evidenceRefs: ['artifact:fixture'] };
@@ -276,15 +282,17 @@ describe('canonical Harness task lifecycle (keyless host fixtures)', () => {
 
   it('does not restart the total deadline after synchronous preparation', async () => {
     const { host, task, options, execute, accept } = setup();
-    task.timeoutMs = 10;
+    const before = Date.now();
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(before);
     vi.mocked(options.prepare).mockImplementation(async () => {
-      const stop = Date.now() + 30;
-      while (Date.now() < stop) { /* Reproduce blocking preparation without a timer callback. */ }
+      clock.mockReturnValue(Date.parse(options.store.listRuns()[0]!.startedAt) + task.timeoutMs + 1);
       return { execute, accept };
     });
-    const { runId } = await host.dispatch('TASK-1', 'deadline');
-    await vi.waitFor(() => expect(host.read(runId)?.status).toBe('failed'));
-    expect(execute).not.toHaveBeenCalled();
+    try {
+      const { runId } = await host.dispatch('TASK-1', 'deadline');
+      await vi.waitFor(() => expect(host.read(runId)?.status).toBe('failed'));
+      expect(execute).not.toHaveBeenCalled();
+    } finally { clock.mockRestore(); }
   });
 
   it('reconciles existing evidence without changing bytes, prompting or claiming unknown exit', async () => {

@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import {
   cpSync,
   existsSync,
@@ -20,7 +20,8 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { readEvents } from '@openslack/collaboration';
 import { LocalGraphStore } from '@openslack/organization-graph';
-import { createRunStore, buildPermissionProfile } from '@openslack/agent-runtime';
+import { resolveAgentPrincipal } from '@openslack/runtime';
+import { createRunStore, createRunRecorder, buildPermissionProfile, ToolGuard, RepositoryToolExecutor, type AdapterExecutionContext } from '@openslack/agent-runtime';
 import { HarnessTaskHost, createHarnessTaskAuthority,
   createConfiguredHarnessTaskHost, hashHarnessDeployment, hashHarnessRuntimeArtifacts, hashHarnessInput,
   buildHarnessTaskPermissionProfile, inspectHarnessTaskExecution, reconcileHarnessTask,
@@ -255,6 +256,70 @@ function previewMetadata(result: Readonly<Record<string, unknown>>): {
     planId: String(result.planId),
     confirmationToken: String(result.confirmationToken),
     correlationId: String(result.correlationId),
+  };
+}
+
+async function claimedLeaseBoundaryFixture() {
+  const root = createWorkspace({ action: 'deny', noScenarios: true });
+  const registry = join(root, '.openslack/agents/registry', `${PRINCIPAL_REF}.yaml`);
+  writeFileSync(registry, readFileSync(registry, 'utf8').replace('  github:', '    harness.task.dispatch: allow\n    harness.task.report: allow\n  github:'));
+  const resolved = resolveAgentPrincipal({ root, agentId: PRINCIPAL_REF, provider: 'cli' });
+  if ('error' in resolved) throw new Error('Synthetic production fixture principal did not resolve');
+  const expired = join(root, 'lease-expired.flag'), base = Date.now();
+  const clock = vi.spyOn(Date, 'now').mockImplementation(() => existsSync(expired) ? base + 200 : base);
+  let onLease = async () => {};
+  const leaseReads = vi.fn(async () => { await onLease(); return { owners: [resolved.principal],
+    expiresAt: new Date(base + 100).toISOString(), claimRef: 'refs/heads/openslack/claims/fixture' }; });
+  const config = { agentId: PRINCIPAL_REF, source: 'fixture', runtimeProvider: 'deepseek-harness', tools: ['Read', 'Write', 'Edit'], permissionMode: 'acceptEdits' as const };
+  const definition = { taskId: 'TASK-LEASE-1', baseline: 'b'.repeat(40), timeoutMs: 60_000,
+    request: { agentId: PRINCIPAL_REF, prompt: 'Update the approved fixture.', resolvedConfig: config, permissionProfile: buildHarnessTaskPermissionProfile(config) },
+    scope: { readPaths: ['fixture.txt'], writePaths: ['fixture.txt'], forbiddenPaths: ['.git/**'] }, outputSchema: { type: 'object' } };
+  const authority = createHarnessTaskAuthority({ identityRoot: root, agentId: PRINCIPAL_REF, uid: `${PRINCIPAL_REF}-uid`, principalId: `principal:${PRINCIPAL_REF}`,
+    runtimeRunId: 'RUN-governed-composition-001', provider: 'cli', claimMode: 'required', source: {
+      read: async () => ({ task: definition, allowedPaths: ['fixture.txt'], forbiddenPaths: ['.git/**'], claimRequired: true, sourceDigest: 'c'.repeat(64) }), readLease: leaseReads,
+    } });
+  const task = await authority.readTask(definition.taskId);
+  const store = createRunStore(root, { sweepOrphans: false }), runId = 'RUN-LEASE-TEST';
+  const worktree = join(root, 'workspace'); mkdirSync(worktree); writeFileSync(join(worktree, 'fixture.txt'), 'before');
+  store.createRun({ ...task.request, runId });
+  store.updateRun(runId, { status: 'running', startedAt: new Date(base).toISOString(), worktreePath: worktree,
+    harnessExecution: { schema: 'openslack.harness_execution.v1', taskId: task.taskId,
+      requestHash: hashHarnessInput({ ...task, idempotencyKey: task.taskId }), principalHash: task.principalHash,
+      baseline: task.baseline, acceptance: 'pending', summary: 'fixture', reports: {}, evidenceRefs: [],
+      lifecycle: { phase: 'started', ownerGeneration: 'fixture-owner', deadlineAt: new Date(base + task.timeoutMs).toISOString() }, evidence: { calls: {}, reservedBytes: 0 } } });
+  const recorder = createRunRecorder(store, root), guard = new ToolGuard(task.request.permissionProfile, recorder, runId);
+  const context: AdapterExecutionContext = { ...task.request, runId, runState: store.getRun(runId)!, worktreePath: worktree,
+    signal: new AbortController().signal, executionDeadline: base + task.timeoutMs, recorder, toolGuard: guard,
+    toolExecutor: new RepositoryToolExecutor({ rootPath: worktree, recorder, toolGuard: guard, runId }) };
+  const control = join(root, 'lock-control'); mkdirSync(control);
+  const module = pathToFileURL(join(repositoryRoot, 'packages/agent-runtime/dist/run-store.js')).href;
+  const script = `import{createRunStore}from${JSON.stringify(module)};import{existsSync,readFileSync,writeFileSync,writeSync}from'node:fs';import{join}from'node:path';
+    const[root,defaultId,control,expired]=process.argv.slice(1),store=createRunStore(root,{sweepOrphans:false});
+    writeSync(1,'ready\\n');while(!existsSync(join(control,'start')))Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,5);
+    const id=existsSync(join(control,'run-id'))?readFileSync(join(control,'run-id'),'utf8'):defaultId;
+    store.withRunTransaction(id,s=>{writeFileSync(join(control,'locked'),'1');while(!existsSync(join(control,'release')))Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,5);
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,100);writeFileSync(expired,'1');return{patch:{toolCalls:s.toolCalls+1}};});`;
+  const child = spawn(process.execPath, ['--input-type=module', '-e', script, root, runId, control, expired], { stdio: ['ignore', 'pipe', 'pipe'] });
+  let error = ''; child.stderr.on('data', bytes => { error += bytes; });
+  const closed = new Promise<void>((resolve, reject) => { child.once('error', reject); child.once('close', code => code === 0 ? resolve() : reject(new Error(error || `Lock child exit ${code}`))); });
+  await new Promise<void>((resolve, reject) => { child.stdout.once('data', () => resolve()); child.once('error', reject); });
+  const hold = async (targetRunId = runId) => {
+    writeFileSync(join(control, 'run-id'), targetRunId);
+    writeFileSync(join(control, 'start'), '1');
+    await vi.waitFor(() => expect(existsSync(join(control, 'locked'))).toBe(true));
+    expect(existsSync(join(root, '.openslack.local/agents/runs', targetRunId, 'run.transaction.lock'))).toBe(true);
+  };
+  const release = () => { writeFileSync(join(control, 'release'), '1'); };
+  const holdSynchronously = (targetRunId: string) => {
+    writeFileSync(join(control, 'run-id'), targetRunId); writeFileSync(join(control, 'start'), '1');
+    const until = performance.now() + 1000;
+    while (!existsSync(join(control, 'locked'))) { if (performance.now() >= until) throw new Error('Fixture canonical writer did not acquire its lock'); Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 5); }
+    expect(existsSync(join(root, '.openslack.local/agents/runs', targetRunId, 'run.transaction.lock'))).toBe(true);
+  };
+  return { root, runId, task, authority, store, recorder, context, leaseReads, hold, holdSynchronously, release,
+    setLeaseHook(hook: () => Promise<void>) { onLease = hook; leaseReads.mockClear(); },
+    revokeSourceWriteScope() { definition.scope.writePaths = []; },
+    async close() { writeFileSync(join(control, 'start'), '1'); release(); await closed; clock.mockRestore(); },
   };
 }
 
@@ -1198,6 +1263,7 @@ describe('production agent-bound governed mutation composition', () => {
       const receipt = (confirmed.structuredContent.data as { outcomes: Array<{ data: { runId: string; status: string } }> }).outcomes[0]!.data;
       expect(receipt.status).toBe('pending');
       const runId = receipt.runId;
+      await vi.waitFor(() => expect(execute).toHaveBeenCalledOnce());
       const worker = new HarnessTaskHost({ ...options, callbackRunId: runId });
       const callbackComposition = await createOpenSlackAgentBoundMutationComposition({ workspaceRoot, principalRef: PRINCIPAL_REF, harnessTaskHost: worker });
       const callback = new OpenSlackMcpCore(context(workspaceRoot, callbackComposition.governedMutations));
@@ -1222,6 +1288,232 @@ describe('production agent-bound governed mutation composition', () => {
       release();
       await host.close(1_000);
     }
+  });
+
+  it('preserves the exact admission route through governed MCP when visibility publication takes longer than the duplicate wait', async () => {
+    const workspaceRoot = createWorkspace({ action: 'deny', noScenarios: true });
+    const registryPath = join(workspaceRoot, '.openslack/agents/registry', `${PRINCIPAL_REF}.yaml`);
+    writeFileSync(registryPath, readFileSync(registryPath, 'utf8').replace('  github:', '    harness.task.dispatch: allow\n  github:'));
+    const config = { agentId: PRINCIPAL_REF, source: 'fixture', runtimeProvider: 'deepseek-harness', tools: ['Read'] };
+    const task: ApprovedHarnessTask = { taskId: 'TASK-SLOW-1', principalHash: '', baseline: 'b'.repeat(40), timeoutMs: 10_000,
+      request: { agentId: PRINCIPAL_REF, prompt: 'Observe the approved fixture.', resolvedConfig: config, permissionProfile: buildPermissionProfile(config) },
+      scope: { readPaths: [], writePaths: [], forbiddenPaths: ['.git/**'] }, outputSchema: { type: 'object' } };
+    const authority = createHarnessTaskAuthority({ identityRoot: workspaceRoot, agentId: PRINCIPAL_REF,
+      uid: `${PRINCIPAL_REF}-uid`, principalId: `principal:${PRINCIPAL_REF}`, runtimeRunId: 'RUN-governed-composition-001', provider: 'cli', claimMode: 'not_applicable',
+      source: { read: async () => {
+        const input = { ...task }; delete (input as Partial<ApprovedHarnessTask>).principalHash;
+        return { task: input, allowedPaths: [], forbiddenPaths: [], claimRequired: false, sourceDigest: 'c'.repeat(64) };
+      } } });
+    const publication = Promise.withResolvers<void>();
+    const started = Promise.withResolvers<string>();
+    const execute = vi.fn(async () => ({ data: {}, exitConfirmed: true as const }));
+    const host = new HarnessTaskHost({ identityRoot: workspaceRoot, workspaceId: WORKSPACE_ID, store: createRunStore(workspaceRoot), ...authority,
+      prepare: async () => ({ execute, accept: async () => ({ outcome: 'verified', summary: 'fixture', evidenceRefs: [] }) }),
+      publish: async state => {
+        started.resolve(state.runId); await publication.promise;
+        const events = join(workspaceRoot, '.openslack.local/collaboration/events.jsonl'); mkdirSync(dirname(events), { recursive: true });
+        appendFileSync(events, `${JSON.stringify({ schema: 'openslack.collaboration_event.v1', id: `EVT-${state.runId}`, timestamp: new Date().toISOString(),
+          type: 'workflow.started', actor: { kind: 'agent', id: state.agentId }, object: { kind: 'workflow', id: state.runId },
+          source: { kind: 'openslack', ref: `run:${state.runId}` }, summary: 'Visible admission.', visibility: 'workspace', redacted: true, containsSensitiveData: false })}\n`);
+      },
+    });
+    try {
+      const composition = await createOpenSlackAgentBoundMutationComposition({ workspaceRoot, principalRef: PRINCIPAL_REF, harnessTaskHost: host });
+      const core = new OpenSlackMcpCore(context(workspaceRoot, composition.governedMutations));
+      const preview = async (requestId: string) => {
+        const result = await core.callTool('openslack_preview_workflow', { workflowId: 'harness.task.dispatch', input: { taskId: task.taskId, requestId } });
+        expect(result.structuredContent.status, JSON.stringify(result.structuredContent)).toBe('needs_confirmation');
+        const metadata = previewMetadata(result.structuredContent);
+        return { planId: metadata.planId, confirmationToken: metadata.confirmationToken };
+      };
+      const first = core.callTool('openslack_confirm_plan', await preview('first'));
+      const runId = await started.promise;
+      const duplicate = await core.callTool('openslack_confirm_plan', await preview('second'));
+      expect(duplicate.structuredContent.status).toBe('blocked');
+      expect(duplicate.structuredContent.data).toMatchObject({ outcomes: [{ data: { taskId: task.taskId,
+        admission: { kind: 'admission', runId, canonicalRunPresent: true, disposition: 'in_progress' } } }] });
+      expect(JSON.stringify(duplicate)).not.toContain('do not redispatch');
+      const invisible = await core.callTool('openslack_get_activity', { objectKind: 'workflow', objectId: runId });
+      expect(invisible.structuredContent.data).not.toHaveProperty('execution');
+      expect(execute).not.toHaveBeenCalled();
+      publication.resolve();
+      expect((await first).structuredContent.status).toBe('completed');
+      await vi.waitFor(() => expect(host.read(runId)?.status).toBe('completed'));
+      expect(execute).toHaveBeenCalledOnce();
+      const visible = await core.callTool('openslack_get_activity', { objectKind: 'workflow', objectId: runId });
+      expect(visible.structuredContent.data).toMatchObject({ execution: { taskId: task.taskId, runId, acceptance: 'verified' } });
+    } finally { publication.resolve(); await host.close(1000); }
+  });
+
+  it('does not let an injected unusable or differently bound Harness host bypass startup authority', async () => {
+    const workspaceRoot = createWorkspace({ action: 'deny', noScenarios: true });
+    const host = new HarnessTaskHost({ identityRoot: workspaceRoot, workspaceId: WORKSPACE_ID, principalId: `principal:${PRINCIPAL_REF}`, store: createRunStore(workspaceRoot),
+      readTask: async () => { throw new Error('No task should be resolved'); }, authorize: async () => {},
+      prepare: async () => { throw new Error('No process should start'); }, publish: async () => {},
+    });
+    try {
+      await expect(createOpenSlackAgentBoundMutationComposition({ workspaceRoot, principalRef: PRINCIPAL_REF, harnessTaskHost: host }))
+        .rejects.toMatchObject({ code: 'GOVERNED_COMPOSITION_PERMISSION_DENIED' });
+      const foreign = new HarnessTaskHost({ identityRoot: workspaceRoot, workspaceId: WORKSPACE_ID, principalId: 'principal:another-agent', store: createRunStore(workspaceRoot),
+        readTask: async () => { throw new Error('No task should be resolved'); }, authorize: async () => {}, prepare: async () => { throw new Error('No process should start'); }, publish: async () => {},
+      });
+      try { await expect(createOpenSlackAgentBoundMutationComposition({ workspaceRoot, principalRef: PRINCIPAL_REF, harnessTaskHost: foreign }))
+        .rejects.toMatchObject({ code: 'GOVERNED_COMPOSITION_PRINCIPAL_MISMATCH' }); }
+      finally { await foreign.close(100); }
+    } finally { await host.close(100); }
+  });
+
+  it('requires governed admission for a real principal and reads its verified history after lease expiry without reauthorizing execution', async () => {
+    const workspaceRoot = createWorkspace({ action: 'deny', noScenarios: true });
+    const registry = join(workspaceRoot, '.openslack/agents/registry', `${PRINCIPAL_REF}.yaml`);
+    writeFileSync(registry, readFileSync(registry, 'utf8').replace('  github:', '    harness.task.dispatch: allow\n  github:'));
+    const resolved = resolveAgentPrincipal({ root: workspaceRoot, agentId: PRINCIPAL_REF, provider: 'cli' });
+    if ('error' in resolved) throw new Error('Fixture principal must resolve through production parser');
+    const config = { agentId: PRINCIPAL_REF, source: 'fixture', runtimeProvider: 'deepseek-harness', tools: ['Read'] };
+    const task: ApprovedHarnessTask = { taskId: 'TASK-HISTORY-1', principalHash: '', baseline: 'b'.repeat(40), timeoutMs: 10_000,
+      request: { agentId: PRINCIPAL_REF, prompt: 'Observe only.', resolvedConfig: config, permissionProfile: buildPermissionProfile(config) },
+      scope: { readPaths: [], writePaths: [], forbiddenPaths: [] }, outputSchema: { type: 'object' } };
+    let expired = false;
+    const readLease = vi.fn(async () => ({ owners: [resolved.principal], claimRef: 'refs/heads/openslack/claims/fixture',
+      expiresAt: new Date(Date.now() + (expired ? -1000 : 60_000)).toISOString() }));
+    const authority = createHarnessTaskAuthority({ identityRoot: workspaceRoot, agentId: PRINCIPAL_REF, uid: `${PRINCIPAL_REF}-uid`,
+      principalId: `principal:${PRINCIPAL_REF}`, runtimeRunId: 'RUN-governed-composition-001', provider: 'cli', claimMode: 'required', source: {
+        read: async () => {
+          const input = { ...task }; delete (input as Partial<ApprovedHarnessTask>).principalHash;
+          return { task: input, allowedPaths: [], forbiddenPaths: [], claimRequired: true, sourceDigest: 'c'.repeat(64) };
+        }, readLease,
+      } });
+    const prepare = vi.fn(async () => ({ execute: async () => ({ data: {}, exitConfirmed: true as const }),
+      accept: async () => ({ outcome: 'verified' as const, summary: 'fixture', evidenceRefs: [] }) }));
+    const options = { identityRoot: workspaceRoot, workspaceId: WORKSPACE_ID, store: createRunStore(workspaceRoot), ...authority, prepare,
+      publish: async () => {},
+    };
+    const host = new HarnessTaskHost(options);
+    const taskBoundOnly = new HarnessTaskHost({ ...options, principalId: undefined });
+    try {
+      const currentTask = await authority.readTask(task.taskId);
+      await expect(host.dispatch(task.taskId, 'direct-bypass')).rejects.toThrow('requires its originating governed confirmation binding');
+      await expect(taskBoundOnly.dispatch(task.taskId, 'task-principal-bypass')).rejects.toThrow('requires its originating governed confirmation binding');
+      expect(readdirSync(join(workspaceRoot, '.openslack.local/agents/harness-admissions'))).toEqual([]);
+      expect(options.store.listRuns()).toEqual([]);
+      expect(prepare).not.toHaveBeenCalled();
+      const composition = await createOpenSlackAgentBoundMutationComposition({ workspaceRoot, principalRef: PRINCIPAL_REF, harnessTaskHost: host });
+      const core = new OpenSlackMcpCore(context(workspaceRoot, composition.governedMutations));
+      const preview = await core.callTool('openslack_preview_workflow', { workflowId: 'harness.task.dispatch', input: { taskId: task.taskId, requestId: 'before-expiry' } });
+      expect(preview.structuredContent.status).toBe('needs_confirmation');
+      const { planId, confirmationToken } = previewMetadata(preview.structuredContent);
+      const confirmed = await core.callTool('openslack_confirm_plan', { planId, confirmationToken });
+      expect(confirmed.structuredContent.status).toBe('completed');
+      const runId = (confirmed.structuredContent.data as { outcomes: Array<{ data: { runId: string } }> }).outcomes[0]!.data.runId;
+      await vi.waitFor(() => expect(host.read(runId)?.status).toBe('completed'));
+      expect(prepare).toHaveBeenCalledOnce();
+      const path = join(workspaceRoot, '.openslack.local/agents/runs', runId, 'run.json');
+      const before = readFileSync(path), transcript = readFileSync(host.read(runId)!.transcriptPath);
+      expired = true;
+      await expect(authority.readTask(task.taskId)).rejects.toThrow('lease');
+      await expect(authority.authorize(currentTask, 'execute')).rejects.toThrow('lease');
+      readLease.mockClear();
+      expect((await authority.readTaskForReconciliation(task.taskId)).principalHash).toBe(currentTask.principalHash);
+      expect(readLease).not.toHaveBeenCalled();
+      const result = await reconcileHarnessTask({ identityRoot: workspaceRoot, ...authority,
+        inspect: async () => ({ deployment: 'matched', workspace: 'matched', process: 'exited' }) }, runId);
+      expect(result).toMatchObject({ disposition: 'existing_verified_result', authority: 'matched', currentExecutionEligibility: 'ineligible' });
+      expect(readFileSync(path)).toEqual(before);
+      expect(readFileSync(host.read(runId)!.transcriptPath)).toEqual(transcript);
+    } finally { await taskBoundOnly.close(100); await host.close(100); }
+  });
+
+  it('rejects a required lease that expires during the final canonical read wait before native authorization', async () => {
+    const value = await claimedLeaseBoundaryFixture();
+    let calls = 0;
+    value.setLeaseHook(async () => { if (++calls === 2) { await value.hold(); value.release(); } });
+    try {
+      await expect(value.authority.authorizeTool(value.context, 'Write', { file_path: join(value.context.worktreePath!, 'fixture.txt') })).rejects.toThrow(/lease|eligibility/i);
+      expect(readFileSync(join(value.context.worktreePath!, 'fixture.txt'), 'utf8')).toBe('before');
+      expect(value.store.getRun(value.runId)?.harnessExecution?.evidence?.calls).toEqual({});
+    } finally { await value.close(); }
+  });
+
+  it('rejects an expired required lease inside the native evidence reservation transaction after waiting for its writer', async () => {
+    const value = await claimedLeaseBoundaryFixture();
+    try {
+      const eligibility = await value.authority.authorizeTool(value.context, 'Write', { file_path: join(value.context.worktreePath!, 'fixture.txt') });
+      await value.hold(); value.release();
+      const reservation = { callId: 'lease-native', toolName: 'Write', input: { file_path: 'fixture.txt', content: 'after' },
+        targetPath: join(value.context.worktreePath!, 'fixture.txt'), generation: 'fixture-owner', maxResultBytes: 2048 };
+      expect(() => value.recorder.reserveToolEvidence!(value.runId, reservation, eligibility)).toThrow(/lease|eligibility/i);
+      expect(value.store.getRun(value.runId)?.harnessExecution?.evidence?.calls).toEqual({});
+      expect(readFileSync(join(value.context.worktreePath!, 'fixture.txt'), 'utf8')).toBe('before');
+    } finally { await value.close(); }
+  });
+
+  it('rejects a required lease that expires while the report CAS waits for a healthy writer', async () => {
+    const value = await claimedLeaseBoundaryFixture();
+    const worker = new HarnessTaskHost({ identityRoot: value.root, workspaceId: WORKSPACE_ID, store: value.store, ...value.authority, callbackRunId: value.runId,
+      prepare: async () => { throw new Error('A callback must not start execution'); }, publish: async () => {} });
+    let calls = 0;
+    value.setLeaseHook(async () => { if (++calls === 2) { await value.hold(); value.release(); } });
+    try {
+      await expect(worker.report({ runId: value.runId, reportId: 'expired', summary: 'must not publish', evidenceRefs: [] })).rejects.toThrow(/lease|eligibility/i);
+      expect(value.store.getRun(value.runId)?.harnessExecution?.reports).toEqual({});
+      const before = readFileSync(join(value.root, '.openslack.local/agents/runs', value.runId, 'run.json'));
+      value.leaseReads.mockClear();
+      expect((await value.authority.readTaskForReconciliation(value.task.taskId)).principalHash).toBe(value.task.principalHash);
+      expect(value.leaseReads).not.toHaveBeenCalled();
+      expect(readFileSync(join(value.root, '.openslack.local/agents/runs', value.runId, 'run.json'))).toEqual(before);
+    } finally { await value.close(); await worker.close(100); }
+  });
+
+  it('retains the second source read when approved scope changes during the first lease await without a principal change', async () => {
+    const value = await claimedLeaseBoundaryFixture();
+    let reads = 0;
+    value.setLeaseHook(async () => { if (++reads === 1) value.revokeSourceWriteScope(); });
+    try {
+      const staleTask = await value.authority.readTask(value.task.taskId);
+      expect(staleTask.scope.writePaths).toEqual(['fixture.txt']);
+      expect(staleTask.principalHash).toBe(value.task.principalHash);
+      await expect(value.authority.authorize(staleTask, 'execute')).rejects.toThrow('differs from the formal source');
+      expect(readFileSync(join(value.context.worktreePath!, 'fixture.txt'), 'utf8')).toBe('before');
+    } finally { await value.close(); }
+  });
+
+  it.each(['start', 'complete'] as const)('keeps the required lease effective inside the final %s CAS after a different process held its canonical lock', async phase => {
+    const value = await claimedLeaseBoundaryFixture();
+    const execute = vi.fn(async () => { writeFileSync(join(value.context.worktreePath!, 'fixture.txt'), 'after'); return { data: {}, exitConfirmed: true as const }; });
+    let executeChecks = 0, acceptanceChecks = 0, gated = false;
+    const host = new HarnessTaskHost({ identityRoot: value.root, workspaceId: WORKSPACE_ID, store: value.store, ...value.authority,
+      authorize: async (task, checkpoint) => {
+        const eligibility = await value.authority.authorize(task, checkpoint);
+        if (checkpoint === 'execute') executeChecks++;
+        if (checkpoint === 'accept') acceptanceChecks++;
+        return eligibility;
+      },
+      prepare: async () => ({ execute, accept: async () => ({ outcome: 'verified', summary: 'fixture', evidenceRefs: [] }),
+        revalidateAccepted: () => { if (readFileSync(join(value.context.worktreePath!, 'fixture.txt'), 'utf8') !== 'after') throw new Error('Fixture changed'); } }),
+      publish: async () => {},
+    });
+    const original = value.store.withRunTransaction;
+    const transaction = vi.spyOn(value.store, 'withRunTransaction').mockImplementation((runId, update) => {
+      if (!gated && runId !== value.runId && (phase === 'start' ? executeChecks === 2 : acceptanceChecks === 2)) {
+        gated = true; value.holdSynchronously(runId); value.release();
+      }
+      return original(runId, update);
+    });
+    try {
+      const composition = await createOpenSlackAgentBoundMutationComposition({ workspaceRoot: value.root, principalRef: PRINCIPAL_REF, harnessTaskHost: host });
+      const core = new OpenSlackMcpCore(context(value.root, composition.governedMutations));
+      const preview = await core.callTool('openslack_preview_workflow', { workflowId: 'harness.task.dispatch', input: { taskId: value.task.taskId, requestId: `lease-${phase}` } });
+      expect(preview.structuredContent.status).toBe('needs_confirmation');
+      const { planId, confirmationToken } = previewMetadata(preview.structuredContent);
+      const confirmed = await core.callTool('openslack_confirm_plan', { planId, confirmationToken });
+      expect(confirmed.structuredContent.status).toBe('completed');
+      const runId = (confirmed.structuredContent.data as { outcomes: Array<{ data: { runId: string } }> }).outcomes[0]!.data.runId;
+      await vi.waitFor(() => expect(host.read(runId)?.status).toBe('failed'), { timeout: 2500 });
+      expect(gated).toBe(true);
+      expect(execute).toHaveBeenCalledTimes(phase === 'start' ? 0 : 1);
+      expect(host.read(runId)?.harnessExecution?.acceptance).not.toBe('verified');
+      expect(readFileSync(join(value.context.worktreePath!, 'fixture.txt'), 'utf8')).toBe(phase === 'start' ? 'before' : 'after');
+    } finally { transaction.mockRestore(); await value.close(); await host.close(100); }
   });
 
   it.runIf(process.env.DEEPSEEK_HARNESS_CHECKOUT)('executes the configured host through the real peer, SDK, native files and callback MCP, then reads verified acceptance', async () => {
@@ -1293,7 +1585,8 @@ describe('production agent-bound governed mutation composition', () => {
     const callerSdk = rows[0]!.insert.find(row => 'id' in row && row.id === 'sdk-jsonrpc-server') as { disabled?: boolean };
     callerSdk.disabled = true;
     rows[0]!.insert.push({ id: 'openslack-sdk-host', name: '@openslack/deepseek-harness-plugin/sdk-host', config: {
-      generation: 'fixture-caller', runtimeEntries: caller.runtimeEntries, mcp: { mode: 'task', workspaceRoot, cliModule: deployment.callbackMcp.cliModule,
+      generation: 'fixture-caller', runtimeEntries: caller.runtimeEntries, startEligibility: JSON.stringify({ mode: 'not_applicable' }),
+      mcp: { mode: 'task', workspaceRoot, cliModule: deployment.callbackMcp.cliModule,
         principalRef: PRINCIPAL_REF, timeoutMs: 240_000 },
     } }, { id: 'openslack-initiator', name: '@openslack/deepseek-harness-plugin/initiator', config: {
       taskId: task.taskId, principalId: `principal:${PRINCIPAL_REF}`, generation: 'fixture-caller', sessionId: 'openslack-caller',
@@ -1320,7 +1613,12 @@ describe('production agent-bound governed mutation composition', () => {
       const requests = readFileSync(join(fixtureRoot, 'requests.jsonl'), 'utf8');
       expect(requests.split('\n').filter(Boolean)).toHaveLength(5);
       expect(requests).not.toContain('confirmationToken');
-      expect((await host.dispatch(task.taskId, 'reconnect')).runId).toBe(runId);
+      const beforeReconnect = readFileSync(join(workspaceRoot, '.openslack.local/agents/runs', runId, 'run.json'));
+      await expect(host.dispatch(task.taskId, 'reconnect')).rejects.toThrow('requires its originating governed confirmation binding');
+      const reconnected = await core.callTool('openslack_get_activity', { objectKind: 'workflow', objectId: runId });
+      expect(reconnected.structuredContent.data).toMatchObject({ execution: { taskId: task.taskId, runId, acceptance: 'verified' } });
+      expect(readFileSync(join(workspaceRoot, '.openslack.local/agents/runs', runId, 'run.json'))).toEqual(beforeReconnect);
+      expect(readdirSync(join(workspaceRoot, '.openslack.local/agents/runs')).filter(name => name.startsWith('RUN-'))).toEqual([runId]);
       expect(readFileSync(join(fixtureRoot, 'requests.jsonl'), 'utf8')).toBe(requests);
       const callerRequests = readFileSync(join(callerRoot, 'requests.jsonl'), 'utf8');
       expect(callerRequests).not.toContain('confirmationToken');
@@ -1344,7 +1642,7 @@ describe('production agent-bound governed mutation composition', () => {
       const readonlySdk = readonlyRows[0]!.insert.find(row => 'id' in row && row.id === 'sdk-jsonrpc-server') as { disabled?: boolean };
       readonlySdk.disabled = true;
       readonlyRows[0]!.insert.push({ id: 'openslack-sdk-host', name: '@openslack/deepseek-harness-plugin/sdk-host',
-        config: { generation: 'fixture-readonly', runtimeEntries: readonly.runtimeEntries } });
+        config: { generation: 'fixture-readonly', runtimeEntries: readonly.runtimeEntries, startEligibility: JSON.stringify({ mode: 'not_applicable' }) } });
       (readonlyRows as object[]).push({ id: 'openslack-readonly', disabled: false,
         config: { workspaceRoot, cliModule: deployment.callbackMcp.cliModule, timeoutMs: 120_000, runtimeEntries: readonly.runtimeEntries } });
       writeFileSync(readonlyProfile, JSON.stringify(readonlyRows));

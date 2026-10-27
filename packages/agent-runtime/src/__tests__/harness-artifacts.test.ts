@@ -1,10 +1,13 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { mkdirSync, mkdtempSync, renameSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, renameSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { HARNESS_PLUGIN_ENTRIES, harnessPluginMountFiles, hashHarnessNodeExecutable, hashHarnessPluginArtifacts, hashOpenSlackHarnessCallback } from '../harness-artifacts.js';
-import { createDeepSeekHarnessProvider } from '../deepseek-harness-provider.js';
+import { execFileSync, spawnSync } from 'node:child_process';
+import { HARNESS_PLUGIN_ENTRIES, HARNESS_NATIVE_SUPERVISOR_FILE, harnessPluginMountFiles, hashHarnessNodeExecutable, hashHarnessPluginArtifacts, hashOpenSlackHarnessCallback,
+  captureHarnessArtifactObservation, inspectHarnessArtifactObservation, type HarnessArtifactObservation } from '../harness-artifacts.js';
+import { createDeepSeekHarnessProvider, classifyHarnessDeploymentFailure } from '../deepseek-harness-provider.js';
 import { hashHarnessRuntimeArtifacts } from '../harness-task-execution.js';
+import { canonicalHarnessRoot } from '../harness-read.js';
 
 const roots: string[] = [];
 afterEach(() => { for (const path of roots.splice(0)) rmSync(path, { recursive: true, force: true }); });
@@ -15,13 +18,104 @@ function fixture() {
   mkdirSync(join(pluginRoot, 'dist'), { recursive: true });
   writeFileSync(join(pluginRoot, 'package.json'), JSON.stringify({ name: '@openslack/deepseek-harness-plugin' }));
   writeFileSync(join(pluginRoot, 'plugin.patch.yml'), '[]');
+  writeFileSync(join(pluginRoot, 'THIRD-PARTY-NOTICES.txt'), 'fixture-license');
   for (const name of HARNESS_PLUGIN_ENTRIES) writeFileSync(join(pluginRoot, 'dist', `${name}.js`), 'export {};');
+  writeFileSync(join(pluginRoot, HARNESS_NATIVE_SUPERVISOR_FILE), 'fixture binary identity only');
   writeFileSync(join(root, 'patch.json'), '[]');
-  writeFileSync(join(root, 'binding.json'), '{}');
+  writeFileSync(join(root, 'binding.json'), JSON.stringify({ runId: 'RUN-TEST', generation: 'owner-test' }));
   return { root, pluginRoot };
 }
 
 describe('external plugin and Node input identities', () => {
+  it.runIf(process.platform === 'win32')('normalizes an actual 8.3 spelling when the test volume supplies one', ({ skip }) => {
+    const { pluginRoot } = fixture();
+    if (!process.env.SystemRoot) throw new Error('A native Windows system directory is required');
+    const cmd = join(process.env.SystemRoot, 'System32/cmd.exe');
+    const observed = spawnSync(cmd, ['/d', '/s', '/c', `for %I in ("${pluginRoot}") do @echo %~sI`],
+      { encoding: 'utf8', windowsVerbatimArguments: true });
+    if (observed.error || observed.status !== 0) throw new Error('Native short-path observation failed');
+    const short = observed.stdout.trim();
+    if (!short || short.toLowerCase() === pluginRoot.toLowerCase()) skip('The test volume did not provide a distinct 8.3 alias');
+    expect(short).toMatch(/~\d/);
+    expect(canonicalHarnessRoot(short).toLowerCase()).toBe(canonicalHarnessRoot(pluginRoot).toLowerCase());
+    expect(hashHarnessPluginArtifacts(short)).toBe(hashHarnessPluginArtifacts(pluginRoot));
+    console.info(JSON.stringify({ kind: 'windows-path-observation', scenario: '8.3', input: short,
+      canonical: canonicalHarnessRoot(short), result: 'same-root-and-artifact-hash' }));
+  });
+  it.runIf(process.platform === 'win32')('normalizes a real Windows drive alias while still rejecting directory junctions', () => {
+    const { root, pluginRoot } = fixture();
+    const drive = ['Z:', 'Y:', 'X:', 'W:', 'V:'].find(value => !existsSync(`${value}\\`));
+    if (!drive || !process.env.SystemRoot) throw new Error('A free temporary test drive and native Windows system directory are required');
+    const subst = join(process.env.SystemRoot, 'System32/subst.exe');
+    execFileSync(subst, [drive, root], { stdio: 'pipe' });
+    try {
+      const alias = join(`${drive}\\`, 'plugin');
+      expect(canonicalHarnessRoot(alias).toLowerCase()).toBe(canonicalHarnessRoot(pluginRoot).toLowerCase());
+      expect(hashHarnessPluginArtifacts(alias)).toBe(hashHarnessPluginArtifacts(pluginRoot));
+      const linked = join(root, 'linked-plugin');
+      symlinkSync(pluginRoot, linked, 'junction');
+      expect(() => canonicalHarnessRoot(linked)).toThrow('directory link');
+      console.info(JSON.stringify({ kind: 'windows-path-observation', scenario: 'drive-alias-and-junction',
+        input: alias, canonical: canonicalHarnessRoot(alias), alias: 'same-root-and-artifact-hash', junction: 'rejected' }));
+    } finally {
+      // Remove only the exact fresh mapping created by this fixture, never a
+      // pre-existing drive or worktree.
+      execFileSync(subst, [drive, '/D'], { stdio: 'pipe' });
+    }
+  });
+  it('reuses exact expensive bytes only in one synchronous phase and rejects forgery or cross-await use', async () => {
+    const { root, pluginRoot } = fixture();
+    const node = join(root, 'node-binary');
+    writeFileSync(node, 'known binary bytes');
+    const proof = captureHarnessArtifactObservation(pluginRoot, node);
+    expect(inspectHarnessArtifactObservation(proof, pluginRoot, node)).toEqual({ pluginHash: hashHarnessPluginArtifacts(pluginRoot), nodeHash: hashHarnessNodeExecutable(node) });
+    expect(() => inspectHarnessArtifactObservation({} as HarnessArtifactObservation, pluginRoot, node)).toThrow('expired or changed');
+    await Promise.resolve();
+    expect(() => inspectHarnessArtifactObservation(proof, pluginRoot, node)).toThrow('expired or changed');
+  });
+  it('distinguishes plugin file partitions even when unframed path/body concatenations are identical', () => {
+    const { root, pluginRoot } = fixture(), node = join(root, 'fixed-node-binary');
+    writeFileSync(node, 'fixed node bytes');
+    const first = join(pluginRoot, 'dist/index.js'), second = join(pluginRoot, 'dist/initiator.js');
+    const left = '// alpha ', pivot = '\n// beta ', right = '\n', key = 'dist/initiator.js';
+    writeFileSync(first, left); writeFileSync(second, pivot + key + right);
+    const initial = hashHarnessPluginArtifacts(pluginRoot);
+    const proof = captureHarnessArtifactObservation(pluginRoot, node);
+    expect(inspectHarnessArtifactObservation(proof, pluginRoot, node).pluginHash).toBe(initial);
+    expect(left + key + pivot + key + right).toBe((left + key + pivot) + key + right);
+    writeFileSync(first, left + key + pivot); writeFileSync(second, right);
+    const changed = hashHarnessPluginArtifacts(pluginRoot);
+    expect(changed).not.toBe(initial);
+    const next = captureHarnessArtifactObservation(pluginRoot, node);
+    expect(inspectHarnessArtifactObservation(next, pluginRoot, node)).toEqual({ pluginHash: changed, nodeHash: hashHarnessNodeExecutable(node) });
+  });
+  it('rejects artifact mutation within a phase even when the opaque proof is otherwise genuine', () => {
+    const { root, pluginRoot } = fixture();
+    const node = join(root, 'node-binary');
+    writeFileSync(node, 'before');
+    const proof = captureHarnessArtifactObservation(pluginRoot, node);
+    writeFileSync(node, 'after!');
+    expect(() => inspectHarnessArtifactObservation(proof, pluginRoot, node)).toThrow('expired or changed');
+  });
+  it.each(['ENOENT', 'EACCES', 'EPERM', 'EBUSY', 'EMFILE'])('retains stable %s diagnostics without disclosing raw paths', code => {
+    const error = classifyHarnessDeploymentFailure(Object.assign(new Error('SECRET_PATH_SENTINEL'), { code }));
+    expect(error).toMatchObject({ filesystemCode: code });
+    expect(error.message).not.toContain('SECRET_PATH_SENTINEL');
+    if (code !== 'ENOENT') { expect(error.message).toContain(code); expect(error.message).not.toContain('build the matching'); }
+  });
+  it('classifies a real missing approved artifact through provider resolution rather than leaking an fs exception', () => {
+    const { root, pluginRoot } = fixture();
+    const deployment = { harnessRoot: root, pluginRoot, pluginBuildHash: hashHarnessPluginArtifacts(pluginRoot),
+      nodeExecutable: process.execPath, nodeVersion: '24.18.1' as const, nodeSha256: hashHarnessNodeExecutable(process.execPath),
+      dshHome: root, agentId: 'fixed', provider: 'fixture', model: 'fixture', workerPatch: join(root, 'patch.json'),
+      workerBinding: join(root, 'binding.json'), timeoutMs: 1_000, exitGraceMs: 1_000 };
+    unlinkSync(join(pluginRoot, HARNESS_NATIVE_SUPERVISOR_FILE));
+    let failure: unknown;
+    try { createDeepSeekHarnessProvider(deployment, async () => {}).resolve({ agentId: 'fixed', source: 'fixture' }); }
+    catch (error) { failure = error; }
+    expect(failure).toMatchObject({ code: 'RUNTIME_MISCONFIGURED', filesystemCode: 'ENOENT' });
+    expect((failure as Error).message).not.toContain(pluginRoot);
+  });
   it.each(['dist', 'workspace-peer'] as const)('rejects callback %s redirection even when its copied JS bytes match', kind => {
     const { root } = fixture();
     const cli = join(root, 'apps/cli');
@@ -69,6 +163,10 @@ describe('external plugin and Node input identities', () => {
       writeFileSync(join(dir, 'package.json'), JSON.stringify({ name, type: 'module',
         exports: { '.': './lib/index.js' }, dependencies: name.endsWith('sdk-client') ? { '@deepseek-ai/dsh-llm': 'workspace:*' } : {} }));
     }
+    // A real workspace dependency must resolve from this approved fixture
+    // installation, not merely share a name with an enumerated manifest.
+    mkdirSync(join(root, 'node_modules/@deepseek-ai'), { recursive: true });
+    symlinkSync(join(root, 'packages/llm/llm'), join(root, 'node_modules/@deepseek-ai/dsh-llm'), process.platform === 'win32' ? 'junction' : 'dir');
     const thirdParty = join(root, 'node_modules/@modelcontextprotocol/client');
     mkdirSync(join(thirdParty, 'dist'), { recursive: true });
     writeFileSync(join(thirdParty, 'package.json'), JSON.stringify({ name: '@modelcontextprotocol/client',

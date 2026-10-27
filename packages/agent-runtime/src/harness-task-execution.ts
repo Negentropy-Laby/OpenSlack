@@ -1,8 +1,8 @@
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
-  constants, existsSync, lstatSync, mkdirSync, openSync, closeSync, fstatSync, fsyncSync,
-  readFileSync, readdirSync, realpathSync, writeFileSync,
+  existsSync, lstatSync, mkdirSync, openSync, closeSync, fsyncSync,
+  readdirSync, realpathSync, writeFileSync,
 } from 'node:fs';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -10,16 +10,22 @@ import { parseDocument } from 'yaml';
 import { ToolGuard } from './adapter.js';
 import type { BridgeProcessAdapterOptions } from './bridge-adapter.js';
 import { createDeepSeekHarnessProvider, type DeepSeekHarnessDeployment } from './deepseek-harness-provider.js';
-import type { ApprovedHarnessTask, HarnessTaskHostOptions } from './harness-task-host.js';
+import { hashHarnessTask, type ApprovedHarnessTask, type HarnessTaskHostOptions } from './harness-task-host.js';
 import { createRunRecorder } from './recorder.js';
 import type { AgentRunStore } from './run-store.js';
 import { RepositoryToolExecutor } from './tool-executor.js';
 import { isSensitiveRepositoryPath } from './sensitive-data.js';
-import { hashHarnessInput } from './harness-admission.js';
-import { hashOpenSlackHarnessCallback, hashHarnessPluginArtifacts, hashHarnessNodeExecutable, harnessPluginMountFiles } from './harness-artifacts.js';
+import { canonicalHarnessInput, hashHarnessInput } from './harness-admission.js';
+import { canonicalHarnessRoot, readHarnessFile } from './harness-read.js';
+import { visitStrictTranscript } from './transcript.js';
+import { hashOpenSlackHarnessCallback, captureHarnessArtifactObservation, inspectHarnessArtifactObservation,
+  type HarnessArtifactObservation, harnessPluginMountFiles } from './harness-artifacts.js';
 import { createRequire } from 'node:module';
 import type { AgentRunState } from './types.js';
 import type { HarnessRecoveryObservation } from './harness-reconciliation.js';
+import { assertHarnessTaskEligibility, assertHarnessRunStartEligibility, bindHarnessRunStartEligibility } from './harness-eligibility.js';
+import { assertHarnessNotStopped } from './harness-stop.js';
+import { HarnessRuntimePackageClosure, readRuntimeWorkspacePackage, type RuntimeWorkspacePackage } from './harness-runtime-closure.js';
 
 /** Trusted first-delivery verification. Never derive checks or commands from success_criteria or model output. */
 export interface HarnessTextVerification {
@@ -40,11 +46,16 @@ export interface HarnessTaskExecutionOptions {
 
 /** Approve the deployment separately from its task-run route and temporary worktree. */
 export function hashHarnessDeployment(deployment: HarnessTaskExecutionOptions['deployment']): string {
-  const runtime = harnessRuntimeArtifacts(deployment.harnessRoot);
+  return deploymentDigest(deployment, harnessRuntimeArtifacts(deployment.harnessRoot),
+    captureHarnessArtifactObservation(deployment.pluginRoot, deployment.nodeExecutable));
+}
+
+function deploymentDigest(deployment: HarnessTaskExecutionOptions['deployment'], runtime: ReturnType<typeof harnessRuntimeArtifacts>, proof: HarnessArtifactObservation): string {
   const publicEntries = new Map(Object.entries(runtime.entries));
-  const plugin = hashHarnessPluginArtifacts(deployment.pluginRoot);
+  const observed = inspectHarnessArtifactObservation(proof, deployment.pluginRoot, deployment.nodeExecutable);
+  const plugin = observed.pluginHash;
   if (plugin !== deployment.pluginBuildHash || deployment.nodeVersion !== '24.18.1' || process.versions.node !== deployment.nodeVersion ||
-    deployment.nodeExecutable !== process.execPath || hashHarnessNodeExecutable(process.execPath) !== deployment.nodeSha256) {
+    deployment.nodeExecutable !== process.execPath || observed.nodeHash !== deployment.nodeSha256) {
     throw new Error('Harness plugin or Node differs from its approved deployment');
   }
   for (const [key, file] of Object.entries({ '': 'index', '/initiator': 'initiator', '/readonly': 'readonly', '/sdk-host': 'sdk-host' })) {
@@ -130,33 +141,26 @@ function safeFile(path: string): void {
 }
 
 function readRegular(path: string, maxBytes: number, trustedArtifact = false): Buffer {
-  const entry = lstatSync(path);
-  if (!entry.isFile() || entry.isSymbolicLink() || (!trustedArtifact && entry.nlink !== 1)) throw new Error('Harness evidence is not an owned regular file');
-  const file = openSync(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
-  try {
-    const before = fstatSync(file);
-    if (entry.ino !== before.ino || entry.dev !== before.dev || before.size > maxBytes) throw new Error('Harness evidence read bound exceeded');
-    const data = readFileSync(file);
-    const after = fstatSync(file);
-    if (before.size !== data.length || before.mtimeMs !== after.mtimeMs || before.ctimeMs !== after.ctimeMs ||
-      before.size !== after.size || before.ino !== after.ino || before.mode !== after.mode) throw new Error('Harness evidence changed during read');
-    return data;
-  } finally { closeSync(file); }
+  return readHarnessFile(path, maxBytes, { trustedArtifact });
 }
 
-function readToolEvidence(path: string, allowedTools: readonly string[]) {
-  const events = readRegular(path, 8 * 1024 * 1024).toString('utf8').split('\n').filter(Boolean)
-    .map(line => JSON.parse(line) as { type: string; data: { toolName?: string } })
-    .filter(event => event.type === 'tool_call' || event.type === 'tool_result');
+function readToolEvidence(path: string, allowedTools: readonly string[]): string {
   const balance = new Map<string, number>();
-  for (const event of events) {
-    if (!event.data?.toolName || !allowedTools.includes(event.data.toolName)) throw new Error('Unapproved tool evidence');
-    const count = (balance.get(event.data.toolName) ?? 0) + (event.type === 'tool_call' ? 1 : -1);
-    balance.set(event.data.toolName, count);
+  const digest = createHash('sha256').update('[');
+  let first = true;
+  visitStrictTranscript(path, event => {
+    if (event.type !== 'tool_call' && event.type !== 'tool_result') return;
+    const name = event.data?.toolName;
+    if (typeof name !== 'string' || !allowedTools.includes(name)) throw new Error('Unapproved tool evidence');
+    const key = typeof event.data.callId === 'string' ? `call:${event.data.callId}` : `legacy:${name}`;
+    const count = (balance.get(key) ?? 0) + (event.type === 'tool_call' ? 1 : -1);
+    balance.set(key, count);
     if (count < 0) throw new Error('Unmatched tool result evidence');
-  }
+    if (!first) digest.update(',');
+    digest.update(canonicalHarnessInput(event)); first = false;
+  });
   if ([...balance.values()].some(value => value !== 0)) throw new Error('Unmatched tool call evidence');
-  return events;
+  return digest.update(']').digest('hex');
 }
 
 function directories(root: string, path: string, create = false): void {
@@ -177,13 +181,13 @@ export function hashHarnessRuntimeArtifacts(harnessRoot: string): string {
 }
 
 function harnessRuntimeArtifacts(harnessRoot: string): { hash: string; entries: Record<string, string>; mounts: string[] } {
-  const digest = createHash('sha256');
-  const packages = new Map<string, { path: string; manifest: Record<string, unknown>; bytes: Buffer }>();
-  const add = (path: string): void => {
-    const bytes = readRegular(join(path, 'package.json'), 512 * 1024, true);
-    const manifest = JSON.parse(bytes.toString('utf8')) as Record<string, unknown>;
-    if (typeof manifest.name !== 'string') throw new Error('Invalid Harness package identity');
-    packages.set(manifest.name, { path, manifest, bytes });
+  harnessRoot = canonicalHarnessRoot(harnessRoot);
+  const packages = new Map<string, RuntimeWorkspacePackage>();
+  const add = (path: string, output: RuntimeWorkspacePackage['output'] = 'lib'): void => {
+    const pkg = readRuntimeWorkspacePackage(path, output, output === 'application');
+    const name = pkg.manifest.name as string;
+    if (packages.has(name)) throw new Error('Duplicate Harness workspace package identity');
+    packages.set(name, pkg);
   };
   for (const group of readdirSync(join(harnessRoot, 'packages'), { withFileTypes: true })) {
     if (!group.isDirectory()) continue;
@@ -196,51 +200,29 @@ function harnessRuntimeArtifacts(harnessRoot: string): { hash: string; entries: 
     const path = join(harnessRoot, 'vendor', pkg.name);
     if (pkg.isDirectory() && existsSync(join(path, 'package.json'))) add(path);
   }
-  add(join(harnessRoot, 'apps/cli'));
-  const walk = (directory: string): void => {
-    if (!lstatSync(directory).isDirectory() || lstatSync(directory).isSymbolicLink()) throw new Error('Harness artifact directory must not be linked');
-    for (const entry of readdirSync(directory, { withFileTypes: true }).sort((a, b) => a.name < b.name ? -1 : 1)) {
-      const path = join(directory, entry.name);
-      if (entry.isSymbolicLink()) throw new Error('Harness artifact links are unsupported');
-      if (entry.isDirectory()) walk(path);
-      else if (entry.isFile() && /\.(?:js|mjs|cjs|node)$/.test(entry.name)) {
-        digest.update(relative(harnessRoot, path)).update(readRegular(path, 64 * 1024 * 1024, true));
-      }
-    }
-  };
-  const visited = new Set<string>();
-  const visit = (name: string): void => {
-    if (visited.has(name)) return;
-    visited.add(name);
-    const pkg = packages.get(name);
-    if (!pkg) throw new Error('Harness workspace dependency is unavailable');
-    digest.update(relative(harnessRoot, pkg.path)).update(pkg.bytes);
-    const dsh = pkg.manifest.dsh;
-    if (dsh && typeof dsh === 'object' && 'bundle' in dsh && dsh.bundle && typeof dsh.bundle === 'object' && 'patch' in dsh.bundle) {
-      const patch = dsh.bundle.patch;
-      for (const file of Array.isArray(patch) ? patch : [patch]) {
-        if (typeof file !== 'string' || isAbsolute(file) || file.split(/[\\/]/).includes('..') || !/\.(?:yaml|yml|json)$/.test(file)) {
-          throw new Error('Unsupported Harness bundle patch declaration');
-        }
-        digest.update(file).update(readRegular(resolve(pkg.path, file), 1024 * 1024, true));
-      }
-    }
-    if (existsSync(join(pkg.path, 'lib'))) walk(join(pkg.path, 'lib'));
-    for (const field of ['dependencies', 'peerDependencies', 'optionalDependencies']) {
-      const dependencies = pkg.manifest[field];
-      if (!dependencies || typeof dependencies !== 'object') continue;
-      for (const dependency of Object.keys(dependencies).sort()) if (packages.has(dependency)) visit(dependency);
-    }
-  };
-  for (const root of ['@deepseek-ai/dsh-sdk-client', '@deepseek-ai/dsh-sdk-jsonrpc-server', '@deepseek-ai/dsh-mcp-client', '@deepseek-ai/dsh']) visit(root);
-  // Third-party versions remain bound by the frozen installation lock; no credential data is part of this closure.
-  digest.update(readRegular(join(harnessRoot, 'pnpm-lock.yaml'), 16 * 1024 * 1024, true));
+  // apps/* is a first-party workspace family in the pinned public manifest.
+  // Classify only a dependency-visited app's declared compiled output; never
+  // scan its source/tests as though it were an installed third-party package.
+  for (const application of readdirSync(join(harnessRoot, 'apps'), { withFileTypes: true })) {
+    if (application.isSymbolicLink()) throw new Error('Harness application workspace must not be linked');
+    const path = join(harnessRoot, 'apps', application.name);
+    if (application.isDirectory() && existsSync(join(path, 'package.json'))) add(path, 'application');
+  }
+  const closure = new HarnessRuntimePackageClosure(harnessRoot, packages);
+  for (const root of ['@deepseek-ai/dsh-sdk-client', '@deepseek-ai/dsh-sdk-jsonrpc-server', '@deepseek-ai/dsh-mcp-client', '@deepseek-ai/dsh']) closure.visitWorkspace(root);
+  closure.addFile(join(harnessRoot, 'pnpm-lock.yaml'), 16 * 1024 * 1024);
   const native = join(harnessRoot, 'native/system/packages', `${process.platform}-${process.arch}`);
-  if (existsSync(native)) walk(native);
+  if (existsSync(native)) closure.addDirectory(native);
+  // The peer directly consumes these two public MCP exports. Bind their entire
+  // installed dependency closure, including split chunks, not only their entry.
+  const mcp = packages.get('@deepseek-ai/dsh-mcp-client')!;
+  const mcpDirectory = closure.dependency(mcp.path, '@modelcontextprotocol/client')!;
+  const mcpManifest = JSON.parse(readRegular(join(mcpDirectory, 'package.json'), 512 * 1024, true).toString('utf8')) as { exports: Record<string, unknown> };
+  const observed = closure.finish();
   const entries: Record<string, string> = {};
   const exported = (value: unknown): string | undefined => typeof value === 'string' ? value
     : value && typeof value === 'object' ? ['import', 'node', 'default'].map(key => exported((value as Record<string, unknown>)[key])).find(Boolean) : undefined;
-  for (const name of visited) {
+  for (const name of observed.workspaceNames) {
     const pkg = packages.get(name)!;
     const table = pkg.manifest.exports;
     if (!table || typeof table !== 'object') continue;
@@ -253,20 +235,14 @@ function harnessRuntimeArtifacts(harnessRoot: string): { hash: string; entries: 
   }
   // Locate third-party peers through the approved native MCP package, then use
   // its public ESM exports, never the require-condition CJS alternative.
-  const mcp = packages.get('@deepseek-ai/dsh-mcp-client')!;
-  const mcpRequire = createRequire(join(mcp.path, 'package.json'));
   for (const name of ['@modelcontextprotocol/client', '@modelcontextprotocol/client/stdio']) {
-    const directory = resolve(dirname(mcpRequire.resolve(name)), '..');
-    const local = relative(realpathSync(harnessRoot), realpathSync(directory));
-    if (isAbsolute(local) || local.split(/[\\/]/).includes('..')) throw new Error('MCP peer is outside approved Harness');
-    const bytes = readRegular(join(directory, 'package.json'), 512 * 1024, true);
-    const manifest = JSON.parse(bytes.toString('utf8')) as { exports: Record<string, unknown> };
-    const file = exported(manifest.exports[name.endsWith('/stdio') ? './stdio' : '.']);
+    const file = exported(mcpManifest.exports[name.endsWith('/stdio') ? './stdio' : '.']);
     if (!file) throw new Error('MCP public ESM entry is absent');
-    entries[name] = resolve(directory, file);
-    digest.update(bytes).update(readRegular(entries[name]!, 64 * 1024 * 1024, true));
+    const entry = resolve(mcpDirectory, file), local = relative(mcpDirectory, entry);
+    if (isAbsolute(local) || local.split(/[\\/]/).includes('..')) throw new Error('MCP public entry escapes its package');
+    entries[name] = entry;
   }
-  return { hash: digest.digest('hex'), entries, mounts: Object.values(entries) };
+  return { hash: observed.hash, entries, mounts: Object.values(entries) };
 }
 
 const PLUGIN_RUNTIME_PEERS = ['@deepseek-ai/schemastery', '@deepseek-ai/cordis', '@deepseek-ai/dsh-sdk-protocol',
@@ -304,9 +280,14 @@ export function createHarnessTaskExecution(options: HarnessTaskExecutionOptions)
   if (!isAbsolute(options.workspaceRoot) || !isAbsolute(options.identityRoot)) throw new Error('Harness host roots must be absolute native paths');
   return async (task: ApprovedHarnessTask, runId, signal) => {
     signal.throwIfAborted();
+    const admission = options.store.getRun(runId);
+    const earlyCutoff = Date.parse(admission?.harnessExecution?.lifecycle?.deadlineAt ?? '') - 30_000;
+    if (!Number.isFinite(earlyCutoff) || Date.now() >= earlyCutoff) throw new Error('Harness preparation cannot fit the required cleanup within the total deadline');
+    const runtime = harnessRuntimeArtifacts(options.deployment.harnessRoot);
+    const proof = captureHarnessArtifactObservation(options.deployment.pluginRoot, options.deployment.nodeExecutable);
     const definition = structuredClone(options.verification(task.taskId));
     if (task.verificationHash !== hashHarnessInput(definition) ||
-      task.deploymentHash !== hashHarnessDeployment(options.deployment)) {
+      task.deploymentHash !== deploymentDigest(options.deployment, runtime, proof)) {
       throw new Error('Harness verifier or deployment does not match the approved task');
     }
     if (!['text', 'json'].includes(definition.resultMode) ||
@@ -334,7 +315,7 @@ export function createHarnessTaskExecution(options: HarnessTaskExecutionOptions)
     if (!lstatSync(join(options.deployment.dshHome, 'profiles/sdk/package.json')).isFile()) {
       throw new Error('Prepare the approved SDK profile once before dispatch; per-task profile installation is disabled');
     }
-    if (!task.executionBuildHash || task.executionBuildHash !== hashHarnessRuntimeArtifacts(options.deployment.harnessRoot)) {
+    if (!task.executionBuildHash || task.executionBuildHash !== runtime.hash) {
       throw new Error('Harness runtime artifacts differ from the approved task build');
     }
     const versions = ['packages/sdk/client', 'apps/cli'].map(path =>
@@ -359,22 +340,28 @@ export function createHarnessTaskExecution(options: HarnessTaskExecutionOptions)
     const workerBinding = join(bindingDirectory, `${runId}.json`);
     const state = options.store.getRun(runId);
     if (!state?.harnessExecution) throw new Error('Canonical pending Harness run is missing');
-    const deadline = Date.parse(state.startedAt) + task.timeoutMs;
-    if (!Number.isFinite(deadline) || Date.now() >= deadline) throw new Error('Harness preparation exceeded the total task deadline');
+    const deadline = Date.parse(state.harnessExecution.lifecycle?.deadlineAt ?? '');
+    const executionDeadline = deadline - 30_000;
+    if (!Number.isFinite(deadline) || Date.now() >= executionDeadline) throw new Error('Harness task cannot fit execution and its required cleanup within the total deadline');
+    options.store.withRunTransaction(runId, current => ({ patch: { harnessExecution: { ...current.harnessExecution!,
+      lifecycle: { ...current.harnessExecution!.lifecycle!, executionDeadlineAt: new Date(executionDeadline).toISOString() } } } }));
     writeFileSync(workerBinding, JSON.stringify({
-      taskId: task.taskId, runId, principalId: task.principalId, generation: state.harnessExecution.requestHash,
-      root: worktree, expiresAt: new Date(deadline).toISOString(),
+      taskId: task.taskId, runId, principalId: task.principalId, generation: state.harnessExecution.lifecycle!.ownerGeneration,
+      requestHash: state.harnessExecution.requestHash,
+      root: worktree, expiresAt: new Date(executionDeadline).toISOString(),
       readPaths: task.scope.readPaths, writePaths: task.scope.writePaths,
       systemText: `Current OpenSlack task: ${task.taskId}. Current run: ${runId}. Report progress only through harness.task.report for this run; do not dispatch another task or declare acceptance.`,
       callbacks: definition.requireReport, resultMode: definition.resultMode,
-      runtimeEntries: harnessPublicRuntimeEntries(options.deployment.harnessRoot),
+      runtimeEntries: harnessPluginRuntimeEntries(runtime.entries),
       ...(definition.requireReport ? { callbackMcp: options.deployment.callbackMcp } : {}),
     }), { flag: 'wx', mode: 0o600 });
     options.store.updateRun(runId, { worktreePath: worktree, worktreeHandoff: {
       worktreePath: worktree, branchName: branch, reason: 'Retained Harness task worktree; no automatic cleanup or merge.', preservedAt: new Date().toISOString(),
     } });
-    const adapter = createDeepSeekHarnessProvider({ ...options.deployment, workerBinding, timeoutMs: Math.max(1, deadline - Date.now()) },
-      options.authorizeTool, definition.requireReport ? ['openslack'] : []).resolve(task.request.resolvedConfig).adapter;
+    // Resolve once within this synchronous observation phase to validate the prepared
+    // provider; execution obtains its own fresh proof and remaining absolute budget.
+    createDeepSeekHarnessProvider({ ...options.deployment, workerBinding, timeoutMs: Math.max(1, executionDeadline - Date.now()) },
+      options.authorizeTool, definition.requireReport ? ['openslack'] : [], proof).resolve(task.request.resolvedConfig);
     const recorder = createRunRecorder(options.store, options.identityRoot);
     const guard = new ToolGuard(task.request.permissionProfile, recorder, runId);
     let acceptedFiles: Array<{ path: string; sha256: string }> | undefined;
@@ -385,22 +372,51 @@ export function createHarnessTaskExecution(options: HarnessTaskExecutionOptions)
       ...git(worktree, 'ls-files', '--others', '--ignored', '--exclude-standard', '-z').split('\0'),
     ].filter(Boolean))].sort();
     return {
-      async execute(executionSignal) {
-        if (hashHarnessDeployment(options.deployment) !== task.deploymentHash ||
+      async execute(executionSignal, eligibility) {
+        executionSignal.throwIfAborted();
+        if (Date.now() >= executionDeadline) throw new Error('Harness execution cutoff elapsed before deployment observation');
+        const expectedEligibility = { taskId: task.taskId, taskHash: hashHarnessTask(task), principalId: task.principalId!, principalHash: task.principalHash, phase: 'execute' as const };
+        assertHarnessTaskEligibility(eligibility, expectedEligibility);
+        const executionRuntime = harnessRuntimeArtifacts(options.deployment.harnessRoot);
+        const executionProof = captureHarnessArtifactObservation(options.deployment.pluginRoot, options.deployment.nodeExecutable);
+        if (deploymentDigest(options.deployment, executionRuntime, executionProof) !== task.deploymentHash ||
           hashHarnessInput(options.verification(task.taskId)) !== task.verificationHash) {
           throw new Error('Harness deployment or verifier changed before execution');
         }
         const current = options.store.getRun(runId)!;
+        const currentBinding = current?.harnessExecution, lifecycle = currentBinding?.lifecycle;
+        if (current.status !== 'running' || currentBinding?.taskId !== task.taskId || currentBinding.requestHash !== hashHarnessTask(task) ||
+          currentBinding.principalHash !== task.principalHash || lifecycle?.phase !== 'started' ||
+          lifecycle.ownerGeneration !== state.harnessExecution!.lifecycle!.ownerGeneration ||
+          lifecycle.executionDeadlineAt !== new Date(executionDeadline).toISOString()) {
+          throw new Error('Harness execution start differs from its canonical confirmed binding');
+        }
+        assertHarnessNotStopped(options.identityRoot, current);
+        executionSignal.throwIfAborted();
+        const remaining = executionDeadline - Date.now();
+        if (remaining <= 0) throw new Error('Harness execution cutoff elapsed during deployment observation');
+        assertHarnessTaskEligibility(eligibility, expectedEligibility);
+        const startEligibility = bindHarnessRunStartEligibility(eligibility, { runId, generation: lifecycle.ownerGeneration });
+        const adapter = createDeepSeekHarnessProvider({ ...options.deployment, workerBinding, timeoutMs: remaining },
+          options.authorizeTool, definition.requireReport ? ['openslack'] : [], executionProof).resolve(task.request.resolvedConfig).adapter;
+        assertHarnessRunStartEligibility(startEligibility, { runId, requestHash: currentBinding.requestHash,
+          principalHash: currentBinding.principalHash, generation: lifecycle.ownerGeneration });
+        assertHarnessNotStopped(options.identityRoot, current);
         const result = await adapter.execute({
           prompt: task.request.prompt, runId, agentId: task.request.agentId, resolvedConfig: task.request.resolvedConfig,
           permissionProfile: task.request.permissionProfile, worktreePath: worktree,
-          recorder, runState: current, signal: executionSignal, toolGuard: guard,
+          recorder, runState: current, signal: executionSignal, executionDeadline, startEligibility, toolGuard: guard,
           toolExecutor: new RepositoryToolExecutor({ rootPath: worktree, toolGuard: guard, recorder, runId }),
         });
         return { data: result.data, exitConfirmed: true, ...(result.tokenUsage === undefined ? {} : { tokenUsage: result.tokenUsage }) };
       },
-      async accept(_data, acceptanceSignal) {
-        acceptanceSignal.throwIfAborted();
+      async accept(_data, acceptanceSignal, eligibility) {
+        const checkEligibility = () => {
+          acceptanceSignal.throwIfAborted();
+          if (Date.now() >= deadline) throw new Error('Harness total deadline expired before acceptance evidence publication');
+          assertHarnessTaskEligibility(eligibility, { taskId: task.taskId, taskHash: hashHarnessTask(task), principalId: task.principalId!, principalHash: task.principalHash, phase: 'accept' });
+        };
+        checkEligibility();
         if (hashHarnessDeployment(options.deployment) !== task.deploymentHash ||
           hashHarnessInput(options.verification(task.taskId)) !== task.verificationHash) {
           throw new Error('Harness deployment or verifier changed before acceptance');
@@ -418,18 +434,19 @@ export function createHarnessTaskExecution(options: HarnessTaskExecutionOptions)
         }) : [];
         const checks = metadataSafe && observedFiles.every(file => file.matches);
         const reported = !definition.requireReport || Object.keys(current?.harnessExecution?.reports ?? {}).length > 0;
-        acceptanceSignal.throwIfAborted();
+        checkEligibility();
         const evidenceRefs = [`run:${runId}`];
         if (checks && reported) {
           const files = observedFiles.map(({ path, sha256 }) => ({ path, sha256 }));
           const transcript = readToolEvidence(current!.transcriptPath, task.request.permissionProfile.allowedTools);
           const directory = join(options.identityRoot, '.openslack.local/agents/runs', runId);
           directories(options.identityRoot, directory);
+          checkEligibility();
           const evidence = openSync(join(directory, 'acceptance.json'), 'wx', 0o600);
           try {
             writeFileSync(evidence, JSON.stringify({ schema: 'openslack.harness_acceptance.v1', taskId: task.taskId, runId,
               requestHash: current!.harnessExecution!.requestHash, baseline: task.baseline, head: task.baseline, indexHash: index,
-              files, toolEvidenceHash: hashHarnessInput(transcript), observedAt: new Date().toISOString() }));
+              files, toolEvidenceHash: transcript, observedAt: new Date().toISOString() }));
             fsyncSync(evidence);
           } finally { closeSync(evidence); }
           evidenceRefs.push(`artifact:harness-acceptance/${runId}`, ...files.map(file => `sha256:${file.sha256}`));
@@ -479,7 +496,7 @@ export async function inspectHarnessTaskExecution(options: Pick<HarnessTaskExecu
         evidence.taskId === task.taskId && evidence.requestHash === state.harnessExecution?.requestHash &&
         evidence.baseline === task.baseline && evidence.head === task.baseline &&
         evidence.indexHash === hash(git(root, 'ls-files', '--stage', '-z')) && hashHarnessInput(evidence.files) === hashHarnessInput(files) &&
-        evidence.toolEvidenceHash === hashHarnessInput(readToolEvidence(state.transcriptPath, task.request.permissionProfile.allowedTools));
+        evidence.toolEvidenceHash === readToolEvidence(state.transcriptPath, task.request.permissionProfile.allowedTools);
       workspace = evidenceMatches && git(root, 'rev-parse', 'HEAD').trim() === task.baseline &&
         !git(root, 'diff', '--cached', '--name-only', task.baseline, '--').trim() &&
         !/mode change|delete mode|rename/.test(git(root, 'diff', '--summary', '--no-ext-diff', '--no-textconv', task.baseline, '--')) &&

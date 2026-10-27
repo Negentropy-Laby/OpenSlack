@@ -11,6 +11,11 @@ import type {} from '@deepseek-ai/dsh-mcp-client'
 import type {} from '@deepseek-ai/dsh-sdk-jsonrpc-server'
 import type { ToolDefinition, ToolRunContext } from '@deepseek-ai/dsh-tools'
 import { ConfirmationVault } from './confirmation-vault.ts'
+import { HARNESS_CALLBACK_TOOLS, BRIDGE_MESSAGE_MAX_BYTES } from '@openslack/agent-runtime/internal/bridge-wire'
+import { previewNativeEvidence, assertPreviewIntent, readEligibilityRestriction, assertEligibilityRestriction } from './scope-evidence.ts'
+import type { NativeEvidencePreview, HarnessEligibilityRestriction } from './scope-evidence.ts'
+import type { ToolEvidenceReservation } from './bridge.ts'
+import { projectCallbackTool, CALLBACK_DISCONNECT_REASON } from './callback-tools.ts'
 import type {} from './capabilities.ts'
 
 /** Loader identity. */
@@ -50,12 +55,8 @@ export const Config: z<Config> = z.object({
   systemText: z.string().required(), callbacks: z.boolean().required(),
 })
 
-const callbackNames = {
-  query: 'mcp__openslack__openslack_get_activity',
-  preview: 'mcp__openslack__openslack_preview_workflow',
-  confirm: 'mcp__openslack__openslack_confirm_plan',
-  cancel: 'mcp__openslack__openslack_cancel_plan',
-}
+const callbackNames = Object.fromEntries(Object.entries(HARNESS_CALLBACK_TOOLS).map(([key, tool]) => [key, tool.sdk])) as
+  Record<keyof typeof HARNESS_CALLBACK_TOOLS, string>
 
 function object(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -107,25 +108,53 @@ export function apply(ctx: Context, config: Config): void {
       }
     }
   }
-  const authorize = async (toolName: string, input: unknown, actor: object | undefined): Promise<void> => {
+  const prepared = new WeakMap<object, { preview: NativeEvidencePreview; reservation: ToolEvidenceReservation; restriction: HarnessEligibilityRestriction }>()
+  const authorize = async (toolName: string, input: unknown, actor: object | undefined, evidence: ToolEvidenceReservation): Promise<HarnessEligibilityRestriction> => {
     checkActor(actor)
     if (!object(actor) || !(actor.signal instanceof AbortSignal)) throw new Error('Missing task cancellation')
     const outcome = await ctx.bail('openslack/host-request', 'openslack/tool-authorize', {
-      taskId: scope.taskId, runId: scope.runId, principalId: scope.principalId, toolName, input,
+      taskId: scope.taskId, runId: scope.runId, principalId: scope.principalId, generation: scope.generation, toolName, input, evidence,
     }, actor.signal)
     checkActor(actor)
     if (!object(outcome) || outcome.allowed !== true) throw new Error('Live OpenSlack authorization is unavailable')
+    return readEligibilityRestriction(outcome.restriction)
   }
-  const targetCheck = async (target: FsTarget, actor: object | undefined): Promise<void> => {
+  const resultEvidence = async (callId: string, value: unknown, actor: ToolRunContext, indeterminate = false): Promise<void> => {
+    const outcome = await ctx.bail('openslack/host-request', 'openslack/tool-evidence-result', {
+      taskId: scope.taskId, runId: scope.runId, principalId: scope.principalId, generation: scope.generation,
+      callId, output: value, ...(indeterminate ? { indeterminate: true } : {}),
+    }, actor.signal)
+    if (!object(outcome) || outcome.recorded !== true) throw new Error('OpenSlack canonical tool evidence is unavailable')
+  }
+  const targetCheck = async (target: FsTarget, actor: object | undefined) => {
     checkActor(actor)
     checkPath(ctx.fs.processPath(target), true)
     const toolName = object(actor) && actor.name === 'edit' ? 'Edit' : 'Write'
-    await authorize(toolName, { file_path: ctx.fs.processPath(target) }, actor)
+    const capacity = actor ? prepared.get(actor) : undefined
+    if (!capacity || capacity.preview.targetPath !== ctx.fs.processPath(target)) throw new Error('Native mutation has no matching capacity reservation')
+    capacity.restriction = await authorize(toolName, { file_path: ctx.fs.processPath(target) }, actor, capacity.reservation)
     checkPath(ctx.fs.processPath(target), true)
+    return capacity
   }
   // Prepend the denial and delegate the actual stale-write intent to existing policy.
-  ctx.on('fs/write-intent', async (target, actor, next) => { await targetCheck(target, actor); return next() }, true)
-  ctx.on('fs/edit-intent', async (target, actor, next) => { await targetCheck(target, actor); return next() }, true)
+  ctx.on('fs/write-intent', async (target, actor, next) => {
+    const capacity = await targetCheck(target, actor)
+    const intent = await next()
+    checkActor(actor)
+    assertEligibilityRestriction(capacity.restriction)
+    checkPath(ctx.fs.processPath(target), true)
+    assertPreviewIntent(capacity.preview, intent, false)
+    return intent
+  }, true)
+  ctx.on('fs/edit-intent', async (target, actor, next) => {
+    const capacity = await targetCheck(target, actor)
+    const intent = await next()
+    checkActor(actor)
+    assertEligibilityRestriction(capacity.restriction)
+    checkPath(ctx.fs.processPath(target), true)
+    assertPreviewIntent(capacity.preview, intent, true)
+    return intent
+  }, true)
 
   const disposers = new Set<() => void | Promise<void>>()
   const agents = new Set<Agent>()
@@ -163,7 +192,7 @@ export function apply(ctx: Context, config: Config): void {
       releases.push(ctx.on('openslack/connection-lost', (server) => {
         if (server !== 'openslack') return
         vault.dispose()
-        agent.cancel({ kind: 'hook', reason: 'OpenSlack MCP disconnected; preserve and reconcile without replay' })
+        agent.cancel({ kind: 'hook', reason: CALLBACK_DISCONNECT_REASON })
       }))
       const mount = (definition: ToolDefinition): void => {
         allowed.set(definition.name, definition)
@@ -181,47 +210,60 @@ export function apply(ctx: Context, config: Config): void {
             const target = await ctx.fs.resolve(input.file_path, { cwd: root, signal: exec.signal })
             checkActor(exec)
             checkPath(ctx.fs.processPath(target), toolName !== 'read')
-            await authorize(toolName === 'read' ? 'Read' : toolName === 'write' ? 'Write' : 'Edit',
-              { file_path: ctx.fs.processPath(target) }, exec)
+            if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(exec.callId)) throw new Error('Invalid native tool call identity')
+            // Live authorization precedes even the private read-only capacity
+            // inspection. Reserve the supported maximum first; never expose a
+            // revoked file while attempting to compute a tighter reservation.
+            const reservation: ToolEvidenceReservation = { callId: exec.callId, input,
+              targetPath: ctx.fs.processPath(target), generation: scope.generation, maxResultBytes: BRIDGE_MESSAGE_MAX_BYTES - 1024 }
+            const restriction = await authorize(toolName === 'read' ? 'Read' : toolName === 'write' ? 'Write' : 'Edit',
+              { file_path: ctx.fs.processPath(target) }, exec, reservation)
+            const preview = await previewNativeEvidence(ctx, definition, input, exec, target,
+              toolName as 'read' | 'write' | 'edit', () => { checkActor(exec); assertEligibilityRestriction(restriction) })
+            if (preview.maxResultBytes > reservation.maxResultBytes) throw new Error('Native output exceeds its pre-effect evidence reservation')
+            const capacity = { preview, reservation, restriction }
+            prepared.set(exec, capacity)
+            capacity.restriction = await authorize(toolName === 'read' ? 'Read' : toolName === 'write' ? 'Write' : 'Edit',
+              { file_path: ctx.fs.processPath(target) }, exec, reservation)
             // Authorization is an await boundary: neither the requested path nor
             // its previously resolved target may have become a link meanwhile.
             checkPath(resolve(root, input.file_path), toolName !== 'read')
             checkPath(ctx.fs.processPath(target), toolName !== 'read')
-            const result = await definition.execute(input, exec)
-            checkActor(exec)
-            checkPath(resolve(root, input.file_path), toolName !== 'read')
-            if (toolName === 'read') {
-              if (!object(result) || typeof result.path !== 'string') throw new Error('Native read omitted its resolved path')
-              checkPath(result.path, false)
+            assertEligibilityRestriction(capacity.restriction)
+            try {
+              const result = await definition.execute(input, exec)
+              checkActor(exec)
+              assertEligibilityRestriction(capacity.restriction)
+              checkPath(resolve(root, input.file_path), toolName !== 'read')
+              if (toolName === 'read') {
+                if (!object(result) || typeof result.path !== 'string') throw new Error('Native read omitted its resolved path')
+                checkPath(result.path, false)
+              }
+              await resultEvidence(exec.callId, result, exec)
+              return result
+            } catch (error) {
+              await resultEvidence(exec.callId, null, exec, true).catch(() => {})
+              throw error
+            } finally {
+              prepared.delete(exec)
             }
-            return result
           },
         })
       }
       if (scope.callbacks) {
         for (const operation of ['query', 'preview', 'confirm', 'cancel'] as const) {
           const definition = lookup(callbackNames[operation])
-          mount({
-            name: definition.name, description: definition.description,
-            parameters: operation === 'confirm' || operation === 'cancel'
-              ? { type: 'object', properties: { planId: { type: 'string' } }, required: ['planId'], additionalProperties: false }
-              : definition.parameters,
-            output: { schema: {}, render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }] },
-            async execute(args: unknown, exec: ToolRunContext) {
-              const input = structuredClone(args)
-              checkActor(exec)
-              await assertCurrent()
-              if (operation === 'preview') return vault.preview(definition, input, exec)
-              if (operation === 'confirm' || operation === 'cancel') return vault.settle(definition, input, exec, operation)
-              if (!object(input) || input.objectKind !== 'workflow' || input.objectId !== scope.runId ||
-                Object.keys(input).some(key => !['objectKind', 'objectId', 'limit'].includes(key))) {
-                throw new Error('Only this OpenSlack run can be queried')
-              }
-              const result = await definition.execute(input, exec)
-              await assertCurrent()
-              return result
+          mount(projectCallbackTool({ operation, definition, vault,
+            current: async exec => { checkActor(exec); await assertCurrent() },
+            permitsQuery: runId => runId === scope.runId,
+            async before(input, exec) {
+              const tool = HARNESS_CALLBACK_TOOLS[operation]
+              const reservation: ToolEvidenceReservation = { callId: exec.callId, input, targetPath: `mcp:${tool.bridge}`,
+                generation: scope.generation, maxResultBytes: BRIDGE_MESSAGE_MAX_BYTES - 1024 }
+              await authorize(tool.bridge, input, exec, reservation)
             },
-          })
+            after: async (result, exec) => { await resultEvidence(exec.callId, result, exec) },
+          }))
         }
       }
       releases.push(agent.ctx.tools.restrict({ allow: [] }))

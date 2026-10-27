@@ -87,7 +87,7 @@ import { OpenSlackMcpToolError } from './errors.js';
 import { HarnessTaskHost } from '@openslack/agent-runtime/internal/harness';
 import {
   HARNESS_WORKFLOW_BUILD_SOURCE_PATH, executeHarnessWorkflow, harnessWorkflowEntries,
-  isHarnessWorkflowId, observeHarnessWorkflow,
+  isHarnessWorkflowId, observeHarnessWorkflow, restoreHarnessWorkflow,
 } from './harness-workflow.js';
 import {
   createOpenSlackGovernedMutationPort,
@@ -98,6 +98,11 @@ const NO_FOLLOW = process.platform === 'win32' ? 0 : (fsConstants.O_NOFOLLOW ?? 
 const MAX_BINDING_FILE_BYTES = 2 * 1024 * 1024;
 const SAFE_REFERENCE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 const SAFE_AUTHORITY = /^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,255}$/;
+const WORKFLOW_FAMILIES = Object.freeze({ [CONTRACT_DELIVERY_LITE_ADAPTER_ID]: 'scenario', 'openslack-harness-task': 'harness' } as const);
+function workflowFamily(resolver: SealedWorkflowPlanResolver, target: string | undefined): 'scenario' | 'harness' | undefined {
+  const adapter = target === undefined ? undefined : resolver.resolve(target)?.adapterId;
+  return adapter && Object.hasOwn(WORKFLOW_FAMILIES, adapter) ? WORKFLOW_FAMILIES[adapter as keyof typeof WORKFLOW_FAMILIES] : undefined;
+}
 const SCENARIO_INSTANTIATE_ACTION_POLICY = Object.freeze({
   actionId: 'scenario.instantiate',
   riskZone: 'yellow',
@@ -161,6 +166,7 @@ interface RootBinding {
 
 interface CurrentPrincipalBinding {
   readonly actorId: string;
+  readonly principalId: string;
   readonly stableSnapshot: Readonly<Record<string, unknown>>;
   readonly snapshot: AgentPermissionSnapshot;
   readonly registryFileHash: string;
@@ -692,6 +698,7 @@ function resolveCurrentPrincipal(
   })}`;
   return Object.freeze({
     actorId,
+    principalId: registry.identity.principal_id,
     snapshot: resolved.snapshot,
     stableSnapshot: stablePermissionSnapshot(resolved.snapshot),
     registryFileHash,
@@ -923,15 +930,10 @@ async function assertPlanMatchesDefinitions(
       definitionHash: current.definitionHash,
     });
   }
-  if (harnessTaskHost && plan.kind === WORKFLOW_ACTION_ID && isHarnessWorkflowId(plan.actions[0]?.actionId)) {
+  if (harnessTaskHost && plan.kind === WORKFLOW_ACTION_ID && workflowFamily(workflowResolver, plan.actions[0]?.actionId) === 'harness') {
     const persisted = workflowPlanFromActionInput(plan.actions[0]!.input);
-    const entry = workflowResolver.resolve(plan.actions[0]!.actionId);
-    if (!entry || persisted.workflow.id !== entry.id) throw new Error('Harness Workflow target binding changed');
-    const restored = rehydrateWorkflowStartPlan(persisted, {
-      resolver: workflowResolver, planHash: persisted.planHash, actorId: authority.actorId,
-      workspaceId: authority.workspaceId, correlationId: persisted.correlationId,
-      workflowHash: entry.workflowHash, now: new Date().toISOString(),
-    });
+    if (persisted.workflow.id !== plan.actions[0]!.actionId) throw new Error('Harness Workflow target binding changed');
+    const restored = restoreHarnessWorkflow(persisted, workflowResolver, { ...authority, correlationId: persisted.correlationId });
     return observeHarnessWorkflow(harnessTaskHost, restored);
   }
   if (
@@ -1004,12 +1006,21 @@ export async function createOpenSlackAgentBoundMutationComposition(
     safeOptions.principalRef,
     provider,
   );
+  const hostBinding = safeOptions.harnessTaskHost?.governanceBinding();
+  if (hostBinding && (hostBinding.workspaceId !== initialWorkspace.workspaceId ||
+    hostBinding.principalId !== initialPrincipal.principalId ||
+    (process.platform === 'win32' ? hostBinding.identityRoot.toLowerCase() !== rootBinding.real.toLowerCase() : hostBinding.identityRoot !== rootBinding.real))) {
+    return fail('GOVERNED_COMPOSITION_PRINCIPAL_MISMATCH', 'Harness owner is bound to another principal or workspace.');
+  }
+  const harnessEntries = safeOptions.harnessTaskHost ? harnessWorkflowEntries().filter(entry => hostBinding!.targets.includes(entry.id) &&
+    authorizeAgentAction({ snapshot: initialPrincipal.snapshot, action: entry.id, riskZone: 'yellow' }).decision === 'allow') : [];
+  const harnessHost = harnessEntries.length ? safeOptions.harnessTaskHost : undefined;
   let scenarioAuthorized = true;
   try {
     authorizeScenarioMutation(initialPrincipal);
   } catch {
     scenarioAuthorized = false;
-    if (!safeOptions.harnessTaskHost) return fail(
+    if (!harnessHost) return fail(
         'GOVERNED_COMPOSITION_PERMISSION_DENIED',
         'The selected principal is not granted scenario.instantiate.',
       );
@@ -1024,12 +1035,12 @@ export async function createOpenSlackAgentBoundMutationComposition(
       catalog: scenarioCatalog,
     })).accepted;
   } catch {
-    if (!safeOptions.harnessTaskHost) return fail(
+    if (!harnessHost) return fail(
       'GOVERNED_COMPOSITION_SCENARIO_UNAVAILABLE',
       'The locked Scenario root could not be discovered safely.',
     );
   }
-  if (acceptedDefinitions.length === 0 && !safeOptions.harnessTaskHost) {
+  if (acceptedDefinitions.length === 0 && !harnessHost) {
     return fail(
       'GOVERNED_COMPOSITION_SCENARIO_UNAVAILABLE',
       'No locked Scenario Pack is available to the governed composition.',
@@ -1062,7 +1073,7 @@ export async function createOpenSlackAgentBoundMutationComposition(
     );
   }
   const workflowResolver = createSealedWorkflowPlanResolver({
-    entries: [reviewedWorkflow, ...(safeOptions.harnessTaskHost ? harnessWorkflowEntries() : [])],
+    entries: [reviewedWorkflow, ...harnessEntries],
   });
 
   let audit;
@@ -1121,7 +1132,7 @@ export async function createOpenSlackAgentBoundMutationComposition(
     if (scenarioReady) {
       try { await initializeScenarioInstanceStoreRoot(rootBinding.real); }
       catch (error) {
-        if (!safeOptions.harnessTaskHost) throw error;
+        if (!harnessHost) throw error;
         scenarioReady = false;
       }
     }
@@ -1243,7 +1254,7 @@ export async function createOpenSlackAgentBoundMutationComposition(
   };
 
   const registry = createGovernedActionExecutionRegistry([
-    ...(safeOptions.harnessTaskHost ? harnessWorkflowEntries().map(entry => ({
+    ...(harnessHost ? harnessEntries.map(entry => ({
       actionId: entry.executorId,
       version: entry.version,
       bindingId: `harness-task:v1:${initialBuildHash.slice(0, 32)}:${entry.id}`,
@@ -1254,12 +1265,8 @@ export async function createOpenSlackAgentBoundMutationComposition(
         if (decision.decision !== 'allow') throw new OpenSlackMcpToolError('GOVERNED_ACTION_NOT_AUTHORIZED', 'Harness action is not authorized.', 'blocked');
         const persisted = workflowPlanFromActionInput(input);
         if (persisted.workflow.id !== entry.id) throw new Error('Harness action target mismatch');
-        const restored = rehydrateWorkflowStartPlan(persisted, {
-          resolver: workflowResolver, planHash: persisted.planHash, actorId: context.actorId,
-          workspaceId: context.workspaceId, correlationId: context.correlationId,
-          workflowHash: entry.workflowHash, now: new Date().toISOString(),
-        });
-        return executeHarnessWorkflow(safeOptions.harnessTaskHost!, restored, context);
+        const restored = restoreHarnessWorkflow(persisted, workflowResolver, context);
+        return executeHarnessWorkflow(harnessHost, restored, context);
       },
     })) : []),
     {
@@ -1429,8 +1436,8 @@ export async function createOpenSlackAgentBoundMutationComposition(
         'blocked',
       );
     }
-    const harnessTarget = safeOptions.harnessTaskHost && context.canonicalPlan.kind === WORKFLOW_ACTION_ID &&
-      isHarnessWorkflowId(context.canonicalPlan.actions[0]?.actionId);
+    const harnessTarget = harnessHost && context.canonicalPlan.kind === WORKFLOW_ACTION_ID &&
+      workflowFamily(workflowResolver, context.canonicalPlan.actions[0]?.actionId) === 'harness';
     if (!harnessTarget) assertScenarioAuthority(currentPrincipal);
     const definitions: ReadonlyMap<string, LoadedScenarioDefinition> = harnessTarget ? new Map() : await loadDefinitions();
     if (!harnessTarget) assertDefinitionSetStable(definitions);
@@ -1447,7 +1454,7 @@ export async function createOpenSlackAgentBoundMutationComposition(
       context.authority,
       workflowResolver,
       scenarioInstanceRoot,
-      safeOptions.harnessTaskHost,
+      harnessHost,
     );
     let buildArtifactHash: string;
     try {
@@ -1506,14 +1513,15 @@ export async function createOpenSlackAgentBoundMutationComposition(
   const governedMutations = createOpenSlackGovernedMutationPort({
     service,
     authority,
-    ...(safeOptions.harnessTaskHost ? { onConfirmed: (record: GovernedPlanRecord) => {
-      if (record.state !== 'succeeded' || record.canonicalPlan.actions[0]?.actionId !== 'harness.task.dispatch') return;
-      for (const outcome of record.execution?.outcomes ?? []) {
-        const data = outcome.data;
-        if (data && typeof data === 'object' && !Array.isArray(data) && 'runId' in data && typeof data.runId === 'string') {
-          safeOptions.harnessTaskHost!.releaseConfirmedAdmission(data.runId);
-        }
-      }
+    ...(harnessHost ? { onConfirmationSettled: async (planId: string, outcome: { attemptId: string; failed: boolean; failureCode?: string; aborted: boolean }) => {
+      let record: GovernedPlanRecord | null = null;
+      try { record = await service.get(planId); } catch { /* Uncertain durable result must not release execution. */ }
+      const state = record?.state;
+      if ((state === 'pending' || state === 'executing') && !outcome.failed && !outcome.aborted &&
+        outcome.failureCode !== 'GOVERNED_PLAN_EXECUTION_UNCERTAIN' && outcome.failureCode !== 'GOVERNED_PLAN_EXECUTION_ABORTED') return;
+      harnessHost.settleConfirmedAdmissions(planId, { state: outcome.failed || outcome.aborted || state === 'executing' || !state ? 'uncertain' : state,
+        confirmationAttemptId: outcome.attemptId,
+        ...(record?.execution?.executionId ? { executionId: record.execution.executionId } : {}) });
     } } : {}),
     compileScenario: async ({ input, authority: compilerAuthority, compilation }) => {
       if (
@@ -1629,10 +1637,10 @@ export async function createOpenSlackAgentBoundMutationComposition(
         }
         throw error;
       }
-      if (safeOptions.harnessTaskHost && isHarnessWorkflowId(workflowPlan.workflow.id)) {
+      if (harnessHost && workflowFamily(workflowResolver, workflowPlan.workflow.id) === 'harness') {
         const decision = authorizeAgentAction({ snapshot: currentPrincipal.snapshot, action: workflowPlan.workflow.id, riskZone: 'yellow' });
         if (decision.decision !== 'allow') throw new OpenSlackMcpToolError('GOVERNED_ACTION_NOT_AUTHORIZED', 'Harness action is not authorized.', 'blocked');
-        const observed = await observeHarnessWorkflow(safeOptions.harnessTaskHost, workflowPlan);
+        const observed = await observeHarnessWorkflow(harnessHost, workflowPlan);
         return {
           kind: WORKFLOW_ACTION_ID,
           goal: workflowPlan.workflow.id === 'harness.task.dispatch' ? 'Admit an approved Harness task; acceptance remains pending.' : 'Record current-task progress only.',

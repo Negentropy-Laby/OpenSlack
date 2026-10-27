@@ -98,6 +98,7 @@
       "version": "0.2.0",
       "dependencies": {
         "@openslack/collaboration": "workspace:*",
+        "@openslack/core": "workspace:*",
         "@openslack/credentials": "workspace:*",
         "@openslack/kernel": "workspace:*",
         "@openslack/runtime": "workspace:*",

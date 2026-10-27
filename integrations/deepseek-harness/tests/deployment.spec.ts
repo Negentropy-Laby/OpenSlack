@@ -11,12 +11,12 @@ import {
 } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
-import { fileURLToPath, pathToFileURL } from 'node:url';
-import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+import { spawn, spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
+import type * as TypeScript from 'typescript';
 import { describe, expect, it, onTestFinished } from 'vitest';
 import {
-  hashHarnessDeployment,
   hashHarnessNodeExecutable,
   hashHarnessPluginArtifacts,
 } from '@openslack/agent-runtime/internal/harness';
@@ -40,12 +40,27 @@ describe('external plugin build inputs', () => {
       'runtime-public.mjs',
       'package.json',
       'src',
+      'native-supervisor',
       'tests/fixtures/scripted-model.ts',
     ]) {
       mkdirSync(dirname(join(root, path)), { recursive: true });
       cpSync(join(packageRoot, path), join(root, path), { recursive: true });
     }
-    const env = { ...testProcessEnvironment(), DEEPSEEK_HARNESS_CHECKOUT: harnessRoot };
+    // Build the exact candidate's one pure leaf afresh, independently of ignored
+    // repository dist or a copied node_modules tree.
+    const ts: typeof TypeScript = createRequire(join(harnessRoot, 'package.json'))('typescript');
+    const wireSource = join(root, '.build/wire-source/bridge-wire.ts');
+    mkdirSync(dirname(wireSource), { recursive: true });
+    cpSync(join(packageRoot, '../../packages/agent-runtime/src/bridge-wire.ts'), wireSource);
+    const wireOutput = join(root, '.build/wire-output');
+    const wireProgram = ts.createProgram([wireSource], { target: ts.ScriptTarget.ES2024,
+      module: ts.ModuleKind.ESNext, moduleResolution: ts.ModuleResolutionKind.Bundler, strict: true,
+      declaration: true, skipLibCheck: true, rootDir: dirname(wireSource), outDir: wireOutput,
+      types: ['node'], typeRoots: [join(harnessRoot, 'node_modules/@types')] });
+    expect(ts.getPreEmitDiagnostics(wireProgram).map(d => ts.flattenDiagnosticMessageText(d.messageText, '\n'))).toEqual([]);
+    expect(wireProgram.emit().emitSkipped).toBe(false);
+    const env = { ...testProcessEnvironment(), DEEPSEEK_HARNESS_CHECKOUT: harnessRoot,
+      OPENSLACK_BRIDGE_WIRE_MODULE: join(wireOutput, 'bridge-wire.js') };
     const built = spawnSync(testExecutable('bun', env), [join(root, 'build.mjs')], {
       cwd: root,
       env,
@@ -64,9 +79,10 @@ describe('external plugin build inputs', () => {
         .sort(),
     );
     expect(existsSync(join(root, 'dist/types/src/index.d.ts'))).toBe(true);
-    const ts: typeof import('typescript') = createRequire(join(harnessRoot, 'package.json'))(
-      'typescript',
-    );
+    expect(existsSync(join(root, 'dist/openslack-harness-supervisor.exe'))).toBe(true);
+    for (const name of readdirSync(join(root, 'dist/types/src')).filter(name => name.endsWith('.d.ts'))) {
+      expect(readFileSync(join(root, 'dist/types/src', name), 'utf8')).not.toContain('@openslack/agent-runtime');
+    }
     const normalize = (path: string) => resolve(path).replaceAll('\\', '/');
     const inputs = (directory: string): string[] =>
       readdirSync(directory, { withFileTypes: true })
@@ -99,9 +115,14 @@ describe('external plugin build inputs', () => {
 });
 
 describe('deployment mounts remain an exact two-code-root set', () => {
-  it('binds the actual package and rejects both outside roots and unexported source inside a root', () => {
+  it('binds the actual package and rejects both outside roots and unexported source inside a root', async () => {
+    const deadlineAt = Date.now() + 330_000;
     const root = mkdtempSync(join(tmpdir(), 'openslack-two-roots-'));
-    onTestFinished(() => rmSync(root, { recursive: true, force: true }));
+    let passed = false;
+    onTestFinished(() => {
+      if (passed) rmSync(root, { recursive: true, force: true });
+      else console.error(`Deployment validation failure retained at ${root}`);
+    });
     const fixture = prepareSdkFixture(root, []);
     const deployment = {
       harnessRoot: fixture.repository,
@@ -117,42 +138,52 @@ describe('deployment mounts remain an exact two-code-root set', () => {
       model: 'fixture',
       exitGraceMs: 1_000,
     };
-    expect(hashHarnessDeployment(deployment)).toMatch(/^[a-f0-9]{64}$/);
-    const outside = join(root, 'outside.js');
-    writeFileSync(outside, 'throw new Error("must not execute");');
-    const patch = readFileSync(fixture.patch);
-    for (const name of [outside, join(fixture.pluginRoot, 'src/index.ts')]) {
-      writeFileSync(
-        fixture.patch,
-        JSON.stringify([{ insert: [{ id: 'not-approved', name: pathToFileURL(name).href }] }]),
-      );
-      expect(() => hashHarnessDeployment(deployment)).toThrow('separately bound');
-    }
-    writeFileSync(fixture.patch, patch);
-    writeFileSync(
-      fixture.patch,
-      JSON.stringify([
-        { insert: [{ id: 'not-bound', name: '@deepseek-ai/dsh-sdk-jsonrpc-server/src/index.ts' }] },
-      ]),
-    );
-    expect(() => hashHarnessDeployment(deployment)).toThrow('package or subpath');
-    writeFileSync(fixture.patch, patch);
-    expect(() => hashHarnessDeployment({ ...deployment, pluginBuildHash: '0'.repeat(64) })).toThrow(
-      'approved deployment',
-    );
-    expect(() => hashHarnessDeployment({ ...deployment, nodeSha256: '0'.repeat(64) })).toThrow(
-      'approved deployment',
-    );
-    const shadow = join(fixture.home, 'profiles/sdk/node_modules/@deepseek-ai/schemastery');
-    mkdirSync(shadow, { recursive: true });
-    writeFileSync(
-      join(shadow, 'package.json'),
-      JSON.stringify({ name: '@deepseek-ai/schemastery', version: '4.0.0', main: 'index.js' }),
-    );
-    writeFileSync(
-      join(shadow, 'index.js'),
-      'throw new Error("must never load an unapproved same-name peer")',
-    );
-    expect(() => hashHarnessDeployment(deployment)).toThrow('runtime peer override');
-  });
+    const input = join(root, 'deployment-validation.json');
+    writeFileSync(input, JSON.stringify({ root, deployment }), { flag: 'wx' });
+    const timeoutMs = Math.min(300_000, deadlineAt - Date.now() - 10_000);
+    if (timeoutMs < 1) throw new Error('Deployment fixture setup exhausted its verification deadline');
+    // Seven complete, fresh production observations must not block Vitest's
+    // worker RPC/event loop. This is only a verification-process budget.
+    const child = spawn(process.execPath, [fileURLToPath(new URL('./fixtures/deployment-validation.mjs', import.meta.url)), input],
+      { cwd: root, env: testProcessEnvironment(), stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
+    const result = await new Promise<{ code: number | null; signal: NodeJS.Signals | null; stdout: string; stderr: string }>((resolve, reject) => {
+      const output: Buffer[] = [], errors: Buffer[] = [];
+      let bytes = 0, failure: Error | undefined, stopping = false, settled = false;
+      let unconfirmed: ReturnType<typeof setTimeout> | undefined;
+      const clear = () => { clearTimeout(timer); if (unconfirmed) clearTimeout(unconfirmed); };
+      const stop = (reason: Error) => {
+        failure ??= reason;
+        if (stopping || settled) return;
+        stopping = true;
+        // This pure verification process owns no SDK/managed descendants.
+        // Its hard computation cutoff cannot grow a graceful-running tail.
+        child.kill('SIGKILL');
+        unconfirmed = setTimeout(() => {
+          if (settled) return;
+          settled = true; clear();
+          reject(new Error('Deployment validation process exit is unconfirmed; preserve the fixture', { cause: failure }));
+        }, 10_000);
+      };
+      const collect = (target: Buffer[]) => (chunk: Buffer) => {
+        bytes += chunk.length;
+        if (bytes > 64 * 1024) stop(new Error('Deployment validation output exceeded its bound'));
+        else target.push(chunk);
+      };
+      const timer = setTimeout(() => stop(new Error('Deployment validation exceeded its bounded verification deadline')), timeoutMs);
+      child.stdout.on('data', collect(output)); child.stderr.on('data', collect(errors));
+      child.stdout.on('error', stop); child.stderr.on('error', stop); child.once('error', stop);
+      child.once('close', (code, signal) => {
+        if (settled) return;
+        settled = true; clear();
+        if (failure) reject(failure);
+        else resolve({ code, signal, stdout: Buffer.concat(output).toString('utf8'), stderr: Buffer.concat(errors).toString('utf8') });
+      });
+    });
+    expect(result.code, result.stderr).toBe(0);
+    expect(result.signal).toBeNull();
+    expect(result.stdout.trim().split('\n').map(line => JSON.parse(line))).toEqual([
+      'valid', 'outside-root', 'unexported-source', 'private-subpath', 'bad-plugin-hash', 'bad-node-hash', 'peer-shadow',
+    ].map(check => ({ check, passed: true })));
+    passed = true;
+  }, 330_000);
 });

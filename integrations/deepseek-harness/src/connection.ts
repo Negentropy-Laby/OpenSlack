@@ -10,6 +10,7 @@ import { isCleanExit, OwnedProcessObservation, requireSupportedNode } from './pr
 import type { ProcessExitReceipt } from './process-observer.ts'
 import { isAbsolute } from 'node:path'
 import { statSync } from 'node:fs'
+import { shutdownDeadline, shutdownRemaining, withinShutdown } from './shutdown.ts'
 
 export const name = 'openslack-native-connection'
 export const inject = ['tools']
@@ -38,6 +39,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   }
   const args = [config.cliModule, 'mcp', 'serve', '--stdio', '--profile', config.mode === 'task' ? 'agent-bound' : 'read-only',
     ...(config.mode === 'task' ? ['--principal-ref', config.principalRef!] : []),
+    ...(config.mode === 'task' && !config.workerBinding ? ['--harness-task-host'] : []),
     ...(config.workerBinding ? ['--harness-worker-binding', config.workerBinding] : [])]
   const observed = new OwnedProcessObservation(process.execPath, args)
   const client = new Client({ name: 'openslack-external-harness', version: '0.2.0' })
@@ -64,20 +66,17 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       try { assertCurrent(); return true } catch { return false }
     },
     tool: toolName => tools.get(toolName),
-    stop() {
+    stop(deadlineAt) {
       stopped ??= (async () => {
+        const deadline = shutdownDeadline(deadlineAt)
         closing = true
         invalidate()
-        let timer: ReturnType<typeof setTimeout> | undefined
         try {
-          await Promise.race([client.close(), new Promise<never>((_, reject) => {
-            timer = setTimeout(() => reject(new Error('OpenSlack MCP stop is unknown')), Math.min(config.timeoutMs, 10_000))
-          })])
-          const receipt = await observed.waitForClose(Math.min(config.timeoutMs, 10_000))
+          await withinShutdown(deadline, () => client.close())
+          const receipt = await observed.waitForClose(shutdownRemaining(deadline))
           if (lost || !isCleanExit(receipt)) throw new Error('OpenSlack MCP did not confirm a clean owned stop')
           return receipt
         } finally {
-          if (timer) clearTimeout(timer)
           observed.dispose()
         }
       })()
@@ -88,9 +87,11 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   ctx.on('openslack/connection-state', server => server === 'openslack' ? owner.connected : undefined)
   ctx.effect(() => async () => { await owner.stop() })
   try {
-    await client.connect(transport)
     // Never retain upstream stderr: JSON-RPC errors can contain bearer material.
+    // The public stream exists before connect; drain it during initialize too.
     transport.stderr?.on('data', () => {})
+    const startupDeadline = Date.now() + config.timeoutMs
+    await withinShutdown(startupDeadline, () => client.connect(transport, { timeout: config.timeoutMs }))
     observed.assertCaptured(transport.pid)
     if (lost) throw new Error('OpenSlack MCP disconnected during startup')
     const listed = await client.listTools()

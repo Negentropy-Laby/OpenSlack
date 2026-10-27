@@ -1,7 +1,8 @@
 import { lstatSync } from 'node:fs';
 import { join } from 'node:path';
 import type { CollaborationEvent } from '@openslack/collaboration';
-import { LocalReadBoundError, readBoundedJsonFileSync } from './bounded-read.js';
+import { RUN_ID_RE, readRunStateSnapshot, readHarnessStopIntent } from '@openslack/agent-runtime/internal/harness';
+import { LocalReadBoundError } from './bounded-read.js';
 
 /** Optional bounded read model; contains no principal data, paths, transcripts or bearer material. */
 export interface HarnessExecutionProjection {
@@ -11,6 +12,7 @@ export interface HarnessExecutionProjection {
   acceptance: string;
   summary: string;
   evidenceRefs: string[];
+  stopRequested?: boolean;
 }
 
 function row(value: unknown): value is Record<string, unknown> {
@@ -23,7 +25,7 @@ export function readHarnessExecutionProjection(
   runId: string,
   visibleEvents: readonly CollaborationEvent[],
 ): HarnessExecutionProjection | undefined {
-  if (!/^RUN-[A-Z0-9-]{1,124}$/.test(runId) ||
+  if (!RUN_ID_RE.test(runId) ||
     !visibleEvents.some(event => event.object.kind === 'workflow' && event.object.id === runId)) return undefined;
   let path = root;
   for (const segment of ['.openslack.local', 'agents', 'runs', runId]) {
@@ -36,7 +38,7 @@ export function readHarnessExecutionProjection(
       throw error;
     }
   }
-  const state = readBoundedJsonFileSync<unknown>(join(path, 'run.json'), 512 * 1024);
+  const state: unknown = readRunStateSnapshot(runId, root);
   if (!row(state) || state.harnessExecution === undefined) return undefined;
   const binding = state.harnessExecution;
   if (state.runId !== runId || !row(binding) || binding.schema !== 'openslack.harness_execution.v1' ||
@@ -49,6 +51,9 @@ export function readHarnessExecutionProjection(
     binding.evidenceRefs.some(ref => typeof ref !== 'string' || !/^[a-z][a-z0-9-]*:[A-Za-z0-9._/-]{1,256}$/.test(ref))) {
     throw new LocalReadBoundError('HARNESS_RUN_BINDING_INVALID');
   }
-  return { taskId: binding.taskId, runId, status: state.status, acceptance: binding.acceptance,
-    summary: binding.summary, evidenceRefs: [...binding.evidenceRefs] };
+  const stopRequested = !!readHarnessStopIntent(root, runId);
+  if (stopRequested && state.status === 'completed') throw new LocalReadBoundError('HARNESS_RUN_STOP_UNRESOLVED');
+  return { taskId: binding.taskId, runId, status: state.status, acceptance: stopRequested ? 'indeterminate' : binding.acceptance,
+    summary: stopRequested ? 'Stop requested; preserve evidence and reconcile without replay.' : binding.summary,
+    evidenceRefs: [...binding.evidenceRefs], ...(stopRequested ? { stopRequested: true } : {}) };
 }

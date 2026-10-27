@@ -2,7 +2,8 @@ import { createOwnedSdk } from '../../dist/owned-sdk.js';
 import { loadPublicHarness } from '../../dist/runtime.js';
 const [harnessRoot, home, workspace, patch, prompt = 'Dispatch the approved task and read its verified result.', generation = 'fixture-caller'] = process.argv.slice(2);
 const runtime = await loadPublicHarness(harnessRoot);
-const port = createOwnedSdk({ runtime, generation, requireMcp: true,
+// Caller/readonly fixture only: not a dispatched worker or local file authority.
+const port = createOwnedSdk({ runtime, generation, requireMcp: true, startEligibility: { mode: 'not_applicable' },
   launch: { dshBin: runtime.dshBin, dshHome: home, profile: 'sdk', patches: [patch],
     cwd: workspace, processCwd: workspace, provider: 'openslack-fixture', model: 'fixture',
     initializeTimeoutMs: 120_000, requestTimeoutMs: 240_000, env: { PATH: process.env.PATH } },

@@ -2,7 +2,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { BridgeProcessAdapter, type BridgeProcessAdapterOptions } from '../bridge-adapter.js';
+import { channel } from 'node:diagnostics_channel';
+import { ChildProcess } from 'node:child_process';
+import { BridgeAdapterError, BridgeProcessAdapter, type BridgeProcessAdapterOptions } from '../bridge-adapter.js';
+import { buildBridgeEnvelope } from '../bridge-contract.js';
 import { createRunStore, generateRunId } from '../run-store.js';
 import { createRunRecorder } from '../recorder.js';
 import { ToolGuard } from '../adapter.js';
@@ -133,6 +136,76 @@ describe('Harness bridge ownership', () => {
     await expect(adapter.execute(context)).rejects.toThrow(/deadline|timed out/);
   });
 
+  it('drains more than 256 valid heartbeats while live authorization is pending', async () => {
+    const authorizeTool = vi.fn(async () => { await new Promise(resolve => setTimeout(resolve, 80)); });
+    const { adapter, context } = setup(prefix + `
+      reply(frame, 'tool_request', { phase: 'authorize', authorizationRequestId: 'auth-1', toolName: 'Read', input: { file_path: '/fixture.txt' } });
+      for (let n = 0; n < 600; n++) reply(frame, 'heartbeat', {});
+    }
+    if (frame.kind === 'tool_response') reply(frame, 'complete', { data: 'one live action' });
+    if (false) {
+    ` + suffix, 2_000, { authorizeTool });
+    expect((await adapter.execute(context)).data).toBe('one live action');
+    expect(authorizeTool).toHaveBeenCalledOnce();
+  });
+
+  it.each(['foreign', 'missing-data', 'duplicate', 'utf8', 'truncated'])('applies strict %s validation to legacy providers too', async kind => {
+    const body = kind === 'foreign' ? `reply({ ...frame, correlationId: 'OTHER' }, 'complete', { data: 1 });`
+      : kind === 'missing-data' ? `reply(frame, 'complete', { result: 1 });`
+      : kind === 'duplicate' ? `reply(frame, 'complete', { data: 1 }); reply(frame, 'complete', { data: 2 });`
+      : kind === 'utf8' ? `process.stdout.write(Buffer.from([0xc3, 0x28, 0x0a]));`
+      : `process.stdout.write('{"protocolVersion":'); process.exit(0);`;
+    const { adapter, context } = setup(prefix + body + suffix, 2_000, { confirmProcessExit: false });
+    await expect(adapter.execute(context)).rejects.toMatchObject({ kind: 'envelope_malformed' });
+  });
+
+  it.each(['within', 'outside'] as const)('uses one absolute legacy completion grace: %s', async boundary => {
+    const base = Date.now();
+    let observed = base;
+    vi.spyOn(Date, 'now').mockImplementation(() => observed);
+    const { adapter, context } = setup(prefix + `reply(frame, 'progress', { step: 'advance-clock' }); reply(frame, 'complete', { data: 'boundary' });` + suffix,
+      2_000, { confirmProcessExit: false });
+    const progress = context.recorder.progress.bind(context.recorder);
+    vi.spyOn(context.recorder, 'progress').mockImplementation((runId, data) => {
+      progress(runId, data);
+      if (data.step === 'advance-clock') observed = base + (boundary === 'within' ? 2_050 : 3_001);
+    });
+    if (boundary === 'within') expect((await adapter.execute(context)).data).toBe('boundary');
+    else await expect(adapter.execute(context)).rejects.toMatchObject({ kind: 'timeout' });
+  });
+
+  it('does not overwrite a primary permission denial when its deadline also aborts', async () => {
+    const controller = new AbortController();
+    vi.spyOn(AbortSignal, 'timeout').mockReturnValue(controller.signal);
+    const denial = new BridgeAdapterError('permission_denied', 'fixed permission refusal');
+    const authorizeTool = async () => { controller.abort(new Error('deadline')); throw denial; };
+    const { adapter, context } = setup(prefix + `reply(frame, 'tool_request', { phase: 'authorize', authorizationRequestId: 'auth', toolName: 'Read', input: {} });` + suffix,
+      2_000, { authorizeTool });
+    await expect(adapter.execute(context)).rejects.toMatchObject({ kind: 'permission_denied', message: 'fixed permission refusal', deadlineExceeded: true });
+  });
+
+  it('settles an in-flight public waiter when closeSession is called externally', async () => {
+    const { adapter, context } = setup(prefix + `reply(frame, 'progress', { step: 'waiting-for-close' });` + suffix);
+    const progress = vi.spyOn(context.recorder, 'progress');
+    const task = adapter.execute(context).then(value => ({ value }), error => ({ error }));
+    await vi.waitFor(() => expect(progress.mock.calls.some(([, data]) => data.step === 'waiting-for-close')).toBe(true));
+    await adapter.closeSession(`bridge-${context.runId}`);
+    expect(await task).toMatchObject({ error: { kind: 'session_unavailable' } });
+  });
+
+  it('treats a broken stdin pipe as a handled transport failure, not an uncaught host exception', async () => {
+    const { adapter, context } = setup(`import { closeSync } from 'node:fs';\n` + prefix + `
+      process.stdin.on('error', () => {}); process.stdin.destroy(); try { closeSync(0); } catch {}
+      reply(frame, 'progress', { step: 'input-closed' }); setInterval(() => {}, 1000);
+    ` + suffix);
+    const progress = vi.spyOn(context.recorder, 'progress');
+    const task = adapter.execute(context).then(value => ({ value }), error => ({ error }));
+    await vi.waitFor(() => expect(progress.mock.calls.some(([, data]) => data.step === 'input-closed')).toBe(true));
+    await expect(adapter.sendEnvelope(`bridge-${context.runId}`, buildBridgeEnvelope(`bridge-${context.runId}`, context.runId,
+      'progress', { text: 'x'.repeat(900_000) }))).rejects.toMatchObject({ kind: 'process_crash' });
+    expect(await task).toMatchObject({ error: { kind: 'process_crash' } });
+  });
+
   it('does not publish success after forced shutdown', async () => {
     const { adapter, context } = setup(prefix + `
       reply(frame, 'complete', { data: { text: 'done' } });
@@ -157,6 +230,101 @@ describe('Harness bridge ownership', () => {
     expect(adapter.processExitReceipt).toBeNull();
   });
 
+  it('rejects an expired host-owned absolute cutoff before spawning', async () => {
+    const { adapter, context } = setup('process.exit(99)');
+    await expect(adapter.execute({ ...context, executionDeadline: Date.now() - 1 })).rejects.toMatchObject({ kind: 'timeout' });
+    expect(adapter.processExitReceipt).toBeNull();
+  });
+
+  it('does not renew the host cutoff after preparation or asynchronous authorization', async () => {
+    const base = Date.now();
+    let observed = base;
+    vi.spyOn(Date, 'now').mockImplementation(() => observed);
+    let calls = 0;
+    const { adapter, context } = setup(prefix + `
+      reply(frame, 'tool_request', { phase: 'authorize', authorizationRequestId: 'auth-1', toolName: 'Read', input: {} });
+    ` + suffix, 2_000, { authorizeTool: async () => { calls++; await Promise.resolve(); observed = base + 1_001; } });
+    await expect(adapter.execute({ ...context, executionDeadline: base + 1_000 })).rejects.toMatchObject({ kind: 'timeout' });
+    expect(calls).toBe(1);
+    expect(adapter.processExitReceipt).not.toBeNull();
+  });
+
+  it('allows an already received complete to use only its separate cleanup reserve', async () => {
+    const base = Date.now();
+    let observed = base;
+    vi.spyOn(Date, 'now').mockImplementation(() => observed);
+    const businessCutoff = new AbortController();
+    vi.spyOn(AbortSignal, 'timeout').mockReturnValue(businessCutoff.signal);
+    const { adapter, context } = setup(prefix + `reply(frame, 'complete', { data: 'before cutoff' });` + suffix, 2_000, { exitGraceMs: 500 });
+    const close = adapter.closeSession.bind(adapter);
+    vi.spyOn(adapter, 'closeSession').mockImplementationOnce(async id => {
+      observed = base + 1_001;
+      businessCutoff.abort(new Error('Business cutoff during permitted cleanup'));
+      return close(id);
+    });
+    expect((await adapter.execute({ ...context, executionDeadline: base + 1_000 })).data).toBe('before cutoff');
+    expect(adapter.processExitReceipt).toEqual({ code: 0, signal: null });
+  });
+
+  it('retains a primary error and closes the child when failure diagnostics cannot persist', async () => {
+    const { adapter, context } = setup(prefix + `reply(frame, 'error', { kind: 'permission_denied', message: 'primary refusal' });` + suffix);
+    const progress = context.recorder.progress.bind(context.recorder);
+    vi.spyOn(context.recorder, 'progress').mockImplementation((runId, data) => {
+      if (data.step === 'bridge_session_failed') throw new Error('diagnostic disk unavailable');
+      return progress(runId, data);
+    });
+    await expect(adapter.execute(context)).rejects.toMatchObject({ kind: 'permission_denied', message: 'primary refusal', diagnosticPersistenceFailed: true });
+    expect(adapter.processExitReceipt).toEqual({ code: 0, signal: null });
+  });
+
+  it('does not let a failed abort diagnostic escape its listener or skip child shutdown', async () => {
+    const controller = new AbortController();
+    const { adapter, context } = setup(prefix + `reply(frame, 'progress', { step: 'abort-now' });` + suffix);
+    const progress = context.recorder.progress.bind(context.recorder);
+    vi.spyOn(context.recorder, 'progress').mockImplementation((runId, data) => {
+      if (data.step === 'bridge_agent_cancel_requested') throw new Error('diagnostic disk unavailable');
+      const result = progress(runId, data);
+      if (data.step === 'abort-now') controller.abort(new Error('explicit cancellation'));
+      return result;
+    });
+    await expect(adapter.execute({ ...context, signal: controller.signal })).rejects.toMatchObject({ diagnosticPersistenceFailed: true });
+    expect(adapter.processExitReceipt).toEqual({ code: 0, signal: null });
+  });
+
+  it('does not announce a completed lifecycle before strict legacy wire finalization', async () => {
+    const { adapter, context } = setup(prefix + `reply(frame, 'complete', { data: 'not final' }); setTimeout(() => process.stdout.write('truncated'), 20);` + suffix,
+      2_000, { confirmProcessExit: false, exitGraceMs: 500 });
+    const progress = vi.spyOn(context.recorder, 'progress');
+    await expect(adapter.execute(context)).rejects.toMatchObject({ kind: 'envelope_malformed' });
+    expect(progress.mock.calls.some(([, data]) => data.step === 'bridge_session_completed')).toBe(false);
+  });
+
+  it('closes a child cancelled synchronously during the public spawn diagnostic without sending a handshake', async () => {
+    const controller = new AbortController();
+    const { adapter, context } = setup(`process.stdin.on('data', () => { process.exitCode = 77; }); process.stdin.resume();`, 2_000, { exitGraceMs: 1_000 });
+    const diagnostic = channel('child_process');
+    let observed = 0;
+    const capture = (value: unknown) => {
+      if (!value || typeof value !== 'object' || !('process' in value) || !(value.process instanceof ChildProcess)) return;
+      observed++;
+      controller.abort(new Error('cancelled during spawn'));
+    };
+    diagnostic.subscribe(capture);
+    try { await expect(adapter.execute({ ...context, signal: controller.signal })).rejects.toThrow('cancelled during spawn'); }
+    finally { diagnostic.unsubscribe(capture); }
+    expect(observed).toBe(1);
+    expect(adapter.processExitReceipt).toEqual({ code: 0, signal: null });
+  });
+
+  it.each(['late-duplicate', 'late-utf8', 'late-tail'] as const)('finalizes legacy stdout before accepting %s', kind => {
+    const late = kind === 'late-duplicate' ? `reply(frame, 'complete', { data: 'late' });`
+      : kind === 'late-utf8' ? `process.stdout.write(Buffer.from([0xc3, 0x28, 0x0a]));`
+      : `process.stdout.write('{"partial":');`;
+    const { adapter, context } = setup(prefix + `reply(frame, 'complete', { data: 'not final yet' }); setTimeout(() => { ${late} }, 20);` + suffix,
+      2_000, { confirmProcessExit: false, exitGraceMs: 300 });
+    return expect(adapter.execute(context)).rejects.toMatchObject({ kind: 'envelope_malformed' });
+  });
+
   it('does not provision absent deployment and refuses a configuration parent link', () => {
     const root = mkdtempSync(join(tmpdir(), 'harness-deployment-'));
     roots.push(root);
@@ -166,6 +334,6 @@ describe('Harness bridge ownership', () => {
     mkdirSync(join(target, 'harness'));
     writeFileSync(join(target, 'harness/deployment.json'), '{}');
     symlinkSync(target, join(root, '.openslack.local'), process.platform === 'win32' ? 'junction' : 'dir');
-    expect(() => createConfiguredHarnessTaskHost(root, 'fixture')).toThrow('cannot traverse a link');
+    expect(() => createConfiguredHarnessTaskHost(root, 'fixture')).toThrow(/traverses? (?:a )?(?:directory )?link/);
   });
 });

@@ -10,10 +10,9 @@ import { readHarnessExecutionProjection } from '../harness-execution.js';
 const roots: string[] = [];
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
 
-function fixture() {
+function fixture(runId = 'RUN-TEST') {
   const root = mkdtempSync(join(tmpdir(), 'mcp-harness-execution-'));
   roots.push(root);
-  const runId = 'RUN-TEST';
   const directory = join(root, '.openslack.local/agents/runs', runId);
   mkdirSync(directory, { recursive: true });
   const state = { runId, status: 'completed', harnessExecution: {
@@ -39,6 +38,11 @@ describe('Harness activity readback', () => {
     expect(projection).toEqual({ taskId: 'TASK-1', runId, status: 'completed', acceptance: 'verified',
       summary: 'Host verified fixture.', evidenceRefs: ['artifact:fixture'] });
     expect(projection).not.toHaveProperty('principalHash');
+  });
+
+  it('uses the canonical RunStore grammar without silently dropping a longer valid run ID', () => {
+    const { root, runId, event } = fixture(`RUN-${'A'.repeat(129)}`);
+    expect(readHarnessExecutionProjection(root, runId, [event])).toMatchObject({ runId, acceptance: 'verified' });
   });
 
   it('retains old records and orphan temp bytes without constructing a maintenance-capable store', () => {

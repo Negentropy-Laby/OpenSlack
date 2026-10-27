@@ -1,13 +1,14 @@
 /** Keyless model for real dsh/Loader subprocess tests; never part of the package payload. */
-import { appendFileSync, readFileSync } from 'node:fs'
+import { appendFileSync, readFileSync, writeFileSync } from 'node:fs'
 import { LlmAdapter, ToolCallId } from '@deepseek-ai/dsh-llm'
 import type { GenerateOptions, StreamChunk } from '@deepseek-ai/dsh-llm'
 import type { Context } from '@deepseek-ai/cordis'
+import type {} from '@deepseek-ai/dsh-agent'
 
 export const name = 'openslack-scripted-model-fixture'
 export const inject = ['llm']
 
-interface Config { script: string; requests: string }
+interface Config { script: string; requests: string; requestGate?: { expiryFile: string; marker: string } }
 
 function find(value: unknown, key: string, depth = 0): unknown {
   if (depth > 16) return undefined
@@ -45,6 +46,20 @@ export function apply(ctx: Context, config: Config): void {
   const script = JSON.parse(readFileSync(config.script, 'utf8')) as Array<string | { name: string; args: object; poll?: boolean }>
   let attempt = 0
   let index = 0
+  if (config.requestGate) {
+    const gate = config.requestGate
+    ctx.on('agent/request', async (_request, next) => {
+      const expiresAt = Number(readFileSync(gate.expiryFile, 'utf8'))
+      const enteredAt = Date.now()
+      if (!Number.isSafeInteger(expiresAt) || enteredAt >= expiresAt) throw new Error('Fixture request did not enter before the known lease cutoff')
+      writeFileSync(gate.marker, JSON.stringify({ enteredAt, expiresAt }), { flag: 'wx' })
+      // A real public framework preparation await, not a replacement SDK or a
+      // model call. Both SDK owner and child keep their real process clocks.
+      await new Promise(resolve => setTimeout(resolve, expiresAt - Date.now() + 20))
+      writeFileSync(gate.marker, JSON.stringify({ enteredAt, expiresAt, finishedAt: Date.now() }))
+      return next()
+    }, true)
+  }
   class Scripted extends LlmAdapter {
     override async *stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
       appendFileSync(config.requests, `${JSON.stringify(options)}\n`)

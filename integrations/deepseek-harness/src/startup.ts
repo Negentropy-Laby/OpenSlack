@@ -1,12 +1,13 @@
 /** Private STDIO Bridge peer; Harness applications still start through dsh --profile sdk. @module */
-import { constants, fstatSync, openSync, closeSync, readFileSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { constants, fstatSync, lstatSync, openSync, closeSync, readSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { isAbsolute, join, resolve } from 'node:path'
-import { createInterface } from 'node:readline'
+import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { loadPublicHarness } from './runtime.ts'
 import { createOwnedSdk } from './owned-sdk.ts'
-import { OpenSlackPeer, parseFrame } from './bridge.ts'
+import { OpenSlackPeer } from './bridge.ts'
 import type { Config } from './index.ts'
+import { HARNESS_CALLBACK_TOOLS } from '@openslack/agent-runtime/internal/bridge-wire'
+import { assertEligibilityRestriction, readEligibilityRestriction } from './scope-evidence.ts'
 
 interface WorkerBinding extends Config {
   resultMode: 'text' | 'json'
@@ -14,9 +15,11 @@ interface WorkerBinding extends Config {
   callbackMcp?: { cliModule: string; workspaceRoot: string; principalRef: string }
 }
 
+let peerDeadlineTimer: ReturnType<typeof setTimeout> | undefined
+
 function options(args: string[]): Map<string, string> {
   const map = new Map<string, string>()
-  const accepted = ['--harness-root', '--home', '--agent', '--provider', '--model', '--patch', '--binding', '--timeout-ms']
+  const accepted = ['--harness-root', '--home', '--agent', '--provider', '--model', '--patch', '--binding', '--timeout-ms', '--start-eligibility-json']
   for (let index = 0; index < args.length; index += 2) {
     const key = args[index]
     const value = args[index + 1]
@@ -36,12 +39,40 @@ function required(values: Map<string, string>, key: string): string {
   return value
 }
 
-function readBinding(path: string): WorkerBinding {
-  const file = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW)
+export function readBinding(path: string): WorkerBinding {
+  if (!isAbsolute(path)) throw new Error('Task binding path must be absolute')
+  const ancestors = []
+  for (let parent = dirname(path);; parent = dirname(parent)) {
+    const stamp = lstatSync(parent, { bigint: true })
+    if (!stamp.isDirectory() || stamp.isSymbolicLink()) throw new Error('Task binding cannot traverse a directory link')
+    ancestors.push({ path: parent, stamp })
+    if (parent === dirname(parent)) break
+  }
+  const entry = lstatSync(path, { bigint: true })
+  if (!entry.isFile() || entry.isSymbolicLink() || entry.nlink !== 1n || entry.size > 128n * 1024n) throw new Error('Invalid task binding file')
+  const file = openSync(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0))
   try {
-    const stat = fstatSync(file)
-    if (!stat.isFile() || stat.size > 128 * 1024) throw new Error('Invalid task binding file')
-    const value: unknown = JSON.parse(readFileSync(file, 'utf8'))
+    const before = fstatSync(file, { bigint: true })
+    const identity = (a: typeof before, b: typeof before) => a.dev === b.dev && a.ino === b.ino && a.mode === b.mode &&
+      a.nlink === b.nlink && a.size === b.size && a.mtimeNs === b.mtimeNs && a.ctimeNs === b.ctimeNs
+    if (!identity(entry, before)) throw new Error('Task binding changed before read')
+    const bytes = Buffer.alloc(128 * 1024 + 1)
+    let count = 0
+    while (count < bytes.length) {
+      const n = readSync(file, bytes, count, bytes.length - count, count)
+      if (!n) break
+      count += n
+    }
+    const after = fstatSync(file, { bigint: true })
+    const final = lstatSync(path, { bigint: true })
+    if (BigInt(count) !== before.size || count > 128 * 1024 || !identity(before, after) ||
+      !final.isFile() || final.isSymbolicLink() || !identity(after, final)) throw new Error('Task binding changed during read')
+    for (const ancestor of ancestors) {
+      const current = lstatSync(ancestor.path, { bigint: true })
+      if (!current.isDirectory() || current.isSymbolicLink() || current.dev !== ancestor.stamp.dev ||
+        current.ino !== ancestor.stamp.ino || current.mode !== ancestor.stamp.mode) throw new Error('Task binding ancestry changed')
+    }
+    const value: unknown = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes.subarray(0, count)))
     if (!value || typeof value !== 'object' || Array.isArray(value) || !('resultMode' in value) ||
       (value.resultMode !== 'text' && value.resultMode !== 'json')) throw new Error('Invalid task output binding')
     // The same Loader Config schema validates this durable deployment input before Agent creation.
@@ -52,33 +83,45 @@ function readBinding(path: string): WorkerBinding {
 /** Own stdin, one task SDK, the per-launch patch, and shutdown through confirmed SDK exit. */
 async function main(): Promise<void> {
   const deployment = options(process.argv.slice(2))
-  const runtime = await loadPublicHarness(required(deployment, '--harness-root'))
+  const timeout = Number(deployment.get('--timeout-ms'))
+  if (!Number.isSafeInteger(timeout) || timeout < 1) throw new Error('Invalid peer deadline')
+  // Includes dependency loading and the first handshake. No input is needed to
+  // arm the cutoff; a silent/hung parent cannot leave an immortal peer.
+  const deadline = Date.now() + timeout
+  let stop: () => void = () => { process.exit(1) }
+  const timer = setTimeout(() => { process.exitCode = 1; stop() }, timeout)
+  peerDeadlineTimer = timer
   const binding = readBinding(required(deployment, '--binding'))
+  const start: unknown = JSON.parse(required(deployment, '--start-eligibility-json'))
+  if (!start || typeof start !== 'object' || Array.isArray(start) || Object.keys(start).sort().join(',') !== 'generation,restriction,runId' ||
+    !('runId' in start) || start.runId !== binding.runId || !('generation' in start) || start.generation !== binding.generation || !('restriction' in start)) {
+    throw new Error('Task start restriction is not bound to this run and generation')
+  }
+  const startEligibility = readEligibilityRestriction(start.restriction)
+  assertEligibilityRestriction(startEligibility)
+  const runtime = await loadPublicHarness(required(deployment, '--harness-root'))
+  assertEligibilityRestriction(startEligibility)
+  if (Date.now() >= deadline) { clearTimeout(timer); throw new Error('Peer startup deadline exceeded') }
   const { resultMode, callbackMcp, runtimeEntries, ...scopeBinding } = binding
   if (binding.callbacks && (!callbackMcp || !isAbsolute(callbackMcp.cliModule) || !isAbsolute(callbackMcp.workspaceRoot) ||
     !callbackMcp.principalRef || !callbackMcp.cliModule.endsWith('.js'))) throw new Error('Missing trusted task callback MCP deployment')
-  const timeout = Number(deployment.get('--timeout-ms'))
-  if (!Number.isSafeInteger(timeout) || timeout < 1) throw new Error('Invalid peer deadline')
-  const input = createInterface({ input: process.stdin, crlfDelay: Infinity })
   let patchDirectory: string | undefined
-  let timer: ReturnType<typeof setTimeout> | undefined
   const peer = new OpenSlackPeer({
     validateEvent: runtime.sdk.validatedSessionEvent, expandStream: runtime.llm.expandAssistantStream,
     runId: binding.runId,
     resultMode,
     agentId: required(deployment, '--agent'), model: required(deployment, '--model'), root: binding.root,
-    allowedTools: ['Read', 'Write', 'Edit',
-      ...(binding.callbacks ? ['mcp.openslack.openslack_get_activity', 'mcp.openslack.openslack_preview_workflow',
-        'mcp.openslack.openslack_confirm_plan', 'mcp.openslack.openslack_cancel_plan'] : [])],
-    createSdk(systemText, allowedTools, authorize) {
+    allowedTools: ['Read', 'Write', 'Edit', ...(binding.callbacks ? Object.values(HARNESS_CALLBACK_TOOLS).map(tool => tool.bridge) : [])],
+    startEligibility,
+    createSdk(systemText, allowedTools, authorize, recordResult) {
+      assertEligibilityRestriction(startEligibility)
       patchDirectory = mkdtempSync(join(tmpdir(), 'openslack-sdk-'))
       const patch = join(patchDirectory, 'scope.patch.json')
       const config: Config = {
         ...scopeBinding, systemText: [binding.systemText, systemText].filter(Boolean).join('\n\n'),
         readPaths: allowedTools.includes('Read') ? binding.readPaths : [],
         writePaths: allowedTools.includes('Write') && allowedTools.includes('Edit') ? binding.writePaths : [],
-        callbacks: binding.callbacks && ['mcp.openslack.openslack_get_activity', 'mcp.openslack.openslack_preview_workflow',
-          'mcp.openslack.openslack_confirm_plan', 'mcp.openslack.openslack_cancel_plan'].every(name => allowedTools.includes(name)),
+        callbacks: binding.callbacks && Object.values(HARNESS_CALLBACK_TOOLS).every(tool => allowedTools.includes(tool.bridge)),
       }
       const mcp = callbackMcp && config.callbacks ? { mode: 'task' as const,
         workspaceRoot: callbackMcp.workspaceRoot, cliModule: callbackMcp.cliModule,
@@ -88,59 +131,84 @@ async function main(): Promise<void> {
         { id: 'tool-executor-native', disabled: false },
         { id: 'sdk-jsonrpc-server', disabled: true },
         { insert: [{ id: 'openslack-sdk-host', name: new URL('./sdk-host.js', import.meta.url).href,
-          config: { generation: binding.generation, runtimeEntries: JSON.stringify(runtimeEntries), ...(mcp ? { mcp } : {}) } }] },
+          config: { generation: binding.generation, runtimeEntries: JSON.stringify(runtimeEntries), startEligibility: JSON.stringify(startEligibility), ...(mcp ? { mcp } : {}) } }] },
         { insert: [{ id: 'openslack-task-scope', name: new URL('./index.js', import.meta.url).href, config }] },
       ]), { flag: 'wx', mode: 0o600 })
       const patches = [required(deployment, '--patch'), patch]
       return Promise.resolve(createOwnedSdk({
-        runtime, generation: binding.generation, requireMcp: !!mcp,
+        runtime, generation: binding.generation, requireMcp: !!mcp, startEligibility,
         launch: {
           dshBin: runtime.dshBin, dshHome: required(deployment, '--home'), profile: 'sdk', patches,
           processCwd: binding.root, cwd: binding.root,
           provider: required(deployment, '--provider'), model: required(deployment, '--model'),
-          initializeTimeoutMs: timeout, requestTimeoutMs: timeout,
+          initializeTimeoutMs: Math.max(1, deadline - Date.now()), requestTimeoutMs: Math.max(1, deadline - Date.now()),
         },
         async authorize(method, params) {
-          if (method !== 'openslack/tool-authorize' || params.runId !== binding.runId ||
+          if (!['openslack/tool-authorize', 'openslack/tool-evidence-result'].includes(method) || params.runId !== binding.runId ||
             params.taskId !== binding.taskId || params.principalId !== binding.principalId ||
-            typeof params.toolName !== 'string') throw new Error('Unrelated SDK host request')
-          await authorize(params.toolName, params.input)
-          return { allowed: true }
+            params.generation !== binding.generation) throw new Error('Unrelated SDK host request')
+          if (method === 'openslack/tool-evidence-result') {
+            if (typeof params.callId !== 'string' || (params.indeterminate !== undefined && params.indeterminate !== true)) throw new Error('Unrelated SDK evidence result')
+            await recordResult(params.callId, params.output, params.indeterminate === true)
+            return { recorded: true }
+          } else {
+            if (typeof params.toolName !== 'string') throw new Error('Unrelated SDK tool authorization')
+            const restriction = await authorize(params.toolName, params.input, params.evidence as Parameters<typeof authorize>[2])
+            return { allowed: true, restriction }
+          }
         },
       }))
     },
-  }, (frame) => { process.stdout.write(`${JSON.stringify(frame)}\n`) })
+  }, (frame, serialized) => { process.stdout.write(`${serialized ?? JSON.stringify(frame)}\n`) })
+  const decoder = new TextDecoder('utf-8', { fatal: true })
+  let pending = ''
+  const fail = (): void => { process.exitCode = 1; stop() }
+  const onData = (bytes: Buffer): void => {
+    try {
+      pending += decoder.decode(bytes, { stream: true })
+      let newline: number
+      while ((newline = pending.indexOf('\n')) !== -1) {
+        const line = pending.slice(0, newline).replace(/\r$/, '')
+        pending = pending.slice(newline + 1)
+        if (Buffer.byteLength(line) > 1024 * 1024) throw new Error('Peer wire frame exceeded its bound')
+        void peer.receiveLine(line).catch(fail)
+      }
+      if (Buffer.byteLength(pending) > 1024 * 1024) throw new Error('Peer wire frame exceeded its bound')
+    } catch { fail() }
+  }
+  const onEnd = (): void => {
+    try { pending += decoder.decode(); if (pending.length) throw new Error('Truncated peer frame') }
+    catch { process.exitCode = 1 }
+    stop()
+  }
   let closing: Promise<void> | undefined
   const close = (): Promise<void> => closing ??= (async () => {
-    if (timer) clearTimeout(timer)
-    input.close()
+    clearTimeout(timer)
+    process.stdin.off('data', onData)
+    process.stdin.off('end', onEnd)
     process.stdin.pause()
-    await peer.close()
+    try { await peer.close() }
+    finally {
+      // A read already started before invalid input can keep a paused STDIO
+      // pipe referenced. After owned shutdown, close only this transport so a
+      // malformed pre-handshake frame cannot strand the otherwise idle peer.
+      process.stdin.destroy()
+    }
     // The generated launch patch is retained with the execution evidence.
   })()
-  const stop = (): void => { void close().catch(() => { process.exitCode = 1 }) }
+  stop = (): void => { void close().catch(() => { process.exitCode = 1 }) }
   process.once('SIGTERM', stop)
   process.once('SIGINT', stop)
-  input.once('close', stop)
-  input.on('line', (line) => {
-    try {
-      const frame = parseFrame(line)
-      if (!timer) timer = setTimeout(() => { process.exitCode = 1; stop() }, timeout)
-      void peer.receive(frame).catch(() => {
-        // No upstream error strings on stdout/stderr: they may contain bearer material.
-        process.stdout.write(`${JSON.stringify({ ...frame, kind: 'error', payload: {
-          kind: 'unknown', message: 'Harness execution failed; preserve the run and inspect host diagnostics',
-        } })}\n`)
-        process.exitCode = 1
-        stop()
-      })
-    } catch {
-      process.exitCode = 1
-      stop()
-    }
-  })
+  process.stdin.once('close', stop)
+  process.stdin.once('error', fail)
+  process.stdin.once('end', onEnd)
+  process.stdin.on('data', onData)
 }
 
 if (process.argv[1] && import.meta.filename === resolve(process.argv[1])) {
-  void main().catch(() => { console.error('OpenSlack peer deployment failed; check nonsecret configuration'); process.exitCode = 1 })
+  void main().catch(() => {
+    if (peerDeadlineTimer) clearTimeout(peerDeadlineTimer)
+    console.error('OpenSlack peer deployment failed; check nonsecret configuration')
+    process.exitCode = 1
+  })
 }

@@ -11,6 +11,7 @@ jobs:
   validate:
     runs-on: ubuntu-latest
     env:
+      OPENSLACK_HARNESS_COMPATIBILITY: required
       DEEPSEEK_HARNESS_CHECKOUT: ${{ github.workspace }}/.openslack.local/ci/harness-original
     permissions:
       contents: read
@@ -84,6 +85,19 @@ jobs:
 
       - name: Build the OpenSlack-owned external plugin
         run: bun integrations/deepseek-harness/build.mjs
+
+      - name: Verify the private supervisor module
+        working-directory: integrations/deepseek-harness/native-supervisor
+        env:
+          GOWORK: 'off'
+          GOTOOLCHAIN: local
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(go env GOWORK)" = off
+          go test ./...
+          go vet ./...
+          git diff --exit-code -- go.mod go.sum
 
       - name: Documentation governance consistency
         run: |

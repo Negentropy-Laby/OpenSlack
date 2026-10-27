@@ -10,13 +10,16 @@ MCP implementation, lockfile, source, or default profile.
 
 First install the pinned Harness's locked dependencies and build its original
 artifacts. Do not copy dependencies, `lib`, credentials, identities, or patched
-outputs from an experimental checkout. From the OpenSlack repository root:
+outputs from an experimental checkout. Building the private Windows x64
+supervisor also requires Go `1.26.5`; the build fixes `GOWORK=off` and does not
+use the repository's worker/Broker modules. Go is not a plugin runtime dependency.
+From the OpenSlack repository root:
 
 ```sh
 export DEEPSEEK_HARNESS_CHECKOUT=/absolute/path/to/unmodified-built-harness
 bun run build
 bun integrations/deepseek-harness/build.mjs
-bunx vitest run integrations/deepseek-harness
+bunx vitest run --config integrations/deepseek-harness/vitest.config.ts
 ```
 
 The plugin has an independent public-declaration typecheck. Runtime peers remain
@@ -24,6 +27,11 @@ external to its bundles and are supplied by the approved Harness installation;
 there must not be a second Cordis, Tools, FS, or SDK runtime instance. Missing or
 unqualified deployment dependencies fail closed. The test configuration requires
 the same explicit built dependency; it never silently substitutes a fixture SDK.
+
+Ordinary root tests build OpenSlack first and do not require a Harness checkout.
+With the explicit checkout they also include this compatibility project. CI sets
+`OPENSLACK_HARNESS_COMPATIBILITY=required`; CI and complete inventory collection
+fail on a missing checkout rather than silently dropping this project's cases.
 
 To create a local archive (not a registry publication):
 
@@ -44,6 +52,12 @@ enable tools, provision identities, configure credentials, approve tasks, or
 change the default profile. A deployment-owned per-launch patch must explicitly
 enable and configure it. Native Windows uses its own native paths and approved
 home, not WSL paths. Production credentials stay in the existing Harness service.
+
+The approved configured dispatcher is explicitly selected with
+`mcp serve --stdio --profile agent-bound --principal-ref <approved-agent> --harness-task-host`.
+Ordinary agent-bound serving does not inspect another principal's Harness
+deployment. A worker instead uses its host-authored `--harness-worker-binding`;
+worker/dispatcher/injected-host combinations are rejected, not silently ignored.
 
 ## Entrypoints and trust boundary
 
@@ -69,6 +83,16 @@ actual public resolver against that bound map before creating its server/MCP.
 The SDK client runs outside dsh and is independently resolved at its approved
 package anchor, not installed again into the plugin's runtime.
 
+Deployment byte proofs also bind the installed package dependency closure, not
+only public entrypoints or lock versions: nested chunks, transitive copies,
+native code and resources remain included. `openslack.installed_runtime_closure.v2`
+frames normalized relative paths, exact byte lengths and stable-descriptor SHA-256
+values; large resources stream within 256 MiB/file, 512 MiB total, 1,024 packages
+and 32,768 files. Protected configuration/key material is metadata-rejected.
+The plugin uses the shared framed `openslack.harness_plugin_artifacts.v2` digest.
+These are byte proofs, not extra mounts or permissions. Existing deployment
+approvals/receipts are not rewritten or silently accepted under the new domains.
+
 The SDK launch overlay disables the original `sdk-jsonrpc-server` row and mounts
 `/sdk-host` instead. There is exactly one STDIO server; standard requests are
 delegated to the public `HarnessSdkJsonRpcServer` and `JsonRpcLineTransport`.
@@ -76,6 +100,15 @@ No private SDK fields or monkey patches are used. The peer observes the actual
 SDK-spawned child through Node's public, experimental `child_process` diagnostics
 channel. The deployment pin is intentional; unavailable observation is not a
 reason to accept an unobserved exit.
+
+The host carries a run/generation-bound, non-authorizing start restriction through
+the private peer arguments and SDK overlay. It is checked after expensive
+observations, dependency loading and SDK initialization, and before the first
+prompt. Missing data is not an unlimited lease. Expiry never disables owned
+prepare-shutdown, cancellation or cleanup.
+The public `llm/stream` boundary also checks when the lazy stream is first
+iterated, after framework preparation awaits; this is not a claim of atomicity
+inside a private provider's later HTTP implementation.
 
 The external native MCP owner keeps raw write definitions private. Only scoped
 wrappers are visible to the model. Confirmation bearers remain in a process-local
@@ -98,6 +131,14 @@ signal, `prompt()`, idle, ACK, or exit zero alone is insufficient. Failed startu
 forced termination, failed disposal, missing observation or unknown side effects
 cannot produce verified completion.
 
+On Windows x64 the private bundled supervisor assigns the peer to a nonbreakaway
+Job at suspended process creation, before any code executes. A clean receipt
+requires the root to stop, the Job to become empty and both output pipes to drain,
+followed by actual helper exit. Unknown or forced cleanup is never success; an
+unsupported supervisor cannot fall back to direct Node termination. The total
+task budget reserves 30 seconds for cleanup, including a shared 24-second SDK
+shutdown cutoff; heartbeat cannot extend either deadline.
+
 The original caller reads the same run through the unchanged
 `openslack_get_activity({objectKind: 'workflow', objectId: runId})` tool. Recovery
 is read-only reconciliation: no new prompt, automatic Session resume, replacement
@@ -115,3 +156,5 @@ The scope/peer implementation was migrated from the preserved integration
 experiment. The icon and MIT license originate from DeepSeek Harness; runtime
 Harness code is reused through its public packages, not copied into this plugin.
 See [LICENSE](./LICENSE) and the [OpenSlack architecture guide](../../docs/architecture/components/agent-runtime.md).
+The bundled Go executable's redistribution notices are in
+[THIRD-PARTY-NOTICES.txt](./THIRD-PARTY-NOTICES.txt).

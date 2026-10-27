@@ -4,16 +4,20 @@ import type { TaskSdk } from './bridge.ts'
 import type { loadPublicHarness } from './runtime.ts'
 import { isCleanExit, OwnedProcessObservation } from './process-observer.ts'
 import type { SdkShutdownReceipt } from './process-observer.ts'
+import { shutdownDeadline, shutdownRemaining, withinShutdown } from './shutdown.ts'
+import { assertEligibilityRestriction, readEligibilityRestriction, type HarnessEligibilityRestriction } from './scope-evidence.ts'
 
 export interface OwnedSdkOptions {
   runtime: Awaited<ReturnType<typeof loadPublicHarness>>
   launch: DeepSeekHarnessOptions & { dshBin: string; profile: 'sdk'; patches: string[] }
   generation: string
   requireMcp: boolean
+  startEligibility: HarnessEligibilityRestriction
   authorize(method: string, params: Record<string, unknown>): Promise<unknown>
 }
 
 export function createOwnedSdk(config: OwnedSdkOptions): TaskSdk {
+  const startEligibility = readEligibilityRestriction(config.startEligibility)
   const observed = new OwnedProcessObservation(process.execPath,
     [config.launch.dshBin, '--profile', 'sdk', ...config.launch.patches.flatMap(path => ['--patch', path])])
   const sdk = new config.runtime.sdk.DeepSeekHarness(config.launch)
@@ -23,29 +27,38 @@ export function createOwnedSdk(config: OwnedSdkOptions): TaskSdk {
   let closeTask: Promise<Readonly<SdkShutdownReceipt>> | undefined
   const close = () => closeTask ??= (async () => {
     closing = true
+    const deadline = shutdownDeadline()
     try {
       if (!initialized) return Object.freeze({ pid: -1, code: null, signal: null,
         terminationRequested: false, shutdownAcknowledged: false, resourcesStopped: false })
-      const result = await sdk.client.request('openslack/prepare-shutdown', { generation: config.generation }, 10_000)
+      const result = await sdk.client.request('openslack/prepare-shutdown', { generation: config.generation, deadlineAt: deadline }, shutdownRemaining(deadline))
       if (!result || typeof result !== 'object' || !('generation' in result) || result.generation !== config.generation ||
         !('resources' in result) || !Array.isArray(result.resources) || result.resources.length !== (config.requireMcp ? 1 : 0) ||
         result.resources.some(item => !isCleanExit(item))) throw new Error('SDK owned-resource stop is unknown')
-      const ack = await sdk.client.request('shutdown', undefined, 10_000)
+      const ack = await sdk.client.request('shutdown', undefined, shutdownRemaining(deadline))
       if (!ack || typeof ack !== 'object' || Array.isArray(ack) || Object.keys(ack).length) throw new Error('SDK shutdown ACK is invalid')
-      const receipt = await observed.waitForClose(10_000)
+      const receipt = await observed.waitForClose(shutdownRemaining(deadline))
       return Object.freeze({ ...receipt, shutdownAcknowledged: true, resourcesStopped: true })
     } finally {
-      try { await sdk.close() } finally { observed.dispose() }
+      try {
+        // close() is a public non-lazy cleanup, unlike session/wait or shutdown.
+        // Invoke it even after the deadline, but never restart the close budget.
+        const cleanup = sdk.close()
+        if (Date.now() < deadline) await withinShutdown(deadline, () => cleanup)
+        else { void cleanup.catch(() => {}); throw new Error('SDK cleanup exceeded the owned shutdown deadline') }
+      } finally { observed.dispose() }
     }
   })()
   return {
     async run(text, sessionId, onNotification) {
       if (closing || attempted) throw new Error('SDK task already attempted or closed before startup')
+      assertEligibilityRestriction(startEligibility)
       attempted = true
       await sdk.start()
+      initialized = true
       observed.assertRunning()
       if (closing) throw new Error('SDK startup was cancelled')
-      initialized = true
+      assertEligibilityRestriction(startEligibility)
       sdk.client.onRequest(async (method, params) => {
         observed.assertRunning()
         if (closing) throw new Error('SDK task is closing')
@@ -54,6 +67,7 @@ export function createOwnedSdk(config: OwnedSdkOptions): TaskSdk {
         if (closing) throw new Error('SDK task closed during authorization')
         return result
       })
+      assertEligibilityRestriction(startEligibility)
       return sdk.run(text, { sessionId, onNotification })
     },
     wait: async sessionId => {

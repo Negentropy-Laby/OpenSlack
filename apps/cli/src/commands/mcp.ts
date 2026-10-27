@@ -1,5 +1,5 @@
 import { Command, Option } from 'commander';
-import { createConfiguredHarnessTaskHost, type HarnessTaskHost } from '@openslack/agent-runtime/internal/harness';
+import { canonicalHarnessRoot, createConfiguredHarnessTaskHost, createHarnessHostCloser, type HarnessTaskHost } from '@openslack/agent-runtime/internal/harness';
 import {
   normalizeGraphServiceOrigin,
   type GraphReadAuthorityPort,
@@ -54,6 +54,7 @@ export interface McpCommandDependencies {
   readonly createServer?: typeof createOpenSlackMcpServer;
   /** Opt-in host owned by this command's lifetime; provisioned by the embedding application, never by MCP flags. */
   readonly harnessTaskHost?: HarnessTaskHost;
+  readonly createConfiguredHarnessTaskHost?: typeof createConfiguredHarnessTaskHost;
 }
 
 interface McpServeOptions {
@@ -63,6 +64,7 @@ interface McpServeOptions {
   readonly humanPrincipal?: string;
   readonly workspaceId?: string;
   readonly harnessWorkerBinding?: string;
+  readonly harnessTaskHost?: boolean;
   readonly graphReadMirrorOrigin?: string;
   readonly graphReadMirrorNetwork?: 'loopback' | 'internal';
   readonly graphReadCanaryBackend?: 'go' | 'ts-local';
@@ -510,6 +512,7 @@ export function mcpCommands(dependencies: McpCommandDependencies): Command {
       'Assert the separately mapped human principal for human-attested',
     )
     .option('--workspace-id <workspace-id>', 'Assert the canonical workspace ID')
+    .option('--harness-task-host', 'Explicitly own the approved configured Harness task dispatcher')
     .option('--harness-worker-binding <file>', 'Use a host-created per-run callback binding; requires a configured agent-bound Harness deployment')
     .option(
       '--graph-read-mirror-origin <origin>',
@@ -624,36 +627,53 @@ export function mcpCommands(dependencies: McpCommandDependencies): Command {
     )
     .action(async (options: McpServeOptions) => {
       let server: OpenSlackMcpServer | undefined;
+      let phase: 'starting' | 'serving' | 'closing' = 'starting';
+      let failureRendered = false;
+      const renderFailure = (): void => {
+        if (failureRendered) return;
+        failureRendered = true;
+        console.error(phase === 'starting'
+          ? 'OPENSLACK_MCP_START_FAILED: the requested stdio profile did not start.'
+          : 'OPENSLACK_MCP_SHUTDOWN_UNCONFIRMED: preserve task evidence and reconcile before retrying.');
+        process.exitCode = 1;
+      };
       try {
-        if (options.harnessWorkerBinding !== undefined && options.profile !== 'agent-bound') {
+        if ((options.harnessWorkerBinding !== undefined || options.harnessTaskHost) && options.profile !== 'agent-bound') {
           throw new McpProfileArgumentError('Harness callbacks require agent-bound.');
         }
-        const taskHost = options.profile === 'agent-bound' && options.principalRef
-          ? dependencies.harnessTaskHost ?? createConfiguredHarnessTaskHost(dependencies.workspaceRoot, options.principalRef, options.harnessWorkerBinding)
+        if ((dependencies.harnessTaskHost && (options.harnessTaskHost || options.harnessWorkerBinding !== undefined)) ||
+          (options.harnessTaskHost && options.harnessWorkerBinding !== undefined)) {
+          throw new McpProfileArgumentError('Select exactly one injected, configured dispatcher, or worker-bound Harness owner.');
+        }
+        const configuredRequested = options.harnessTaskHost || options.harnessWorkerBinding !== undefined;
+        if (configuredRequested && !options.principalRef) throw new McpProfileArgumentError('agent-bound requires --principal-ref.');
+        const taskHost = options.profile === 'agent-bound'
+          ? dependencies.harnessTaskHost ?? (configuredRequested && options.principalRef
+            ? (dependencies.createConfiguredHarnessTaskHost ?? createConfiguredHarnessTaskHost)(dependencies.workspaceRoot, options.principalRef, options.harnessWorkerBinding)
+            : undefined)
           : undefined;
-        const configured = taskHost ? { ...dependencies, harnessTaskHost: taskHost } : dependencies;
+        if (configuredRequested && !taskHost) throw new Error('The explicitly selected Harness owner is unavailable');
+        const configured = taskHost ? { ...dependencies, workspaceRoot: canonicalHarnessRoot(dependencies.workspaceRoot), harnessTaskHost: taskHost } : dependencies;
         const context = await createProfileContext(configured, options);
         const createServer = dependencies.createServer ?? createOpenSlackMcpServer;
         server = taskHost
-          ? createServer(context, {}, { closeOwnedResources: async () => {
-              const receipt = await taskHost.close(10_000);
-              if (!receipt.stopped) throw new Error('Harness shutdown is unconfirmed; preserve and reconcile affected runs');
-            } })
+          ? createServer(context, {}, { closeOwnedResources: createHarnessHostCloser(taskHost) })
           : createServer(context);
 
         const close = async (): Promise<void> => {
+          phase = 'closing';
           try {
             await server?.close();
-            process.exitCode = 0;
+            if (!failureRendered) process.exitCode = 0;
           } catch {
-            console.error('OPENSLACK_MCP_SHUTDOWN_UNCONFIRMED: preserve task evidence and reconcile before retrying.');
-            process.exitCode = 1;
+            renderFailure();
           }
         };
         process.once('SIGINT', close);
         process.once('SIGTERM', close);
         try {
           await server.serveStdio();
+          if (phase === 'starting') phase = 'serving';
           await server.whenClosed;
         } finally {
           process.off('SIGINT', close);
@@ -664,7 +684,7 @@ export function mcpCommands(dependencies: McpCommandDependencies): Command {
         if (error instanceof McpProfileArgumentError) {
           console.error(`OPENSLACK_MCP_PROFILE_ARGUMENT_INVALID: ${error.message}`);
         } else {
-          console.error('OPENSLACK_MCP_START_FAILED: the requested stdio profile did not start.');
+          renderFailure();
         }
         process.exitCode = 1;
       }

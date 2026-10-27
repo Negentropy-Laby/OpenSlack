@@ -4,7 +4,7 @@ import type { ProcessExitReceipt } from './process-observer.ts'
 export interface OpenSlackConnection {
   readonly connected: boolean
   tool(name: string): ToolDefinition | undefined
-  stop(): Promise<ProcessExitReceipt>
+  stop(deadlineAt?: number): Promise<ProcessExitReceipt>
 }
 declare module '@deepseek-ai/cordis' {
   interface Context { openslackConnection: OpenSlackConnection }

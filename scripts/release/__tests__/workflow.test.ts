@@ -23,6 +23,49 @@ const workflow = readFileSync(
 const build = readFileSync(resolve(import.meta.dirname, '..', 'build.ts'), 'utf-8');
 
 describe('native release workflow integrity', () => {
+  it('prepares pinned Go before plugin build and verifies its private module without service scaffolding', () => {
+    const root = resolve(import.meta.dirname, '../../..');
+    for (const [name, job] of [['openslack-release.yml', 'build'], ['openslack-reusable-validate.yml', 'validate']] as const) {
+      const steps = parse(readFileSync(join(root, '.github/workflows', name), 'utf8')).jobs[job].steps;
+      const plugin = steps.findIndex((step: { name?: string }) => step.name === 'Build the OpenSlack-owned external plugin');
+      const go = steps.findIndex((step: { uses?: string; with?: Record<string, unknown> }) => step.uses?.startsWith('actions/setup-go@') && step.with?.['go-version'] === '1.26.5');
+      expect(go, name).toBeGreaterThanOrEqual(0);
+      expect(go, name).toBeLessThan(plugin);
+      const verification = steps.find((step: { name?: string }) => step.name === 'Verify the private supervisor module');
+      expect(verification.workingDirectory ?? verification['working-directory']).toBe('integrations/deepseek-harness/native-supervisor');
+      expect(verification.env).toEqual({ GOWORK: 'off', GOTOOLCHAIN: 'local' });
+      expect(verification.run).toContain('go test ./...');
+      expect(verification.run).toContain('go vet ./...');
+      expect(verification.run).not.toContain('services/');
+    }
+  });
+  it('keeps both required Harness compatibility preparations and dependency pins identical', () => {
+    const reusable = parse(readFileSync(resolve(import.meta.dirname, '../../../.github/workflows/openslack-reusable-validate.yml'), 'utf8'));
+    const release = parse(workflow);
+    const jobs = [reusable.jobs.validate, release.jobs.build];
+    const preparation = jobs.map(job => job.steps.find((step: { name?: string }) =>
+      step.name === 'Prepare original Harness artifacts and public declarations'));
+    expect(preparation[0]).toBeDefined();
+    expect(preparation[1]).toEqual(preparation[0]);
+    for (const job of jobs) {
+      expect(job.env.OPENSLACK_HARNESS_COMPATIBILITY).toBe('required');
+      const steps = job.steps;
+      const checkout = steps.find((step: { with?: Record<string, string> }) =>
+        step.with?.repository === 'deepseek-ai/deepseek-harness');
+      expect(checkout.with).toMatchObject({ ref: '22ddee3792402c3e70ec5f86a63c3e3e895a2f60', 'persist-credentials': false });
+      expect(steps.find((step: { uses?: string }) => step.uses?.startsWith('actions/setup-node@')).with['node-version']).toBe('24.18.1');
+      expect(preparation[0].run).toContain('pnpm@11.28.5');
+      const prepareIndex = steps.indexOf(preparation[jobs.indexOf(job)]);
+      const pluginIndex = steps.findIndex((step: { name?: string }) => step.name === 'Build the OpenSlack-owned external plugin');
+      expect(prepareIndex).toBeGreaterThan(steps.indexOf(checkout));
+      expect(pluginIndex).toBeGreaterThan(prepareIndex);
+      expect(steps.slice(0, prepareIndex).some((step: { run?: string }) => /vitest\s+run/.test(step.run ?? ''))).toBe(false);
+      expect(preparation[0].run).toContain('pnpm install --frozen-lockfile');
+      expect(preparation[0].run).toContain('pnpm run build:artifacts');
+      expect(preparation[0].run).toContain('pnpm run build:check');
+    }
+  });
+
   it('canonicalizes the existing Windows temporary directory before native validation', () => {
     const steps = parse(workflow).jobs.build.steps;
     const index = steps.findIndex(

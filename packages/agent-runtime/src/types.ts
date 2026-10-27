@@ -111,6 +111,8 @@ export interface AgentRunState {
   worktreeHandoff?: WorktreeHandoff;
   /** Optional task-host data. Historical runs without this field remain unchanged. */
   harnessExecution?: HarnessExecutionBinding;
+  /** New writer checkpoint only; absence on historical rows never authorizes repair. */
+  persistence?: { revision: number; transcriptBytes: number };
 }
 
 /** Canonical task binding; lifecycle status remains AgentRunState.status. */
@@ -131,6 +133,22 @@ export interface HarnessExecutionBinding {
   processExit?: 'confirmed';
   /** Cancellation intent only; never proof of process or descendant termination. */
   stopRequestedAt?: string;
+  /** Host-owned admission generation, never the runtime identity's run ID. */
+  lifecycle?: {
+    ownerGeneration: string;
+    deadlineAt: string;
+    /** Concrete native execution cutoff; cleanup must finish within deadlineAt. */
+    executionDeadlineAt?: string;
+    phase: 'awaiting_confirmation' | 'authorized' | 'started' | 'stopped_before_start' | 'indeterminate';
+    governed?: { planId: string; executionId: string; confirmationAttemptId?: string };
+  };
+  /** Bounded reservation metadata only; complete tool payloads live once in JSONL. */
+  evidence?: {
+    reservedBytes: number;
+    terminalBytes?: number;
+    calls: Record<string, { toolName: string; inputDigest: string; targetPath: string; generation: string;
+      maxResultBytes: number; resultDigest?: string }>;
+  };
 }
 
 export interface AgentRunEvent {

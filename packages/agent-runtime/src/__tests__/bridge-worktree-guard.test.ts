@@ -205,6 +205,11 @@ describe('BridgeWorktreeGuard', () => {
     });
 
     it('checks additional path fields (destination, target, file_path, etc.)', () => {
+      // The guard records refusals under a generic canonical audit run, not a
+      // Harness execution/identity or permission to access these string paths.
+      recorder.start({ runId: 'RUN-1', agentId: 'test', prompt: 'worktree guard audit fixture',
+        resolvedConfig: { agentId: 'test', source: 'test' },
+        permissionProfile: buildPermissionProfile({ agentId: 'test', source: 'test' }) });
       const guard = new BridgeWorktreeGuard(recorder, 'RUN-1');
       const config = BridgeWorktreeGuard.buildConfig('/tmp/worktree-1');
 
@@ -247,6 +252,14 @@ describe('BridgeWorktreeGuard', () => {
         config,
       );
       expect(result4.valid).toBe(true);
+
+      const transcript = readTranscript('RUN-1', root);
+      expect(transcript.some(event => event.type === 'start')).toBe(true);
+      expect(transcript.every(event => event.type === 'start' || event.type === 'progress')).toBe(true);
+      expect(transcript.filter(event => event.type === 'progress' && event.data.step === 'worktree_boundary_violation'))
+        .toMatchObject([{ data: { context: 'Write', path: '/etc/passwd' } }, { data: { context: 'Read', path: '/etc/shadow' } }]);
+      expect(store.getRun('RUN-1')).toMatchObject({ status: 'running', toolCalls: 0 });
+      expect(store.getRun('RUN-1')?.harnessExecution).toBeUndefined();
     });
   });
 

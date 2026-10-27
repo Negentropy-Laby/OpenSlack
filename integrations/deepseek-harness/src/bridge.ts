@@ -2,7 +2,10 @@
 import type { HarnessNotification, RunResult, validatedSessionEvent } from '@deepseek-ai/dsh-sdk-client'
 import type { expandAssistantStream } from '@deepseek-ai/dsh-llm'
 import type { SdkShutdownReceipt } from './process-observer.ts'
-import { resolve } from 'node:path'
+import { isDeepStrictEqual } from 'node:util'
+import { assertEligibilityRestriction, readEligibilityRestriction, type HarnessEligibilityRestriction } from './scope-evidence.ts'
+import { BridgeWireEncoder, BridgeWireDecoder, validateBridgeWireEnvelope, BRIDGE_CHUNK_EXTENSION,
+  BRIDGE_MESSAGE_MAX_BYTES, HARNESS_CALLBACK_TOOLS } from '@openslack/agent-runtime/internal/bridge-wire'
 
 const version = '2025-06-03'
 
@@ -42,10 +45,24 @@ export interface PeerDeployment {
   root: string
   /** Exact allowlist after the host's task/principal/policy intersection. */
   allowedTools: readonly string[]
+  /** A host-supplied start cutoff, never a replacement for per-effect authority. */
+  startEligibility: HarnessEligibilityRestriction
   /** Adds the original system text through a logged system-prompt section before boot. */
   createSdk: (systemText: string, allowedTools: readonly string[],
-    authorize: (toolName: string, input: unknown) => Promise<void>) => Promise<TaskSdk>
+    authorize: (toolName: string, input: unknown, evidence?: ToolEvidenceReservation) => Promise<HarnessEligibilityRestriction>,
+    recordResult: (callId: string, value: unknown, indeterminate?: boolean) => Promise<void>) => Promise<TaskSdk>
 }
+
+/** Trusted scope wrapper creates this before an effect; it is not a model tool input. */
+export interface ToolEvidenceReservation {
+  callId: string
+  input: unknown
+  targetPath: string
+  generation: string
+  maxResultBytes: number
+}
+const sdkToolNames: Readonly<Record<string, string>> = Object.freeze({ read: 'Read', write: 'Write', edit: 'Edit',
+  ...Object.fromEntries(Object.values(HARNESS_CALLBACK_TOOLS).map(tool => [tool.sdk, tool.bridge])) })
 
 function record(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -58,16 +75,7 @@ function record(value: unknown): value is Record<string, unknown> {
  */
 export function parseFrame(text: string): Frame {
   if (Buffer.byteLength(text) > 1024 * 1024) throw new PeerFailure('PROTOCOL', 'Bridge frame exceeds 1 MiB')
-  const value: unknown = JSON.parse(text)
-  if (!record(value) || value.protocolVersion !== version ||
-    typeof value.sessionId !== 'string' || !value.sessionId ||
-    typeof value.correlationId !== 'string' || !value.correlationId ||
-    typeof value.timestamp !== 'string' || !Number.isFinite(Date.parse(value.timestamp)) ||
-    typeof value.kind !== 'string' || !record(value.payload)) {
-    throw new PeerFailure('PROTOCOL', 'Invalid Agent Run Bridge frame')
-  }
-  return { protocolVersion: version, sessionId: value.sessionId, correlationId: value.correlationId,
-    timestamp: value.timestamp, kind: value.kind, payload: value.payload }
+  return validateBridgeWireEnvelope(JSON.parse(text)) as Frame
 }
 
 /** One handshake and at most one task. Closing cancels only this instance; replay is unsupported. */
@@ -77,10 +85,22 @@ export class OpenSlackPeer {
   private sdk: TaskSdk | undefined
   private closing = false
   private closeTask: Promise<void> | undefined
-  private readonly authorization = new Map<string, { resolve: () => void; reject: (error: Error) => void }>()
+  private readonly authorization = new Map<string, { resolve: (restriction: HarnessEligibilityRestriction) => void; reject: (error: Error) => void }>()
   private nextAuthorization = 0
+  private readonly wireEncoder = new BridgeWireEncoder()
+  private readonly wireDecoder = new BridgeWireDecoder()
+  private fatalFailure: PeerFailure | undefined
+  private readonly startEligibility: HarnessEligibilityRestriction
 
-  constructor(private readonly deployment: PeerDeployment, private readonly send: (frame: Frame) => void) {}
+  constructor(private readonly deployment: PeerDeployment, private readonly send: (frame: Frame, serialized: string) => void) {
+    this.startEligibility = readEligibilityRestriction(deployment.startEligibility)
+  }
+
+  /** Native startup keeps connection-local chunk state and decodes before dispatching any action. */
+  receiveLine(text: string): Promise<void> {
+    const decoded = this.wireDecoder.receive(text)
+    return decoded ? this.receive(decoded as Frame) : Promise.resolve()
+  }
 
   /**
    * Admit a handshake or one execution. Duplicate and cross-run frames reject without a new prompt.
@@ -94,14 +114,25 @@ export class OpenSlackPeer {
       const pending = typeof id === 'string' ? this.authorization.get(id) : undefined
       if (!pending || typeof id !== 'string') return Promise.reject(new PeerFailure('PROTOCOL', 'Unrelated authorization response'))
       this.authorization.delete(id)
-      if (frame.payload.allowed === true) pending.resolve()
+      if (frame.payload.allowed === true) {
+        try { pending.resolve(readEligibilityRestriction(frame.payload.restriction)) }
+        catch { pending.reject(new PeerFailure('SCOPE', 'Live host eligibility restriction is unavailable or expired')) }
+      }
       else pending.reject(new PeerFailure('SCOPE', 'Live host authorization denied this action'))
       return Promise.resolve()
     }
     if (frame.kind === 'handshake_request' && !this.handshake) {
-      if (frame.payload.protocolVersion !== version) return Promise.reject(new PeerFailure('PROTOCOL', 'Unsupported Bridge version'))
+      validateBridgeWireEnvelope(frame)
+      if (frame.payload.protocolVersion !== version || frame.correlationId !== this.deployment.runId) return Promise.reject(new PeerFailure('PROTOCOL', 'Unsupported or unrelated Bridge handshake'))
+      const requested = frame.payload.extensions ?? []
+      if (!Array.isArray(requested) || requested.some(item => item !== BRIDGE_CHUNK_EXTENSION) || requested.length > 1) {
+        return Promise.reject(new PeerFailure('PROTOCOL', 'Unsupported Bridge extensions'))
+      }
       this.handshake = structuredClone(frame)
-      this.emit(frame, 'handshake_response', { accepted: true })
+      this.wireDecoder.bind({ sessionId: frame.sessionId, correlationId: frame.correlationId })
+      this.wireEncoder.setExtensions(requested)
+      this.wireDecoder.setExtensions(requested)
+      this.emit(frame, 'handshake_response', { accepted: true, ...(requested.length ? { extensions: requested } : {}) })
       return Promise.resolve()
     }
     if (!this.handshake || frame.sessionId !== this.handshake.sessionId ||
@@ -120,19 +151,24 @@ export class OpenSlackPeer {
     for (const pending of this.authorization.values()) pending.reject(new PeerFailure('CLOSED', 'Authorization transport closed'))
     this.authorization.clear()
     this.closeTask ??= (async () => {
-      await this.sdk?.close()
-      await this.work
+      let protocolFailure: unknown
+      try { this.wireDecoder.finish() } catch (error) { protocolFailure = error }
+      let shutdownFailure: unknown
+      try { await this.sdk?.close() } catch (error) { shutdownFailure = error }
+      try { await this.work } catch (error) { throw error }
+      if (protocolFailure) throw protocolFailure
+      if (shutdownFailure) throw shutdownFailure
     })()
     return this.closeTask
   }
 
   private emit(source: Frame, kind: string, payload: Record<string, unknown>): void {
     const frame = { ...source, timestamp: new Date().toISOString(), kind, payload }
-    if (Buffer.byteLength(JSON.stringify(frame)) > 1024 * 1024) throw new PeerFailure('PROTOCOL', 'Bridge output exceeds 1 MiB')
-    this.send(frame)
+    for (const serialized of this.wireEncoder.encode(frame)) this.send(frame, serialized)
   }
 
   private async execute(frame: Frame): Promise<void> {
+    assertEligibilityRestriction(this.startEligibility)
     const request = frame.payload
     const denied = request.deniedTools
     if (request.runId !== frame.correlationId || request.runId !== this.deployment.runId || request.agentId !== this.deployment.agentId ||
@@ -156,49 +192,82 @@ export class OpenSlackPeer {
     }
     const system = messages.filter(item => item.role === 'system').map(item => item.content).join('\n\n')
     const allowedTools = request.allowedTools as string[]
-    const sdk = await this.deployment.createSdk(system, allowedTools, async (toolName, input) => {
-      if (this.closing || !this.deployment.allowedTools.includes(toolName) || !allowedTools.includes(toolName)) {
+    const calls = new Map<string, { toolName: string; input: unknown; seen: boolean; reserved: boolean; emitted: boolean; value?: unknown; hasValue: boolean }>()
+    const emitCall = (callId: string) => {
+      const call = calls.get(callId)!
+      if (!call.seen || !call.reserved || call.emitted) return
+      this.emit(frame, 'tool_request', { phase: 'observed', callId, toolName: call.toolName, input: call.input })
+      call.emitted = true
+    }
+    const sdk = await this.deployment.createSdk(system, allowedTools, async (toolName, input, evidence) => {
+      if (this.closing || this.fatalFailure || !this.deployment.allowedTools.includes(toolName) || !allowedTools.includes(toolName)) {
         throw new PeerFailure('SCOPE', 'Tool is outside the admitted request')
       }
       const id = String(++this.nextAuthorization)
-      await new Promise<void>((resolve, reject) => {
+      if (!evidence || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(evidence.callId) || !evidence.generation ||
+        typeof evidence.targetPath !== 'string' || !Number.isSafeInteger(evidence.maxResultBytes) || evidence.maxResultBytes <= 0 ||
+        evidence.maxResultBytes > BRIDGE_MESSAGE_MAX_BYTES) throw new PeerFailure('SCOPE', 'Tool evidence reservation is missing or unsupported')
+      let call = calls.get(evidence.callId)
+      if (call && (call.toolName !== toolName || !isDeepStrictEqual(call.input, evidence.input))) throw new PeerFailure('PROTOCOL', 'Tool input differs from SDK observation')
+      if (!call) {
+        call = { toolName, input: structuredClone(evidence.input), seen: false, reserved: false, emitted: false, hasValue: false }
+        calls.set(evidence.callId, call)
+      }
+      const restriction = await new Promise<HarnessEligibilityRestriction>((resolve, reject) => {
         this.authorization.set(id, { resolve, reject })
-        try { this.emit(frame, 'tool_request', { phase: 'authorize', authorizationRequestId: id, toolName, input }) }
+        try { this.emit(frame, 'tool_request', { phase: 'authorize', authorizationRequestId: id, toolName, input, evidence }) }
         catch (error) { this.authorization.delete(id); reject(error instanceof Error ? error : new PeerFailure('PROTOCOL', 'Authorization frame failed')) }
       })
+      this.assertOpen()
+      call.reserved = true
+      emitCall(evidence.callId)
+      return restriction
+    }, async (callId, value, indeterminate) => {
+      const call = calls.get(callId)
+      if (this.closing || !call?.reserved || call.hasValue) throw new PeerFailure('PROTOCOL', 'Unbound or repeated canonical tool result')
+      if (indeterminate) {
+        this.fatalFailure ??= new PeerFailure('TERMINAL', 'A native effect or its result is indeterminate; preserve without completion')
+        throw this.fatalFailure
+      }
+      call.value = structuredClone(value)
+      call.hasValue = true
     })
     this.sdk = sdk
     if (this.closing) { await sdk.close(); throw new PeerFailure('CLOSED', 'Peer closed before prompt') }
     const sessionId = `openslack-${frame.correlationId}`
     this.emit(frame, 'run_started', { runId: request.runId, sessionId })
     try {
-      const calls = new Map<string, string>()
+      assertEligibilityRestriction(this.startEligibility)
       const user = users[0]
       if (!user) throw new PeerFailure('PROTOCOL', 'Missing user message')
       const result = await sdk.run(user.content, sessionId, (notification) => {
         if (notification.method !== 'session.event' || notification.params.sessionId !== sessionId) return
+        try {
         const event = this.deployment.validateEvent(notification.params.event)
         if (event.type === 'tool/call') {
-          const names: Record<string, string> = {
-            read: 'Read', write: 'Write', edit: 'Edit',
-            mcp__openslack__openslack_get_activity: 'mcp.openslack.openslack_get_activity',
-            mcp__openslack__openslack_preview_workflow: 'mcp.openslack.openslack_preview_workflow',
-            mcp__openslack__openslack_confirm_plan: 'mcp.openslack.openslack_confirm_plan',
-            mcp__openslack__openslack_cancel_plan: 'mcp.openslack.openslack_cancel_plan',
-          }
-          const toolName = names[event.data.name]
-          if (!toolName || calls.has(event.data.callId)) throw new PeerFailure('PROTOCOL', 'Unapproved or duplicate SDK tool event')
+          const toolName = sdkToolNames[event.data.name]
+          const existing = calls.get(event.data.callId)
+          if (!toolName || existing?.seen || Buffer.byteLength(event.data.arguments) > BRIDGE_MESSAGE_MAX_BYTES) throw new PeerFailure('PROTOCOL', 'Unapproved, excessive or duplicate SDK tool event')
           const input: unknown = JSON.parse(event.data.arguments)
-          if (record(input) && typeof input.file_path === 'string') input.file_path = resolve(this.deployment.root, input.file_path)
-          calls.set(event.data.callId, toolName)
-          this.emit(frame, 'tool_request', { phase: 'observed', callId: event.data.callId, toolName, input })
+          if (existing) {
+            if (existing.toolName !== toolName || !isDeepStrictEqual(input, existing.input)) throw new PeerFailure('PROTOCOL', 'Observed SDK input differs from its reservation')
+            existing.seen = true
+          } else calls.set(event.data.callId, { toolName, input, seen: true, reserved: false, emitted: false, hasValue: false })
+          emitCall(event.data.callId)
         } else if (event.type === 'tool/result') {
           const id = event.data.message.toolCallId
-          const toolName = calls.get(id)
-          if (!toolName) throw new PeerFailure('PROTOCOL', 'Unmatched SDK tool result')
+          const call = calls.get(id)
+          if (!call?.seen || !call.reserved || !call.emitted || (!call.hasValue && !event.data.message.isError)) throw new PeerFailure('PROTOCOL', 'Unmatched SDK tool result or missing canonical value')
           calls.delete(id)
-          this.emit(frame, 'tool_response', { phase: 'observed', callId: id, toolName,
-            output: { isError: event.data.message.isError === true, content: event.data.message.content } })
+          this.emit(frame, 'tool_response', { phase: 'observed', callId: id, toolName: call.toolName,
+            output: { ...event.data, ...(call.hasValue ? { value: call.value } : {}) } })
+        }
+        } catch {
+          this.fatalFailure ??= new PeerFailure('PROTOCOL', 'SDK tool evidence could not be reconciled; preserve without completion')
+          // The SDK owner retains this same idempotent shutdown Promise; close()
+          // awaits it even when its notification dispatcher catches observers.
+          void sdk.close().catch(() => {})
+          throw this.fatalFailure
         }
       })
       await sdk.wait(sessionId)
@@ -223,6 +292,7 @@ export class OpenSlackPeer {
     }
   }
   private assertOpen(): void {
+    if (this.fatalFailure) throw this.fatalFailure
     if (this.closing) throw new PeerFailure('CLOSED', 'Execution interrupted; preserve and reconcile the run')
   }
 }

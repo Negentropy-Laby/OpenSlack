@@ -1,5 +1,4 @@
-import { constants, closeSync, fstatSync, lstatSync, openSync, readFileSync } from 'node:fs';
-import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
+import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { createBoundEventAppender, createEvent } from '@openslack/collaboration';
 import { resolveAgentPrincipal } from '@openslack/runtime';
 import { HarnessTaskHost, type ApprovedHarnessTask } from './harness-task-host.js';
@@ -7,6 +6,7 @@ import { createHarnessTaskAuthority, type HarnessTaskAuthorityOptions } from './
 import { createHarnessTaskExecution, type HarnessTaskExecutionOptions, type HarnessTextVerification } from './harness-task-execution.js';
 import { hashHarnessInput } from './harness-admission.js';
 import { createRunStore, readRunStateSnapshot } from './run-store.js';
+import { canonicalHarnessRoot, readHarnessFile } from './harness-read.js';
 
 /** Administrator-authored nonsecret deployment. No runtime identity or task is created by this configuration. */
 export interface HarnessDeploymentFile {
@@ -30,35 +30,34 @@ export interface HarnessWorkspaceTaskFile {
   verification: HarnessTextVerification;
 }
 
+/** Safe lifecycle classification shared by EOF, signals and embedded hosts. */
+export class HarnessHostShutdownUnconfirmedError extends Error {
+  readonly code = 'HARNESS_HOST_SHUTDOWN_UNCONFIRMED';
+  constructor() { super('Harness shutdown is unconfirmed; preserve evidence and reconcile without replay'); }
+}
+
+/** One bounded close owned by the package, not duplicated in CLI transport policy. */
+export function createHarnessHostCloser(host: HarnessTaskHost): () => Promise<void> {
+  let closing: Promise<void> | undefined;
+  return () => closing ??= (async () => {
+    const receipt = await host.close(30_000);
+    if (!receipt.stopped) throw new HarnessHostShutdownUnconfirmedError();
+  })();
+}
+
 function object(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value);
 }
 
 function readJson(path: string): unknown {
   if (!isAbsolute(path)) throw new Error('Harness configuration paths must be absolute');
-  for (let parent = dirname(path);; parent = dirname(parent)) {
-    const directory = lstatSync(parent);
-    if (!directory.isDirectory() || directory.isSymbolicLink()) throw new Error('Harness configuration cannot traverse a link');
-    if (parent === dirname(parent)) break;
-  }
-  const entry = lstatSync(path);
-  if (!entry.isFile() || entry.isSymbolicLink() || entry.nlink !== 1 || entry.size > 512 * 1024) throw new Error('Invalid Harness configuration file');
-  const file = openSync(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
-  try {
-    const before = fstatSync(file);
-    if (before.ino !== entry.ino || before.dev !== entry.dev || !before.isFile() || before.size > 512 * 1024) throw new Error('Harness configuration changed');
-    const bytes = readFileSync(file);
-    const after = fstatSync(file);
-    if (before.size !== bytes.length || before.size !== after.size || before.mtimeMs !== after.mtimeMs || before.ctimeMs !== after.ctimeMs) {
-      throw new Error('Harness configuration changed');
-    }
-    return JSON.parse(bytes.toString('utf8'));
-  } finally { closeSync(file); }
+  return JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(readHarnessFile(path, 512 * 1024)));
 }
 
 /** Load only an explicitly provisioned file; absence leaves the shipped CLI unchanged and performs no writes. */
 export function createConfiguredHarnessTaskHost(workspaceRoot: string, principalRef: string,
   callbackBinding?: string): HarnessTaskHost | undefined {
+  workspaceRoot = canonicalHarnessRoot(workspaceRoot);
   const path = join(workspaceRoot, '.openslack.local/harness/deployment.json');
   let input: unknown;
   try { input = readJson(path); }
@@ -76,22 +75,25 @@ export function createConfiguredHarnessTaskHost(workspaceRoot: string, principal
   const config = structuredClone(input) as unknown as HarnessDeploymentFile;
   // This CLI runs in the approved primary workspace. Only the worker's isolated execution tree differs.
   // Cross-workspace identity hosting needs an explicit read-model/authority composition, not an inferred path.
+  const identityRoot = canonicalHarnessRoot(config.identityRoot);
   const sameRoot = process.platform === 'win32'
-    ? resolve(config.identityRoot).toLowerCase() === resolve(workspaceRoot).toLowerCase()
-    : resolve(config.identityRoot) === resolve(workspaceRoot);
+    ? identityRoot.toLowerCase() === workspaceRoot.toLowerCase()
+    : identityRoot === resolve(workspaceRoot);
   if (!sameRoot) throw new Error('The configured Harness CLI must run from its approved identity workspace');
   const initialHash = hashHarnessInput(config);
+  config.identityRoot = identityRoot;
   const current = (): void => {
     if (hashHarnessInput(readJson(path)) !== initialHash) throw new Error('Harness deployment changed; stop and reconcile');
   };
   const taskFile = (taskId: string): HarnessWorkspaceTaskFile => {
     current();
     const descriptor = Object.hasOwn(config.tasks, taskId) ? config.tasks[taskId] : undefined;
-    if (!descriptor || typeof descriptor.path !== 'string' || !/^[a-f0-9]{64}$/.test(descriptor.sha256)) throw new Error('Task is not in the approved deployment');
+    if (!descriptor || typeof descriptor.path !== 'string' || !isAbsolute(descriptor.path) || !/^[a-f0-9]{64}$/.test(descriptor.sha256)) throw new Error('Task is not in the approved deployment');
     const allowedRoot = join(config.identityRoot, '.openslack.local/harness/tasks');
-    const local = relative(allowedRoot, descriptor.path);
+    const descriptorPath = join(canonicalHarnessRoot(dirname(descriptor.path)), basename(descriptor.path));
+    const local = relative(allowedRoot, descriptorPath);
     if (!local || isAbsolute(local) || local.split(/[\\/]/).includes('..')) throw new Error('Approved task descriptor is outside its owner directory');
-    const value = readJson(descriptor.path);
+    const value = readJson(descriptorPath);
     if (hashHarnessInput(value) !== descriptor.sha256 || !object(value) || value.schema !== 'openslack.harness_workspace_task.v1' ||
       value.sourceKind !== 'approved-workspace-task' || value.claimRequired !== false || !object(value.task) ||
       value.task.taskId !== taskId || !Array.isArray(value.allowedPaths) || !Array.isArray(value.forbiddenPaths) ||
@@ -118,9 +120,10 @@ export function createConfiguredHarnessTaskHost(workspaceRoot: string, principal
     const state = readRunStateSnapshot(value.runId, config.identityRoot);
     if (!state?.harnessExecution || state.harnessExecution.taskId !== value.taskId ||
       state.harnessExecution.stopRequestedAt ||
-      state.harnessExecution.requestHash !== value.generation || state.worktreePath !== value.root ||
+      state.harnessExecution.lifecycle?.ownerGeneration !== value.generation ||
+      state.harnessExecution.requestHash !== value.requestHash || state.worktreePath !== value.root ||
       !['pending', 'running'].includes(state.status)) throw new Error('Harness callback is not bound to the current canonical run');
-    const deadline = Date.parse(state.startedAt) + taskFile(state.harnessExecution.taskId).task.timeoutMs;
+    const deadline = Date.parse(state.harnessExecution.lifecycle?.executionDeadlineAt ?? '');
     if (typeof value.expiresAt !== 'string' || !Number.isFinite(deadline) || Date.parse(value.expiresAt) !== deadline || Date.now() >= deadline) {
       throw new Error('Harness callback deadline is expired or does not match the canonical task');
     }
@@ -129,7 +132,7 @@ export function createConfiguredHarnessTaskHost(workspaceRoot: string, principal
   const store = createRunStore(config.identityRoot, { sweepOrphans: false });
   let appender: ReturnType<typeof createBoundEventAppender> | undefined;
   return new HarnessTaskHost({ identityRoot: config.identityRoot, workspaceId: config.workspaceId, store,
-    ...authority, ...(callbackRunId === undefined ? {} : { callbackRunId }),
+    ...authority, principalId: resolved.principalId, ...(callbackRunId === undefined ? {} : { callbackRunId }),
     prepare: createHarnessTaskExecution({ workspaceRoot, identityRoot: config.identityRoot, store,
       deployment: config.execution, authorizeTool: authority.authorizeTool, verification: taskId => taskFile(taskId).verification }),
     publish(state) {

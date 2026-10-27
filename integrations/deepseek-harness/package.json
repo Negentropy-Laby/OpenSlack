@@ -14,7 +14,7 @@
     "./package.json": "./package.json",
     "./locale/*.json": "./locale/*.json"
   },
-  "files": ["dist/index.js", "dist/initiator.js", "dist/readonly.js", "dist/sdk-host.js", "dist/startup.js", "dist/runtime.js", "dist/owned-sdk.js", "dist/types/src/*.d.ts", "locale/*.json", "plugin.patch.yml", "icon.svg", "LICENSE", "README.md", "README.zh.md"],
+  "files": ["dist/index.js", "dist/initiator.js", "dist/readonly.js", "dist/sdk-host.js", "dist/startup.js", "dist/runtime.js", "dist/owned-sdk.js", "dist/openslack-harness-supervisor.exe", "dist/types/src/*.d.ts", "locale/*.json", "plugin.patch.yml", "icon.svg", "LICENSE", "THIRD-PARTY-NOTICES.txt", "README.md", "README.zh.md"],
   "icon": "icon.svg",
   "dsh": { "bundle": { "patch": "./plugin.patch.yml" } },
   "peerDependencies": {

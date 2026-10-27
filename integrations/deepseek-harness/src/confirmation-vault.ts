@@ -4,7 +4,7 @@ import type { ToolDefinition, ToolRunContext } from '@deepseek-ai/dsh-tools'
 /** Host-owned task and transport identity, independent of model-supplied arguments. */
 export interface ConfirmationScope {
   taskId: string
-  /** Worker callbacks use a fixed run. Initiators learn one run only from a successful admission receipt. */
+  /** Worker callbacks use a fixed run. Initiators learn one route only from a host admission result. */
   runId?: string
   mode?: 'worker' | 'initiator'
   principalId: string
@@ -17,6 +17,11 @@ interface Entry { token: string; expiresAt: number }
 
 function object(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
+}
+
+function copyInput(value: unknown): unknown {
+  try { return structuredClone(value) }
+  catch { throw new ConfirmationFailure() }
 }
 
 /** Carries only stable nonsecret diagnostics. */
@@ -56,18 +61,24 @@ export class ConfirmationVault {
    * @returns sanitized canonical and text projections; the bearer stays private in memory.
    */
   async preview(raw: ToolDefinition, args: unknown, exec: ToolRunContext): Promise<unknown> {
+    // A local typo has not attempted an upstream effect and cannot invalidate
+    // unrelated, still-live confirmation capabilities.
+    const input = copyInput(args)
+    if (!object(input) || !object(input.input) || Object.keys(input).sort().join(',') !== 'input,workflowId') throw new ConfirmationFailure()
+    if (this.scope.mode === 'initiator') {
+      if (input.workflowId !== 'harness.task.dispatch' || input.input.taskId !== this.scope.taskId ||
+        Object.keys(input.input).sort().join(',') !== 'requestId,taskId' ||
+        typeof input.input.requestId !== 'string' || this.admittedRun) throw new ConfirmationFailure()
+    } else if (input.workflowId !== 'harness.task.report' || input.input.runId !== this.scope.runId ||
+        Object.keys(input.input).sort().join(',') !== 'evidenceRefs,reportId,runId,summary' ||
+        typeof input.input.reportId !== 'string' || typeof input.input.summary !== 'string' ||
+        !Array.isArray(input.input.evidenceRefs) || input.input.evidenceRefs.some(ref => typeof ref !== 'string')) throw new ConfirmationFailure()
+    try { await this.assertCurrent() }
+    catch { this.dispose(); throw new ConfirmationFailure() }
+    // A confirmation may have admitted the initiator's run during the await.
+    // This is a local refusal, not an ambiguous upstream request.
+    if (this.scope.mode === 'initiator' && this.admittedRun) throw new ConfirmationFailure()
     try {
-      const input = structuredClone(args)
-      await this.assertCurrent()
-      if (!object(input) || !object(input.input) || Object.keys(input).sort().join(',') !== 'input,workflowId') throw new ConfirmationFailure()
-      if (this.scope.mode === 'initiator') {
-        if (input.workflowId !== 'harness.task.dispatch' || input.input.taskId !== this.scope.taskId ||
-          Object.keys(input.input).sort().join(',') !== 'requestId,taskId' ||
-          typeof input.input.requestId !== 'string' || this.admittedRun) throw new ConfirmationFailure()
-      } else if (input.workflowId !== 'harness.task.report' || input.input.runId !== this.scope.runId ||
-          Object.keys(input.input).sort().join(',') !== 'evidenceRefs,reportId,runId,summary' ||
-          typeof input.input.reportId !== 'string' || typeof input.input.summary !== 'string' ||
-          !Array.isArray(input.input.evidenceRefs) || input.input.evidenceRefs.some(ref => typeof ref !== 'string')) throw new ConfirmationFailure()
       const result = await raw.execute(input, exec)
       await this.assertCurrent()
       if (!object(result) || !object(result.structuredContent)) throw new ConfirmationFailure()
@@ -99,27 +110,56 @@ export class ConfirmationVault {
    * @returns sanitized upstream outcome; uncertainty invalidates all outstanding capabilities.
    */
   async settle(raw: ToolDefinition, args: unknown, exec: ToolRunContext, operation: 'confirm' | 'cancel' = 'confirm'): Promise<unknown> {
-    let bearer: string | undefined
-    try {
-      const input = structuredClone(args)
-      await this.assertCurrent()
-      if (!object(input) || typeof input.planId !== 'string' || Object.keys(input).length !== 1) throw new ConfirmationFailure()
-      const entry = this.entries.get(input.planId)
-      if (!entry || entry.expiresAt <= Date.now()) throw new ConfirmationFailure()
-      bearer = entry.token
+    const input = copyInput(args)
+    if (!object(input) || typeof input.planId !== 'string' || Object.keys(input).length !== 1) throw new ConfirmationFailure()
+    try { await this.assertCurrent() }
+    catch { this.dispose(); throw new ConfirmationFailure() }
+    // Look up and consume only after the authority await. Concurrent duplicate
+    // calls cannot consume twice or dispose the legitimate in-flight request.
+    const entry = this.entries.get(input.planId)
+    if (!entry || entry.expiresAt <= Date.now()) {
       this.entries.delete(input.planId)
+      throw new ConfirmationFailure()
+    }
+    const bearer = entry.token
+    this.entries.delete(input.planId)
+    try {
       const result = await raw.execute({ planId: input.planId, confirmationToken: bearer }, exec)
       await this.assertCurrent()
       if (!object(result) || !object(result.structuredContent)) throw new ConfirmationFailure()
-      if (this.scope.mode === 'initiator' && operation === 'confirm' && result.structuredContent.status === 'completed') {
-        const data = result.structuredContent.data
+      if (this.scope.mode === 'initiator' && operation === 'confirm') {
+        const upstream = result.structuredContent
+        const data = upstream.data
         const outcomes = object(data) && Array.isArray(data.outcomes) ? data.outcomes : []
-        const receipt = outcomes.length === 1 && object(outcomes[0]) ? outcomes[0].data : undefined
-        if (!object(receipt) || receipt.taskId !== this.scope.taskId || typeof receipt.runId !== 'string' ||
-          !/^RUN-[A-Z0-9-]{1,124}$/.test(receipt.runId) || !['pending', 'running', 'completed', 'failed', 'cancelled'].includes(String(receipt.status))) {
-          throw new ConfirmationFailure()
+        const outcome = outcomes.length === 1 && object(outcomes[0]) ? outcomes[0] : undefined
+        const receipt = outcome?.data
+        let observedRun: string | undefined
+        if (upstream.status === 'completed') {
+          if (!object(receipt) || receipt.taskId !== this.scope.taskId || typeof receipt.runId !== 'string' ||
+            !/^RUN-[A-Z0-9-]+$/.test(receipt.runId) || !['pending', 'running', 'completed', 'failed', 'cancelled'].includes(String(receipt.status))) {
+            throw new ConfirmationFailure()
+          }
+          observedRun = receipt.runId
+        } else if (object(receipt) && receipt.admission !== undefined) {
+          // A duplicate may observe an exclusively owned admission before its
+          // visibility publication finishes. This host-bound route grants only
+          // query access, never a pending/completed execution or another dispatch.
+          const admission = receipt.admission
+          if (upstream.status !== 'blocked' || upstream.planId !== input.planId ||
+            !object(data) || data.state !== 'blocked' || outcome?.status !== 'blocked' ||
+            outcome.actionId !== 'harness.task.dispatch' || receipt.taskId !== this.scope.taskId ||
+            !object(admission) || Object.keys(admission).sort().join(',') !== 'canonicalRunPresent,disposition,kind,requestHash,runId' ||
+            admission.kind !== 'admission' || typeof admission.runId !== 'string' || !/^RUN-[A-Z0-9-]+$/.test(admission.runId) ||
+            typeof admission.requestHash !== 'string' || !/^[a-f0-9]{64}$/.test(admission.requestHash) ||
+            typeof admission.canonicalRunPresent !== 'boolean' || !['in_progress', 'reconcile_required'].includes(String(admission.disposition))) {
+            throw new ConfirmationFailure()
+          }
+          observedRun = admission.runId
         }
-        this.admittedRun = receipt.runId
+        if (observedRun !== undefined) {
+          if (this.admittedRun !== undefined && this.admittedRun !== observedRun) throw new ConfirmationFailure()
+          this.admittedRun = observedRun
+        }
       }
       return project(scrub(result.structuredContent, bearer))
     } catch {

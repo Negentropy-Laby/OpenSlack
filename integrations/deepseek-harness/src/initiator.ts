@@ -6,6 +6,8 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-mcp-client'
 import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
 import { ConfirmationVault } from './confirmation-vault.ts'
+import { HARNESS_CALLBACK_TOOLS } from '@openslack/agent-runtime/internal/bridge-wire'
+import { projectCallbackTool, CALLBACK_DISCONNECT_REASON } from './callback-tools.ts'
 import type {} from './capabilities.ts'
 
 export const name = 'openslack-initiator'
@@ -26,10 +28,6 @@ export interface Config {
 }
 export const Config: z<Config> = z.object({ taskId: z.string().required(), principalId: z.string().required(),
   generation: z.string().required(), sessionId: z.string().required(), expiresAt: z.string().required() })
-
-function object(value: unknown): value is Record<string, unknown> {
-  return !!value && typeof value === 'object' && !Array.isArray(value)
-}
 
 /** Mount before the caller Agent starts. Only this task may be dispatched; queries require its returned run. */
 export function apply(ctx: Context, config: Config): void {
@@ -70,32 +68,21 @@ export function apply(ctx: Context, config: Config): void {
       releases.push(ctx.on('openslack/connection-lost', (server) => {
         if (server !== 'openslack') return
         vault.dispose()
-        agent.cancel({ kind: 'hook', reason: 'OpenSlack MCP disconnected; preserve and reconcile without replay' })
+        agent.cancel({ kind: 'hook', reason: CALLBACK_DISCONNECT_REASON })
       }))
-      for (const operation of ['get_activity', 'preview_workflow', 'confirm_plan', 'cancel_plan'] as const) {
-        const name = `mcp__openslack__openslack_${operation}`
+      for (const operation of Object.keys(HARNESS_CALLBACK_TOOLS) as Array<keyof typeof HARNESS_CALLBACK_TOOLS>) {
+        const name = HARNESS_CALLBACK_TOOLS[operation].sdk
         const definition = ctx.get('openslackConnection')?.tool(name)
         if (!definition) throw new Error('Required native OpenSlack MCP tool is missing')
         raw.set(name, definition)
-        const projected: ToolDefinition = { name, description: definition.description,
-          parameters: ['confirm_plan', 'cancel_plan'].includes(operation)
-            ? { type: 'object', properties: { planId: { type: 'string' } }, required: ['planId'], additionalProperties: false } : definition.parameters,
-          output: { schema: {}, render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }] },
-          async execute(args, exec) {
-            const input = structuredClone(args)
+        const projected = projectCallbackTool({ operation, definition, vault,
+          current: async exec => {
             current()
             if (exec.agent !== agent) throw new Error('OpenSlack initiator actor mismatch')
-            if (operation === 'preview_workflow') return vault.preview(definition, input, exec)
-            if (operation === 'confirm_plan' || operation === 'cancel_plan') {
-              return vault.settle(definition, input, exec, operation === 'confirm_plan' ? 'confirm' : 'cancel')
-            }
-            if (!object(input) || input.objectKind !== 'workflow' || !vault.permitsQuery(input.objectId) ||
-              Object.keys(input).some(key => !['objectKind', 'objectId', 'limit'].includes(key))) throw new Error('Query only the admitted OpenSlack task run')
-            const result = await definition.execute(input, exec)
-            current()
-            return result
+            for (const [key, value] of raw) if (ctx.get('openslackConnection')?.tool(key) !== value) throw new Error('OpenSlack connection generation changed')
           },
-        }
+          permitsQuery: runId => vault.permitsQuery(runId),
+        })
         allowed.set(name, projected)
         releases.push(agent.ctx.tools.register(projected))
       }

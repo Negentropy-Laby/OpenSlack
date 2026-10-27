@@ -29,7 +29,7 @@ import {
   createBridgeRuntimeResolver,
 } from './bridge-runtime-resolver.js';
 import type { ProviderResolution, ProviderTransport } from './provider-registry.js';
-import { ProviderRegistry } from './provider-registry.js';
+import { ProviderRegistry, providerExecutionPolicy, type ProviderExecutionPolicy } from './provider-registry.js';
 import { RepositoryToolExecutor } from './tool-executor.js';
 import type { OpenAICompatibleRuntimeOptions } from './openai-compatible-runtime.js';
 import {
@@ -71,6 +71,8 @@ export interface LauncherOptions {
    * that construct a governed adapter directly. There is no production default.
    */
   adapter?: AgentExecutionAdapter;
+  /** Lifecycle capabilities for an explicitly injected trusted adapter. */
+  adapterExecutionPolicy?: Readonly<ProviderExecutionPolicy>;
   /**
    * Legacy transport metadata for an explicitly injected adapter. This value
    * never selects or constructs an adapter.
@@ -158,6 +160,7 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
             `injected:${explicitlyConfiguredAdapter.adapterId}`,
           transport: transportForExplicitAdapter(bridgeMode),
           adapter: explicitlyConfiguredAdapter,
+          ...(options.adapterExecutionPolicy ? { policy: options.adapterExecutionPolicy } : {}),
         }
       : providerRegistry.resolve(resolvedConfig);
   }
@@ -211,7 +214,7 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
     let providerResolution: ProviderResolution;
     try {
       providerResolution = resolveProvider(resolvedConfig);
-      if (providerResolution.providerId === 'deepseek-harness' && !options.harnessResultAcceptance) {
+      if (providerExecutionPolicy(providerResolution).requiresHostAcceptance && !options.harnessResultAcceptance) {
         throw new RuntimeMisconfiguredError('DeepSeek Harness requires host-owned acceptance before execution.');
       }
     } catch (error) {
@@ -249,6 +252,7 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
   }> {
     const { resolvedConfig, runId, permissionProfile, request, providerResolution } =
       prepareAndValidate(prompt, agentOptions);
+    const executionPolicy = providerExecutionPolicy(providerResolution);
 
     // Enforce worktree isolation for implementer agents and write-capable
     // Aby bridge agents.
@@ -267,7 +271,7 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
       resolvedConfig.isolation === 'worktree' ||
       agentOptions.isolation === 'worktree' ||
       isImplementer ||
-      ((isAbyBridgeRun || providerResolution.providerId === 'deepseek-harness') && isWriteCapable) ||
+      (executionPolicy.worktreeForFileWrites && isWriteCapable) ||
       (isOpenAICompatibleRun && permissionProfile.allowedTools.includes('repo.apply_patch'));
 
     if (needsWorktree) {
@@ -352,7 +356,7 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
       }
 
       if (agentOptions.schema) assertAgentResultSchema(adapterResult.data, agentOptions.schema);
-      if (providerResolution.providerId === 'deepseek-harness') {
+      if (executionPolicy.requiresHostAcceptance) {
         await options.harnessResultAcceptance!(executionContext, adapterResult.data);
         abortController.signal.throwIfAborted();
       }
@@ -463,14 +467,20 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
       // Dirty-state-aware worktree cleanup: preserve worktrees with
       // uncommitted changes so real work is never destroyed by an
       // automatic cleanup sweep.
-      if (worktreePath && providerResolution.providerId === 'deepseek-harness') {
+      if (worktreePath && executionPolicy.preserveWorktree) {
         // Harness shutdown can leave unknown child effects. Preserve even apparently clean trees;
         // neither a signal nor a failed dirty check grants cleanup authority.
         const branchName = worktreeBranchName ?? `agent/${resolvedConfig.agentId}/run-${runId}/${runId}`;
-        runStore.updateRun(runId, { worktreeHandoff: {
-          worktreePath, branchName, reason: 'Harness execution retained for acceptance and read-only reconciliation.',
-          preservedAt: new Date().toISOString(),
-        } });
+        try {
+          runStore.updateRun(runId, { worktreeHandoff: {
+            worktreePath, branchName, reason: 'External execution retained for acceptance and read-only reconciliation.',
+            preservedAt: new Date().toISOString(),
+          } });
+        } catch {
+          // Preservation is unconditional; failure to record its advisory receipt
+          // must not replace an accepted result or the original execution error.
+          try { recorder.progress(runId, { step: 'worktree_preservation_receipt_unconfirmed' }); } catch { /* primary result wins */ }
+        }
       } else if (worktreePath) {
         try {
           const { checkDirty, cleanupWorktree } = await import('@openslack/runtime');
@@ -784,6 +794,7 @@ function createDefaultProviderRegistry(
       return {
         providerId: 'aby',
         transport: 'process',
+        policy: { requiresHostAcceptance: false, worktreeForFileWrites: true, preserveWorktree: false },
         adapter: createBridgeAdapter({
           bridgeMode: 'process',
           availableMcpServers,
