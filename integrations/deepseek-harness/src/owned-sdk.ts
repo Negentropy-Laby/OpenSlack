@@ -29,8 +29,15 @@ export function createOwnedSdk(config: OwnedSdkOptions): TaskSdk {
     closing = true
     const deadline = shutdownDeadline()
     try {
-      if (!initialized) return Object.freeze({ pid: -1, code: null, signal: null,
-        terminationRequested: false, shutdownAcknowledged: false, resourcesStopped: false })
+      if (!initialized) {
+        // start() has already synchronously spawned before awaiting initialize.
+        // Never wait for initialize before requesting public, non-lazy cleanup.
+        await withinShutdown(deadline, () => sdk.close())
+        if (!attempted) return Object.freeze({ pid: -1, code: null, signal: null,
+          terminationRequested: false, shutdownAcknowledged: false, resourcesStopped: false })
+        const receipt = await observed.waitForClose(shutdownRemaining(deadline))
+        return Object.freeze({ ...receipt, shutdownAcknowledged: false, resourcesStopped: false })
+      }
       const result = await sdk.client.request('openslack/prepare-shutdown', {
         generation: config.generation, remainingMs: shutdownRemaining(deadline),
       }, shutdownRemaining(deadline))

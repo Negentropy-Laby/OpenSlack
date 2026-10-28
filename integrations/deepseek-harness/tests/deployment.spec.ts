@@ -42,6 +42,7 @@ describe('external plugin build inputs', () => {
       'src',
       'native-supervisor',
       'tests/fixtures/scripted-model.ts',
+      'tests/fixtures/shutdown-probe.ts',
     ]) {
       mkdirSync(dirname(join(root, path)), { recursive: true });
       cpSync(join(packageRoot, path), join(root, path), { recursive: true });
@@ -136,7 +137,7 @@ describe('deployment mounts remain an exact two-code-root set', () => {
       agentId: 'fixture-only',
       provider: 'fixture',
       model: 'fixture',
-      exitGraceMs: 1_000,
+      exitGraceMs: 30_000,
     };
     const input = join(root, 'deployment-validation.json');
     writeFileSync(input, JSON.stringify({ root, deployment }), { flag: 'wx' });

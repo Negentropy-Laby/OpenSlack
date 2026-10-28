@@ -7,6 +7,7 @@ import type {
 import type { OpenSlackHumanAttestedMcpComposition } from '../mcp-human-attested-composition.js';
 import { mcpCommands, OPENSLACK_MCP_CLI_PROFILES } from '../commands/mcp.js';
 import type { HarnessTaskHost } from '@openslack/agent-runtime/internal/harness';
+import { HarnessRootUnsafeError } from '@openslack/agent-runtime/internal/harness';
 
 function operatorContext() {
   return Object.freeze({}) as never;
@@ -980,6 +981,34 @@ describe('mcp command', () => {
     expect(createAgentBoundComposition).not.toHaveBeenCalled();
     expect(createServer).not.toHaveBeenCalled();
     expect(stderr).toHaveBeenCalledOnce();
+    expect(process.exitCode).toBe(1);
+  });
+
+  it('explains rejected linked Harness roots without leaking OS errors or weakening startup checks', async () => {
+    const createConfiguredHarnessTaskHost = vi.fn(() => { throw new HarnessRootUnsafeError(); });
+    const createAgentBoundComposition = vi.fn(), createServer = vi.fn();
+    await mcpCommands({ workspaceRoot: process.cwd(), operator: operatorContext(), createConfiguredHarnessTaskHost,
+      createAgentBoundComposition, createServer }).parseAsync(['node', 'test', 'serve', '--stdio', '--profile', 'agent-bound',
+      '--principal-ref', 'agent-1', '--harness-task-host']);
+    expect(stderr).toHaveBeenCalledExactlyOnceWith('OPENSLACK_MCP_START_FAILED: HARNESS_ROOT_UNSAFE; use an approved physical workspace path without links or junction ancestors.');
+    expect(createServer).not.toHaveBeenCalled(); expect(createAgentBoundComposition).not.toHaveBeenCalled();
+    expect(process.exitCode).toBe(1);
+  });
+
+  it.each(['SIGINT', 'SIGTERM'] as const)('keeps %s during failed startup classified as startup, even if close fails', async signal => {
+    const created = server();
+    created.close = vi.fn(async () => { throw new Error('private close detail'); });
+    created.serveStdio = vi.fn(async () => {
+      process.emit(signal);
+      await Promise.resolve();
+      throw new Error('private start detail');
+    });
+    await mcpCommands({ workspaceRoot: process.cwd(), operator: operatorContext(),
+      createContext: () => ({} as OpenSlackMcpContext), createServer: () => created })
+      .parseAsync(['node', 'test', 'serve', '--stdio']);
+    expect(created.close).toHaveBeenCalledOnce();
+    expect(stderr).toHaveBeenCalledExactlyOnceWith('OPENSLACK_MCP_START_FAILED: the requested stdio profile did not start.');
+    expect(stdout).not.toHaveBeenCalled();
     expect(process.exitCode).toBe(1);
   });
 

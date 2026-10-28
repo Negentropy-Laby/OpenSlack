@@ -90,7 +90,7 @@ describe('owned shutdown duration and process-local monotonic deadlines', () => 
       'process.stdout.write(JSON.stringify({ wall: Date.now(), remaining: shutdownRemaining(local) }));',
     ].join('\n');
     const actual = JSON.parse(execFileSync(process.execPath, ['--input-type=module', '-e', script,
-      new URL('../src/shutdown.ts', import.meta.url).href, String(parentWall), String(remainingMs)],
+      new URL('../.build/fixtures/shutdown-probe.js', import.meta.url).href, String(parentWall), String(remainingMs)],
     { encoding: 'utf8', timeout: 5_000, env: { PATH: process.env.PATH } })) as { wall: number; remaining: number };
     expect(actual.wall).toBe(parentWall - 1);
     expect(actual.remaining).toBeGreaterThan(0);
@@ -211,7 +211,7 @@ describe('external strict SDK host over the unmodified public server', () => {
     ctx.llm.registerAdapter(['fixture'], new Backend());
     const request = { provider: 'fixture', model: 'fixture', messages: [] };
     const initial = JSON.stringify(request);
-    const consume = async (stream: AsyncIterable<StreamChunk>) => { for await (const _chunk of stream) { /* exhaust */ } };
+    const consume = async (stream: AsyncIterable<StreamChunk>) => { for await (const chunk of stream) { expect(chunk.type).toBe('finish'); } };
     const stream = ctx.llm.stream(request);
     if (boundary === 'next-stream') { await consume(stream); expect(dispatched).toHaveBeenCalledOnce(); dispatched.mockClear(); }
     const clock = vi.spyOn(Date, 'now').mockReturnValue(expiry);
@@ -221,5 +221,30 @@ describe('external strict SDK host over the unmodified public server', () => {
       expect(dispatched).not.toHaveBeenCalled();
       expect(JSON.stringify(request)).toBe(initial);
     } finally { clock.mockRestore(); }
+  });
+  it.each(['closing', 'lease-expired'] as const)('stops an existing stream at the next chunk when %s, and closes its iterator', async reason => {
+    const expiry = Date.now() + 30_000;
+    const { ctx, request: rpc } = await setup(false, { mode: 'required', expiresAt: expiry });
+    const finished = vi.fn();
+    class Backend extends LlmAdapter {
+      override async *stream(): AsyncIterable<StreamChunk> {
+        try {
+          yield { type: 'finish', reason: { kind: 'stop' } };
+          yield { type: 'finish', reason: { kind: 'stop' } };
+        } finally { finished(); }
+      }
+    }
+    ctx.llm.registerAdapter(['fixture'], new Backend());
+    const modelRequest = Object.freeze({ provider: 'fixture', model: 'fixture', messages: [] });
+    const before = JSON.stringify(modelRequest);
+    const stream = ctx.llm.stream(modelRequest)[Symbol.asyncIterator]();
+    expect((await stream.next()).done).toBe(false);
+    const wall = reason === 'lease-expired' ? vi.spyOn(Date, 'now').mockReturnValue(expiry) : undefined;
+    try {
+      if (reason === 'closing') await rpc('prepare-stream', 'openslack/prepare-shutdown', { generation: 'g1', remainingMs: 24_000 });
+      await expect(stream.next()).rejects.toThrow(reason === 'closing' ? /closing/ : /lease expired/);
+      expect(finished).toHaveBeenCalledOnce();
+      expect(JSON.stringify(modelRequest)).toBe(before);
+    } finally { wall?.mockRestore(); await stream.return?.(); }
   });
 });

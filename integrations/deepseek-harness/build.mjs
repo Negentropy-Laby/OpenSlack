@@ -54,7 +54,7 @@ const native = spawnSync('go', ['build', '-trimpath', '-buildvcs=false', '-ldfla
   env: { ...goEnv, GOOS: 'windows', GOARCH: 'amd64', CGO_ENABLED: '0' },
 });
 if (native.status !== 0) process.exit(native.status ?? 1);
-const fixture = await Bun.build({ entrypoints: [join(root, 'tests/fixtures/scripted-model.ts')],
+const fixture = await Bun.build({ entrypoints: ['scripted-model', 'shutdown-probe'].map(name => join(root, `tests/fixtures/${name}.ts`)),
   outdir: join(root, '.build/fixtures'), target: 'node', format: 'esm', sourcemap: 'none', external,
   plugins: [wirePlugin] });
 if (!fixture.success) { for (const log of fixture.logs) console.error(log); process.exit(1); }

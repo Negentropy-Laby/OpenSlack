@@ -48,15 +48,31 @@ export function publicAliases(harnessRoot, declarations = false) {
       if (existsSync(path)) aliases[name] = path;
     } catch { /* Packages without a public root are not consumed by this integration. */ }
   }
+  for (const [name, pkg] of publicMcpEntries(packages)) aliases[name] = resolve(pkg.directory, declarations ? pkg.exported.types : pkg.exported.default);
+  return aliases;
+}
+
+function publicMcpEntries(packages) {
   const mcp = packages.get('@deepseek-ai/dsh-mcp-client');
   if (!mcp) throw new Error('Native MCP public tool adapter is required');
-  const require = createRequire(mcp.manifestPath);
+  const require = createRequire(mcp.manifestPath), entries = new Map();
   for (const name of ['@modelcontextprotocol/client', '@modelcontextprotocol/client/stdio']) {
-    const entry = require.resolve(name);
-    const packageRoot = resolve(dirname(entry), '..');
-    const metadata = JSON.parse(readFileSync(join(packageRoot, 'package.json'), 'utf8'));
-    const exported = metadata.exports[name.endsWith('/stdio') ? './stdio' : '.'].import;
-    aliases[name] = resolve(packageRoot, declarations ? exported.types : exported.default);
+    const entry = require.resolve(name), directory = resolve(dirname(entry), '..');
+    const manifestPath = join(directory, 'package.json'), metadata = JSON.parse(readFileSync(manifestPath, 'utf8'));
+    const exported = metadata.exports?.[name.endsWith('/stdio') ? './stdio' : '.']?.import;
+    // Deliberately fixed to the approved MCP 2.2.0 public export layout. An
+    // intentional dependency upgrade needs a new compatibility review, not a
+    // guessed private path or a second runtime installation.
+    if (metadata.name !== '@modelcontextprotocol/client' || metadata.version !== '2.2.0' ||
+      !exported || typeof exported !== 'object' || typeof exported.types !== 'string' || typeof exported.default !== 'string') {
+      throw new Error('Unsupported pinned MCP public export layout; review the original Harness compatibility baseline before upgrading.');
+    }
+    entries.set(name, { directory, manifestPath, exported });
   }
-  return aliases;
+  return entries;
+}
+
+/** Exact extra public peer packages consumed by aliases, including local chunks. */
+export function publicMcpRuntimePackages(harnessRoot) {
+  return [...new Map([...publicMcpEntries(publicHarnessPackages(harnessRoot)).values()].map(pkg => [pkg.directory, pkg])).values()];
 }

@@ -48,7 +48,12 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       assertEligibilityRestriction(startEligibility)
     }
     current()
-    return (async function* () { current(); yield* next() })()
+    return (async function* () {
+      current()
+      // A lease may expire while a model request is already streaming. Keep
+      // this boundary independent of the SDK Agent's own cancellation checks.
+      for await (const chunk of next()) { current(); yield chunk }
+    })()
   })
   let prepared: Promise<{ resources: ProcessExitReceipt[] }> | undefined
   let exitTask: Promise<void> | undefined

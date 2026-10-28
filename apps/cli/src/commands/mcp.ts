@@ -1,5 +1,5 @@
 import { Command, Option } from 'commander';
-import { canonicalHarnessRoot, createConfiguredHarnessTaskHost, createHarnessHostCloser, type HarnessTaskHost } from '@openslack/agent-runtime/internal/harness';
+import { canonicalHarnessRoot, HarnessRootUnsafeError, createConfiguredHarnessTaskHost, createHarnessHostCloser, type HarnessTaskHost } from '@openslack/agent-runtime/internal/harness';
 import {
   normalizeGraphServiceOrigin,
   type GraphReadAuthorityPort,
@@ -627,13 +627,16 @@ export function mcpCommands(dependencies: McpCommandDependencies): Command {
     )
     .action(async (options: McpServeOptions) => {
       let server: OpenSlackMcpServer | undefined;
-      let phase: 'starting' | 'serving' | 'closing' = 'starting';
+      let everServed = false;
+      let closeRequested = false;
       let failureRendered = false;
-      const renderFailure = (): void => {
+      const renderFailure = (error?: unknown): void => {
         if (failureRendered) return;
         failureRendered = true;
-        console.error(phase === 'starting'
-          ? 'OPENSLACK_MCP_START_FAILED: the requested stdio profile did not start.'
+        console.error(!everServed
+          ? error instanceof HarnessRootUnsafeError
+            ? 'OPENSLACK_MCP_START_FAILED: HARNESS_ROOT_UNSAFE; use an approved physical workspace path without links or junction ancestors.'
+            : 'OPENSLACK_MCP_START_FAILED: the requested stdio profile did not start.'
           : 'OPENSLACK_MCP_SHUTDOWN_UNCONFIRMED: preserve task evidence and reconcile before retrying.');
         process.exitCode = 1;
       };
@@ -661,7 +664,7 @@ export function mcpCommands(dependencies: McpCommandDependencies): Command {
           : createServer(context);
 
         const close = async (): Promise<void> => {
-          phase = 'closing';
+          closeRequested = true;
           try {
             await server?.close();
             if (!failureRendered) process.exitCode = 0;
@@ -673,7 +676,7 @@ export function mcpCommands(dependencies: McpCommandDependencies): Command {
         process.once('SIGTERM', close);
         try {
           await server.serveStdio();
-          if (phase === 'starting') phase = 'serving';
+          if (!closeRequested) everServed = true;
           await server.whenClosed;
         } finally {
           process.off('SIGINT', close);
@@ -684,7 +687,7 @@ export function mcpCommands(dependencies: McpCommandDependencies): Command {
         if (error instanceof McpProfileArgumentError) {
           console.error(`OPENSLACK_MCP_PROFILE_ARGUMENT_INVALID: ${error.message}`);
         } else {
-          renderFailure();
+          renderFailure(error);
         }
         process.exitCode = 1;
       }

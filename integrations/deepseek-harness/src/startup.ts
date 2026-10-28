@@ -87,7 +87,7 @@ async function main(): Promise<void> {
   if (!Number.isSafeInteger(timeout) || timeout < 1) throw new Error('Invalid peer deadline')
   // Includes dependency loading and the first handshake. No input is needed to
   // arm the cutoff; a silent/hung parent cannot leave an immortal peer.
-  const deadline = Date.now() + timeout
+  const deadline = performance.now() + timeout
   let stop: () => void = () => { process.exit(1) }
   const timer = setTimeout(() => { process.exitCode = 1; stop() }, timeout)
   peerDeadlineTimer = timer
@@ -101,7 +101,7 @@ async function main(): Promise<void> {
   assertEligibilityRestriction(startEligibility)
   const runtime = await loadPublicHarness(required(deployment, '--harness-root'))
   assertEligibilityRestriction(startEligibility)
-  if (Date.now() >= deadline) { clearTimeout(timer); throw new Error('Peer startup deadline exceeded') }
+  if (performance.now() >= deadline) { clearTimeout(timer); throw new Error('Peer startup deadline exceeded') }
   const { resultMode, callbackMcp, runtimeEntries, ...scopeBinding } = binding
   if (binding.callbacks && (!callbackMcp || !isAbsolute(callbackMcp.cliModule) || !isAbsolute(callbackMcp.workspaceRoot) ||
     !callbackMcp.principalRef || !callbackMcp.cliModule.endsWith('.js'))) throw new Error('Missing trusted task callback MCP deployment')
@@ -141,7 +141,7 @@ async function main(): Promise<void> {
           dshBin: runtime.dshBin, dshHome: required(deployment, '--home'), profile: 'sdk', patches,
           processCwd: binding.root, cwd: binding.root,
           provider: required(deployment, '--provider'), model: required(deployment, '--model'),
-          initializeTimeoutMs: Math.max(1, deadline - Date.now()), requestTimeoutMs: Math.max(1, deadline - Date.now()),
+          initializeTimeoutMs: Math.max(1, Math.floor(deadline - performance.now())), requestTimeoutMs: Math.max(1, Math.floor(deadline - performance.now())),
         },
         async authorize(method, params) {
           if (!['openslack/tool-authorize', 'openslack/tool-evidence-result'].includes(method) || params.runId !== binding.runId ||

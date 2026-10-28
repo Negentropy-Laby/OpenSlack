@@ -1267,6 +1267,10 @@ describe('production agent-bound governed mutation composition', () => {
       const worker = new HarnessTaskHost({ ...options, callbackRunId: runId });
       const callbackComposition = await createOpenSlackAgentBoundMutationComposition({ workspaceRoot, principalRef: PRINCIPAL_REF, harnessTaskHost: worker });
       const callback = new OpenSlackMcpCore(context(workspaceRoot, callbackComposition.governedMutations));
+      expect((await callback.callTool('openslack_preview_workflow', { workflowId: 'harness.task.dispatch', input: { taskId: task.taskId, requestId: 'wrong-worker-role' } })).structuredContent.status).toBe('blocked');
+      expect((await core.callTool('openslack_preview_workflow', { workflowId: 'harness.task.report', input: { runId, reportId: 'wrong-initiator-role', summary: 'must not record', evidenceRefs: [] } })).structuredContent.status).toBe('blocked');
+      expect(host.read(runId)?.harnessExecution?.reports).toEqual({});
+      expect(execute).toHaveBeenCalledOnce();
       const report = await callback.callTool('openslack_preview_workflow', { workflowId: 'harness.task.report',
         input: { runId, reportId: 'report-1', summary: 'Text changed; host acceptance pending.', evidenceRefs: ['artifact:fixture'] } });
       expect(report.structuredContent.status).toBe('needs_confirmation');

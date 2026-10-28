@@ -17,8 +17,7 @@ From the OpenSlack repository root:
 
 ```sh
 export DEEPSEEK_HARNESS_CHECKOUT=/absolute/path/to/unmodified-built-harness
-bun run build
-bun integrations/deepseek-harness/build.mjs
+bun integrations/deepseek-harness/prepare-compatibility.mjs
 bunx vitest run --config integrations/deepseek-harness/vitest.config.ts
 ```
 
@@ -27,6 +26,11 @@ external to its bundles and are supplied by the approved Harness installation;
 there must not be a second Cordis, Tools, FS, or SDK runtime instance. Missing or
 unqualified deployment dependencies fail closed. The test configuration requires
 the same explicit built dependency; it never silently substitutes a fixture SDK.
+The explicit preparation forces TypeScript emission, builds the plugin and records
+an ignored content witness for source/config/locks, public dependency artifacts,
+tools and outputs. Test configuration only verifies it; it never builds or skips.
+After source, output, compiler or dependency drift, rerun that preparation command.
+Preserved mtimes do not bypass verification. The witness is not deployment authority.
 
 Ordinary root tests build OpenSlack first and do not require a Harness checkout.
 With the explicit checkout they also include this compatibility project. CI sets

@@ -185,7 +185,7 @@ export function apply(ctx: Context, config: Config): void {
       }
       return Promise.resolve()
     }
-    const vault = new ConfirmationVault({ taskId: scope.taskId, runId: scope.runId,
+    const vault = new ConfirmationVault({ mode: 'worker', taskId: scope.taskId, runId: scope.runId,
       principalId: scope.principalId, generation: scope.generation, assertCurrent })
     const dispose = agent.ctx.effect(() => {
       const releases: Array<() => void> = []

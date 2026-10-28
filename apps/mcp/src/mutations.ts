@@ -52,10 +52,26 @@ export interface CreateOpenSlackGovernedMutationPortOptions {
   readonly compileWorkflow: (
     input: OpenSlackGovernedPlanCompilerInput,
   ) => CreateCanonicalGovernedPlanInput | Promise<CreateCanonicalGovernedPlanInput>;
-  /** Synchronous host notification after the service returns its durable confirmation result; never a model callback. */
-  readonly onConfirmed?: (record: GovernedPlanRecord) => void;
   /** Always observes durable readback after confirmation/cancellation, including partial failure. */
   readonly onConfirmationSettled?: (planId: string, outcome: Readonly<{ operation: 'confirm' | 'cancel'; attemptId: string; failed: boolean; failureCode?: string; aborted: boolean }>) => void | Promise<void>;
+}
+
+/** The effect is already durable. This error cannot authorize a retry or claim
+ * that a task admission was released; it only carries immutable readback. */
+export class GovernedMutationSettlementUnconfirmedError extends Error {
+  readonly code = 'GOVERNED_MUTATION_SETTLEMENT_UNCONFIRMED';
+  readonly durableRecord: GovernedPlanRecord;
+  constructor(readonly operation: 'confirm' | 'cancel', record: GovernedPlanRecord, cause: unknown) {
+    super('The governed result is durable but host settlement is unconfirmed; reconcile without replay.', { cause });
+    this.name = 'GovernedMutationSettlementUnconfirmedError';
+    const copy = structuredClone(record), pending: object[] = [copy];
+    while (pending.length) {
+      const value = pending.pop()!;
+      for (const child of Object.values(value)) if (child && typeof child === 'object' && !Object.isFrozen(child)) pending.push(child);
+      Object.freeze(value);
+    }
+    this.durableRecord = copy;
+  }
 }
 
 const mutationAttempts = new AsyncLocalStorage<string>();
@@ -169,7 +185,6 @@ export function createOpenSlackGovernedMutationPort(
   }
   const descriptors = Object.getOwnPropertyDescriptors(options);
   const expected = ['authority', 'compileScenario', 'compileWorkflow', 'service',
-    ...(Object.hasOwn(descriptors, 'onConfirmed') ? ['onConfirmed'] : []),
     ...(Object.hasOwn(descriptors, 'onConfirmationSettled') ? ['onConfirmationSettled'] : [])];
   if (
     Reflect.ownKeys(descriptors).length !== expected.length ||
@@ -189,10 +204,6 @@ export function createOpenSlackGovernedMutationPort(
   const compileWorkflow = descriptors.compileWorkflow!.value;
   assertHostFunction(compileScenario, 'compileScenario');
   assertHostFunction(compileWorkflow, 'compileWorkflow');
-  const onConfirmed: CreateOpenSlackGovernedMutationPortOptions['onConfirmed'] = descriptors.onConfirmed?.value;
-  if (onConfirmed !== undefined && (typeof onConfirmed !== 'function' || utilTypes.isProxy(onConfirmed))) {
-    throw new TypeError('onConfirmed must be a host-owned non-Proxy function.');
-  }
   const onSettled: CreateOpenSlackGovernedMutationPortOptions['onConfirmationSettled'] = descriptors.onConfirmationSettled?.value;
   if (onSettled !== undefined && (typeof onSettled !== 'function' || utilTypes.isProxy(onSettled))) throw new TypeError('onConfirmationSettled must be host-owned.');
   const settle = async (operation: 'confirm' | 'cancel', request: ReturnType<typeof tokenInput>, control: ReturnType<typeof invocation>,
@@ -203,10 +214,15 @@ export function createOpenSlackGovernedMutationPort(
     catch (error) {
       const failureCode = error && typeof error === 'object' && 'code' in error && typeof error.code === 'string' ? error.code : undefined;
       try { await onSettled?.(request.planId, { operation, attemptId, failed: true, aborted: control.signal.aborted, ...(failureCode ? { failureCode } : {}) }); }
-      catch (secondary) { throw new AggregateError([error, secondary], 'Governed execution and settlement both failed.', { cause: error }); }
+      catch (secondary) {
+        const combined = new AggregateError([error, secondary], 'Governed execution and settlement both failed.', { cause: error });
+        if (failureCode) Object.defineProperty(combined, 'code', { value: failureCode });
+        throw combined;
+      }
       throw error;
     }
-    await onSettled?.(request.planId, { operation, attemptId, failed: false, aborted: control.signal.aborted });
+    try { await onSettled?.(request.planId, { operation, attemptId, failed: false, aborted: control.signal.aborted }); }
+    catch (secondary) { throw new GovernedMutationSettlementUnconfirmedError(operation, result, secondary); }
     return result;
   };
 
@@ -249,10 +265,7 @@ export function createOpenSlackGovernedMutationPort(
     ) => {
       const control = invocation(invocationValue);
       const request = tokenInput(inputValue);
-      return settle('confirm', request, control, () => service.confirm(request, boundAuthority, control).then(record => {
-        onConfirmed?.(record);
-        return record;
-      }));
+      return settle('confirm', request, control, () => service.confirm(request, boundAuthority, control));
     },
     cancel: (
       inputValue: Readonly<Record<string, unknown>>,

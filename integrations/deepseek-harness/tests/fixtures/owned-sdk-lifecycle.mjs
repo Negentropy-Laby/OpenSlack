@@ -8,6 +8,23 @@ const [harnessRoot, home, workspace, patch, mode] = process.argv.slice(2);
 let runtime = await loadPublicHarness(harnessRoot);
 const expiresAt = Date.now() + 60_000, realNow = Date.now;
 let startEligibility = { mode: 'not_applicable' }, patches = [patch];
+const startEntered = Promise.withResolvers(), startReleased = Promise.withResolvers();
+if (mode === 'close-during-start') {
+  // Real public SDK start/spawn/initialize still runs; only the public start
+  // return is held. This deterministically keeps the owner's start() pending
+  // while close() must stop its real process, without SDK private fields.
+  const Original = runtime.sdk.DeepSeekHarness;
+  class StartBarrier extends Original {
+    async start() {
+      const started = super.start();
+      void started.catch(() => {});
+      startEntered.resolve();
+      await startReleased.promise;
+      await started;
+    }
+  }
+  runtime = { ...runtime, sdk: { ...runtime.sdk, DeepSeekHarness: StartBarrier } };
+}
 if (mode === 'expired-after-initialize') {
   startEligibility = { mode: 'required', expiresAt };
   const binding = JSON.parse(readFileSync(join(dirname(home), 'binding.json'), 'utf8'));
@@ -35,13 +52,21 @@ const observe = ({ process: child }) => child.once('spawn', () => {
 channel('child_process').subscribe(observe);
 const port = createOwnedSdk({ runtime, generation: 'fixture-g1', requireMcp: false, startEligibility,
   launch: { dshBin: runtime.dshBin, profile: 'sdk', dshHome: home, patches,
-    cwd: workspace, processCwd: workspace, provider: mode === 'expired-after-initialize' ? 'openslack-fixture' : 'missing-provider-for-initialize-negative', model: 'fixture',
+    cwd: workspace, processCwd: workspace, provider: ['expired-after-initialize', 'close-during-start'].includes(mode) ? 'openslack-fixture' : 'missing-provider-for-initialize-negative', model: 'fixture',
     initializeTimeoutMs: 5_000, env: { PATH: process.env.PATH } },
   authorize: async () => { throw new Error('No fixture authorization'); } });
 let rejected = false, failure;
 try {
   if (mode === 'before-start') await port.close();
-  try { await port.run('must never reach a model', 'not-started', () => {}); } catch (error) { rejected = true; failure = error.message; }
+  if (mode === 'close-during-start') {
+    const running = port.run('must never reach a model', 'not-started', () => {}).catch(error => { rejected = true; failure = error.message; });
+    await startEntered.promise;
+    const first = port.close(), repeated = port.close();
+    if (first !== repeated) throw new Error('Close did not retain a single lifecycle promise');
+    try { await first; } finally { startReleased.resolve(); await running; }
+  } else {
+    try { await port.run('must never reach a model', 'not-started', () => {}); } catch (error) { rejected = true; failure = error.message; }
+  }
   // Only the owner's fulfilled-initialize boundary uses the deterministic
   // parent clock. Restore it before sending an absolute cleanup deadline to
   // the child, which has its own real clock and did not undergo that test jump.

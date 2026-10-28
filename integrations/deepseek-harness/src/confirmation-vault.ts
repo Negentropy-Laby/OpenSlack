@@ -2,16 +2,17 @@
 import type { ToolDefinition, ToolRunContext } from '@deepseek-ai/dsh-tools'
 
 /** Host-owned task and transport identity, independent of model-supplied arguments. */
-export interface ConfirmationScope {
+interface ConfirmationScopeBase {
   taskId: string
-  /** Worker callbacks use a fixed run. Initiators learn one route only from a host admission result. */
-  runId?: string
-  mode?: 'worker' | 'initiator'
   principalId: string
   generation: string
   /** Revalidate host binding and backing MCP definitions before and after every await. */
   assertCurrent: () => Promise<void>
 }
+/** Chosen by the trusted plugin composition, never inferred from model arguments. */
+export type ConfirmationScope = ConfirmationScopeBase & (
+  { mode: 'worker'; runId: string } | { mode: 'initiator'; runId?: never }
+)
 
 interface Entry { token: string; expiresAt: number }
 
@@ -38,7 +39,13 @@ export class ConfirmationVault {
   private admittedRun: string | undefined
 
   private readonly scope: ConfirmationScope
-  constructor(scope: ConfirmationScope) { this.scope = { ...scope } }
+  constructor(scope: ConfirmationScope) {
+    if (!scope.taskId || !scope.principalId || !scope.generation || typeof scope.assertCurrent !== 'function' ||
+      (scope.mode === 'worker' ? !/^RUN-[A-Z0-9-]+$/.test(scope.runId) : scope.mode !== 'initiator' || scope.runId !== undefined)) {
+      throw new ConfirmationFailure()
+    }
+    this.scope = Object.freeze({ ...scope })
+  }
 
   /** Irreversibly invalidate all pending confirmation capabilities. */
   dispose(): void { this.disposed = true; this.entries.clear() }
@@ -139,6 +146,16 @@ export class ConfirmationVault {
             !/^RUN-[A-Z0-9-]+$/.test(receipt.runId) || !['pending', 'running', 'completed', 'failed', 'cancelled'].includes(String(receipt.status))) {
             throw new ConfirmationFailure()
           }
+          observedRun = receipt.runId
+        } else if (upstream.status === 'blocked' && object(data) && data.settlement !== undefined) {
+          const governance = upstream.governance
+          if (upstream.planId !== input.planId || data.kind !== 'workflow.start' || data.state !== 'succeeded' ||
+            data.settlement !== 'unconfirmed' || data.requiresReconciliation !== true || !object(governance) || governance.blocker !== 'GOVERNED_MUTATION_SETTLEMENT_UNCONFIRMED' ||
+            outcome?.actionId !== 'harness.task.dispatch' || outcome.status !== 'succeeded' || !object(receipt) ||
+            receipt.taskId !== this.scope.taskId || typeof receipt.runId !== 'string' || !/^RUN-[A-Z0-9-]+$/.test(receipt.runId) ||
+            !['pending', 'running', 'completed', 'failed', 'cancelled'].includes(String(receipt.status))) throw new ConfirmationFailure()
+          // Durable admission is not a second confirmation or execution grant.
+          // It binds only the route that the original caller must reconcile.
           observedRun = receipt.runId
         } else if (object(receipt) && receipt.admission !== undefined) {
           // A duplicate may observe an exclusively owned admission before its

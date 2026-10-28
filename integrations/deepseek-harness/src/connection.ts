@@ -91,10 +91,16 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     // The public stream exists before connect; drain it during initialize too.
     transport.stderr?.on('data', () => {})
     const startupDeadline = performance.now() + config.timeoutMs
-    await withinShutdown(startupDeadline, () => client.connect(transport, { timeout: config.timeoutMs }))
+    const startup = new AbortController()
+    const startupTimer = setTimeout(() => startup.abort(new Error('OpenSlack MCP startup deadline exceeded')), config.timeoutMs)
+    try {
+    await withinShutdown(startupDeadline, () => client.connect(transport, { timeout: shutdownRemaining(startupDeadline) }))
     observed.assertCaptured(transport.pid)
     if (lost) throw new Error('OpenSlack MCP disconnected during startup')
-    const listed = await client.listTools()
+    // MCP aggregates pages internally. Its per-page timeout alone would renew
+    // the budget, so one signal and outer deadline cover the entire catalog.
+    const listed = await withinShutdown(startupDeadline, () => client.listTools(undefined,
+      { signal: startup.signal, timeout: shutdownRemaining(startupDeadline) }))
     const expected = config.mode === 'read-only' ? 12 : 16
     if (listed.tools.length !== expected || new Set(listed.tools.map(tool => tool.name)).size !== expected) {
       throw new Error('Unexpected OpenSlack tool catalog')
@@ -119,7 +125,12 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
         ctx.effect(() => ctx.tools.register(definition))
       }
     }
+    shutdownRemaining(startupDeadline)
+    startup.signal.throwIfAborted()
+    observed.assertCaptured(transport.pid)
+    if (closing || lost) throw new Error('OpenSlack MCP disconnected before readiness')
     ready = true
+    } finally { clearTimeout(startupTimer) }
   } catch {
     lost = true
     await owner.stop().catch(() => {})

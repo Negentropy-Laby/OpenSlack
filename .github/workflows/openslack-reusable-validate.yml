@@ -84,7 +84,7 @@ jobs:
       - run: bun run build
 
       - name: Build the OpenSlack-owned external plugin
-        run: bun integrations/deepseek-harness/build.mjs
+        run: bun integrations/deepseek-harness/prepare-compatibility.mjs
 
       - name: Verify the private supervisor module
         working-directory: integrations/deepseek-harness/native-supervisor

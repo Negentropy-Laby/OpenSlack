@@ -6,6 +6,20 @@ import * as Connection from '../src/connection.ts';
 import type { ToolRunContext } from '@deepseek-ai/dsh-tools';
 
 describe('externally owned native MCP over a real server process', () => {
+  it.each(['read-only', 'task'] as const)('bounds the %s catalog, including all pages, by the one startup budget', async mode => {
+    const ctx = new Context();
+    onTestFinished(() => ctx.fiber.dispose());
+    await mountAgentLoopTestDependencies(ctx, { workingDirectory: true });
+    let failure: string | undefined;
+    try { await ctx.plugin(Connection, { mode,
+      workspaceRoot: fileURLToPath(new URL('.', import.meta.url)),
+      cliModule: fileURLToPath(new URL('./fixtures/mcp-server-catalog.js', import.meta.url)),
+      principalRef: 'fixture-only', timeoutMs: mode === 'task' ? 6_000 : 5_000,
+    }); } catch (error) { failure = error instanceof Error ? error.message : String(error); }
+    expect(failure ?? '<fulfilled>').toContain('OpenSlack MCP initialization failed');
+    // Cordis removes a failed plugin's provided service during disposal.
+    expect(ctx.get('openslackConnection')?.connected ?? false).toBe(false);
+  }, 20_000);
   it('drains a full pre-initialize stderr pipe before awaiting the public MCP handshake', async () => {
     const ctx = new Context();
     onTestFinished(() => ctx.fiber.dispose());

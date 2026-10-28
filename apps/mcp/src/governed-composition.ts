@@ -87,7 +87,7 @@ import { OpenSlackMcpToolError } from './errors.js';
 import { HarnessTaskHost } from '@openslack/agent-runtime/internal/harness';
 import {
   HARNESS_WORKFLOW_BUILD_SOURCE_PATH, executeHarnessWorkflow, harnessWorkflowEntries,
-  isHarnessWorkflowId, observeHarnessWorkflow, restoreHarnessWorkflow,
+  observeHarnessWorkflow, restoreHarnessWorkflow,
 } from './harness-workflow.js';
 import {
   createOpenSlackGovernedMutationPort,
@@ -1436,15 +1436,20 @@ export async function createOpenSlackAgentBoundMutationComposition(
         'blocked',
       );
     }
-    const harnessTarget = harnessHost && context.canonicalPlan.kind === WORKFLOW_ACTION_ID &&
-      workflowFamily(workflowResolver, context.canonicalPlan.actions[0]?.actionId) === 'harness';
+    // Scenario adapters use an executor action ID, not their Workflow ID. The
+    // sealed persisted plan supplies the target; the resolver supplies its family.
+    const workflowTarget = context.canonicalPlan.kind === WORKFLOW_ACTION_ID && context.canonicalPlan.actions.length === 1
+      ? workflowPlanFromActionInput(context.canonicalPlan.actions[0]!.input).workflow.id : undefined;
+    const family = context.canonicalPlan.kind === WORKFLOW_ACTION_ID ? workflowFamily(workflowResolver, workflowTarget) : undefined;
+    if (context.canonicalPlan.kind === WORKFLOW_ACTION_ID && !family) throw new OpenSlackMcpToolError(
+      'GOVERNED_WORKFLOW_BINDING_CHANGED', 'The reviewed Workflow family is unavailable; no alternate family may execute.', 'blocked');
+    const harnessTarget = family === 'harness';
     if (!harnessTarget) assertScenarioAuthority(currentPrincipal);
     const definitions: ReadonlyMap<string, LoadedScenarioDefinition> = harnessTarget ? new Map() : await loadDefinitions();
     if (!harnessTarget) assertDefinitionSetStable(definitions);
     if (context.canonicalPlan.kind === WORKFLOW_ACTION_ID) {
-      const target = context.canonicalPlan.actions[0]?.actionId;
-      if (isHarnessWorkflowId(target)) {
-        const decision = authorizeAgentAction({ snapshot: currentPrincipal.snapshot, action: target, riskZone: 'yellow' });
+      if (harnessTarget) {
+        const decision = authorizeAgentAction({ snapshot: currentPrincipal.snapshot, action: workflowTarget!, riskZone: 'yellow' });
         if (decision.decision !== 'allow') throw new OpenSlackMcpToolError('GOVERNED_ACTION_NOT_AUTHORIZED', 'Harness action is not authorized.', 'blocked');
       } else authorizeContractDeliveryWorkflow(currentPrincipal);
     }

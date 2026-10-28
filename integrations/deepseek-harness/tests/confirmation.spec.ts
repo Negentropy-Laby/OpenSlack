@@ -17,11 +17,50 @@ function preview() {
 }
 function setup() {
   const assertCurrent = vi.fn(async () => {})
-  const vault = new ConfirmationVault({ taskId: 'TASK-1', runId: 'RUN-TEST', principalId: 'principal', generation: 'g1', assertCurrent })
+  const vault = new ConfirmationVault({ mode: 'worker', taskId: 'TASK-1', runId: 'RUN-TEST', principalId: 'principal', generation: 'g1', assertCurrent })
   return { vault, assertCurrent }
 }
 
 describe('per-agent confirmation vault', () => {
+  it.each(['valid', 'task', 'plan', 'action', 'state', 'outcome', 'blocker', 'settlement', 'reconciliation', 'kind'])(
+    'learns only the exact durable-succeeded settlement-unconfirmed query route: %s', async variant => {
+      const vault = new ConfirmationVault({ mode: 'initiator', taskId: 'TASK-1', principalId: 'principal', generation: 'g1', assertCurrent: async () => {} })
+      const dispatch = { workflowId: 'harness.task.dispatch', input: { taskId: 'TASK-1', requestId: 'request' } }
+      await vault.preview(tool(preview()), dispatch, exec)
+      const result = { status: 'blocked', planId: 'PLAN-1', governance: { blocker: 'GOVERNED_MUTATION_SETTLEMENT_UNCONFIRMED' }, data: {
+        kind: 'workflow.start', state: 'succeeded', settlement: 'unconfirmed', requiresReconciliation: true,
+        outcomes: [{ actionId: 'harness.task.dispatch', status: 'succeeded', data: { taskId: 'TASK-1', runId: 'RUN-DURABLE', status: 'failed' } }],
+      } }
+      if (variant === 'task') result.data.outcomes[0]!.data.taskId = 'TASK-OTHER'
+      if (variant === 'plan') result.planId = 'PLAN-OTHER'
+      if (variant === 'action') result.data.outcomes[0]!.actionId = 'harness.task.report'
+      if (variant === 'state') result.data.state = 'executing'
+      if (variant === 'outcome') result.data.outcomes[0]!.status = 'blocked'
+      if (variant === 'blocker') result.governance.blocker = 'OTHER_BLOCKER'
+      if (variant === 'settlement') result.data.settlement = 'different'
+      if (variant === 'reconciliation') result.data.requiresReconciliation = false
+      if (variant === 'kind') result.data.kind = 'scenario.instantiate'
+      const confirm = tool({ structuredContent: result, content: [] })
+      if (variant === 'valid') {
+        await expect(vault.settle(confirm, { planId: 'PLAN-1' }, exec)).resolves.toBeDefined()
+        expect(vault.permitsQuery('RUN-DURABLE')).toBe(true)
+        expect(vault.permitsQuery('RUN-OTHER')).toBe(false)
+        await expect(vault.preview(tool(preview()), dispatch, exec)).rejects.toBeDefined()
+        await expect(vault.settle(confirm, { planId: 'PLAN-1' }, exec)).rejects.toBeDefined()
+        expect(confirm.execute).toHaveBeenCalledOnce()
+      } else {
+        await expect(vault.settle(confirm, { planId: 'PLAN-1' }, exec)).rejects.toBeDefined()
+        expect(vault.permitsQuery('RUN-DURABLE')).toBe(false)
+      }
+    })
+  it.each([
+    { taskId: 'TASK-1', principalId: 'principal', generation: 'g1', assertCurrent: async () => {} },
+    { mode: 'worker', taskId: 'TASK-1', principalId: 'principal', generation: 'g1', assertCurrent: async () => {} },
+    { mode: 'initiator', runId: 'RUN-TEST', taskId: 'TASK-1', principalId: 'principal', generation: 'g1', assertCurrent: async () => {} },
+  ])('rejects an absent/confused trusted role before exposing any confirmation capability %#', scope => {
+    expect(() => new ConfirmationVault(scope as never)).toThrow('Confirmation is unavailable');
+  })
+
   it('removes bearer from canonical and text projections; confirm receives only planId from the caller', async () => {
     const { vault } = setup()
     const safe = await vault.preview(tool(preview()), args, exec)

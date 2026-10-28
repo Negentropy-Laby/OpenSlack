@@ -1,15 +1,16 @@
 /** One process-local monotonic close budget inside the supervisor's 25-second graceful window. */
-export const OWNED_SHUTDOWN_MS = 24_000
+import { HARNESS_CLEANUP_BUDGET } from '@openslack/agent-runtime/internal/bridge-wire'
+export const OWNED_SHUTDOWN_MS = HARNESS_CLEANUP_BUDGET.ownedMs
 
 /** Only a bounded remaining duration crosses a process boundary, never a clock reading. */
-export function shutdownBudget(remainingMs = OWNED_SHUTDOWN_MS): number {
+export function shutdownBudget(remainingMs: number = OWNED_SHUTDOWN_MS): number {
   if (!Number.isSafeInteger(remainingMs) || remainingMs < 1 || remainingMs > OWNED_SHUTDOWN_MS) {
     throw new Error('Invalid owned-resource shutdown budget')
   }
   return remainingMs
 }
 
-export function shutdownDeadline(remainingMs = OWNED_SHUTDOWN_MS): number {
+export function shutdownDeadline(remainingMs: number = OWNED_SHUTDOWN_MS): number {
   return performance.now() + shutdownBudget(remainingMs)
 }
 

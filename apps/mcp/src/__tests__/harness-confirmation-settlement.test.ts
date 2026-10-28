@@ -7,6 +7,7 @@ import { createGovernedActionExecutionRegistry, createGovernedPlanService, Local
 import { createRunStore, buildPermissionProfile } from '@openslack/agent-runtime';
 import { HarnessTaskHost, type ApprovedHarnessTask } from '@openslack/agent-runtime/internal/harness';
 import { createOpenSlackGovernedMutationPort, currentGovernedMutationAttempt } from '../mutations.js';
+import { callGovernedMutationTool } from '../tools/mutations.js';
 
 const roots: string[] = [];
 const hosts: HarnessTaskHost[] = [];
@@ -16,7 +17,7 @@ afterEach(async () => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
 });
 
-function setup(failure: 'hook' | 'audit' | 'busy' | 'none', wait?: Promise<void>) {
+function setup(failure: 'hook' | 'audit' | 'busy' | 'none', wait?: Promise<void>, hookMode: 'sync' | 'async' = 'async') {
   const root = mkdtempSync(join(tmpdir(), 'harness-confirmation-settlement-')); roots.push(root);
   const config = { agentId: 'fixture', source: 'fixture', tools: ['Read'] };
   const task: ApprovedHarnessTask = { taskId: 'TASK-1', principalHash: 'a'.repeat(64), baseline: 'b'.repeat(40), timeoutMs: 5000,
@@ -57,12 +58,12 @@ function setup(failure: 'hook' | 'audit' | 'busy' | 'none', wait?: Promise<void>
   const outcomes: Array<{ attemptId: string; failed: boolean }> = [];
   const mutations = createOpenSlackGovernedMutationPort({ service, authority: { actorId: 'fixture-principal', workspaceId: 'fixture' },
     compileScenario: compile, compileWorkflow: compile,
-    onConfirmed: () => { if (failure === 'hook') throw new Error('Fixture post-confirm hook failure'); },
-    onConfirmationSettled: async (planId, outcome) => {
+    onConfirmationSettled: hookMode === 'sync' ? () => { throw new Error('Fixture synchronous observer failure'); } : async (planId, outcome) => {
       outcomes.push(outcome);
       const record = await service.get(planId);
-      host.settleConfirmedAdmissions(planId, { state: outcome.failed || outcome.aborted ? 'uncertain' : record?.state ?? 'uncertain',
+      host.settleConfirmedAdmissions(planId, { state: outcome.failed || outcome.aborted || failure === 'hook' ? 'uncertain' : record?.state ?? 'uncertain',
         confirmationAttemptId: outcome.attemptId, ...(record?.execution?.executionId ? { executionId: record.execution.executionId } : {}) });
+      if (failure === 'hook') throw new Error('Fixture actual settlement observer failure');
     },
   });
   const invocation = () => ({ signal: new AbortController().signal, deadlineAt: new Date(Date.now() + 10_000).toISOString() });
@@ -71,6 +72,35 @@ function setup(failure: 'hook' | 'audit' | 'busy' | 'none', wait?: Promise<void>
 }
 
 describe('originating governed confirmation settlement', () => {
+  it.each(['sync', 'async'] as const)('retains durable cancelled truth after a %s settlement failure without inventing an unexecuted retry', async mode => {
+    const value = setup('hook', undefined, mode), preview = await value.preview();
+    const result = await callGovernedMutationTool(value.mutations, 'openslack_cancel_plan',
+      { planId: preview.record.planId, confirmationToken: preview.confirmationToken }, value.invocation());
+    expect(result).toMatchObject({ result: { status: 'blocked', data: { state: 'cancelled', settlement: 'unconfirmed', requiresReconciliation: true },
+      governance: { blocker: 'GOVERNED_MUTATION_SETTLEMENT_UNCONFIRMED' } } });
+    expect((await value.service.get(preview.record.planId))?.state).toBe('cancelled');
+    expect(value.execute).not.toHaveBeenCalled();
+  });
+  it.each(['sync', 'async'] as const)('preserves the primary invalid-confirmation classification when its %s failure observer also fails', async mode => {
+    const value = setup('hook', undefined, mode), preview = await value.preview();
+    const token = preview.confirmationToken!, altered = (token.startsWith('a') ? 'b' : 'a') + token.slice(1);
+    const failure = await value.mutations.confirm({ planId: preview.record.planId, confirmationToken: altered }, value.invocation()).catch(error => error);
+    expect(failure).toBeInstanceOf(AggregateError);
+    expect(failure).toMatchObject({ code: 'GOVERNED_PLAN_CONFIRMATION_INVALID', cause: { code: 'GOVERNED_PLAN_CONFIRMATION_INVALID' } });
+    expect(failure.errors).toHaveLength(2); expect(failure.errors[0]).toBe(failure.cause);
+    expect((await value.service.get(preview.record.planId))?.state).toBe('pending');
+    expect(value.execute).not.toHaveBeenCalled();
+  });
+  it('returns durable succeeded plus settlement-unconfirmed instead of pretending confirm did not execute', async () => {
+    const value = setup('hook'); const preview = await value.preview();
+    await expect(callGovernedMutationTool(value.mutations, 'openslack_confirm_plan',
+      { planId: preview.record.planId, confirmationToken: preview.confirmationToken }, value.invocation()))
+      .resolves.toMatchObject({ result: { status: 'blocked', data: { state: 'succeeded', settlement: 'unconfirmed' },
+        governance: { blocker: 'GOVERNED_MUTATION_SETTLEMENT_UNCONFIRMED' } } });
+    expect((await value.service.get(preview.record.planId))?.state).toBe('succeeded');
+    expect(value.outcomes).toHaveLength(1);
+    expect(value.execute).not.toHaveBeenCalled();
+  });
   it.each(['hook', 'audit', 'busy'] as const)('stops admission after %s failure without interpreting durable success as execution permission', async failure => {
     const value = setup(failure);
     const preview = await value.preview();
@@ -79,7 +109,7 @@ describe('originating governed confirmation settlement', () => {
     await vi.waitFor(() => expect(value.host.read(runId)?.status).toBe('failed'));
     expect(value.host.read(runId)?.harnessExecution?.lifecycle?.phase).toBe('stopped_before_start');
     expect(value.execute).not.toHaveBeenCalled();
-    expect(value.outcomes).toEqual([expect.objectContaining({ failed: true })]);
+    expect(value.outcomes).toEqual([expect.objectContaining({ failed: failure !== 'hook' })]);
     if (failure !== 'busy') expect((await value.service.get(preview.record.planId))?.state).toBe('succeeded');
   });
 
