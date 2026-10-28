@@ -70,42 +70,24 @@ jobs:
           appendFileSync(process.env.GITHUB_ENV, `TEMP=${canonical}\nTMP=${canonical}\n`);
           NODE
 
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - id: harness-source
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
           repository: deepseek-ai/deepseek-harness
           ref: 22ddee3792402c3e70ec5f86a63c3e3e895a2f60
           path: .openslack.local/ci/harness-original
           persist-credentials: false
 
+      # actions/cache v5.0.3; only original dependency download bytes.
+      - name: Cache original Harness downloads
+        uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306
+        with:
+          path: .openslack.local/ci/pnpm-store
+          key: openslack-harness-downloads-v1-${{ runner.os }}-${{ steps.harness-source.outputs.commit }}-${{ hashFiles('.openslack.local/ci/harness-original/pnpm-lock.yaml') }}-node24.18.1-pnpm11.28.5-end
+
       - name: Prepare original Harness artifacts and public declarations
         shell: bash
-        working-directory: .openslack.local/ci/harness-original
-        run: |
-          set -euo pipefail
-          # Compare actual tracked bytes, index entries and refs, not only Git's
-          # possibly normalized text diff. No source, secrets or identity is copied.
-          capture_harness_inputs() {
-            node --input-type=module <<'NODE'
-          import { execFileSync } from 'node:child_process';
-          import { createHash } from 'node:crypto';
-          import { lstatSync, readFileSync, readlinkSync } from 'node:fs';
-          const git = (...args) => execFileSync('git', args, { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 });
-          const sha = bytes => createHash('sha256').update(bytes).digest('hex');
-          const files = git('ls-files', '-z').split('\0').filter(Boolean).sort().map(path =>
-            [path, lstatSync(path).mode, sha(lstatSync(path).isSymbolicLink() ? readlinkSync(path) : readFileSync(path))]);
-          console.log(sha(JSON.stringify([git('rev-parse', 'HEAD'), git('ls-files', '--stage'),
-            git('for-each-ref', '--format=%(refname) %(objectname)'), files])));
-          NODE
-          }
-          openslack_harness_before=$(capture_harness_inputs)
-          npm install --global pnpm@11.28.5 --ignore-scripts
-          pnpm install --frozen-lockfile
-          pnpm run build:artifacts
-          pnpm run build:check
-          test "$openslack_harness_before" = "$(capture_harness_inputs)"
-          git diff --exit-code
-          git diff --cached --exit-code
-          node -e "const c=require('node:child_process'); if(c.execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim()!=='22ddee3792402c3e70ec5f86a63c3e3e895a2f60') throw new Error('Harness dependency head drift');"
+        run: bash scripts/ci/prepare-harness-deps.sh
 
       # oven-sh/setup-bun v2
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6

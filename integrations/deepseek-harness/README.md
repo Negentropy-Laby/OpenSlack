@@ -40,6 +40,13 @@ Ordinary root tests build OpenSlack first and do not require a Harness checkout.
 With the explicit checkout they also include this compatibility project. CI sets
 `OPENSLACK_HARNESS_COMPATIBILITY=required`; CI and complete inventory collection
 fail on a missing checkout rather than silently dropping this project's cases.
+The two CI workflows call `scripts/ci/prepare-harness-deps.sh`. Their delimited
+OS/commit/lock/tool-version primary cache key selects only the pnpm download store,
+with side-effect caching disabled and integrity verification retained. Cache hits
+never skip frozen installation or either original build check; identity, home,
+node_modules and lib/dist outputs are not cached.
+GitHub may return a primary-key prefix match even without restore keys; a cache
+match is not artifact, execution or deployment evidence.
 
 To create a local archive (not a registry publication):
 
