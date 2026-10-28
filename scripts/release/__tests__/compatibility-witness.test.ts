@@ -24,6 +24,8 @@ describe('explicit compatibility preparation content witness (not runtime author
     put(join(root, 'package.json'), '{}'); put(join(root, 'bun.lock'), 'fixture lock');
     put(join(root, 'tsconfig.json'), '{}');
     put(join(root, 'scripts/release/stage-schema-assets.ts'), '/* fixture staging input */');
+    put(join(root, 'scripts/qualification/workflow-runner-bundle.ts'), '/* fixture bundle input */');
+    put(join(root, 'scripts/qualification/remove-temporary-directory.ts'), '/* fixture build import */');
     put(join(root, 'packages/agent-runtime/contracts/v1/schema.json'), '{}');
     put(join(root, 'packages/agent-runtime/src/harness.ts'), 'export const fixture = 1;');
     put(join(root, 'packages/agent-runtime/dist/harness.js'), 'export const fixture = 1;');
@@ -51,6 +53,7 @@ describe('explicit compatibility preparation content witness (not runtime author
     expect(() => assertCompatibilityWitness(root, harness)).not.toThrow();
     for (const path of ['packages/agent-runtime/src/harness.ts', 'bun.lock', 'tsconfig.json',
       'scripts/release/stage-schema-assets.ts', 'packages/agent-runtime/contracts/v1/schema.json',
+      'scripts/qualification/workflow-runner-bundle.ts', 'scripts/qualification/remove-temporary-directory.ts',
       'packages/agent-runtime/dist/harness.js', 'integrations/deepseek-harness/dist/startup.js', 'integrations/deepseek-harness/vitest.config.ts',
       'original-peer-fixture/packages/sdk/client/lib/index.js', 'node_modules/typescript/package.json']) {
       const target = join(root, path), bytes = readFileSync(target), stamp = statSync(target);

@@ -26,11 +26,15 @@ external to its bundles and are supplied by the approved Harness installation;
 there must not be a second Cordis, Tools, FS, or SDK runtime instance. Missing or
 unqualified deployment dependencies fail closed. The test configuration requires
 the same explicit built dependency; it never silently substitutes a fixture SDK.
-The explicit preparation forces TypeScript emission, builds the plugin and records
+The explicit preparation forces TypeScript emission, stages the existing exact
+schema assets and fixed runner bundle, builds the plugin and records
 an ignored content witness for source/config/locks, public dependency artifacts,
 tools and outputs. Test configuration only verifies it; it never builds or skips.
 After source, output, compiler or dependency drift, rerun that preparation command.
 Preserved mtimes do not bypass verification. The witness is not deployment authority.
+This prepares ignored artifacts only; it never runs the sealed worker or changes
+its source, contracts or deployment eligibility. Formal preparation rejects the
+fixture-only wire/staging-root overrides.
 
 Ordinary root tests build OpenSlack first and do not require a Harness checkout.
 With the explicit checkout they also include this compatibility project. CI sets

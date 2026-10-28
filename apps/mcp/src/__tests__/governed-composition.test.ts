@@ -22,6 +22,7 @@ import { readEvents } from '@openslack/collaboration';
 import { LocalGraphStore } from '@openslack/organization-graph';
 import { resolveAgentPrincipal } from '@openslack/runtime';
 import { createRunStore, createRunRecorder, buildPermissionProfile, ToolGuard, RepositoryToolExecutor, type AdapterExecutionContext } from '@openslack/agent-runtime';
+import { HARNESS_CLEANUP_BUDGET } from '@openslack/agent-runtime/internal/bridge-wire';
 import { HarnessTaskHost, createHarnessTaskAuthority,
   createConfiguredHarnessTaskHost, hashHarnessDeployment, hashHarnessRuntimeArtifacts, hashHarnessInput,
   buildHarnessTaskPermissionProfile, inspectHarnessTaskExecution, reconcileHarnessTask,
@@ -1549,7 +1550,7 @@ describe('production agent-bound governed mutation composition', () => {
     const deployment = { harnessRoot, pluginRoot, pluginBuildHash: hashHarnessPluginArtifacts(pluginRoot),
       nodeExecutable: process.execPath, nodeVersion: '24.18.1' as const, nodeSha256: hashHarnessNodeExecutable(process.execPath),
       dshHome: fixture.home, agentId: PRINCIPAL_REF, provider: 'openslack-fixture', model: 'fixture',
-      workerPatch: fixture.patch, exitGraceMs: 10_000,
+      workerPatch: fixture.patch, exitGraceMs: HARNESS_CLEANUP_BUDGET.totalMs,
       callbackMcp: { cliModule: join(repositoryRoot, 'apps/cli/dist/index.js'), workspaceRoot, principalRef: PRINCIPAL_REF } };
     const verification = { resultMode: 'text' as const, requireReport: true, checks: [{ path: 'fixture.txt', expectedText: 'after' }] };
     const resolvedConfig = { agentId: PRINCIPAL_REF, source: 'fixture', runtimeProvider: 'deepseek-harness', model: 'fixture',

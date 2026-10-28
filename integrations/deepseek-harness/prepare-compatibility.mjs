@@ -16,6 +16,7 @@ const before = captureCompatibilityInputs(root, harness);
 for (const [command, args] of [
   ['node', [join(root, 'node_modules/typescript/bin/tsc'), '--build', '--force', '--pretty', 'false']],
   ['bun', [join(root, 'scripts/release/stage-schema-assets.ts')]],
+  ['bun', [join(root, 'scripts/qualification/workflow-runner-bundle.ts'), 'build']],
   ['bun', [join(import.meta.dirname, 'build.mjs')]],
 ]) {
   const result = spawnSync(command, args, { cwd: root, env: process.env, stdio: 'inherit', windowsHide: true });

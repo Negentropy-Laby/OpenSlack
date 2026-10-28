@@ -54,6 +54,7 @@ export function captureCompatibilityInputs(root, harnessRoot) {
     files(root, join(pkg, 'contracts'), source);
   }
   files(root, join(root, 'scripts/release/stage-schema-assets.ts'), source);
+  for (const name of ['workflow-runner-bundle.ts', 'remove-temporary-directory.ts']) files(root, join(root, 'scripts/qualification', name), source);
   const plugin = join(root, 'integrations/deepseek-harness');
   for (const name of readdirSync(plugin).filter(name => /\.(?:mjs|json)$/.test(name))) files(root, join(plugin, name), source);
   files(root, join(plugin, 'vitest.config.ts'), source);
