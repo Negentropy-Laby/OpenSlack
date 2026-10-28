@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { mkdtempSync, rmSync, readdirSync, readFileSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -10,6 +10,7 @@ import { buildPermissionProfile } from '../permissions.js';
 import { HarnessAdmissionStore, hashHarnessInput } from '../harness-admission.js';
 import { reconcileHarnessTask, type HarnessRecoveryObservation } from '../harness-reconciliation.js';
 import { buildHarnessTaskPermissionProfile } from '../harness-permissions.js';
+import { ownRunWriterWitness } from '../run-process-witness.js';
 
 vi.mock('../run-store.js', async importOriginal => {
   const actual = await importOriginal<typeof RunStoreModule>();
@@ -55,6 +56,13 @@ function setup() {
 }
 
 describe('canonical Harness task lifecycle (keyless host fixtures)', () => {
+  beforeAll(() => {
+    // Prepare the real, bounded OS port before these fixtures' 5 s task budget.
+    // A cold Windows CIM timeout is not part of snapshot-observation behavior.
+    // Missing witness still grants no maintenance authority; its OS semantics
+    // are exercised separately in run-process-witness.test.ts.
+    ownRunWriterWitness();
+  });
   it.each(['transient', 'exhausted', 'corrupt', 'foreign-conflict'] as const)('only re-observes rejected %s snapshots without another effect', async kind => {
     const { host, root, execute, options } = setup();
     const receipt = await host.dispatch('TASK-1', 'read-only-conflict');
@@ -342,14 +350,26 @@ describe('canonical Harness task lifecycle (keyless host fixtures)', () => {
   });
 
   it('does not delete another owner\'s canonical lock when ownership changes', () => {
-    const { root } = setup();
-    const store = new HarnessAdmissionStore(root);
-    const path = join(root, '.openslack.local/agents/harness-admissions/RUN-LOCK.lock');
-    expect(() => store.withRunLock('RUN-LOCK', () => {
-      unlinkSync(path);
-      writeFileSync(path, 'replacement', { flag: 'wx' });
-    })).toThrow('lock ownership changed');
-    expect(readFileSync(path, 'utf8')).toBe('replacement');
+    const { root, options, task } = setup();
+    const store = options.store;
+    for (const write of [false, true]) {
+      const runId = write ? 'RUN-LOCK-WRITE' : 'RUN-LOCK-NOOP';
+      store.createRun({ ...task.request, runId });
+      const directory = join(root, '.openslack.local/agents/runs', runId);
+      const path = join(directory, 'run.transaction.lock');
+      const original = new Map(readdirSync(directory).map(name => [name, readFileSync(join(directory, name))]));
+      expect(() => store.withRunTransaction(runId, () => {
+        unlinkSync(path);
+        writeFileSync(path, 'replacement', { flag: 'wx' });
+        return write ? { patch: { toolCalls: 1 } } : {};
+      })).toThrow(expect.objectContaining({ code: 'RUN_PERSISTENCE_INDETERMINATE' }));
+      expect(readFileSync(path, 'utf8')).toBe('replacement');
+      // Both retirement and before-write checks preserve all original bytes;
+      // a changed lock must not publish an intent, transcript or temporary file.
+      expect(readdirSync(directory).sort()).toEqual([...original.keys(), 'run.transaction.lock'].sort());
+      for (const [name, bytes] of original) expect(readFileSync(join(directory, name))).toEqual(bytes);
+      expect(store.observeRun(runId)).toMatchObject({ kind: 'unavailable', reason: 'locked' });
+    }
   });
 
   it('refuses expired callback preview and report after a host restart without changing historical bytes', async () => {

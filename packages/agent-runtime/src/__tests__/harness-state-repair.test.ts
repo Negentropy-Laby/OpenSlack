@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { spawn } from 'node:child_process';
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, utimesSync, writeFileSync, openSync, closeSync, ftruncateSync, unlinkSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync, openSync, closeSync, ftruncateSync, unlinkSync } from 'node:fs';
 import type * as FsModule from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -173,6 +173,18 @@ describe('governed admission and shared canonical state repair', () => {
     await vi.waitFor(() => expect(readHarnessStopIntent(root, runId)).not.toBeNull());
     expect(readFileSync(join(root, '.openslack.local/agents/runs', runId, 'run.json'), 'utf8')).toBe('corrupt preserved fixture\n');
     expect(await host.close(100)).toEqual({ stopped: false, unknownRunIds: [runId] });
+    const admissions = join(root, '.openslack.local/agents/harness-admissions'), displaced = join(root, 'retained-admissions');
+    const stopBytes = readFileSync(join(admissions, `${runId}.stop.json`));
+    renameSync(admissions, displaced);
+    try {
+      symlinkSync(displaced, admissions, process.platform === 'win32' ? 'junction' : 'dir');
+      // An absent leaf behind a redirected ancestor is unsafe, not "no stop".
+      expect(() => readHarnessStopIntent(root, 'RUN-ABSENT-LEAF')).toThrow('directory link');
+    } finally {
+      if (existsSync(admissions)) unlinkSync(admissions);
+      renameSync(displaced, admissions);
+    }
+    expect(readFileSync(join(admissions, `${runId}.stop.json`))).toEqual(stopBytes);
   });
 
   it('publishes a stop barrier despite an orphan writer lock and never acknowledges a later worker report', async () => {

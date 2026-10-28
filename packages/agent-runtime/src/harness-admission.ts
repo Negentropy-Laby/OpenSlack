@@ -1,12 +1,12 @@
 import { createHash, randomUUID } from 'node:crypto';
 import {
-  closeSync, fstatSync, fsyncSync, linkSync, lstatSync, mkdirSync,
+  closeSync, fsyncSync, linkSync, lstatSync, mkdirSync,
   openSync, realpathSync, unlinkSync, writeFileSync,
 } from 'node:fs';
 import { join } from 'node:path';
 import { types as utilTypes } from 'node:util';
 import { canonicalHarnessRoot, readHarnessFile } from './harness-read.js';
-import { RUN_ID_RE, validateRunId } from './run-id.js';
+import { RUN_ID_RE } from './run-id.js';
 import { isCode } from './io-errors.js';
 import { performance } from 'node:perf_hooks';
 
@@ -128,28 +128,6 @@ export class HarnessAdmissionStore {
     }
     if (failed) throw failure;
     return result!;
-  }
-
-  /** Hold only a short synchronous canonical-run read/update; a stale lock blocks instead of being repaired. */
-  withRunLock<T>(runId: string, action: () => T): T {
-    validateRunId(runId);
-    const path = join(this.directory, `${runId}.lock`);
-    let file: number;
-    try { file = openSync(path, 'wx', 0o600); }
-    catch (error) {
-      if (isCode(error, 'EEXIST')) throw new HarnessAdmissionError('BUSY', 'Canonical run is busy; query before retrying a mutation');
-      throw error;
-    }
-    try { return action(); } finally {
-      try {
-        const owned = fstatSync(file);
-        const current = lstatSync(path);
-        if (owned.ino !== current.ino || owned.dev !== current.dev || !current.isFile() || current.isSymbolicLink()) {
-          throw new HarnessAdmissionError('INDETERMINATE', 'Canonical lock ownership changed; preserve and reconcile');
-        }
-        unlinkSync(path);
-      } finally { closeSync(file); }
-    }
   }
 
   private read(path: string): HarnessAdmissionRecord {

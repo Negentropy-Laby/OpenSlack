@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { existsSync, mkdirSync, mkdtempSync, renameSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
+import { closeSync, existsSync, fstatSync, futimesSync, mkdirSync, mkdtempSync, openSync, renameSync, rmSync, symlinkSync, unlinkSync, writeFileSync, writeSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { execFileSync, spawnSync } from 'node:child_process';
@@ -71,7 +72,7 @@ describe('external plugin and Node input identities', () => {
       execFileSync(subst, [drive, '/D'], { stdio: 'pipe' });
     }
   });
-  it('reuses exact expensive bytes only in one synchronous phase and rejects forgery or cross-await use', async () => {
+  it('reuses bytes only within one phase, rejects stale proofs and rereads a same-size mutation while its writer remains open', async () => {
     const { root, pluginRoot } = fixture();
     const node = join(root, 'node-binary');
     writeFileSync(node, 'known binary bytes');
@@ -80,6 +81,21 @@ describe('external plugin and Node input identities', () => {
     expect(() => inspectHarnessArtifactObservation({} as HarnessArtifactObservation, pluginRoot, node)).toThrow('expired or changed');
     await Promise.resolve();
     expect(() => inspectHarnessArtifactObservation(proof, pluginRoot, node)).toThrow('expired or changed');
+    const writer = openSync(node, 'r+');
+    try {
+      const before = fstatSync(writer, { bigint: true }), changed = Buffer.from('known Binary bytes');
+      expect(changed.length).toBe(Number(before.size));
+      expect(writeSync(writer, changed, 0, changed.length, 0)).toBe(changed.length);
+      futimesSync(writer, Number(before.atimeNs) / 1e9, Number(before.mtimeNs) / 1e9);
+      const after = fstatSync(writer, { bigint: true });
+      const expected = createHash('sha256').update(changed).digest('hex');
+      expect(hashHarnessNodeExecutable(node)).toBe(expected);
+      const next = captureHarnessArtifactObservation(pluginRoot, node);
+      expect(inspectHarnessArtifactObservation(next, pluginRoot, node).nodeHash).toBe(expected);
+      console.info(JSON.stringify({ scope: 'phase-local byte proof with open writer; no metadata-only cache', platform: process.platform,
+        sameSize: before.size === after.size, sameMtime: before.mtimeNs === after.mtimeNs, sameCtime: before.ctimeNs === after.ctimeNs,
+        changedBytesObservedBeforeWriterClose: true }));
+    } finally { closeSync(writer); }
   });
   it('distinguishes plugin file partitions even when unframed path/body concatenations are identical', () => {
     const { root, pluginRoot } = fixture(), node = join(root, 'fixed-node-binary');
