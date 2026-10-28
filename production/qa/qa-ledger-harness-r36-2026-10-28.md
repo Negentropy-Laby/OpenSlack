@@ -562,3 +562,145 @@ qualified copy. Registry SHA-256 is
 `58163d9480d85b7359a96651fb8ce0792a36ac3ccb0c5960aa4b4bbbee18709f`.
 The module-attributed sum is 11,757/817, not a distinct executed-test count.
 No permissions, file counts, maturity or unrelated governance projection change.
+
+### Authorized CI fixture follow-up — 2026-10-29 checkpoint
+
+The user explicitly authorized only these three additional test paths, plus the
+already authorized collected counts/status and this existing evidence ledger:
+
+- `packages/agent-runtime/src/__tests__/harness-bridge.test.ts`
+- `packages/agent-runtime/src/__tests__/harness-task-host.test.ts`
+- `apps/mcp/src/__tests__/governed-composition.test.ts`
+
+Starting candidate is `0368f72ef3c3136685cf0a9af4ef64bbb7703964`, tree
+`883e5093c2b50ce49c4b9639df10c3eab1c82746`. Its original hosted Linux forced
+shutdown failure and Windows three fixture failures remain FAIL, not retries
+relabeled as success. Notification service and Windows boundary jobs on that
+head subsequently completed successfully; the artifact and self-validation
+workflows still failed. No Harness or production source is modified here.
+
+Necessity and disposition (no-adr, local test lifecycle correction):
+
+- Forced shutdown accepts only the two exact `process_crash` diagnostics that
+  production can lawfully return within the unchanged 100 ms fixture cleanup.
+  No result, recorder completion or completed-session event may appear. A
+  uniquely matched real child must independently close with SIGKILL; a late
+  close is not timely/clean business success.
+- Each independent host prepares its own real bounded OS witness before ready
+  and before the unchanged five-second task admission. Each calls dispatch
+  exactly once. Only a typed, bound IN_PROGRESS admission is observed through
+  the same canonical route/hash. A held-publication case deterministically
+  exercises this path; the actual executor effect must still occur once.
+- The lease writer announces ready only after its own OS preparation. Actual
+  lock acquisition and lease-expiry/zero-write/evidence assertions remain.
+  Parent preparation and bounded per-case test lifetimes are separate from
+  the unchanged 10/60-second tasks, synthetic UTC lease and production cleanup.
+- Spawned fixtures are immediately excluded from automatic deletion. Only
+  actual close and confirmed owned-host stop restore deletion eligibility.
+  Cleanup errors augment, rather than replace, the original assertion error.
+
+Independent TypeScript/lifecycle review approves, and independent QA finds the
+revised scope statically adequate. Both bind these exact bytes, not a runtime
+PASS or GitHub APPROVE:
+
+| Test file | Bytes | SHA-256 |
+| --- | ---: | --- |
+| harness-bridge.test.ts | 25126 | `22f06123ed153c3836cd17f7dbcfae1b96cb34b33d6ce009a47e0c03248dd981` |
+| harness-task-host.test.ts | 30421 | `0d638fc4fe9ef9e2501000946b75d30bf4db0ba475edf00dfe7717bd272ce08c` |
+| governed-composition.test.ts | 91452 | `38e224c158e29ad6d7e2b48b743baada91d8b0a8d56ffe6a43690e6c9419a9f3` |
+
+This table preserves the first reviewed cleanup revision, not the final Bridge
+bytes. Subsequent counterexamples below required additional same-file changes.
+
+The first local Linux revision has 96 PASS. QA then required the earlier root
+protection and primary-error preservation described above. That earlier run
+does not cover the revision. The new three-file Linux run has **96 PASS**, exit
+0, 62,320.321458 ms; log SHA-256
+`0d2eb55f0a1eaa03220e30cd67b49216794ab5679dc7b2544922675cd30dd8fc`.
+Both platforms' explicit force-emission preparation returned 0 before testing.
+The first native Windows collector ended at its own 300-second outer bound,
+before the whole suite reported, and remains **Incomplete/ETIMEDOUT**, log
+`7b18f5a88504a74152c781fa4dbb6e3b9ce1da1aa27eee4d26007d8c9f232e08`.
+This bound also contained the existing 300-second keyless end-to-end case and
+the preceding cases. A separately recorded revised collector allows their
+combined duration without changing any test's or production task's budget;
+its R2 result is **95 PASS/1 FAIL**, exit 1, log SHA-256
+`f49d8eca27ae710cd889983e8dadfa8dba96cb6eb77f72e1806617cd793a37ac`.
+The original four CI cases passed, as did the actual keyless SDK/native-MCP
+loop (258,148 ms). The remaining failure was the old stdin-pipe fixture:
+closing stream/descriptor 0 did not portably yield a write EPIPE. R3/R4
+experiments and their failures remain in raw receipts; no production fix or
+OS-generated EPIPE qualification is inferred from a later mock.
+
+The final fixture injects two deterministic failures at the public Writable
+callback/asynchronous-error boundaries while independently observing the real
+child close. The error event is outside the write caller's synchronous catch.
+It still requires typed process_crash for send and execution and zero success.
+A shared private observer protects roots before spawn and bounds the check,
+task settlement and real close separately; all failures retain the primary
+error and finally detach. The explicit 20-second per-case lifetimes are not a
+change to any production deadline or 100 ms fixture cleanup.
+
+R6/R7 also reproduced over-narrow heartbeat error text and immediate clean-exit
+assumptions in three other negative cases. The heartbeat requires typed timeout,
+not one wording. Authority still accepts only permission_denied/timeout without
+private cause leakage; externally closed waiters require session_unavailable;
+failed abort diagnostics must retain diagnosticPersistenceFailed and no value.
+Late actual close is separate evidence, never timely clean business success.
+Every intermediate FAIL and review-required revision remains preserved.
+
+Final Bridge bytes are **29,104**, SHA-256
+`d7ee12f7de0ced93d223cb22aafc7e9e5d6adc3ae9d7ca109870078d371405bb`.
+Fresh independent TypeScript and QA static reviews approve this exact revision;
+the other two test files retain the table's hashes. R9 executes **40 PASS** on
+Linux (8,159.920066 ms, exit 0, log
+`d00e3048b062263609d09731419a439a22da59e47a9697982d239143bb373486`) and
+**40 PASS** on native Windows (16,080.4301 ms, exit 0, log
+`335ef6dde28b9a48e0758c04fbbcacd7ac4a3108ce9cfd4ed68204452521f06f`).
+These scoped runs do not replace final-candidate full/hosted gates.
+
+Initial inventory was **8,692 declarations/585 files**, not an executed-pass count. Two
+official nonprivileged collection/status passes return 0 with identical
+registry `2f47ca656fd0c3beb24de113d4a2c17e82d083ac7a15ed49a69572fd22639615`
+and status `5aa8db3e74172c0532c38ad073f44313075d70eeab9d1d08ce803d934c2e4e6d`.
+The second public-I/O fault case adds one more declaration. R5's two official
+collector/status passes return **8,693/585**, both with identical registry
+`a98ffbd3bd1535e15e5a480339c08d67b76b61857f7e0be48211e9b3115c964b`
+and status `6ea6bbce9aba2dacc1689a9b305ce24c02ee639d443d8cc72096f3e57d69bc85`.
+Later refinements change no declarations. Final-candidate count verification
+must still run; this does not transpose R5's runtime results onto R9.
+
+The two precisely authorized production create-only issuance operations did
+subsequently succeed on the prior fully locally validated head. Windows uses
+`RUN-20261028171531-enafyr`; WSL uses `RUN-20261028171537-ecm2vp`, both provider
+`cli`, fixed `custom_developer_harness-integration`, with unchanged registry
+and negative permission checks. Issued locally is not qualified execution.
+Following the user's establishment instruction, each platform now owns a
+separate `.openslack.local/harness/home` initialized using the original public
+plugin manager, with the external plugin linked offline/ignore-scripts. No SDK,
+model, credential service or task execution was initialized. Noncanonical
+`preparation-20261029-r1/deployment.draft.json` records the independent task
+intent, exact fixture, 240-second task, report and fixed text verifier. Windows
+draft SHA-256 is
+`32e4f5882bc0bcb93ca405c8c2ee570435acab52211d14502ebe061839ddf69f`;
+WSL draft is `8f9060a123271e2b082f49d7a328712fd77d57331c361b1baa8bafe99b14b97c`.
+They are inactive and require final-candidate rebinding and formal task/deployment
+qualification; canonical `deployment.json` and task registration are not written.
+
+The public route `deepseek-official`, explicit model candidate `deepseek-flash`
+and credential-service reference `DEEPSEEK_API_KEY` are nonsecret proposals,
+not account availability evidence. The fixed SDK's implicit model default
+differs from the static provider catalog, so implicit selection is not used.
+No pure independent metadata factory was found: service initialization can
+read/migrate the credential store. No such initialization, secret generation,
+credential borrowing or secret-value inspection was performed. Credential
+configured/source remain Unknown until supplied through the proper owner's
+existing service. Real Windows/WSL model acceptance and human sign-off remain
+separate, as do U01 Unknown and optional Aby/performance follow-ups.
+
+Append-only raw evidence is under `remaining-20261028-r1/ci-followup-20261029-r1`
+and `/tmp/openslack426-ci-followup-Kl0SqX`. This checkpoint precedes the final
+candidate's complete gates, hosted CI, update-only #426 synchronization and PRMS;
+their later actual results belong to bot receipts/comments without rewriting
+these historical outcomes. Draft, no approval/merge/release and zero Harness
+patch boundaries remain unchanged.
