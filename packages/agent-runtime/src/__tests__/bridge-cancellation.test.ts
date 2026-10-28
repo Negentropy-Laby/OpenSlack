@@ -14,7 +14,7 @@ import type { BridgeEnvelope } from '../bridge-contract.js';
 import { readTranscript } from '../transcript.js';
 
 const roots: string[] = [];
-afterEach(() => { vi.restoreAllMocks(); for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
+afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
 
 // The child deliberately ignores EOF. The adapter must use its cleanup budget,
 // not wait for this independent natural-exit timer to settle a missed waiter.
@@ -52,8 +52,8 @@ interface PublicCloseFact {
 }
 
 /** Public process observation only; no patched spawn, private fields or PID-only exit inference. */
-function observeExactChild(args: readonly string[]) {
-  const diagnostic = channel('child_process');
+type TestObservationChannel = Pick<ReturnType<typeof channel>, 'subscribe' | 'unsubscribe'>;
+function observeExactChild(args: readonly string[], diagnostic: TestObservationChannel = channel('child_process')) {
   const pending = new Map<ChildProcess, () => void>();
   const matched = new Map<ChildProcess, { exit?: PublicCloseFact; close?: PublicCloseFact; ended: Promise<void> }>();
   let closeFact: PublicCloseFact | undefined;
@@ -108,12 +108,50 @@ function observeExactChild(args: readonly string[]) {
     release: async () => {
       // A failed assertion may still own a process. This is failure-only test
       // teardown, never extra time granted to the adapter's 100ms policy.
-      for (const [candidate, entry] of matched) if (!entry.close) candidate.kill('SIGKILL');
-      await bounded(Promise.all([...matched.values()].map(entry => entry.ended)), 5_000);
-      unsubscribe(); // Never detach observation before the actual owned close.
+      try {
+        for (const [candidate, entry] of matched) if (!entry.close) candidate.kill('SIGKILL');
+        await bounded(Promise.all([...matched.values()].map(entry => entry.ended)), 5_000);
+      } finally {
+        // A failed signal/observation still rejects with its original cause;
+        // detach the test observer without inventing an actual close receipt.
+        unsubscribe();
+      }
     },
   };
 }
+
+describe('test-only observer teardown', () => {
+  it.each(['confirmed', 'kill-error', 'unknown-timeout'] as const)('always unsubscribes after %s without inventing a close', async mode => {
+    let notify: Parameters<TestObservationChannel['subscribe']>[0] | undefined;
+    const subscribe = vi.fn<TestObservationChannel['subscribe']>(listener => { notify = listener; });
+    const unsubscribe = vi.fn<TestObservationChannel['unsubscribe']>(() => true);
+    const args = ['--synthetic-teardown-fixture', mode];
+    const observation = observeExactChild(args, { subscribe, unsubscribe });
+    // Inert emitter: no OS process/PID is created. This is a test-cleanup
+    // branch oracle, never actual resource-stop or platform qualification.
+    const candidate = new ChildProcess();
+    candidate.spawnfile = process.execPath; candidate.spawnargs = [process.execPath, ...args];
+    const failure = new Error('Synthetic test cleanup signal failed');
+    const kill = vi.spyOn(candidate, 'kill').mockImplementation(() => {
+      if (mode === 'kill-error') throw failure;
+      return false;
+    });
+    notify!({ process: candidate }, 'child_process'); candidate.emit('spawn');
+    if (mode === 'confirmed') { candidate.emit('exit', 0, null); candidate.emit('close', 0, null); }
+    if (mode === 'unknown-timeout') {
+      vi.useFakeTimers();
+      const assertion = expect(observation.release()).rejects.toThrow('Actual owned child close was not observed');
+      await vi.advanceTimersByTimeAsync(5_000);
+      await assertion;
+    } else if (mode === 'kill-error') await expect(observation.release()).rejects.toBe(failure);
+    else await observation.release();
+    expect(unsubscribe).toHaveBeenCalledTimes(1);
+    expect(unsubscribe).toHaveBeenCalledWith(subscribe.mock.calls[0]![0]);
+    expect(observation.snapshot().failure).toBe('Expected one uniquely bound actual child');
+    if (mode === 'confirmed') expect(kill).not.toHaveBeenCalled();
+    else { expect(kill).toHaveBeenCalledWith('SIGKILL'); expect(observation.snapshot().close).toBeUndefined(); }
+  });
+});
 
 async function exerciseSendCancellation(
   boundary: 'handshake_request' | 'run_request' | 'tool_response',
