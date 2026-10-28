@@ -152,6 +152,58 @@ Implemented is not independently reviewed, qualified, delivered or accepted.
 
 ## Exit criteria and outstanding owners
 
+### Additive local delivery phase
+
+The first source batches are `796812558a23ceb6d72623d0ae1f2126fc2550db`,
+`3105789116e86ee2e7dd227c5e5b71a8ab912362` and
+`a9bd768a2175ebad894a3e24f026e419240ec6b8`. None rewrites the published 9f33
+history. Backup ref `backup/pr426-r36-20261028-9f33f17a` retains that starting
+commit. Local commits alone are not a push, PR-head synchronization or CI receipt.
+
+- Fresh native `focused-r3.json` now records **139 PASS/6 SKIP in seven files**;
+  the preceding 1-FAIL result remains retained. This subset includes actual SDK
+  shutdown/process behavior, Windows witness branches and fixture-only recovery.
+- Complete nonprivileged compatibility r2 is **8,593 PASS/19 FAIL/25 SKIP**.
+  Eighteen failures identify missing pnpm on the selected PATH; the nineteenth is
+  npm's unwritable default cache under the actual nobody home. After the precise
+  tool-path/independent-cache correction, the five-file phase has 48 PASS/1 FAIL:
+  the remaining fixture still declared the obsolete 10 s cleanup configuration.
+  It now consumes the shared 30 s contract, preserving its existing 240 s task
+  budget and all assertions. Its actual SDK → governed admission → worker →
+  native files/report → independent acceptance → original caller verified-readback
+  case passed in 50.52 s (`live-keyless-r4.json`, **1 PASS/29 unselected**).
+  This is keyless synthetic-principal integration, not real-model qualification.
+- Complete collection in both the repair root and the nonprivileged copy found
+  **8,637 declared cases in 585 files**. The later no-update collection verifies
+  those counts. Two official status generations preserve exactly:
+  `.openslack/modules.yaml` SHA-256
+  `cf993ae7d47e33669527949f3515e03982a3f07ccb1006f204b8abaa95074902` and
+  `docs/status/current.md` SHA-256
+  `778415d4ea3aa224d98f9d5695391000857dac177d594af0e1f4e2b664fb24d1`.
+  Status verify passes. These are inventory/generation results, not a test pass count.
+- Formal preparation also builds the existing fixed ignored worker bundle, without
+  changing or running frozen Worker/Broker code. Otherwise full tests lazily add
+  that output and rightly invalidate the preparation witness. Actual before/after
+  comparison found that bundle as the sole output difference; this is not an
+  explanation for the 19 installation failures. Independent TD approved the fixed
+  build-only call and complete source/import binding. Both current Linux roots
+  emitted the same 3,182,515-byte bundle SHA-256
+  `384c44b7bbdce015195c7bf344e208b94ab3575ef35dace4b3c01140a10a3892`.
+- Full typecheck and all contract-family exact-byte checks passed; lint passed
+  with only the existing module-type notice. Workspace, docs verify/migration,
+  notification docs, Genesis (5/5) and golden (7/7) checks passed. Two read-only
+  governance renders matched each other and the existing four projections, with
+  zero projection writes. A final complete compatibility run and hosted CI are
+  still pending; preserve each phase's original input/timestamp rather than
+  re-stamping it as the eventual commit.
+
+The original Windows authentication workspace's package-owned bot entry was
+verified against the existing bot-author open Draft #426, matching ref/repository
+and base, no auto-merge. The delivery clone was clean at 9f33. This proves the
+preflight only, not publication. P2 cross-phase byte-cache work and common CI
+download preparation remain pending; U01, live subject/model and human acceptance
+remain independently outstanding.
+
 Author: finish targeted negative coverage, necessary fixes and independent-review
 responses, then full build/typecheck/lint/workspace/docs/count/source-lock gates on
 the candidate. Re-run count/status generation until a second pass adds no diff.
