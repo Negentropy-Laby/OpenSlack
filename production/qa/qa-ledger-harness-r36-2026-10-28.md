@@ -508,3 +508,57 @@ checkpoint precedes final-candidate full tests, hosted checks, same-head PRMS
 and update-only delivery. Later actual results belong in bot receipts/comments,
 not retroactive claims here. Subject qualification, U01, real-model acceptance
 and human sign-off cannot be closed by CI PASS.
+
+### Precisely authorized exclusive-issuance follow-up
+
+After the 716 checkpoint, independent QA found the proposed local helper's
+absence check could race the existing issuer, which intentionally merges and
+overwrites existing identity files. That helper was never invoked. Original
+SHA-256 `349fd27524217ee3c00f7a7c371ee6368d94269d98e4d10c9285eb1349e64db2`
+is retained as `provision-rejected-absent-r1.mjs`; active copies were disabled.
+The user separately authorized exactly `packages/runtime/src/identity.ts` and
+its existing identity test, with count/status authority continuing, not a wider
+registry, permission, policy, credential-backend or bootstrap change.
+
+Additive `8293c300a65f03515fde1aa56eec6e8cc3c968a4`, tree
+`d6f6e0369615a786859ffb38a7876133612e1eea`, adds optional `createOnly: true`:
+one `wx` write returns a new identity only after success; occupied targets are
+not read, merged or overwritten. The default legacy merge and YAML format stay
+unchanged. This is exclusive namespace creation, not a claim of power-loss
+atomicity or an authorization source. Independent technical and QA reviews
+approve exact producer SHA-256
+`359948bf1103c07b7e86753fd44a4782d50837ea2c549f43da5954614b263daa` and test
+`cb96d934821733976e0882c6fc65faa2ba668cb88c9e497f376dd5f4770d4172`.
+Technical disposition is no-adr: a narrower optional I/O mode, no new execution
+capability, permission or durable format; accepted ADR-0003/0004 are unchanged.
+
+The actual RED retains **4 FAIL/11 PASS**, including two successful competing
+issuers. Original RED test SHA is
+`3034a03ba55500093d7bf6e213611a1cc861fe0f4d5e13e093f4fdecca23b8af`.
+Final tests add existing valid/invalid byte preservation and zero-read checks,
+occupied namespace, default compatibility, production resolver readback, and
+two real independent Node children released from a readiness barrier. Exactly
+one winner, one EEXIST and matching on-disk run ID are required; unknown child
+exit preserves the fixture. Intermediate TS18047 and a corrected test-only
+type-import warning remain recorded, not erased by runtime PASS. Final root
+build/scoped lint and **19 tests** (identity 15 plus bootstrap 4) pass. Native
+Windows actual formal emission and the same **19 tests** separately pass at
+8293. No synthetic test identity is formal integration provisioning.
+
+At this checkpoint the two real identity targets remain unissued; actual use
+must pass `createOnly: true`, verify the fixed registry/principal and permissions,
+and still wait for complete validation. New code requires fresh candidate-bound
+checks; 716's full-suite, hosted and PRMS results remain historical rather than
+being relabeled. Existing formal task/deployment, real-model and human-acceptance
+conditions remain independent. No model task, approval, merge or release follows
+from this exact provision authority.
+
+The complete 8293 inventory collects **8,691 declarations/585 files**. Two
+official nonprivileged collector/status passes return 0 with identical hashes;
+the only registry edits are total +6 and two overlapping module counts +6.
+Source-root status generation also runs twice and both outputs byte-match the
+qualified copy. Registry SHA-256 is
+`6a6f599f5db795034638623f2f14cfd53f3a139165ceeb76654ce0e66bf283dc`; status is
+`58163d9480d85b7359a96651fb8ce0792a36ac3ccb0c5960aa4b4bbbee18709f`.
+The module-attributed sum is 11,757/817, not a distinct executed-test count.
+No permissions, file counts, maturity or unrelated governance projection change.
