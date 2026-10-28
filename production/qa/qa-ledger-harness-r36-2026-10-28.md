@@ -404,3 +404,107 @@ their outcomes without repeatedly changing the candidate just to backfill status
 The last 25db PRMS attempt was unavailable at `prms-fetch` with `AbortError`, not
 a fabricated `BLOCKED_DRAFT`. Maintainer-owned subject/provision, real-model
 Windows/WSL loop, U01 and human acceptance remain independently open.
+
+## Approved remaining-task batch: N0–N8
+
+This append-only checkpoint is not final acceptance. Starting head is
+`5e2ba8ae2039b74b0f6d25feec42dfbc61227b3f`, tree
+`fa781383073e9300ab745f6512cc9bdd5aab1f35`. The branch and original Draft PR
+#426 are unchanged; no Harness patch, new PR, approval, merge or release.
+
+### Repair and focused evidence
+
+- **N1:** `c469e7f85c517a2062f12e61bfb13918eb1eb569` gives file evidence one
+  absolute monotonic 30-second window after client acquisition. Pages, retries,
+  backoff and fallback share it; other requests retain eight seconds and parent
+  cancellation. Strict fallback rejects omitted original paths and unknown
+  change types. Initial PR inputs are copied; final head/base, repository/ref,
+  lifecycle, body and classification drift rejects the report. This binds a
+  collection window, not an atomic API snapshot or authentication latency.
+- Initial N1 RED retains 27 FAIL/18 PASS and three assertion-setup rejections,
+  not all valid product counterexamples. Independent late-boundary RED has
+  4 FAIL/31 PASS with zero-next-request assertions. Final targeted GREEN has
+  **62 PASS/two files**; actual nonprivileged Linux package regression at c469
+  has **2,096 PASS/118 files**, exit 0. Build/scoped lint and exact-input
+  independent static code, architecture and QA reviews pass. Reviewers did not
+  execute tests or give GitHub APPROVE.
+- Production configured-bot PRMS at `2026-10-28T15:13:12.503Z` used native c469
+  against remote 5e2: 171 changed paths and genuine **BLOCKED_DRAFT** in
+  44,712.542 ms end-to-end, including metadata/CODEOWNERS. This is not file-only
+  latency or final same-head evidence. Earlier cross-OS module-layout failure
+  remains distinct from the subsequent clean native locked install/build.
+- **N7/P2:** `d640e00eb8ca090d94ecd5fe1ce501835e46c9dc` and additive type fix
+  `56b0783c9f8e0726f49b35e1a07850fdfce20d6c` ensure test subscriptions detach
+  even when close throws/times out. Seventeen real-child cases and production
+  budgets remain; three expressly inert no-PID branch cases are added. Valid
+  RED: 2 FAIL/1 PASS/17 deselections. Earlier spy recursion is a setup failure;
+  intermediate TS2540 is retained separately from runtime PASS. Final revision
+  passes build, **20 tests**, lint and independent static code/QA review. File
+  SHA-256: `cb04ee94bc3f605cc4881f3696d4c875d2056a28146084e0c91f1adb45f0f1c4`.
+
+### Generated inputs and preservation
+
+Official complete collection reports **8,685 declarations/585 files**, not
+executed-test PASS. Two root collection/status-generation passes returned 0;
+the second made no new changes. Independent nonprivileged collection agrees.
+Only four registry counts and corresponding generated numbers change. Registry
+SHA-256: `f949f2f6a0b5bd35b23207d2464692ad3417bb104aef08902c8a60572179de3d`;
+status: `b10f7cf2f81776ef8d78eac5a1f56754c1fc4fdd5980df495a5e1e5f9d8896d0`.
+No signal was sent to the slow collector: the safety check found it already
+exited; the full two-pass command later returned 0. Independent static review
+confirms the generated output does not claim runtime PASS.
+
+All **229** source-lock bindings were independently rehashed at
+`2026-10-28T15:54:54.686Z`: zero mismatches and zero manifest writes. Manifest
+SHA-256: `d86ae40f85f5d1dd341807ffee005ecde665ed8397a6f6e982d275578aa6f6c4`.
+
+D: ran out of space during this batch's test edit. New commit/evidence were
+preserved on Linux and the test restored from Git: 20,401 B, SHA-256
+`e6ba67093b402e680205346afe6d054edc8d74b79d54d8c7fd65f700948548d9`, zero
+diff before reapplying. No user change was lost. The user authorized removal
+only of the new D-side `starting-5e2ba8ae.bundle` duplicate. Its 13,648,594 bytes
+remain at `/tmp/openslack426-remaining-knMLF1/evidence-before-space-repair/starting-5e2ba8ae.bundle`,
+SHA-256 `386a62720b20a62af0f207a0f627e3db6fc188be5298c686a29a32f9bf6b7644`;
+bytes and complete history were checked before that sole unlink. No old
+worktree, original archive/log, identity or credential was deleted. Later
+free-space increases and missing old Windows tool/delivery prefixes are
+external observations with unknown cause, not this agent's cleanup. The new
+native clone and original U01 archive remain. Node recovery uses the official
+archive/checksum and a task-only prefix, not global configuration. Failed
+safe-directory, NTFS chmod and intermediate type-check preparations keep their
+own receipts; no guard was weakened.
+
+### Independent exits and nonblocking work
+
+- **N2:** user separately authorizes single-identity issuance for the fixed
+  integration agent/provider cli, only after full validation and if absent,
+  in Windows `D:/Users/WSMAN/Desktop/Coding Task/.openslack426-remaining-Yi8EWh`
+  and WSL `/tmp/openslack426-remaining-knMLF1/openslack`. Production resolution
+  and exact permission negatives are required. No identity has been issued at
+  this checkpoint. This is not bootstrap, copied identity, registry change,
+  model dispatch, governance qualification or business acceptance.
+- **N3/N4:** approved deployment/task references, Windows/WSL real-model loops
+  and human acceptance remain separate. Keyless tests cannot replace them.
+- **N5/U01:** one C-drive keyless fixture used the original unchanged TGZ
+  (SHA-256 `f0cbe8b84929b270a3f9c62536c1a71bc2226f857d12265b3be76c1e3efc8441`)
+  and matching retained helper: actual peer exit 0/null, three scripted model
+  requests, complete data and native Job empty/drained/graceful were observed.
+  Different root, added containment and omission of original type-consumer
+  preparation are explicit differences. Original Harness remains fixed/clean.
+  This does **not** locate historical exit 1; missing original causal stderr
+  and SDK shutdown receipt keep U01 **Unknown**. Original bytes are additionally
+  preserved on Linux, not patched or rerun as business work.
+- **N6/P2:** clean actual Aby `bd6679f0054960aad27f5d70819d3e5b5c63b779`, tree
+  `e77bceeae2d7dca796db8522fc2bf47fd0208584`, passes public availability only.
+  Actual peer/model smoke is **NotRun**, not a Harness mainline prerequisite.
+  Strict Bridge regressions remain required; no Aby source was changed.
+- **N8/P2:** the historical instrumented sample alone does not justify another
+  production performance patch. Previous Finding 29 remains Partial; no
+  cross-await authorization cache or mandatory profiling platform is added.
+
+Receipts append in local `remaining-20261028-r1/` and
+`/tmp/openslack426-remaining-knMLF1/`; old PASS/FAIL stay unchanged. This
+checkpoint precedes final-candidate full tests, hosted checks, same-head PRMS
+and update-only delivery. Later actual results belong in bot receipts/comments,
+not retroactive claims here. Subject qualification, U01, real-model acceptance
+and human sign-off cannot be closed by CI PASS.
