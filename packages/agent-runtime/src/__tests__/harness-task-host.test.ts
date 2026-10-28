@@ -135,46 +135,116 @@ describe('canonical Harness task lifecycle (keyless host fixtures)', () => {
     expect(new Set(results.map(result => result.record.runId)).size).toBe(1);
   });
 
-  it('dispatches the executor exactly once across two independent host processes', async () => {
+  it.each(['concurrent', 'publication-held'] as const)('dispatches exactly once across two host processes with %s publication', async mode => {
     const { root, task } = setup();
     const hostModule = new URL('../../dist/harness-task-host.js', import.meta.url).href;
     const storeModule = new URL('../../dist/run-store.js', import.meta.url).href;
-    const source = `import { HarnessTaskHost } from ${JSON.stringify(hostModule)};
+    const admissionModule = new URL('../../dist/harness-admission.js', import.meta.url).href;
+    const witnessModule = new URL('../../dist/run-process-witness.js', import.meta.url).href;
+    const source = `import { HarnessTaskHost, hashHarnessTask } from ${JSON.stringify(hostModule)};
       import { createRunStore, RunStateSnapshotChangedError } from ${JSON.stringify(storeModule)};
+      import { HarnessAdmissionError } from ${JSON.stringify(admissionModule)};
+      import { ownRunWriterWitness } from ${JSON.stringify(witnessModule)};
       import { appendFileSync } from 'node:fs';
       import { join } from 'node:path';
-      const root = process.argv[1], task = JSON.parse(process.argv[2]);
+      const root = process.argv[1], task = JSON.parse(process.argv[2]), role = process.argv[3], held = process.argv[4] === 'publication-held';
+      const received = new Set(), waiters = new Map();
+      process.on('message', message => { received.add(message); waiters.get(message)?.(); });
+      const wait = message => received.has(message) ? Promise.resolve() : new Promise(resolve => waiters.set(message, resolve));
+      // Each real child prepares its own bounded OS port before admission's
+      // unchanged 5 s task budget, not just the Vitest parent's cached witness.
+      ownRunWriterWitness(); process.send({ phase: 'ready' }); await wait('go');
       const host = new HarnessTaskHost({ identityRoot: root, workspaceId: 'independent-hosts', store: createRunStore(root),
-        readTask: async () => task, authorize: async () => {}, publish: async () => {},
+        readTask: async () => task, authorize: async () => {}, publish: async () => {
+          if (held && role === 'owner') { process.send({ phase: 'publishing' }); await wait('release'); }
+        },
         prepare: async () => ({ execute: async () => {
           appendFileSync(join(root, 'effects.log'), 'executed\\n');
           return { data: { answer: 'fixture' }, exitConfirmed: true };
         }, accept: async () => ({ outcome: 'verified', summary: 'fixture', evidenceRefs: [] }) }) });
-      const receipt = await host.dispatch(task.taskId, 'request-' + process.pid);
-      const deadline = Date.now() + 5000;
+      let result, dispatchCalls = 0;
+      try {
+        dispatchCalls++; const receipt = await host.dispatch(task.taskId, 'request-' + process.pid);
+        if (receipt.taskId !== task.taskId) throw new Error('Foreign task receipt');
+        result = { kind: 'receipt', runId: receipt.runId, requestHash: hashHarnessTask(task) };
+      } catch (error) {
+        const observation = error instanceof HarnessAdmissionError && error.code === 'IN_PROGRESS' ? error.observation : undefined;
+        if (!observation || observation.kind !== 'admission' || observation.disposition !== 'in_progress' ||
+          !/^RUN-[A-Z0-9-]+$/.test(observation.runId) || typeof observation.canonicalRunPresent !== 'boolean' ||
+          observation.requestHash !== hashHarnessTask(task)) throw error;
+        result = observation; process.send({ phase: 'observed-admission' });
+      }
+      // Never dispatch again: only query the same durable route, including
+      // after a legitimate IN_PROGRESS observation rather than a receipt.
+      const deadline = performance.now() + 5000;
       for (;;) {
-        if (Date.now() >= deadline) throw new Error('No completed canonical fixture');
+        if (performance.now() >= deadline) throw new Error('No completed canonical fixture');
         try {
-          if (host.read(receipt.runId)?.status === 'completed') break;
+          const state = host.read(result.runId);
+          if (state?.status === 'completed') {
+            if (state.harnessExecution?.taskId !== task.taskId || state.harnessExecution.requestHash !== result.requestHash ||
+              state.harnessExecution.acceptance !== 'verified') throw new Error('Canonical result binding differs');
+            break;
+          }
+          if (state?.status === 'failed') throw new Error('Canonical task failed');
         } catch (error) {
-          if (!(error instanceof RunStateSnapshotChangedError) || error.runId !== receipt.runId) throw error;
+          if (!(error instanceof RunStateSnapshotChangedError) || error.runId !== result.runId) throw error;
         }
         await new Promise(resolve => setTimeout(resolve, 10));
       }
       if (!(await host.close(1000)).stopped) throw new Error('Fixture host did not stop');
-      process.stdout.write(JSON.stringify(receipt));`;
-    const invoke = () => new Promise<{ runId: string }>((resolve, reject) => {
-      const child = spawn(process.execPath, ['--input-type=module', '-e', source, root, JSON.stringify(task)], { stdio: ['ignore', 'pipe', 'pipe'] });
+      process.stdout.write(JSON.stringify({ ...result, dispatchCalls })); process.disconnect();`;
+    const children: Array<ReturnType<typeof spawn>> = [];
+    const closed = new Set<ReturnType<typeof spawn>>();
+    const actualCloses: Array<Promise<void>> = [];
+    const invoke = (role: string) => {
+      const ready = Promise.withResolvers<void>();
+      const child = spawn(process.execPath, ['--input-type=module', '-e', source, root, JSON.stringify(task), role, mode], { stdio: ['ignore', 'pipe', 'pipe', 'ipc'] });
+      if (roots.includes(root)) roots.splice(roots.indexOf(root), 1);
+      children.push(child);
+      actualCloses.push(new Promise(resolve => child.once('close', () => resolve())));
       let output = ''; let error = '';
-      child.stdout.on('data', (bytes: Buffer) => { output += bytes.toString(); });
-      child.stderr.on('data', (bytes: Buffer) => { error += bytes.toString(); });
-      child.once('error', reject);
-      child.once('close', code => code === 0 ? resolve(JSON.parse(output)) : reject(new Error(`Fixture host failed: ${error}`)));
-    });
-    const receipts = await Promise.all([invoke(), invoke()]);
-    expect(receipts[0]!.runId).toBe(receipts[1]!.runId);
-    expect(readFileSync(join(root, 'effects.log'), 'utf8')).toBe('executed\n');
-  });
+      child.stdout!.on('data', (bytes: Buffer) => { output += bytes.toString(); });
+      child.stderr!.on('data', (bytes: Buffer) => { error += bytes.toString(); });
+      const done = new Promise<{ kind: string; runId: string; requestHash: string; dispatchCalls: number }>((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error(`Fixture host ${role} exceeded its bounded startup/observation window`)), 20_000);
+        child.once('error', cause => { ready.reject(cause); reject(cause); });
+        child.once('close', code => {
+          clearTimeout(timer); closed.add(child);
+          if (code !== 0) { const cause = new Error(`Fixture host failed: ${error}`); ready.reject(cause); reject(cause); }
+          else { try { resolve(JSON.parse(output)); } catch (cause) { reject(cause); } }
+        });
+      });
+      // Attach immediately so an early child failure is not an unhandled rejection.
+      void done.catch(() => {});
+      child.on('message', message => {
+        const phase = (message as { phase?: string }).phase;
+        if (phase === 'ready') ready.resolve();
+        if (phase === 'publishing' && role === 'owner') children[1]!.send('go');
+        if (phase === 'observed-admission' && role === 'observer' && mode === 'publication-held') children[0]!.send('release');
+      });
+      return { ready: Promise.race([ready.promise, done.then(() => { throw new Error('Child closed before ready'); })]), done, child };
+    };
+    const owner = invoke('owner'), observer = invoke('observer');
+    try {
+      await Promise.all([owner.ready, observer.ready]);
+      owner.child.send('go');
+      if (mode === 'concurrent') observer.child.send('go');
+      const results = await Promise.all([owner.done, observer.done]);
+      expect(results[0]!.runId).toBe(results[1]!.runId);
+      expect(results[0]!.requestHash).toBe(results[1]!.requestHash);
+      expect(results.map(result => result.dispatchCalls)).toEqual([1, 1]);
+      if (mode === 'publication-held') expect(results[1]!.kind).toBe('admission');
+      expect(readFileSync(join(root, 'effects.log'), 'utf8')).toBe('executed\n');
+    } finally {
+      for (const child of children) if (!closed.has(child)) child.kill('SIGKILL');
+      // Preserve the fixture if a failed child cannot produce an actual close.
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      try { await Promise.race([Promise.all(actualCloses), new Promise(resolve => { timer = setTimeout(resolve, 5_000); })]); }
+      finally { clearTimeout(timer); }
+      if (closed.size === children.length && !roots.includes(root)) roots.push(root);
+    }
+  }, 30_000);
 
   it('refuses same-key changed input and does not replay a prior run after restart', async () => {
     const { host, options, task, execute } = setup();

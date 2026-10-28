@@ -51,7 +51,7 @@ import {
   CONTRACT_DELIVERY_LITE_FIXTURE_ID,
   CONTRACT_DELIVERY_LITE_WORKFLOW_ID,
 } from '@openslack/workflows';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import {
   assembleContractDeliveryLiteRehearsalSource,
   createOpenSlackAgentBoundMutationComposition,
@@ -69,6 +69,15 @@ const PRINCIPAL_REF = 'agent-bound';
 const WORKSPACE_ID = 'workspace-governed-composition';
 const roots: string[] = [];
 const GOVERNANCE_BUILD = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+
+beforeAll(async () => {
+  // Prepare the real parent OS witness outside these fixtures' task budgets.
+  // Each independent writer below must also prepare its own process witness.
+  const { ownRunWriterWitness } = await import(pathToFileURL(join(repositoryRoot, 'packages/agent-runtime/dist/run-process-witness.js')).href) as {
+    ownRunWriterWitness(): unknown;
+  };
+  ownRunWriterWitness();
+}, 10_000);
 
 afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
@@ -294,20 +303,72 @@ async function claimedLeaseBoundaryFixture() {
     toolExecutor: new RepositoryToolExecutor({ rootPath: worktree, recorder, toolGuard: guard, runId }) };
   const control = join(root, 'lock-control'); mkdirSync(control);
   const module = pathToFileURL(join(repositoryRoot, 'packages/agent-runtime/dist/run-store.js')).href;
-  const script = `import{createRunStore}from${JSON.stringify(module)};import{existsSync,readFileSync,writeFileSync,writeSync}from'node:fs';import{join}from'node:path';
+  const witness = pathToFileURL(join(repositoryRoot, 'packages/agent-runtime/dist/run-process-witness.js')).href;
+  const script = `import{createRunStore}from${JSON.stringify(module)};import{ownRunWriterWitness}from${JSON.stringify(witness)};import{existsSync,readFileSync,writeFileSync,writeSync}from'node:fs';import{join}from'node:path';
     const[root,defaultId,control,expired]=process.argv.slice(1),store=createRunStore(root,{sweepOrphans:false});
-    writeSync(1,'ready\\n');while(!existsSync(join(control,'start')))Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,5);
+    ownRunWriterWitness();writeSync(1,'ready\\n');
+    const startup=performance.now()+10000;
+    while(!existsSync(join(control,'start'))){if(performance.now()>=startup)throw new Error('Fixture start barrier timed out');Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,5);}
     const id=existsSync(join(control,'run-id'))?readFileSync(join(control,'run-id'),'utf8'):defaultId;
-    store.withRunTransaction(id,s=>{writeFileSync(join(control,'locked'),'1');while(!existsSync(join(control,'release')))Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,5);
+    store.withRunTransaction(id,s=>{writeFileSync(join(control,'locked'),'1');const held=performance.now()+10000;
+      while(!existsSync(join(control,'release'))){if(performance.now()>=held)throw new Error('Fixture release barrier timed out');Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,5);}
       Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,100);writeFileSync(expired,'1');return{patch:{toolCalls:s.toolCalls+1}};});`;
   const child = spawn(process.execPath, ['--input-type=module', '-e', script, root, runId, control, expired], { stdio: ['ignore', 'pipe', 'pipe'] });
-  let error = ''; child.stderr.on('data', bytes => { error += bytes; });
+  // Protect the fixture immediately, including if Vitest's own deadline fires
+  // before teardown finishes. Only an actual child close permits deletion.
+  roots.splice(roots.indexOf(root), 1);
+  const ownedHosts: HarnessTaskHost[] = [];
+  let error = '', didClose = false; child.stderr.on('data', bytes => { error += bytes; });
+  const actualClose = new Promise<void>(resolve => child.once('close', () => { didClose = true; resolve(); }));
   const closed = new Promise<void>((resolve, reject) => { child.once('error', reject); child.once('close', code => code === 0 ? resolve() : reject(new Error(error || `Lock child exit ${code}`))); });
-  await new Promise<void>((resolve, reject) => { child.stdout.once('data', () => resolve()); child.once('error', reject); });
+  void closed.catch(() => {});
+  const bounded = async <T>(work: Promise<T>, ms: number): Promise<T> => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try { return await Promise.race([work, new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error('Fixture process observation timed out')), ms); })]); }
+    finally { clearTimeout(timer); }
+  };
+  const close = async (primaryFailure?: unknown) => {
+    let cleanupFailure: unknown;
+    try {
+      writeFileSync(join(control, 'start'), '1'); writeFileSync(join(control, 'release'), '1');
+      await bounded(closed, 10_000);
+    } catch (cause) { cleanupFailure = cause; }
+    finally {
+      try { if (!didClose) { child.kill('SIGKILL'); await bounded(actualClose, 5_000); } }
+      catch (cause) { cleanupFailure ??= cause; }
+      finally {
+        clock.mockRestore();
+      }
+      let hostsStopped = true;
+      for (const host of ownedHosts) {
+        try { if (!(await host.close(100)).stopped) throw new Error('Fixture host stop remains unconfirmed'); }
+        catch (cause) { cleanupFailure ??= cause; hostsStopped = false; }
+      }
+      if (didClose && hostsStopped && !roots.includes(root)) roots.push(root);
+    }
+    if (cleanupFailure !== undefined) {
+      if (primaryFailure === undefined) throw cleanupFailure;
+      if (primaryFailure instanceof Error) Object.defineProperty(primaryFailure, 'fixtureCleanup', {
+        value: { closed: didClose, error: cleanupFailure },
+      });
+    }
+  };
+  try {
+    await bounded(new Promise<void>((resolve, reject) => {
+      let output = '';
+      child.stdout.on('data', bytes => {
+        output += bytes.toString();
+        if (output === 'ready\n') resolve();
+        else if (output.includes('\n') || output.length > 64) reject(new Error('Invalid fixture readiness receipt'));
+      });
+      child.once('error', reject);
+      child.once('close', () => reject(new Error('Fixture writer closed before readiness')));
+    }), 10_000);
+  } catch (cause) { await close(cause); throw cause; }
   const hold = async (targetRunId = runId) => {
     writeFileSync(join(control, 'run-id'), targetRunId);
     writeFileSync(join(control, 'start'), '1');
-    await vi.waitFor(() => expect(existsSync(join(control, 'locked'))).toBe(true));
+    await vi.waitFor(() => expect(existsSync(join(control, 'locked'))).toBe(true), { timeout: 2_000 });
     expect(existsSync(join(root, '.openslack.local/agents/runs', targetRunId, 'run.transaction.lock'))).toBe(true);
   };
   const release = () => { writeFileSync(join(control, 'release'), '1'); };
@@ -320,8 +381,17 @@ async function claimedLeaseBoundaryFixture() {
   return { root, runId, task, authority, store, recorder, context, leaseReads, hold, holdSynchronously, release,
     setLeaseHook(hook: () => Promise<void>) { onLease = hook; leaseReads.mockClear(); },
     revokeSourceWriteScope() { definition.scope.writePaths = []; },
-    async close() { writeFileSync(join(control, 'start'), '1'); release(); await closed; clock.mockRestore(); },
+    ownHost(host: HarnessTaskHost) { ownedHosts.push(host); return host; },
+    close,
   };
+}
+
+async function withClaimedLeaseBoundaryFixture(check: (value: Awaited<ReturnType<typeof claimedLeaseBoundaryFixture>>) => Promise<void>) {
+  const value = await claimedLeaseBoundaryFixture();
+  let primaryFailure: unknown;
+  try { await check(value); }
+  catch (cause) { primaryFailure = cause; throw cause; }
+  finally { await value.close(primaryFailure); }
 }
 
 async function rewritePackLock(pack: string): Promise<void> {
@@ -1293,7 +1363,7 @@ describe('production agent-bound governed mutation composition', () => {
       release();
       await host.close(1_000);
     }
-  });
+  }, 30_000); // Serial governance/FS assertions, not a change to the 10 s task.
 
   it('preserves the exact admission route through governed MCP when visibility publication takes longer than the duplicate wait', async () => {
     const workspaceRoot = createWorkspace({ action: 'deny', noScenarios: true });
@@ -1429,19 +1499,17 @@ describe('production agent-bound governed mutation composition', () => {
   });
 
   it('rejects a required lease that expires during the final canonical read wait before native authorization', async () => {
-    const value = await claimedLeaseBoundaryFixture();
-    let calls = 0;
-    value.setLeaseHook(async () => { if (++calls === 2) { await value.hold(); value.release(); } });
-    try {
+    await withClaimedLeaseBoundaryFixture(async value => {
+      let calls = 0;
+      value.setLeaseHook(async () => { if (++calls === 2) { await value.hold(); value.release(); } });
       await expect(value.authority.authorizeTool(value.context, 'Write', { file_path: join(value.context.worktreePath!, 'fixture.txt') })).rejects.toThrow(/lease|eligibility/i);
       expect(readFileSync(join(value.context.worktreePath!, 'fixture.txt'), 'utf8')).toBe('before');
       expect(value.store.getRun(value.runId)?.harnessExecution?.evidence?.calls).toEqual({});
-    } finally { await value.close(); }
-  });
+    });
+  }, 30_000); // Bounded OS preparation + assertions + confirmed test teardown.
 
   it('rejects an expired required lease inside the native evidence reservation transaction after waiting for its writer', async () => {
-    const value = await claimedLeaseBoundaryFixture();
-    try {
+    await withClaimedLeaseBoundaryFixture(async value => {
       const eligibility = await value.authority.authorizeTool(value.context, 'Write', { file_path: join(value.context.worktreePath!, 'fixture.txt') });
       await value.hold(); value.release();
       const reservation = { callId: 'lease-native', toolName: 'Write', input: { file_path: 'fixture.txt', content: 'after' },
@@ -1449,16 +1517,15 @@ describe('production agent-bound governed mutation composition', () => {
       expect(() => value.recorder.reserveToolEvidence!(value.runId, reservation, eligibility)).toThrow(/lease|eligibility/i);
       expect(value.store.getRun(value.runId)?.harnessExecution?.evidence?.calls).toEqual({});
       expect(readFileSync(join(value.context.worktreePath!, 'fixture.txt'), 'utf8')).toBe('before');
-    } finally { await value.close(); }
-  });
+    });
+  }, 30_000);
 
   it('rejects a required lease that expires while the report CAS waits for a healthy writer', async () => {
-    const value = await claimedLeaseBoundaryFixture();
-    const worker = new HarnessTaskHost({ identityRoot: value.root, workspaceId: WORKSPACE_ID, store: value.store, ...value.authority, callbackRunId: value.runId,
-      prepare: async () => { throw new Error('A callback must not start execution'); }, publish: async () => {} });
-    let calls = 0;
-    value.setLeaseHook(async () => { if (++calls === 2) { await value.hold(); value.release(); } });
-    try {
+    await withClaimedLeaseBoundaryFixture(async value => {
+      const worker = value.ownHost(new HarnessTaskHost({ identityRoot: value.root, workspaceId: WORKSPACE_ID, store: value.store, ...value.authority, callbackRunId: value.runId,
+        prepare: async () => { throw new Error('A callback must not start execution'); }, publish: async () => {} }));
+      let calls = 0;
+      value.setLeaseHook(async () => { if (++calls === 2) { await value.hold(); value.release(); } });
       await expect(worker.report({ runId: value.runId, reportId: 'expired', summary: 'must not publish', evidenceRefs: [] })).rejects.toThrow(/lease|eligibility/i);
       expect(value.store.getRun(value.runId)?.harnessExecution?.reports).toEqual({});
       const before = readFileSync(join(value.root, '.openslack.local/agents/runs', value.runId, 'run.json'));
@@ -1466,60 +1533,60 @@ describe('production agent-bound governed mutation composition', () => {
       expect((await value.authority.readTaskForReconciliation(value.task.taskId)).principalHash).toBe(value.task.principalHash);
       expect(value.leaseReads).not.toHaveBeenCalled();
       expect(readFileSync(join(value.root, '.openslack.local/agents/runs', value.runId, 'run.json'))).toEqual(before);
-    } finally { await value.close(); await worker.close(100); }
-  });
+    });
+  }, 30_000);
 
   it('retains the second source read when approved scope changes during the first lease await without a principal change', async () => {
-    const value = await claimedLeaseBoundaryFixture();
-    let reads = 0;
-    value.setLeaseHook(async () => { if (++reads === 1) value.revokeSourceWriteScope(); });
-    try {
+    await withClaimedLeaseBoundaryFixture(async value => {
+      let reads = 0;
+      value.setLeaseHook(async () => { if (++reads === 1) value.revokeSourceWriteScope(); });
       const staleTask = await value.authority.readTask(value.task.taskId);
       expect(staleTask.scope.writePaths).toEqual(['fixture.txt']);
       expect(staleTask.principalHash).toBe(value.task.principalHash);
       await expect(value.authority.authorize(staleTask, 'execute')).rejects.toThrow('differs from the formal source');
       expect(readFileSync(join(value.context.worktreePath!, 'fixture.txt'), 'utf8')).toBe('before');
-    } finally { await value.close(); }
-  });
+    });
+  }, 30_000);
 
   it.each(['start', 'complete'] as const)('keeps the required lease effective inside the final %s CAS after a different process held its canonical lock', async phase => {
-    const value = await claimedLeaseBoundaryFixture();
-    const execute = vi.fn(async () => { writeFileSync(join(value.context.worktreePath!, 'fixture.txt'), 'after'); return { data: {}, exitConfirmed: true as const }; });
-    let executeChecks = 0, acceptanceChecks = 0, gated = false;
-    const host = new HarnessTaskHost({ identityRoot: value.root, workspaceId: WORKSPACE_ID, store: value.store, ...value.authority,
-      authorize: async (task, checkpoint) => {
-        const eligibility = await value.authority.authorize(task, checkpoint);
-        if (checkpoint === 'execute') executeChecks++;
-        if (checkpoint === 'accept') acceptanceChecks++;
-        return eligibility;
-      },
-      prepare: async () => ({ execute, accept: async () => ({ outcome: 'verified', summary: 'fixture', evidenceRefs: [] }),
-        revalidateAccepted: () => { if (readFileSync(join(value.context.worktreePath!, 'fixture.txt'), 'utf8') !== 'after') throw new Error('Fixture changed'); } }),
-      publish: async () => {},
+    await withClaimedLeaseBoundaryFixture(async value => {
+      const execute = vi.fn(async () => { writeFileSync(join(value.context.worktreePath!, 'fixture.txt'), 'after'); return { data: {}, exitConfirmed: true as const }; });
+      let executeChecks = 0, acceptanceChecks = 0, gated = false;
+      const host = value.ownHost(new HarnessTaskHost({ identityRoot: value.root, workspaceId: WORKSPACE_ID, store: value.store, ...value.authority,
+        authorize: async (task, checkpoint) => {
+          const eligibility = await value.authority.authorize(task, checkpoint);
+          if (checkpoint === 'execute') executeChecks++;
+          if (checkpoint === 'accept') acceptanceChecks++;
+          return eligibility;
+        },
+        prepare: async () => ({ execute, accept: async () => ({ outcome: 'verified', summary: 'fixture', evidenceRefs: [] }),
+          revalidateAccepted: () => { if (readFileSync(join(value.context.worktreePath!, 'fixture.txt'), 'utf8') !== 'after') throw new Error('Fixture changed'); } }),
+        publish: async () => {},
+      }));
+      const original = value.store.withRunTransaction;
+      const transaction = vi.spyOn(value.store, 'withRunTransaction').mockImplementation((runId, update) => {
+        if (!gated && runId !== value.runId && (phase === 'start' ? executeChecks === 2 : acceptanceChecks === 2)) {
+          gated = true; value.holdSynchronously(runId); value.release();
+        }
+        return original(runId, update);
+      });
+      try {
+        const composition = await createOpenSlackAgentBoundMutationComposition({ workspaceRoot: value.root, principalRef: PRINCIPAL_REF, harnessTaskHost: host });
+        const core = new OpenSlackMcpCore(context(value.root, composition.governedMutations));
+        const preview = await core.callTool('openslack_preview_workflow', { workflowId: 'harness.task.dispatch', input: { taskId: value.task.taskId, requestId: `lease-${phase}` } });
+        expect(preview.structuredContent.status).toBe('needs_confirmation');
+        const { planId, confirmationToken } = previewMetadata(preview.structuredContent);
+        const confirmed = await core.callTool('openslack_confirm_plan', { planId, confirmationToken });
+        expect(confirmed.structuredContent.status).toBe('completed');
+        const runId = (confirmed.structuredContent.data as { outcomes: Array<{ data: { runId: string } }> }).outcomes[0]!.data.runId;
+        await vi.waitFor(() => expect(host.read(runId)?.status).toBe('failed'), { timeout: 2500 });
+        expect(gated).toBe(true);
+        expect(execute).toHaveBeenCalledTimes(phase === 'start' ? 0 : 1);
+        expect(host.read(runId)?.harnessExecution?.acceptance).not.toBe('verified');
+        expect(readFileSync(join(value.context.worktreePath!, 'fixture.txt'), 'utf8')).toBe(phase === 'start' ? 'before' : 'after');
+      } finally { transaction.mockRestore(); }
     });
-    const original = value.store.withRunTransaction;
-    const transaction = vi.spyOn(value.store, 'withRunTransaction').mockImplementation((runId, update) => {
-      if (!gated && runId !== value.runId && (phase === 'start' ? executeChecks === 2 : acceptanceChecks === 2)) {
-        gated = true; value.holdSynchronously(runId); value.release();
-      }
-      return original(runId, update);
-    });
-    try {
-      const composition = await createOpenSlackAgentBoundMutationComposition({ workspaceRoot: value.root, principalRef: PRINCIPAL_REF, harnessTaskHost: host });
-      const core = new OpenSlackMcpCore(context(value.root, composition.governedMutations));
-      const preview = await core.callTool('openslack_preview_workflow', { workflowId: 'harness.task.dispatch', input: { taskId: value.task.taskId, requestId: `lease-${phase}` } });
-      expect(preview.structuredContent.status).toBe('needs_confirmation');
-      const { planId, confirmationToken } = previewMetadata(preview.structuredContent);
-      const confirmed = await core.callTool('openslack_confirm_plan', { planId, confirmationToken });
-      expect(confirmed.structuredContent.status).toBe('completed');
-      const runId = (confirmed.structuredContent.data as { outcomes: Array<{ data: { runId: string } }> }).outcomes[0]!.data.runId;
-      await vi.waitFor(() => expect(host.read(runId)?.status).toBe('failed'), { timeout: 2500 });
-      expect(gated).toBe(true);
-      expect(execute).toHaveBeenCalledTimes(phase === 'start' ? 0 : 1);
-      expect(host.read(runId)?.harnessExecution?.acceptance).not.toBe('verified');
-      expect(readFileSync(join(value.context.worktreePath!, 'fixture.txt'), 'utf8')).toBe(phase === 'start' ? 'before' : 'after');
-    } finally { transaction.mockRestore(); await value.close(); await host.close(100); }
-  });
+  }, 30_000);
 
   it.runIf(process.env.DEEPSEEK_HARNESS_CHECKOUT)('executes the configured host through the real peer, SDK, native files and callback MCP, then reads verified acceptance', async () => {
     const harnessRoot = resolve(process.env.DEEPSEEK_HARNESS_CHECKOUT!);

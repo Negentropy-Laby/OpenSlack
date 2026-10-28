@@ -37,7 +37,7 @@ function setup(source: string, timeoutMs = 2_000, extra: Partial<BridgeProcessAd
     recorder, runState: state, toolGuard,
     toolExecutor: new RepositoryToolExecutor({ rootPath: root, recorder, runId, toolGuard }),
   };
-  return { adapter, context };
+  return { root, adapter, context };
 }
 
 const prefix = `
@@ -50,6 +50,68 @@ lines.on('line', text => {
   if (frame.kind === 'run_request') {
 `;
 const suffix = `\n  }\n});`;
+
+/** Observe the exact real test child; failure teardown never fabricates exit evidence. */
+function observePeer(root: string, source: string) {
+  const diagnostic = channel('child_process');
+  const closed = Promise.withResolvers<{ code: number | null; signal: NodeJS.Signals | null }>();
+  const pending = new Map<ChildProcess, () => void>();
+  let child: ChildProcess | undefined, closeFact: { code: number | null; signal: NodeJS.Signals | null } | undefined;
+  let matches = 0;
+  const capture = (value: unknown) => {
+    if (!value || typeof value !== 'object' || !('process' in value) || !(value.process instanceof ChildProcess)) return;
+    const candidate = value.process;
+    const spawned = () => {
+      pending.delete(candidate);
+      if (candidate.spawnfile !== process.execPath || JSON.stringify(candidate.spawnargs.slice(1)) !== JSON.stringify(['--input-type=module', '-e', source])) return;
+      matches++; child = candidate;
+      candidate.once('close', (code, signal) => { closeFact = { code, signal }; closed.resolve(closeFact); });
+    };
+    pending.set(candidate, spawned); candidate.once('spawn', spawned);
+  };
+  const bounded = async <T>(work: Promise<T>): Promise<T> => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([work, new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error('Fixture close remains unknown; preserve its workspace')), 5_000);
+      })]);
+    } finally { clearTimeout(timer); }
+  };
+  if (roots.includes(root)) roots.splice(roots.indexOf(root), 1);
+  diagnostic.subscribe(capture);
+  return {
+    get child() { return child; }, get matches() { return matches; },
+    waitForClose: () => bounded(closed.promise),
+    async verify<T>(task: Promise<T>, check: () => Promise<void>) {
+      let primaryFailure: unknown;
+      try { await bounded(check()); }
+      catch (cause) { primaryFailure = cause; throw cause; }
+      finally {
+        try { await bounded(task); }
+        catch (cause) {
+          if (primaryFailure === undefined) { primaryFailure = cause; throw cause; }
+          if (primaryFailure instanceof Error) {
+            try { Object.defineProperty(primaryFailure, 'fixtureSettlementError', { value: cause }); } catch { /* preserve the primary */ }
+          }
+        } finally { await this.release(primaryFailure); }
+      }
+    },
+    async release(primaryFailure?: unknown) {
+      try {
+        if (child && !closeFact) { child.kill('SIGKILL'); await bounded(closed.promise); }
+      } catch (cleanupError) {
+        if (primaryFailure === undefined) throw cleanupError;
+        if (primaryFailure instanceof Error) {
+          try { Object.defineProperty(primaryFailure, 'fixtureCleanupError', { value: cleanupError }); } catch { /* preserve the primary */ }
+        }
+      } finally {
+        diagnostic.unsubscribe(capture);
+        for (const [candidate, spawned] of pending) candidate.removeListener('spawn', spawned);
+        if (matches === 1 && closeFact && !roots.includes(root)) roots.push(root);
+      }
+    },
+  };
+}
 
 describe('Harness bridge ownership', () => {
   it('returns complete.data only after an observed clean exit', async () => {
@@ -121,20 +183,30 @@ describe('Harness bridge ownership', () => {
 
   it('fails closed on a rejected or non-resolving live authority port without leaking its cause', async () => {
     for (const authorizeTool of [async () => { throw new Error('PRIVATE_AUTHORITY_DETAIL'); }, () => new Promise<void>(() => {})]) {
-      const { adapter, context } = setup(prefix + `
+      const source = prefix + `
         reply(frame, 'tool_request', { phase: 'authorize', authorizationRequestId: 'auth-1', toolName: 'Read', input: {} });
-      ` + suffix, 100, { authorizeTool });
-      await expect(adapter.execute(context)).rejects.not.toThrow('PRIVATE_AUTHORITY_DETAIL');
-      expect(adapter.processExitReceipt).not.toBeNull();
+      ` + suffix;
+      const { root, adapter, context } = setup(source, 100, { authorizeTool });
+      const observation = observePeer(root, source);
+      const task = adapter.execute(context).then(value => ({ value, error: undefined }), error => ({ value: undefined, error }));
+      await observation.verify(task, async () => {
+        const outcome = await task;
+        expect(outcome.value).toBeUndefined();
+        expect(outcome.error).toBeInstanceOf(BridgeAdapterError);
+        expect(['permission_denied', 'timeout']).toContain(outcome.error.kind);
+        expect(outcome.error.message).not.toContain('PRIVATE_AUTHORITY_DETAIL');
+        expect(observation.matches).toBe(1);
+        expect(await observation.waitForClose()).toEqual(adapter.processExitReceipt);
+      });
     }
-  });
+  }, 20_000); // Two authority modes; bounded observation/teardown, not a renewed task.
 
   it('does not reset the deadline on heartbeat', async () => {
     const { adapter, context } = setup(prefix + `
       const timer = setInterval(() => reply(frame, 'heartbeat', {}), 5);
       lines.on('close', () => clearInterval(timer));
     ` + suffix, 100);
-    await expect(adapter.execute(context)).rejects.toThrow(/deadline|timed out/);
+    await expect(adapter.execute(context)).rejects.toMatchObject({ kind: 'timeout' });
   });
 
   it('drains more than 256 valid heartbeats while live authorization is pending', async () => {
@@ -206,36 +278,86 @@ describe('Harness bridge ownership', () => {
   });
 
   it('settles an in-flight public waiter when closeSession is called externally', async () => {
-    const { adapter, context } = setup(prefix + `reply(frame, 'progress', { step: 'waiting-for-close' });` + suffix);
+    const source = prefix + `reply(frame, 'progress', { step: 'waiting-for-close' });` + suffix;
+    const { root, adapter, context } = setup(source);
+    const observation = observePeer(root, source);
     const progress = vi.spyOn(context.recorder, 'progress');
     const task = adapter.execute(context).then(value => ({ value }), error => ({ error }));
-    await vi.waitFor(() => expect(progress.mock.calls.some(([, data]) => data.step === 'waiting-for-close')).toBe(true));
-    await adapter.closeSession(`bridge-${context.runId}`);
-    expect(await task).toMatchObject({ error: { kind: 'session_unavailable' } });
-  });
+    await observation.verify(task, async () => {
+      await vi.waitFor(() => expect(progress.mock.calls.some(([, data]) => data.step === 'waiting-for-close')).toBe(true));
+      const shutdown = await adapter.closeSession(`bridge-${context.runId}`).then(() => undefined, error => error);
+      if (shutdown !== undefined) {
+        expect(shutdown).toMatchObject({ kind: 'process_crash' });
+        expect(['Bridge did not confirm a clean owned shutdown', 'Bridge exit and side effects remain unknown']).toContain(shutdown.message);
+      }
+      expect(await task).toMatchObject({ error: { kind: 'session_unavailable' } });
+      expect(observation.matches).toBe(1);
+      expect(await observation.waitForClose()).toEqual(adapter.processExitReceipt);
+    });
+  }, 20_000);
 
-  it('treats a broken stdin pipe as a handled transport failure, not an uncaught host exception', async () => {
-    const { adapter, context } = setup(`import { closeSync } from 'node:fs';\n` + prefix + `
-      process.stdin.on('error', () => {}); process.stdin.destroy(); try { closeSync(0); } catch {}
-      reply(frame, 'progress', { step: 'input-closed' }); setInterval(() => {}, 1000);
-    ` + suffix);
+  it.each(['callback', 'error-event'] as const)('handles an EPIPE at the public stdin %s boundary without an uncaught exception or success', async boundary => {
+    const source = prefix + `
+      const hold = setInterval(() => {}, 1000);
+      process.stdin.once('end', () => clearInterval(hold));
+      reply(frame, 'progress', { step: 'write-fault-ready' });
+    ` + suffix;
+    const { root, adapter, context } = setup(source);
+    const observation = observePeer(root, source);
     const progress = vi.spyOn(context.recorder, 'progress');
     const task = adapter.execute(context).then(value => ({ value }), error => ({ error }));
-    await vi.waitFor(() => expect(progress.mock.calls.some(([, data]) => data.step === 'input-closed')).toBe(true));
-    await expect(adapter.sendEnvelope(`bridge-${context.runId}`, buildBridgeEnvelope(`bridge-${context.runId}`, context.runId,
-      'progress', { text: 'x'.repeat(900_000) }))).rejects.toMatchObject({ kind: 'process_crash' });
-    expect(await task).toMatchObject({ error: { kind: 'process_crash' } });
-  });
+    await observation.verify(task, async () => {
+      await vi.waitFor(() => expect(progress.mock.calls.some(([, data]) => data.step === 'write-fault-ready')).toBe(true));
+      expect(observation.matches).toBe(1);
+      const stdin = observation.child!.stdin!;
+      const pipeError = Object.assign(new Error('Deterministic test-only broken pipe'), { code: 'EPIPE' });
+      // Fault injection at a public Writable port, not an OS-generated EPIPE
+      // qualification. Closing child fd 0 does not portably close every pipe handle.
+      vi.spyOn(stdin, 'write').mockImplementationOnce(((...args: unknown[]) => {
+        const callback = args.at(-1);
+        if (typeof callback !== 'function') throw new Error('Expected the real Bridge write callback');
+        queueMicrotask(() => {
+          // Outside write's synchronous try/catch: without the permanent error
+          // listener this would be an uncaught event, not a rescued callback.
+          if (boundary === 'error-event') stdin.emit('error', pipeError);
+          callback(pipeError);
+        }); return false;
+      }) as typeof stdin.write);
+      await expect(adapter.sendEnvelope(`bridge-${context.runId}`, buildBridgeEnvelope(`bridge-${context.runId}`, context.runId,
+        'progress', { text: 'x'.repeat(900_000) }))).rejects.toMatchObject({ kind: 'process_crash' });
+      expect(await task).toMatchObject({ error: { kind: 'process_crash' } });
+      expect(progress.mock.calls.some(([, data]) => data.step === 'bridge_session_completed')).toBe(false);
+      expect(await observation.waitForClose()).toEqual(adapter.processExitReceipt);
+    });
+  }, 20_000);
 
   it('does not publish success after forced shutdown', async () => {
-    const { adapter, context } = setup(prefix + `
-      reply(frame, 'complete', { data: { text: 'done' } });
+    const source = prefix + `
       process.on('SIGTERM', () => {});
       setInterval(() => {}, 1000);
-    ` + suffix);
-    await expect(adapter.execute(context)).rejects.toThrow('clean owned shutdown');
-    expect(adapter.processExitReceipt?.signal).toBe('SIGKILL');
-  });
+      reply(frame, 'complete', { data: { text: 'must not succeed' } });
+    ` + suffix;
+    const { root, adapter, context } = setup(source);
+    const complete = vi.spyOn(context.recorder, 'complete');
+    const progress = vi.spyOn(context.recorder, 'progress');
+    const observation = observePeer(root, source);
+    const task = adapter.execute(context).then(value => ({ value, error: undefined }), error => ({ value: undefined, error }));
+    await observation.verify(task, async () => {
+      const outcome = await task;
+      expect(outcome.value).toBeUndefined();
+      expect(outcome.error).toBeInstanceOf(BridgeAdapterError);
+      expect(outcome.error).toMatchObject({ kind: 'process_crash' });
+      // The unchanged 100 ms cleanup may end before the OS delivers close after
+      // SIGKILL. Both fail-closed outcomes are valid, never business success.
+      expect(['Bridge did not confirm a clean owned shutdown', 'Bridge exit and side effects remain unknown']).toContain(outcome.error.message);
+      expect(complete).not.toHaveBeenCalled();
+      expect(progress.mock.calls.some(([, data]) => data.step === 'bridge_session_completed')).toBe(false);
+      expect(observation.matches).toBe(1);
+      expect(await observation.waitForClose()).toEqual({ code: null, signal: 'SIGKILL' });
+      // This is independent, possibly late OS evidence, not extra adapter time.
+      expect(outcome.error.shutdownEvidence).toMatchObject({ clean: false });
+    });
+  }, 20_000);
 
   it('fails closed without trusted deployment configuration', () => {
     expect(() => createDeepSeekHarnessProvider().resolve({
@@ -300,7 +422,9 @@ describe('Harness bridge ownership', () => {
 
   it('does not let a failed abort diagnostic escape its listener or skip child shutdown', async () => {
     const controller = new AbortController();
-    const { adapter, context } = setup(prefix + `reply(frame, 'progress', { step: 'abort-now' });` + suffix);
+    const source = prefix + `reply(frame, 'progress', { step: 'abort-now' });` + suffix;
+    const { root, adapter, context } = setup(source);
+    const observation = observePeer(root, source);
     const progress = context.recorder.progress.bind(context.recorder);
     vi.spyOn(context.recorder, 'progress').mockImplementation((runId, data) => {
       if (data.step === 'bridge_agent_cancel_requested') throw new Error('diagnostic disk unavailable');
@@ -308,9 +432,15 @@ describe('Harness bridge ownership', () => {
       if (data.step === 'abort-now') controller.abort(new Error('explicit cancellation'));
       return result;
     });
-    await expect(adapter.execute({ ...context, signal: controller.signal })).rejects.toMatchObject({ diagnosticPersistenceFailed: true });
-    expect(adapter.processExitReceipt).toEqual({ code: 0, signal: null });
-  });
+    const task = adapter.execute({ ...context, signal: controller.signal }).then(value => ({ value, error: undefined }), error => ({ value: undefined, error }));
+    await observation.verify(task, async () => {
+      const outcome = await task;
+      expect(outcome.value).toBeUndefined();
+      expect(outcome.error).toMatchObject({ diagnosticPersistenceFailed: true });
+      expect(observation.matches).toBe(1);
+      expect(await observation.waitForClose()).toEqual(adapter.processExitReceipt);
+    });
+  }, 20_000);
 
   it('does not announce a completed lifecycle before strict legacy wire finalization', async () => {
     const { adapter, context } = setup(prefix + `reply(frame, 'complete', { data: 'not final' }); setTimeout(() => process.stdout.write('truncated'), 20);` + suffix,
