@@ -332,3 +332,75 @@ then hosted Linux and native Windows receipts and truthful PRMS Draft result.
 Maintainer: provision/approve the separate live subject and deployment parameters,
 then real-model Windows/WSL fixture loop and human acceptance. U01, prior 51-item
 P2 and true qualification remain separate. No overall completion claim yet.
+
+### Authorized test follow-up after 25db
+
+The retained checkpoint is `25db505a483e871477a7c14e8812da36ba8610e3`, tree
+`3908a5f4387163f62187be88f9f340103ce64b31`. The maintainer authorized the exact
+Operator test path and existing observation-test repair, without changing global
+timeouts, runtime deadlines, Harness or authority. Additive two-file commit:
+`33a9f9362edb28bf0c997cc2d91600b9fd425448`, tree
+`0cb27a9ba4e4192f9847497578f6d40a32813f6b`. Before bytes, authority, raw receipts
+and static-review inputs append in local `followup-tests-r1/`, not a new run.
+
+- **Distinct retained REDs:** local complete R5 at 25db has **8,611 PASS / 1 FAIL
+  / 25 SKIP**, Operator expected eight shadow events but saw seven within the old
+  polling bound. Hosted Self Validate `40681378907`, attempt 1, job
+  `122793139905`, has the same totals but a different failure: the cumulative
+  observation test exceeded 60,000 ms (reported 71,389 ms). Later count/security/
+  budget-history steps were SKIPPED. Its 275,523-byte raw log SHA-256 is
+  `08c6ecb293238c8185dfff281a1b55b4963cdfb3ad7cb288f0783330da271bac`.
+  At `12:15:58.373Z`, Release Artifacts `40681378916` separately succeeded,
+  including Windows downstream build/smoke; applicable boundary and notification
+  jobs succeeded. Tag-only publication was SKIPPED. This is not overall CI PASS.
+- **Minimal repairs:** Operator awaits the existing public `observer.flush()`
+  before unchanged exact count/order/kind/journal/token assertions. Hung/throwing
+  publisher negatives remain. Observation splits the cumulative probe into three
+  independent fully hashed fixtures: execute cutoffs, unbalanced-to-balanced
+  acceptance, and its own verified/matched control followed by rehashed unbalanced
+  inspection. The first required-lease case and original assertions remain.
+  Per-case 60,000 ms, task 240,000 ms and cleanup 30,000 ms are unchanged.
+- **Measured diagnosis:** an instrumented original cumulative case took 52,820 ms
+  locally, including fixture/prepare and repeated fresh execute/accept/inspection
+  reads. This neither proves the hosted job's unique cause nor production deadline
+  headroom. No pre-run whole-file hash was captured for that diagnostic variant;
+  it is not relabeled as candidate validation. Raw console observations remain in
+  the tool transcript; before bytes and result JSON are retained separately.
+- **Focused GREEN:** actual Linux nobody uid 65534, Node 24.18.1, original Harness
+  and isolated qualified tools/caches: `followup-focused-r1` records **9 PASS /
+  0 FAIL / 0 SKIP**, exit 0, `12:26:29.117Z`–`12:28:32.493Z`. The unchanged
+  first case took 24.678 s; new probes took 24.238 / 30.248 / 34.719 s. Test hashes
+  match before/after. JSON SHA-256:
+  `9f967241ed6c8afdee7f6b262d13928ae8d8051323c866e94e392d5ad331f6f4`.
+  Native Windows `followup-operator-r1.json` separately records **5 PASS**, no
+  skip, exit 0. This is not a native run of the time-heavy observation file.
+- **Independent static review:** code and QA reviewers approve exact observation
+  SHA-256 `ef9416aea1227874d436c5fddc684678675e63fc98cb0a8bc27268aa6c9353f7`
+  and Operator `dd2d12f1038670de24aea9d303df512c5498cc7cc5377962f99a37562f32bf6a`.
+  All checks, fresh reads, independent mutable state and same-fixture controls
+  remain. This is not execution or GitHub APPROVE.
+
+Complete nonprivileged collection now has **8,639 declared cases in 585 files**,
+verified by a second no-update collection. The official status generator ran twice
+there. Main-checkout duplicate collection was interrupted after about six minutes
+of I/O-bound work; its shutdown EPIPE is retained and is not a test or collection
+PASS. Only the two numeric registry edits produced by the successful collector
+are transferred, with exact content comparison; root status generation and the
+final candidate get separate receipts. Root status generation subsequently
+completed; a serial repeat from `12:45:37.250Z` to `12:46:15.466Z` exited 0 with
+identical before/after hashes. Registry SHA-256 is
+`b57ed118a8b646aabc6a5691509544804644da5c5f16633462b9bfa5b4014ac3`; status is
+`e05665a01ca023b0fc1383bfb136839a69ad44b65eada9f389ca942565e65bcf`.
+Both match the qualified copy; root and copy status verify pass.
+This is two added declarations, not repeated-run accounting. Full typecheck and
+existing exact-byte contract-family checks passed; lint, workspace, docs verify/
+migration, notification docs, Genesis 5/5, golden 7/7 and budget-history checks
+passed. Two read-only renders match all four governance projections with zero
+projection writes. No source-lock binding or protected source changed.
+
+At this ledger checkpoint final full-candidate execution, hosted Linux/Windows CI
+and a new real PRMS attempt remain pending; later bot receipts/comments report
+their outcomes without repeatedly changing the candidate just to backfill status.
+The last 25db PRMS attempt was unavailable at `prms-fetch` with `AbortError`, not
+a fabricated `BLOCKED_DRAFT`. Maintainer-owned subject/provision, real-model
+Windows/WSL loop, U01 and human acceptance remain independently open.
