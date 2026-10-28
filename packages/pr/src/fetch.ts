@@ -51,13 +51,55 @@ function latestReviewsByReviewer(reviews: PRReview[]): PRReview[] {
   return [...latest.values()].map((entry) => entry.review);
 }
 
+type PRSnapshot = NonNullable<Awaited<ReturnType<typeof getPR>>>;
+
+function evidenceError(code: string, cause?: unknown): Error & { code: string } {
+  return Object.assign(new Error(code, cause === undefined ? undefined : { cause }), { code });
+}
+
+async function readPRSnapshot(
+  prNumber: number,
+  options?: GitHubClientOptions,
+): Promise<PRSnapshot> {
+  let pr: Awaited<ReturnType<typeof getPR>>;
+  try {
+    pr = await getPR(prNumber, options);
+  } catch (cause) {
+    throw evidenceError('PR_EVIDENCE_SNAPSHOT_UNAVAILABLE', cause);
+  }
+  if (!pr) throw evidenceError('PR_EVIDENCE_SNAPSHOT_UNAVAILABLE');
+  if (pr.number !== prNumber) throw evidenceError('PR_EVIDENCE_SNAPSHOT_CHANGED');
+  return pr;
+}
+
+function snapshotIdentity(pr: PRSnapshot): string {
+  // Bind the collection window, not an imaginary atomic GitHub API snapshot.
+  // Volatile mergeability/check status may legitimately settle during collection.
+  return JSON.stringify([
+    pr.number,
+    pr.head.sha,
+    pr.base.sha,
+    pr.head.ref,
+    pr.base.ref,
+    pr.head.repoFullName,
+    pr.base.repoFullName,
+    pr.state,
+    pr.draft,
+    pr.merged,
+    pr.body,
+    pr.title,
+    pr.user.login,
+  ]);
+}
+
 export async function fetchPRDetails(
   prNumber: number,
   options?: GitHubClientOptions,
 ): Promise<PRReviewReport> {
   if (options?.signal?.aborted) throw new Error('GITHUB_EVIDENCE_ABORTED');
-  const [pr, files, checks, reviews] = await Promise.all([
-    getPR(prNumber, options),
+  const pr = structuredClone(await readPRSnapshot(prNumber, options));
+  const initialIdentity = snapshotIdentity(pr);
+  const [files, checks, reviews] = await Promise.all([
     listPRFiles(prNumber, options),
     getPRChecks(prNumber, options),
     getPRReviews(prNumber, options),
@@ -94,6 +136,11 @@ export async function fetchPRDetails(
   const workflowGovernanceIssue = governanceRequired
     ? await findWorkflowGovernanceIssue(prNumber, options)
     : undefined;
+  if (options?.signal?.aborted) throw new Error('GITHUB_EVIDENCE_ABORTED');
+  const current = await readPRSnapshot(prNumber, options);
+  if (snapshotIdentity(current) !== initialIdentity) {
+    throw evidenceError('PR_EVIDENCE_SNAPSHOT_CHANGED');
+  }
   if (options?.signal?.aborted) throw new Error('GITHUB_EVIDENCE_ABORTED');
 
   const author = pr?.user.login || 'unknown';
@@ -136,7 +183,7 @@ export async function fetchPRDetails(
     decision: 'DISCOVERED',
     reason: 'Initial fetch complete. Awaiting classification.',
     recommendation: 'Run classification to determine risk zone and next steps.',
-    mergeable: pr?.mergeable ?? false,
+    mergeable: current.mergeable ?? false,
     body: pr?.body ?? '',
     workflowEvidence,
     workflowGovernanceIssue:
