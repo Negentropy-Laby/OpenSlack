@@ -103,6 +103,8 @@ export interface AdapterExecutionContext {
   signal?: AbortSignal;
   /** Absolute host-owned business cutoff (UTC milliseconds), never supplied by a model or the wire. */
   executionDeadline?: number;
+  /** Same-process absolute monotonic cutoff. Never persist or transmit this clock reading. */
+  executionMonotonicDeadline?: number;
   /** Host-only known lease restriction for this already-confirmed Harness start; never a wire/model capability. */
   startEligibility?: HarnessRunStartEligibility;
   /**

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { spawn } from 'node:child_process';
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, utimesSync, writeFileSync, openSync, closeSync, ftruncateSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, utimesSync, writeFileSync, openSync, closeSync, ftruncateSync, unlinkSync } from 'node:fs';
 import type * as FsModule from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -14,13 +14,15 @@ import { reconcileHarnessTask } from '../harness-reconciliation.js';
 import { HarnessAdmissionStore } from '../harness-admission.js';
 import { bindHarnessToolEligibility, createHarnessTaskEligibility } from '../harness-eligibility.js';
 
-vi.mock('node:fs', async original => { const fs = await original<typeof FsModule>(); return { ...fs, renameSync: vi.fn(fs.renameSync) }; });
+vi.mock('node:fs', async original => { const fs = await original<typeof FsModule>(); return { ...fs, renameSync: vi.fn(fs.renameSync), unlinkSync: vi.fn(fs.unlinkSync) }; });
 const rename = vi.mocked(renameSync);
 const nativeRename = rename.getMockImplementation()!;
+const unlink = vi.mocked(unlinkSync), nativeUnlink = unlink.getMockImplementation()!;
 const roots: string[] = [];
 const hosts: HarnessTaskHost[] = [];
 afterEach(async () => {
   rename.mockReset().mockImplementation(nativeRename);
+  unlink.mockReset().mockImplementation(nativeUnlink);
   vi.useRealTimers();
   vi.restoreAllMocks();
   for (const host of hosts.splice(0)) await host.close(100);
@@ -64,6 +66,20 @@ function runningFixture() {
 }
 
 describe('governed admission and shared canonical state repair', () => {
+  it('retains ownership and publishes a non-executable failure when admission unlink fails after exclusive publication', async () => {
+    const { root, store, host, options, execute } = fixture();
+    unlink.mockImplementation(path => {
+      if (String(path).includes('harness-admissions') && String(path).endsWith('.tmp') && !String(path).includes('.stop.json.')) throw Object.assign(new Error('fixture AV EPERM'), { code: 'EPERM' });
+      return nativeUnlink(path);
+    });
+    await expect(host.dispatch('TASK-FIXTURE', 'published-temp-failed')).rejects.toMatchObject({ code: 'INDETERMINATE',
+      observation: { kind: 'admission', canonicalRunPresent: true, disposition: 'reconcile_required' } });
+    const [run] = store.listRuns();
+    expect(run).toMatchObject({ status: 'failed', harnessExecution: { visible: false, lifecycle: { phase: 'stopped_before_start' } } });
+    expect(readHarnessStopIntent(root, run!.runId)?.reason).toBe('persistence_failed');
+    expect(execute).not.toHaveBeenCalled(); expect(options.publish).not.toHaveBeenCalled();
+    expect(await host.close(100)).toEqual({ stopped: false, unknownRunIds: [run!.runId] });
+  });
   it('owns publishing before close and never returns an unowned pending success', async () => {
     const { host, options, execute, store } = fixture();
     const published = deferred();
@@ -348,8 +364,9 @@ describe('owned RunStore transactions and full evidence quota', () => {
   it('persists full call/result once and rejects reauthorization of a settled public call ID', () => {
     const { recorder, store, runId, reserve } = runningFixture();
     const reservation = { callId: 'call-1', toolName: 'Read', input: { file_path: 'fixture.txt' }, targetPath: '/fixture/fixture.txt', generation: 'fixture-owner', maxResultBytes: 2048 };
+    const receipt = reserve(reservation);
     reserve(reservation);
-    reserve(reservation);
+    recorder.markToolEvidenceAuthorizationAttempt!(receipt);
     recorder.recordToolEvidenceCall!(runId, reservation.callId);
     const result = { message: 'full public output', meta: { path: 'fixture.txt' }, value: { text: 'fixture' } };
     recorder.recordToolEvidenceResult!(runId, reservation.callId, result);
@@ -360,6 +377,65 @@ describe('owned RunStore transactions and full evidence quota', () => {
     expect(events).toHaveLength(2);
     expect(events[1]).toMatchObject({ type: 'tool_result', data: { callId: reservation.callId, output: result } });
     expect(store.getRun(runId)!.harnessExecution!.evidence!.reservedBytes).toBe(0);
+  });
+
+  it('releases only a newly committed reservation when eligibility expires before any allowed response can be attempted', () => {
+    const { recorder, store, runId, task } = runningFixture();
+    const now = Date.now();
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(now);
+    const eligibility = bindHarnessToolEligibility(createHarnessTaskEligibility({ taskId: task.taskId,
+      taskHash: 'c'.repeat(64), principalId: 'quota-unit-fixture-only', principalHash: task.principalHash, phase: 'execute' },
+    { mode: 'required', expiresAt: now + 1000 }), { runId, generation: 'fixture-owner', toolName: 'Read', targetPath: '/fixture' });
+    const transact = store.withRunTransaction.bind(store);
+    let first = true;
+    vi.spyOn(store, 'withRunTransaction').mockImplementation((id, update) => {
+      const result = transact(id, update);
+      if (first) { first = false; clock.mockReturnValue(now + 1000); }
+      return result;
+    });
+    expect(() => recorder.reserveToolEvidence!(runId, { callId: 'expiry-after-commit', toolName: 'Read', input: {},
+      targetPath: '/fixture', generation: 'fixture-owner', maxResultBytes: 2048 }, eligibility)).toThrow(/eligibility|lease/);
+    expect(store.readRun(runId)?.harnessExecution?.evidence?.reservedBytes).toBe(0);
+    expect(store.readRun(runId)?.harnessExecution?.evidence?.calls['expiry-after-commit']).toMatchObject({ phase: 'not_dispatched' });
+    const events: Array<{ type: string }> = [];
+    visitStrictTranscript(store.readRun(runId)!.transcriptPath, value => events.push(value));
+    expect(events.map(value => value.type)).toEqual(['tool_call', 'progress']);
+  });
+
+  it('revalidates only this recorder\'s exact already-attempted call and never releases duplicate, foreign or attempted receipts', () => {
+    const { recorder, store, runId, reserve } = runningFixture();
+    const value = { callId: 'pre-effect-checks', toolName: 'Read', input: {}, targetPath: '/fixture', generation: 'fixture-owner', maxResultBytes: 2048 };
+    const first = reserve(value), prematureDuplicate = reserve(value);
+    expect(() => recorder.markToolEvidenceAuthorizationAttempt!(prematureDuplicate)).toThrow('first-dispatch');
+    expect(() => recorder.releaseUndispatchedToolEvidence!(prematureDuplicate)).toThrow('original new');
+    recorder.markToolEvidenceAuthorizationAttempt!(first);
+    const before = store.readRun(runId);
+    for (let index = 0; index < 2; index++) recorder.markToolEvidenceAuthorizationAttempt!(reserve(value));
+    expect(store.readRun(runId)).toEqual(before); // No extra allocation, event or checkpoint on a pure recheck.
+    expect(() => recorder.releaseUndispatchedToolEvidence!(first)).toThrow('attempted');
+    expect(() => recorder.releaseUndispatchedToolEvidence!({} as never)).toThrow('original new');
+    recorder.recordToolEvidenceResult!(runId, value.callId, { fixture: 'settled' });
+    expect(() => reserve(value)).toThrow('settled tool call ID');
+  });
+
+  it('cannot use another recorder or a legacy unknown call to acquire or release first-dispatch authority', () => {
+    const { recorder, store, root, runId, reserve, task } = runningFixture();
+    const value = { callId: 'foreign-owner', toolName: 'Read', input: {}, targetPath: '/fixture', generation: 'fixture-owner', maxResultBytes: 2048 };
+    const first = reserve(value); recorder.markToolEvidenceAuthorizationAttempt!(first);
+    const other = createRunRecorder(store, root);
+    const eligibility = bindHarnessToolEligibility(createHarnessTaskEligibility({ taskId: task.taskId, taskHash: 'c'.repeat(64),
+      principalId: 'quota-unit-fixture-only', principalHash: task.principalHash, phase: 'execute' }, { mode: 'not_applicable' }),
+    { runId, generation: value.generation, toolName: value.toolName, targetPath: value.targetPath });
+    const reused = other.reserveToolEvidence!(runId, value, eligibility);
+    expect(() => other.markToolEvidenceAuthorizationAttempt!(reused)).toThrow('original new');
+    expect(() => other.releaseUndispatchedToolEvidence!(reused)).toThrow('original new');
+    const state = store.readRun(runId)!;
+    const calls = state.harnessExecution!.evidence!.calls;
+    store.updateRun(runId, { harnessExecution: { ...state.harnessExecution!, evidence: { ...state.harnessExecution!.evidence!,
+      calls: { ...calls, [value.callId]: { ...calls[value.callId]!, reservationId: undefined, phase: undefined } } } } });
+    const legacy = reserve(value);
+    expect(() => recorder.markToolEvidenceAuthorizationAttempt!(legacy)).toThrow('original new');
+    expect(store.readRun(runId)?.harnessExecution?.evidence?.reservedBytes).toBe(2048);
   });
 
   it('rejects missing, forged and callback-domain observations instead of treating them as unlimited eligibility', () => {
@@ -396,7 +472,8 @@ describe('owned RunStore transactions and full evidence quota', () => {
 
   it('strictly streams complete evidence beyond the old 8 MiB reader limit', () => {
     const { recorder, store, runId, reserve } = runningFixture();
-    reserve({ callId: 'large', toolName: 'Read', input: {}, targetPath: '/fixture', generation: 'fixture-owner', maxResultBytes: 16 * 1024 * 1024 });
+    const receipt = reserve({ callId: 'large', toolName: 'Read', input: {}, targetPath: '/fixture', generation: 'fixture-owner', maxResultBytes: 16 * 1024 * 1024 });
+    recorder.markToolEvidenceAuthorizationAttempt!(receipt);
     recorder.recordToolEvidenceResult!(runId, 'large', { message: 'x'.repeat(9 * 1024 * 1024), meta: { complete: true } });
     let count = 0;
     visitStrictTranscript(store.getRun(runId)!.transcriptPath, () => count++);

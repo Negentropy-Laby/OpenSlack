@@ -1,4 +1,4 @@
-import { readRunStateSnapshot } from './run-store.js';
+import { observeRun } from './run-store.js';
 import { assertHarnessRunStorage, hashHarnessTask, type ApprovedHarnessTask, type HarnessTaskHostOptions } from './harness-task-host.js';
 import type { AgentRunState } from './types.js';
 import { readHarnessStopIntent } from './harness-stop.js';
@@ -21,7 +21,10 @@ export interface HarnessReconciliationOptions extends Pick<HarnessTaskHostOption
 /** No RunStore, Host, Session, lock repair, task replay, or record update is constructed by recovery inspection. */
 export async function reconcileHarnessTask(options: HarnessReconciliationOptions, runId: string) {
   assertHarnessRunStorage(options.identityRoot, runId);
-  const state = readRunStateSnapshot(runId, options.identityRoot);
+  const current = observeRun(runId, options.identityRoot);
+  if (current.kind === 'unavailable') return Object.freeze({ runId, readStatus: 'unavailable' as const,
+    reason: current.reason, disposition: 'preserve_and_reconcile' as const });
+  const state = current.kind === 'ready' ? current.state : null;
   if (!state?.harnessExecution) return null;
   const binding = state.harnessExecution;
   let observation: HarnessRecoveryObservation = { deployment: 'unknown', workspace: 'unknown', process: 'unknown' };

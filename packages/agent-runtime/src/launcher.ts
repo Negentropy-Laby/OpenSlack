@@ -1,4 +1,4 @@
-import type { AgentRunRequest, ResolvedAgentConfig, WorktreeHandoff } from './types.js';
+import type { AgentRunRequest, AgentRunState, ResolvedAgentConfig, WorktreeHandoff } from './types.js';
 import {
   PermissionDeniedError,
   AgentUnavailableError,
@@ -17,7 +17,7 @@ import {
 import { buildPermissionProfile, validatePermissionProfile } from './permissions.js';
 import { createRunRecorder } from './recorder.js';
 import type { AgentRunStore } from './run-store.js';
-import { generateRunId } from './run-store.js';
+import { generateRunId, RUN_ID_RE } from './run-store.js';
 import type { AgentExecutionAdapter, AdapterExecutionContext } from './adapter.js';
 import type { BridgeProcessAdapterOptions } from './bridge-adapter.js';
 import { ToolGuard } from './adapter.js';
@@ -220,7 +220,8 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
     } catch (error) {
       const runtimeError = normalizeRuntimeResolutionError(error);
       runtimeError.runId = runId;
-      recorder.reject(request, runtimeError);
+      try { recorder.reject(request, runtimeError); }
+      catch { attachRunDiagnostics(runtimeError, runId, ['RUN_REJECTION_RECORD_UNCONFIRMED']); }
       throw runtimeError;
     }
 
@@ -234,7 +235,8 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
           : error instanceof PermissionDeniedError
             ? 'RUNTIME_MISCONFIGURED'
             : getAgentRunFailureCode(error);
-      recorder.reject(request, rejection, failureCode);
+      try { recorder.reject(request, rejection, failureCode); }
+      catch { attachRunDiagnostics(rejection, runId, ['RUN_REJECTION_RECORD_UNCONFIRMED']); }
       throw error;
     }
 
@@ -249,6 +251,7 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
     tokenUsage?: number;
     usageEvidence?: readonly ProviderUsageReceipt[];
     runId: string;
+    runtimeDiagnostics?: readonly string[];
   }> {
     const { resolvedConfig, runId, permissionProfile, request, providerResolution } =
       prepareAndValidate(prompt, agentOptions);
@@ -288,7 +291,9 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
     }
 
     // Start run
-    const state = recorder.start(request);
+    let state: AgentRunState;
+    try { state = recorder.start(request); }
+    catch (error) { if (RUN_ID_RE.test(runId)) attachRunDiagnostics(error, runId, ['RUN_INITIALIZATION_RECORD_UNCONFIRMED']); throw error; }
     const abortController = new AbortController();
     const unregisterControl = registerActiveAgentRunControl({
       runId,
@@ -299,6 +304,11 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
 
     const runAdapter = providerResolution.adapter;
     let adapterUsageEvidence: readonly ProviderUsageReceipt[] = [];
+    const diagnostics: RunDiagnostic[] = [];
+    const secondary = <T>(code: RunDiagnostic, action: () => T): T | undefined => {
+      try { return action(); }
+      catch { if (!diagnostics.includes(code)) diagnostics.push(code); return undefined; }
+    };
 
     try {
       // Delegate execution to the adapter
@@ -371,11 +381,11 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
 
       // Record bridge lifecycle marker only when the adapter is actually a bridge
       if (runAdapter.bridgeContract) {
-        recorder.progress(runId, {
+        secondary('RUN_LIFECYCLE_RECORD_UNCONFIRMED', () => recorder.progress(runId, {
           step: 'bridge_lifecycle_complete',
           runId,
           status: 'completed',
-        });
+        }));
       }
 
       return {
@@ -383,58 +393,63 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
         tokenUsage: adapterResult.tokenUsage,
         usageEvidence: adapterUsageEvidence.length > 0 ? adapterUsageEvidence : undefined,
         runId,
+        ...(diagnostics.length ? { runtimeDiagnostics: Object.freeze([...diagnostics]) } : {}),
       };
     } catch (err) {
+      diagnostics.push(...readRunDiagnostics(err));
       const attachedEvidenceInspection = inspectAttachedProviderUsageEvidence(err);
       if (attachedEvidenceInspection.status === 'invalid') {
-        recorder.progress(runId, {
+        secondary('RUN_LIFECYCLE_RECORD_UNCONFIRMED', () => recorder.progress(runId, {
           step: 'provider_usage_evidence_invalid',
           source: 'thrown_error',
-        });
+        }));
       }
       const attachedUsageEvidence =
         attachedEvidenceInspection.status === 'valid' ? attachedEvidenceInspection.receipts : [];
       const usageEvidence =
         attachedUsageEvidence.length > 0 ? attachedUsageEvidence : adapterUsageEvidence;
       attachProviderUsageEvidence(err, usageEvidence);
-      const chargedUsage = runStore.getRun(runId)?.tokensUsed ?? 0;
-      attachTokenUsage(err, chargedUsage);
+      const chargedUsage = secondary('RUN_USAGE_READ_UNCONFIRMED', () => runStore.readRun(runId)?.tokensUsed);
+      if (chargedUsage !== undefined) attachTokenUsage(err, chargedUsage);
       if (safeInstanceOf(err, AgentRunRestartRequestedError)) {
-        recorder.progress(runId, {
+        secondary('RUN_LIFECYCLE_RECORD_UNCONFIRMED', () => recorder.progress(runId, {
           step: 'agent_restart_handoff',
           reason: err.reason,
-        });
-        recorder.cancel(runId);
+        }));
+        secondary('RUN_CANCELLATION_RECORD_UNCONFIRMED', () => recorder.cancel(runId));
         if (runAdapter.bridgeContract) {
-          recorder.progress(runId, {
+          secondary('RUN_LIFECYCLE_RECORD_UNCONFIRMED', () => recorder.progress(runId, {
             step: 'bridge_lifecycle_complete',
             runId,
             status: 'cancelled',
             reason: err.reason,
-          });
+          }));
         }
+        attachRunDiagnostics(err, runId, diagnostics);
         throw err;
       }
       if (abortController.signal.aborted || safeInstanceOf(err, AgentRunCancelledError)) {
         const reason = safeInstanceOf(err, AgentRunCancelledError)
           ? err.reason
           : (readErrorMessage(err) ?? 'agent run cancelled');
-        recorder.cancel(runId);
+        secondary('RUN_CANCELLATION_RECORD_UNCONFIRMED', () => recorder.cancel(runId));
         if (runAdapter.bridgeContract) {
-          recorder.progress(runId, {
+          secondary('RUN_LIFECYCLE_RECORD_UNCONFIRMED', () => recorder.progress(runId, {
             step: 'bridge_lifecycle_complete',
             runId,
             status: 'cancelled',
             reason,
-          });
+          }));
         }
-        if (safeInstanceOf(err, AgentRunCancelledError)) throw err;
+        if (safeInstanceOf(err, AgentRunCancelledError)) { attachRunDiagnostics(err, runId, diagnostics); throw err; }
         const cancellationError = new AgentRunCancelledError(runId, reason);
         attachProviderUsageEvidence(cancellationError, usageEvidence);
+        attachRunDiagnostics(cancellationError, runId, diagnostics);
         throw cancellationError;
       }
       if (safeInstanceOf(err, PermissionDeniedError)) {
-        recorder.fail(runId, err, 'TOOL_DENIED');
+        secondary('RUN_FAILURE_RECORD_UNCONFIRMED', () => recorder.fail(runId, err, 'TOOL_DENIED'));
+        attachRunDiagnostics(err, runId, diagnostics);
         throw err;
       }
       const failureCode = getAgentRunFailureCode(err);
@@ -450,17 +465,18 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
             : formatAgentResultSchemaFailureSummary(schemaError.violations),
       });
       attachProviderUsageEvidence(executionError, usageEvidence);
-      attachTokenUsage(executionError, chargedUsage);
-      recorder.fail(runId, executionError, failureCode);
+      if (chargedUsage !== undefined) attachTokenUsage(executionError, chargedUsage);
+      secondary('RUN_FAILURE_RECORD_UNCONFIRMED', () => recorder.fail(runId, executionError, failureCode));
       if (runAdapter.bridgeContract) {
-        recorder.progress(runId, {
+        secondary('RUN_LIFECYCLE_RECORD_UNCONFIRMED', () => recorder.progress(runId, {
           step: 'bridge_lifecycle_complete',
           runId,
           status: 'failed',
           failureCode,
           errorSummary: getAgentRunFailureSummary(executionError, failureCode),
-        });
+        }));
       }
+      attachRunDiagnostics(executionError, runId, diagnostics);
       throw executionError;
     } finally {
       unregisterControl();
@@ -522,11 +538,11 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
         } catch (cleanupErr) {
           // Log cleanup failure so orphan worktrees are discoverable, but do
           // not mask the original result or error from the run.
-          recorder.progress(runId, {
+          secondary('RUN_LIFECYCLE_RECORD_UNCONFIRMED', () => recorder.progress(runId, {
             step: 'worktree_cleanup_failed',
             worktreePath,
             error: cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr),
-          });
+          }));
         }
       }
     }
@@ -540,6 +556,26 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
   };
 
   return launchAgent;
+}
+
+type RunDiagnostic = 'RUN_INITIALIZATION_RECORD_UNCONFIRMED' | 'RUN_REJECTION_RECORD_UNCONFIRMED' | 'RUN_USAGE_READ_UNCONFIRMED' |
+  'RUN_FAILURE_RECORD_UNCONFIRMED' | 'RUN_CANCELLATION_RECORD_UNCONFIRMED' |
+  'RUN_LIFECYCLE_RECORD_UNCONFIRMED' | 'RUN_USAGE_RECORD_UNCONFIRMED';
+const RUN_DIAGNOSTICS = new WeakMap<object, readonly RunDiagnostic[]>();
+
+function readRunDiagnostics(error: unknown): readonly RunDiagnostic[] {
+  return error !== null && typeof error === 'object' ? RUN_DIAGNOSTICS.get(error) ?? [] : [];
+}
+
+/** Only host-owned codes are attached; secondary exception messages never escape. */
+function attachRunDiagnostics(error: unknown, runId: string, diagnostics: readonly RunDiagnostic[]): void {
+  if (error === null || typeof error !== 'object') return;
+  const codes = Object.freeze([...new Set([...readRunDiagnostics(error), ...diagnostics])]);
+  RUN_DIAGNOSTICS.set(error, codes);
+  try {
+    if (!Object.hasOwn(error, 'runId')) Object.defineProperty(error, 'runId', { value: runId, configurable: true });
+    if (codes.length) Object.defineProperty(error, 'runtimeDiagnostics', { value: codes, configurable: true });
+  } catch { /* Frozen or hostile errors cannot replace the original outcome. */ }
 }
 
 function safeInstanceOf<T>(
@@ -609,6 +645,9 @@ async function executeAbyBridgeWithProviderAttempt<T>(options: {
   modelId: string;
   onUsageEvidence(receipt: ProviderUsageReceipt): void;
 }): Promise<Awaited<ReturnType<AgentExecutionAdapter['execute']>> & { data: T }> {
+  const recordSecondary = (primary: unknown, code: RunDiagnostic, action: () => unknown): void => {
+    try { action(); } catch { attachRunDiagnostics(primary, options.context.runId, [code]); }
+  };
   const requestedTokens = options.context.runState.tokensRemaining;
   if (
     typeof requestedTokens !== 'number' ||
@@ -631,10 +670,10 @@ async function executeAbyBridgeWithProviderAttempt<T>(options: {
       requestedTokens: String(requestedTokens),
     });
   } catch (error) {
-    options.context.recorder.progress(options.context.runId, {
+    recordSecondary(error, 'RUN_LIFECYCLE_RECORD_UNCONFIRMED', () => options.context.recorder.progress(options.context.runId, {
       step: 'provider_attempt_reserve_failed',
       errorCode: readProviderAttemptErrorCode(error),
-    });
+    }));
     throw error;
   }
   const requestBytes = JSON.stringify({
@@ -672,12 +711,12 @@ async function executeAbyBridgeWithProviderAttempt<T>(options: {
     try {
       await options.port.settle(reservation, receipt);
     } catch (error) {
-      options.context.recorder.progress(options.context.runId, {
+      recordSecondary(error, 'RUN_LIFECYCLE_RECORD_UNCONFIRMED', () => options.context.recorder.progress(options.context.runId, {
         step: 'provider_attempt_settle_failed',
         errorCode: readProviderAttemptErrorCode(error),
-      });
+      }));
       if (!result.tokenUsageRecorded) {
-        options.context.recorder.chargeUsage(options.context.runId, tokenUsage);
+        recordSecondary(error, 'RUN_USAGE_RECORD_UNCONFIRMED', () => options.context.recorder.chargeUsage(options.context.runId, tokenUsage));
       }
       attachProviderUsageEvidence(error, [receipt]);
       throw error;
@@ -701,11 +740,11 @@ async function executeAbyBridgeWithProviderAttempt<T>(options: {
       try {
         await options.port.settle(reservation, receipt);
       } catch (settlementError) {
-        options.context.recorder.progress(options.context.runId, {
+        const combined = combineProviderAttemptFailures(error, settlementError);
+        recordSecondary(combined, 'RUN_LIFECYCLE_RECORD_UNCONFIRMED', () => options.context.recorder.progress(options.context.runId, {
           step: 'provider_attempt_settle_failed',
           errorCode: readProviderAttemptErrorCode(settlementError),
-        });
-        const combined = combineProviderAttemptFailures(error, settlementError);
+        }));
         attachProviderUsageEvidence(combined, [receipt]);
         throw combined;
       }

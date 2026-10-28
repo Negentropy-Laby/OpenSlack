@@ -6,10 +6,11 @@ authority: canonical
 audience:
   - contributors
 owner: architecture
-updated: 2026-10-27
+updated: 2026-10-28
 sources:
   - docs/reference/document-path-migration-v1.yaml
   - docs/architecture/adr/adr-0003-harness-closed-loop-repair.md
+  - docs/architecture/adr/adr-0004-run-storage-recovery.md
 ---
 
 # Agent Runtime — Implementation Guide
@@ -339,6 +340,27 @@ State-derived patches and their intended transcript events share the owned run
 transaction for every provider. Readers enforce the published transcript watermark;
 they do not repair an incomplete append or discard its recovery evidence.
 
+### Unavailable runs and explicitly authorized storage maintenance
+
+Creation, ordinary updates and the public transcript append use the same run
+owner. New records bind v2 creation/transaction identities, metadata and complete
+publication intents. An uncertain lock/append remains evidence, not permission
+to overwrite, replay a tool or auto-redispatch. `readRun` is strict for execution;
+`observeRun`/`listRunObservations` expose ready/missing/unavailable for read models.
+A corrupt or locked entry cannot hide healthy records. Activity requires its
+existing visible anchor and reports unavailable without inventing task status.
+
+`openslack agent-runtime repair-run RUN-ID --format json` is a read-only
+single-run inspection. The stock CLI cannot write: `--write` and the exact
+`--inspection-sha256` are only intent/CAS, not authorization. An embedding host
+must supply a nominal, exact workspace/run/inspection maintenance authorizer.
+ADR-0004 requires same-scope OS birth evidence that the storage writer ended,
+an exclusive maintenance barrier, a verified byte archive and final target
+proof before retiring a proven lock. Unknown/legacy witness, live writer or any
+CAS/archival uncertainty stays isolated; resources/descendants remain unknown.
+Recovery never creates execution eligibility or claims an unknown success.
+This repair batch exercises only synthetic fixture data, not real old runs.
+
 ## Permission Profile Construction
 
 `buildPermissionProfile(resolvedConfig)`:
@@ -367,6 +389,11 @@ Worktree creation uses `createWorktree()` from `@openslack/runtime`.
 Cleanup/preservation and host acceptance follow trusted immutable
 `ProviderExecutionPolicy`, not a provider-name comparison. Aby retains its explicit
 existing cleanup policy; unknown external transports default to preservation.
+Embedding hosts that inject a process/external-command adapter must explicitly
+provide their trusted `adapterExecutionPolicy` if they own safe cleanup semantics.
+Omitting it preserves evidence; it does not silently acquire destructive cleanup
+permission. In-process/test-fixture defaults remain compatible. A model or agent
+configuration cannot supply this lifecycle policy.
 Harness worktrees are always preserved for acceptance and reconciliation, including
 apparently clean trees and unknown dirty-state results. An advisory handoff-write
 failure cannot replace the accepted result or original execution error.

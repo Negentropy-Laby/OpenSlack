@@ -7,6 +7,7 @@ import { createHarnessTaskExecution, type HarnessTaskExecutionOptions, type Harn
 import { hashHarnessInput } from './harness-admission.js';
 import { createRunStore, readRunStateSnapshot } from './run-store.js';
 import { canonicalHarnessRoot, readHarnessFile } from './harness-read.js';
+import { HARNESS_CLEANUP_BUDGET, assertHarnessCleanupBudget } from './bridge-cleanup.js';
 
 /** Administrator-authored nonsecret deployment. No runtime identity or task is created by this configuration. */
 export interface HarnessDeploymentFile {
@@ -40,7 +41,7 @@ export class HarnessHostShutdownUnconfirmedError extends Error {
 export function createHarnessHostCloser(host: HarnessTaskHost): () => Promise<void> {
   let closing: Promise<void> | undefined;
   return () => closing ??= (async () => {
-    const receipt = await host.close(30_000);
+    const receipt = await host.close(HARNESS_CLEANUP_BUDGET.totalMs);
     if (!receipt.stopped) throw new HarnessHostShutdownUnconfirmedError();
   })();
 }
@@ -73,6 +74,7 @@ export function createConfiguredHarnessTaskHost(workspaceRoot: string, principal
   }
   // The authority resolver validates every runtime field through the production registry and identity.
   const config = structuredClone(input) as unknown as HarnessDeploymentFile;
+  assertHarnessCleanupBudget(config.execution.exitGraceMs);
   // This CLI runs in the approved primary workspace. Only the worker's isolated execution tree differs.
   // Cross-workspace identity hosting needs an explicit read-model/authority composition, not an inferred path.
   const identityRoot = canonicalHarnessRoot(config.identityRoot);

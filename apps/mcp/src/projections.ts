@@ -362,7 +362,11 @@ export function projectToolData(name: OpenSlackReadToolName, value: unknown): Ro
         events: rows(item.events, 100).map(event),
         evidenceRefs: texts(item.evidenceRefs, 50),
         ...(item.execution && typeof item.execution === 'object' ? {
-          execution: {
+          execution: row(item.execution).readStatus === 'unavailable' ? {
+            runId: text(row(item.execution).runId), readStatus: 'unavailable',
+            reason: ['locked', 'creation-incomplete', 'corrupt', 'unsafe', 'persistence-unconfirmed'].includes(String(row(item.execution).reason))
+              ? row(item.execution).reason : 'corrupt',
+          } : {
             taskId: text(row(item.execution).taskId),
             runId: text(row(item.execution).runId),
             status: text(row(item.execution).status),

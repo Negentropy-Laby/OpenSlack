@@ -1,5 +1,5 @@
-import { existsSync, mkdirSync, appendFileSync, readFileSync, readSync } from 'node:fs';
-import { join, dirname } from 'node:path';
+import { existsSync, readFileSync, readSync } from 'node:fs';
+import { join } from 'node:path';
 import { TextDecoder } from 'node:util';
 import { scanValue } from '@openslack/collaboration';
 import type { AgentRunEvent } from './types.js';
@@ -17,12 +17,6 @@ function getTranscriptPath(runId: string, rootDir?: string): string {
   return join(getRunDir(runId, rootDir), 'transcript.jsonl');
 }
 
-function ensureDir(dir: string): void {
-  if (!existsSync(dir)) {
-    mkdirSync(dir, { recursive: true });
-  }
-}
-
 export function appendTranscriptEvent(runId: string, event: AgentRunEvent, rootDir?: string): void {
   validateRunId(runId);
 
@@ -31,11 +25,7 @@ export function appendTranscriptEvent(runId: string, event: AgentRunEvent, rootD
     throw new Error(`Transcript event contains ${scan.name} at ${scan.path}. Refusing to persist.`);
   }
 
-  const transcriptPath = getTranscriptPath(runId, rootDir);
-  ensureDir(dirname(transcriptPath));
-  if (existsSync(join(getRunDir(runId, rootDir), 'run.json'))) {
-    createRunStore(rootDir, { sweepOrphans: false }).withRunTransaction(runId, () => ({ events: [event] }));
-  } else appendFileSync(transcriptPath, JSON.stringify(event) + '\n', 'utf-8');
+  createRunStore(rootDir, { sweepOrphans: false }).appendEvent(runId, event);
 }
 
 export function readTranscript(runId: string, rootDir?: string): AgentRunEvent[] {

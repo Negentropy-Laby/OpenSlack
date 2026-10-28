@@ -8,6 +8,9 @@
 
 import { spawn, type ChildProcess } from 'node:child_process';
 import { TextDecoder, isDeepStrictEqual } from 'node:util';
+import { performance } from 'node:perf_hooks';
+import type { ToolEvidenceReservationReceipt } from './recorder.js';
+import { HARNESS_CLEANUP_BUDGET } from './bridge-cleanup.js';
 import type {
   AgentExecutionAdapter,
   AdapterExecutionContext,
@@ -135,6 +138,7 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
   private activeSignal: AbortSignal | undefined;
   private invocationAbortError: BridgeAdapterError | undefined;
   private activeExecutionDeadline: number | undefined;
+  private activeUtcExecutionDeadline: number | undefined;
   private startEligibilityCheck: (() => Readonly<{ runId: string; generation: string; restriction: HarnessEligibilityRestriction }>) | undefined;
   private transportAbort = new AbortController();
 
@@ -332,7 +336,7 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
   // ---------------------------------------------------------------------------
 
   async execute<T>(context: AdapterExecutionContext): Promise<AdapterExecutionResult<T>> {
-    const startTime = Date.now();
+    const startTime = performance.now();
     // Keep the caller's signal separate: AbortSignal.any retains its first
     // reason and can hide a later explicit cancellation behind an inner cutoff.
     const callerSignal = context.signal;
@@ -348,12 +352,19 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
     if (context.executionDeadline !== undefined && (!Number.isSafeInteger(context.executionDeadline) || context.executionDeadline < 0)) {
       throw new BridgeAdapterError('session_unavailable', 'Invalid trusted execution deadline');
     }
-    const executionDeadline = Math.min(startTime + totalTimeoutMs, context.executionDeadline ?? Infinity);
+    if (context.executionMonotonicDeadline !== undefined && (!Number.isFinite(context.executionMonotonicDeadline) || context.executionMonotonicDeadline < 0)) {
+      throw new BridgeAdapterError('session_unavailable', 'Invalid same-process execution deadline');
+    }
+    // Translate the trusted UTC upper bound once into a remaining local duration.
+    // Keep UTC as a separate revocation bound; wall-clock changes cannot renew
+    // local elapsed/cleanup budgets or compare unrelated process clock origins.
+    const executionDeadline = Math.min(context.executionMonotonicDeadline ?? Infinity, startTime + Math.min(totalTimeoutMs,
+      context.executionDeadline === undefined ? Infinity : Math.max(0, context.executionDeadline - Date.now())));
     const completionDeadline = executionDeadline + completionGrace;
     this.transportAbort = new AbortController();
     this.invocationAbortError = undefined;
     {
-      deadline = AbortSignal.timeout(Math.max(0, completionDeadline - Date.now()));
+      deadline = AbortSignal.timeout(Math.max(0, Math.ceil(completionDeadline - performance.now())));
       context = { ...context, signal: AbortSignal.any([...(callerSignal ? [callerSignal] : []), deadline, this.transportAbort.signal]) };
     }
     const {
@@ -424,7 +435,7 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
       prompt,
       permissionProfile: bridgePermissionProfile,
       worktreePath,
-      timeout: Math.max(0, executionDeadline - Date.now()),
+      timeout: Math.max(0, Math.floor(executionDeadline - performance.now())),
       metadata: {
         model: resolvedConfig.model,
         correlationId: context.correlationId ?? runId,
@@ -439,6 +450,7 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
 
     this.activeSignal = context.signal;
     this.activeExecutionDeadline = executionDeadline;
+    this.activeUtcExecutionDeadline = context.executionDeadline;
     try {
       this.assertExecutionWindow();
       if (context.signal) {
@@ -504,7 +516,7 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
         this.assertInvocationSignal();
         // Track elapsed time so the total budget is shared across all
         // envelopes, not multiplied per envelope.
-        const remaining = completionDeadline - Date.now();
+        const remaining = completionDeadline - performance.now();
         if (remaining <= 0) throw new BridgeAdapterError('timeout', 'Bridge total deadline exceeded');
         const envelope = await this.waitForResponse(remaining);
 
@@ -519,8 +531,8 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
         if (envelope.sessionId !== sessionId || envelope.correlationId !== runId) {
           throw new BridgeAdapterError('envelope_malformed', 'Bridge frame belongs to another run');
         }
-        if (Date.now() >= completionDeadline) throw new BridgeAdapterError('timeout', 'Bridge total deadline exceeded');
-        if (Date.now() >= executionDeadline && !['complete', 'error', 'heartbeat'].includes(envelope.kind)) {
+        if (performance.now() >= completionDeadline || (context.executionDeadline !== undefined && Date.now() >= context.executionDeadline + completionGrace)) throw new BridgeAdapterError('timeout', 'Bridge total deadline exceeded');
+        if (performance.now() >= executionDeadline && !['complete', 'error', 'heartbeat'].includes(envelope.kind)) {
           throw new BridgeAdapterError('timeout', 'Bridge completion grace cannot authorize further actions');
         }
 
@@ -563,6 +575,8 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
               let allowed = false;
               let authorizationError: BridgeAdapterError | undefined;
               let restriction: HarnessEligibilityRestriction | undefined;
+              let reservationReceipt: ToolEvidenceReservationReceipt | undefined;
+              let authorizationAttempted = false;
               try {
                 this.assertExecutionWindow();
                 toolGuard.check(toolName);
@@ -581,20 +595,28 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
                     typeof evidence.generation !== 'string' || !evidence.generation || typeof evidence.targetPath !== 'string' ||
                     !Number.isSafeInteger(evidence.maxResultBytes) || (evidence.maxResultBytes as number) < 1 || (evidence.maxResultBytes as number) > BRIDGE_MESSAGE_MAX_BYTES ||
                     (!callback && (!tp.input || typeof tp.input !== 'object' || !('file_path' in tp.input) || tp.input.file_path !== evidence.targetPath)) ||
-                    (callback && evidence.targetPath !== `mcp:${toolName}`) || !recorder.reserveToolEvidence) throw new Error('Unsupported canonical evidence reservation');
+                    (callback && evidence.targetPath !== `mcp:${toolName}`) || !recorder.reserveToolEvidence ||
+                    !recorder.markToolEvidenceAuthorizationAttempt || !recorder.releaseUndispatchedToolEvidence) throw new Error('Unsupported canonical evidence reservation');
                   const binding = context.runState.harnessExecution;
                   if (!binding || !binding.lifecycle) throw new Error('Canonical Harness evidence owner is missing');
                   const expected = { runId, requestHash: binding.requestHash, principalHash: binding.principalHash,
                     generation: binding.lifecycle.ownerGeneration, toolName, targetPath: evidence.targetPath };
                   assertHarnessToolEligibility(eligibility, expected);
-                  recorder.reserveToolEvidence(runId, { callId: evidence.callId, toolName, input: evidence.input,
+                  reservationReceipt = recorder.reserveToolEvidence(runId, { callId: evidence.callId, toolName, input: evidence.input,
                     targetPath: evidence.targetPath, generation: evidence.generation, maxResultBytes: evidence.maxResultBytes as number }, eligibility);
                   assertHarnessToolEligibility(eligibility, expected);
                   restriction = harnessToolEligibilityRestriction(eligibility);
                   evidenceCalls.set(evidence.callId, { input: structuredClone(evidence.input), toolName, targetPath: evidence.targetPath });
+                  this.assertExecutionWindow();
+                  authorizationAttempted = true;
+                  recorder.markToolEvidenceAuthorizationAttempt(reservationReceipt);
                 }
                 allowed = true;
               } catch (error) {
+                if (reservationReceipt && !authorizationAttempted) {
+                  try { recorder.releaseUndispatchedToolEvidence!(reservationReceipt); }
+                  catch { /* A disputed/legacy reservation remains reserved; the run must fail and reconcile. */ }
+                }
                 // Return no principal, path or upstream exception text to the untrusted caller.
                 authorizationError = error instanceof BridgeAdapterError ? error
                   : deadline?.aborted && error === context.signal?.reason
@@ -732,7 +754,7 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
         this.sessionMachine.transition('ready');
       }
 
-      const durationMs = Date.now() - startTime;
+      const durationMs = Math.max(0, performance.now() - startTime);
       successfulSummary = BridgeLifecycleMapper.buildSummary(runId, sessionId, {
         tokenUsage: finalResult.tokenUsage,
         durationMs,
@@ -772,6 +794,7 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
       }
       this.activeSignal = undefined;
       this.activeExecutionDeadline = undefined;
+      this.activeUtcExecutionDeadline = undefined;
       this.startEligibilityCheck = undefined;
       // Always close session
       if (this.sessionMachine) {
@@ -789,7 +812,7 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
         // Governed callers reserve cleanup inside their outer lifetime; an
         // already accepted complete may cross the inner business cutoff only.
         const expired = this.options.confirmProcessExit && context.executionDeadline === undefined &&
-          (deadline?.aborted || Date.now() >= executionDeadline);
+          (deadline?.aborted || performance.now() >= executionDeadline);
         if (!executionError && (cancelled || expired)) {
           const error = new BridgeAdapterError(cancelled ? 'unknown' : 'timeout',
             cancelled ? 'Bridge invocation cancelled during shutdown' : 'Bridge total deadline exceeded during shutdown',
@@ -1155,7 +1178,7 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
     const started = this.cleanupStartedAt!;
     const wait = async (until: number): Promise<boolean> => {
       if (this.exitReceipt) return true;
-      const remaining = Math.max(0, Math.min(until, deadline) - Date.now());
+      const remaining = Math.max(0, Math.min(until, deadline) - performance.now());
       if (!remaining) return false;
       let timer: ReturnType<typeof setTimeout> | undefined;
       try {
@@ -1193,7 +1216,7 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
       receipt.terminationRequested || !receipt.graceful || receipt.timedOut)) {
       throw new BridgeAdapterError('process_crash', 'Windows owned process-tree shutdown is unconfirmed or forced');
     }
-    if (this.options.confirmProcessExit && (forced || Date.now() > deadline || this.exitReceipt?.code !== 0 || this.exitReceipt.signal !== null)) {
+    if (this.options.confirmProcessExit && (forced || performance.now() > deadline || this.exitReceipt?.code !== 0 || this.exitReceipt.signal !== null)) {
       throw new BridgeAdapterError('process_crash', 'Bridge did not confirm a clean owned shutdown');
     }
   }
@@ -1217,7 +1240,8 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
 
   private assertExecutionWindow(): void {
     this.assertInvocationSignal();
-    if (this.activeExecutionDeadline !== undefined && Date.now() >= this.activeExecutionDeadline) {
+    if ((this.activeExecutionDeadline !== undefined && performance.now() >= this.activeExecutionDeadline) ||
+      (this.activeUtcExecutionDeadline !== undefined && Date.now() >= this.activeUtcExecutionDeadline)) {
       throw new BridgeAdapterError('timeout', 'Bridge execution cutoff exceeded');
     }
   }
@@ -1272,8 +1296,8 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
 
   private requestPeerStop(): void {
     if (this.cleanupDeadline === undefined) {
-      this.cleanupStartedAt = Date.now();
-      const budget = this.options.requireToolEvidence || this.options.supervisor ? 30_000 : this.options.exitGraceMs ?? 5_000;
+      this.cleanupStartedAt = performance.now();
+      const budget = this.options.requireToolEvidence || this.options.supervisor ? HARNESS_CLEANUP_BUDGET.totalMs : this.options.exitGraceMs ?? 5_000;
       this.cleanupDeadline = this.cleanupStartedAt + budget;
     }
     this.process?.stdin?.end();

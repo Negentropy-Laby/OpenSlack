@@ -8,6 +8,7 @@ import { hashHarnessNodeExecutable, hashHarnessPluginArtifacts, HARNESS_NATIVE_S
 import { readHarnessFile } from './harness-read.js';
 import { BRIDGE_CHUNK_EXTENSION } from './bridge-wire.js';
 import { RUN_ID_RE } from './run-id.js';
+import { HARNESS_CLEANUP_BUDGET, assertHarnessCleanupBudget } from './bridge-cleanup.js';
 
 /** Trusted deployment settings. Never populate these fields from a model or MCP arguments. */
 export interface DeepSeekHarnessDeployment {
@@ -75,6 +76,8 @@ export function createDeepSeekHarnessProvider(
           throw new RuntimeMisconfiguredError('DeepSeek Harness time limits must be positive integers.');
         }
       }
+      try { assertHarnessCleanupBudget(deployment.exitGraceMs); }
+      catch { throw new RuntimeMisconfiguredError('Harness exitGraceMs must be 30000; migrate to the fixed cleanup contract.'); }
       if (deployment.nodeVersion !== '24.18.1' || process.versions.node !== deployment.nodeVersion ||
         deployment.nodeExecutable !== process.execPath) {
         throw new RuntimeMisconfiguredError('Harness Node identity or external plugin artifacts differ from the approved deployment.');
@@ -119,12 +122,12 @@ export function createDeepSeekHarnessProvider(
         policy: { requiresHostAcceptance: true, worktreeForFileWrites: true, preserveWorktree: true },
         adapter: new BridgeProcessAdapter({
           command: supervisor ? join(deployment.pluginRoot, HARNESS_NATIVE_SUPERVISOR_FILE) : process.execPath,
-          args: supervisor ? ['--run-id', supervisor.runId, '--generation', supervisor.generation, '--cleanup-ms', '30000', '--', process.execPath, ...args] : args,
+          args: supervisor ? ['--run-id', supervisor.runId, '--generation', supervisor.generation, '--cleanup-ms', String(HARNESS_CLEANUP_BUDGET.totalMs), '--', process.execPath, ...args] : args,
           ...(supervisor ? { supervisor } : {}),
           // The model cannot select this binding or replace its task/run/principal.
           timeoutMs: deployment.timeoutMs,
           confirmProcessExit: true,
-          exitGraceMs: 30_000,
+          exitGraceMs: HARNESS_CLEANUP_BUDGET.totalMs,
           completionGraceMs: 0,
           wireExtensions: [BRIDGE_CHUNK_EXTENSION],
           requireToolEvidence: true,

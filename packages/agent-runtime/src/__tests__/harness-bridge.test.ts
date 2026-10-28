@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { channel } from 'node:diagnostics_channel';
 import { ChildProcess } from 'node:child_process';
+import { performance } from 'node:perf_hooks';
 import { BridgeAdapterError, BridgeProcessAdapter, type BridgeProcessAdapterOptions } from '../bridge-adapter.js';
 import { buildBridgeEnvelope } from '../bridge-contract.js';
 import { createRunStore, generateRunId } from '../run-store.js';
@@ -59,14 +60,14 @@ describe('Harness bridge ownership', () => {
 
   it.each(['deadline', 'cancel', 'elapsed'] as const)('does not return success when %s invalidates clean shutdown confirmation', async kind => {
     const controller = new AbortController();
-    const started = Date.now();
+    const started = performance.now();
     if (kind === 'deadline') vi.spyOn(AbortSignal, 'timeout').mockReturnValue(controller.signal);
     const { adapter, context } = setup(prefix + `reply(frame, 'complete', { data: 'must not succeed' });` + suffix);
     const close = adapter.closeSession.bind(adapter);
     vi.spyOn(adapter, 'closeSession').mockImplementationOnce(async id => {
       if (kind !== 'elapsed') controller.abort(new Error('Cancelled during shutdown'));
       const result = await close(id);
-      if (kind === 'elapsed') vi.spyOn(Date, 'now').mockReturnValue(started + 60_000);
+      if (kind === 'elapsed') vi.spyOn(performance, 'now').mockReturnValue(started + 60_000);
       return result;
     });
     const outcome = await adapter.execute({ ...context, ...(kind === 'cancel' ? { signal: controller.signal } : {}) })
@@ -160,9 +161,9 @@ describe('Harness bridge ownership', () => {
   });
 
   it.each(['within', 'outside'] as const)('uses one absolute legacy completion grace: %s', async boundary => {
-    const base = Date.now();
+    const base = performance.now();
     let observed = base;
-    vi.spyOn(Date, 'now').mockImplementation(() => observed);
+    vi.spyOn(performance, 'now').mockImplementation(() => observed);
     const { adapter, context } = setup(prefix + `reply(frame, 'progress', { step: 'advance-clock' }); reply(frame, 'complete', { data: 'boundary' });` + suffix,
       2_000, { confirmProcessExit: false });
     const progress = context.recorder.progress.bind(context.recorder);
@@ -172,6 +173,26 @@ describe('Harness bridge ownership', () => {
     });
     if (boundary === 'within') expect((await adapter.execute(context)).data).toBe('boundary');
     else await expect(adapter.execute(context)).rejects.toMatchObject({ kind: 'timeout' });
+  });
+
+  it.each([-86_400_000, 86_400_000])('does not use an unrelated wall-clock jump of %i ms as local elapsed time', async jump => {
+    const wall = Date.now();
+    const { adapter, context } = setup(prefix + `reply(frame, 'progress', { step: 'wall-jump' }); reply(frame, 'complete', { data: 'local elapsed only' });` + suffix);
+    const progress = context.recorder.progress.bind(context.recorder);
+    vi.spyOn(context.recorder, 'progress').mockImplementation((id, value) => {
+      progress(id, value); if (value.step === 'wall-jump') vi.spyOn(Date, 'now').mockReturnValue(wall + jump);
+    });
+    expect((await adapter.execute(context)).data).toBe('local elapsed only');
+  });
+
+  it('retains an explicit UTC task cutoff as a separate denial bound even while monotonic execution time remains', async () => {
+    const wall = Date.now();
+    const { adapter, context } = setup(prefix + `reply(frame, 'progress', { step: 'utc-policy-expiry' }); reply(frame, 'complete', { data: 'not accepted' });` + suffix);
+    const progress = context.recorder.progress.bind(context.recorder);
+    vi.spyOn(context.recorder, 'progress').mockImplementation((id, value) => {
+      progress(id, value); if (value.step === 'utc-policy-expiry') vi.spyOn(Date, 'now').mockReturnValue(wall + 60_000);
+    });
+    await expect(adapter.execute({ ...context, executionDeadline: wall + 30_000 })).rejects.toMatchObject({ kind: 'timeout' });
   });
 
   it('does not overwrite a primary permission denial when its deadline also aborts', async () => {

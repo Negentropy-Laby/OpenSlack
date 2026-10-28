@@ -1,7 +1,5 @@
-import { lstatSync } from 'node:fs';
-import { join } from 'node:path';
 import type { CollaborationEvent } from '@openslack/collaboration';
-import { RUN_ID_RE, readRunStateSnapshot, readHarnessStopIntent } from '@openslack/agent-runtime/internal/harness';
+import { RUN_ID_RE, observeRun, assertHarnessRunStorage, readHarnessStopIntent, type RunUnavailableReason } from '@openslack/agent-runtime/internal/harness';
 import { LocalReadBoundError } from './bounded-read.js';
 
 /** Optional bounded read model; contains no principal data, paths, transcripts or bearer material. */
@@ -14,6 +12,11 @@ export interface HarnessExecutionProjection {
   evidenceRefs: string[];
   stopRequested?: boolean;
 }
+export interface HarnessExecutionUnavailableProjection {
+  runId: string;
+  readStatus: 'unavailable';
+  reason: RunUnavailableReason;
+}
 
 function row(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value);
@@ -24,21 +27,15 @@ export function readHarnessExecutionProjection(
   root: string,
   runId: string,
   visibleEvents: readonly CollaborationEvent[],
-): HarnessExecutionProjection | undefined {
+): HarnessExecutionProjection | HarnessExecutionUnavailableProjection | undefined {
   if (!RUN_ID_RE.test(runId) ||
     !visibleEvents.some(event => event.object.kind === 'workflow' && event.object.id === runId)) return undefined;
-  let path = root;
-  for (const segment of ['.openslack.local', 'agents', 'runs', runId]) {
-    path = join(path, segment);
-    try {
-      const stat = lstatSync(path);
-      if (!stat.isDirectory() || stat.isSymbolicLink()) throw new LocalReadBoundError('HARNESS_RUN_PATH_UNSAFE');
-    } catch (error) {
-      if (row(error) && error.code === 'ENOENT') return undefined;
-      throw error;
-    }
-  }
-  const state: unknown = readRunStateSnapshot(runId, root);
+  try { assertHarnessRunStorage(root, runId); }
+  catch { throw new LocalReadBoundError('HARNESS_RUN_PATH_UNSAFE'); }
+  const observation = observeRun(runId, root);
+  if (observation.kind === 'missing') return undefined;
+  if (observation.kind === 'unavailable') return { runId, readStatus: 'unavailable', reason: observation.reason };
+  const state: unknown = observation.state;
   if (!row(state) || state.harnessExecution === undefined) return undefined;
   const binding = state.harnessExecution;
   if (state.runId !== runId || !row(binding) || binding.schema !== 'openslack.harness_execution.v1' ||

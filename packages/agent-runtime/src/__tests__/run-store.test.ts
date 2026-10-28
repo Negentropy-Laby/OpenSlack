@@ -174,6 +174,14 @@ describe('createRunStore', () => {
     expect(found).toBeNull();
   });
 
+  it('preserves historical short and long run IDs while reporting the actual grammar', () => {
+    const store = createRunStore(root, { sweepOrphans: false });
+    for (const runId of ['RUN-A', 'RUN--', `RUN-${'A'.repeat(140)}`]) {
+      expect(store.createRun(makeRequest({ runId })).runId).toBe(runId);
+    }
+    expect(() => store.getRun('RUN-lowercase')).toThrow('Must match /^RUN-[A-Z0-9-]+$/ (historical lengths are preserved)');
+  });
+
   it('rejects invalid runId format', () => {
     const store = createRunStore(root);
     expect(() => store.getRun('../etc/passwd')).toThrow(/Invalid run ID/);
@@ -191,7 +199,9 @@ describe('createRunStore', () => {
     const runPath = join(runDir, 'run.json');
     writeFileSync(runPath, 'not-valid-json', 'utf-8');
 
-    expect(() => store.getRun('RUN-20260101-TEST1234')).toThrow(/Corrupted run metadata/);
+    expect(store.getRun('RUN-20260101-TEST1234')).toBeNull();
+    expect(store.observeRun('RUN-20260101-TEST1234')).toMatchObject({ kind: 'unavailable', reason: 'corrupt' });
+    expect(() => store.readRun('RUN-20260101-TEST1234')).toThrow(/Corrupted run metadata/);
   });
 
   it('updates run state', () => {

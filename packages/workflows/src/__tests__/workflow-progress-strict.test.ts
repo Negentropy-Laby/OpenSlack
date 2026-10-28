@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -192,6 +192,25 @@ describe('strict workflow progress evidence', () => {
     const transcriptDir = writeValidAgentRun(transcript.root);
     writeFileSync(join(transcriptDir, 'transcript.jsonl'), `${JSON.stringify({})}\n`);
     await expectStrictFailure(transcript.root);
+  });
+
+  it('classifies a locked agent snapshot as reconciliation-required without accepting stale state or modifying evidence', async () => {
+    const { root, runDir } = fixtureRoot();
+    writeValidAgentResult(runDir);
+    const agentDir = writeValidAgentRun(root);
+    const lockPath = join(agentDir, 'run.transaction.lock');
+    writeFileSync(lockPath, 'retained unknown writer');
+    const originalState = readFileSync(join(agentDir, 'run.json'));
+    await expect(getWorkflowRunProgress(WORKFLOW_RUN_ID, {
+      rootDir: root, loadWorkflowManifest: false, loadCostConfig: false, strictRead: true,
+    })).rejects.toMatchObject({ code: 'WORKFLOW_RUN_EVIDENCE_RECONCILIATION_REQUIRED' });
+    const observation = await getWorkflowRunProgress(WORKFLOW_RUN_ID, {
+      rootDir: root, loadWorkflowManifest: false, loadCostConfig: false,
+    });
+    expect(JSON.stringify(observation)).toContain('WORKFLOW_RUN_EVIDENCE_RECONCILIATION_REQUIRED');
+    expect(JSON.stringify(observation)).not.toContain('WORKFLOW_RUN_EVIDENCE_INTERNAL_ERROR');
+    expect(readFileSync(join(agentDir, 'run.json'))).toEqual(originalState);
+    expect(readFileSync(lockPath, 'utf8')).toBe('retained unknown writer');
   });
 
   it('accepts persisted negative over-budget tokensRemaining values', async () => {

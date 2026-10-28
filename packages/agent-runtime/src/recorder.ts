@@ -4,6 +4,11 @@ import type { AgentRunStore } from './run-store.js';
 import { assertHarnessNotStopped } from './harness-stop.js';
 import { hashHarnessInput } from './harness-admission.js';
 import { assertHarnessToolEligibility, type HarnessToolEligibility } from './harness-eligibility.js';
+import { randomUUID } from 'node:crypto';
+
+declare const reservationReceiptBrand: unique symbol;
+/** Process-private proof of a particular newly prepared reservation, not an execution grant. */
+export interface ToolEvidenceReservationReceipt { readonly [reservationReceiptBrand]: never }
 
 export interface ToolEvidenceReservation {
   callId: string;
@@ -24,7 +29,9 @@ export interface RunRecorder {
   complete(runId: string, result: unknown, tokenUsage?: number, tokenUsageAlreadyCharged?: boolean): AgentRunState;
   fail(runId: string, error: Error, failureCode?: AgentRunFailureCode): AgentRunState;
   cancel(runId: string): AgentRunState;
-  reserveToolEvidence?(runId: string, reservation: ToolEvidenceReservation, eligibility?: HarnessToolEligibility): void;
+  reserveToolEvidence?(runId: string, reservation: ToolEvidenceReservation, eligibility?: HarnessToolEligibility): ToolEvidenceReservationReceipt;
+  markToolEvidenceAuthorizationAttempt?(receipt: ToolEvidenceReservationReceipt): void;
+  releaseUndispatchedToolEvidence?(receipt: ToolEvidenceReservationReceipt): void;
   recordToolEvidenceCall?(runId: string, callId: string): void;
   recordToolEvidenceResult?(runId: string, callId: string, output: unknown): void;
 }
@@ -33,6 +40,29 @@ const event = (type: AgentRunEvent['type'], data: Record<string, unknown>): Agen
 
 /** Every state-derived update and transcript append is serialized by the store owner. */
 export function createRunRecorder(store: AgentRunStore, root?: string): RunRecorder {
+  const receipts = new WeakMap<object, { runId: string; callId: string; reservationId: string; generation: string; created: boolean; attempted: boolean; checkEligibility(): void }>();
+  const ownedReservations = new Set<string>();
+  const receiptBinding = (receipt: ToolEvidenceReservationReceipt, requireNew = true) => {
+    const binding = receipt && receipts.get(receipt);
+    if (!binding || !ownedReservations.has(binding.reservationId) || (requireNew && !binding.created)) throw new Error('Only the original new evidence reservation owner may settle its dispatch intent');
+    return binding;
+  };
+  const releaseUndispatched = (receipt: ToolEvidenceReservationReceipt): void => {
+    const value = receiptBinding(receipt);
+    if (value.attempted) throw new Error('An attempted authorization must retain evidence capacity until reconciliation');
+    store.withRunTransaction(value.runId, state => {
+      const binding = state.harnessExecution, evidence = binding?.evidence, reserved = evidence?.calls[value.callId];
+      if (!binding || !evidence || !reserved || reserved.generation !== value.generation || reserved.reservationId !== value.reservationId) {
+        throw new Error('Evidence reservation ownership changed');
+      }
+      if (reserved.phase === 'not_dispatched') return {};
+      if (reserved.phase !== 'prepared' || reserved.resultDigest) throw new Error('Evidence dispatch is not provably unattempted');
+      return { patch: { harnessExecution: { ...binding, evidence: { ...evidence,
+        reservedBytes: evidence.reservedBytes - reserved.maxResultBytes,
+        calls: { ...evidence.calls, [value.callId]: { ...reserved, phase: 'not_dispatched' } },
+      } } }, events: [event('progress', { step: 'tool_evidence_not_dispatched', callId: value.callId })] };
+    });
+  };
   const live = (state: Readonly<AgentRunState>): void => {
     assertHarnessNotStopped(root, state);
     if (!state.harnessExecution) return;
@@ -116,6 +146,8 @@ export function createRunRecorder(store: AgentRunStore, root?: string): RunRecor
         throw new TypeError('Tool evidence reservation cannot fit even its result envelope');
       }
       let checkEligibility: () => void = () => { throw new Error('Harness eligibility reservation was not observed'); };
+      let created = false;
+      let reservationId: string = randomUUID();
       store.withRunTransaction(runId, state => {
         checkEligibility = () => {
           live(state);
@@ -129,20 +161,60 @@ export function createRunRecorder(store: AgentRunStore, root?: string): RunRecor
         const existing = Object.hasOwn(evidence.calls, input.callId) ? evidence.calls[input.callId] : undefined;
         const reservation = { toolName: input.toolName, inputDigest, targetPath: input.targetPath, generation: input.generation, maxResultBytes: input.maxResultBytes };
         if (existing) {
-          if (existing.resultDigest) throw new Error('A settled tool call ID cannot authorize another effect');
-          if (hashHarnessInput({ ...existing, resultDigest: undefined }) !== hashHarnessInput(reservation)) throw new Error('Tool call ID already binds another effect');
+          if (existing.resultDigest || existing.phase === 'not_dispatched') throw new Error('A settled tool call ID cannot authorize another effect');
+          if (hashHarnessInput({ toolName: existing.toolName, inputDigest: existing.inputDigest, targetPath: existing.targetPath,
+            generation: existing.generation, maxResultBytes: existing.maxResultBytes }) !== hashHarnessInput(reservation)) throw new Error('Tool call ID already binds another effect');
+          reservationId = existing.reservationId ?? '';
           return { beforePublish: checkEligibility };
         }
+        created = true;
         return { patch: { toolCalls: state.toolCalls + 1, lastTool: input.toolName, harnessExecution: { ...binding, evidence: {
-          reservedBytes: evidence.reservedBytes + input.maxResultBytes, calls: { ...evidence.calls, [input.callId]: reservation },
+          reservedBytes: evidence.reservedBytes + input.maxResultBytes,
+          calls: { ...evidence.calls, [input.callId]: { ...reservation, reservationId, phase: 'prepared' } },
         } } }, events: [event('tool_call', { callId: input.callId, toolName: input.toolName, input: input.input,
           targetPath: input.targetPath, inputDigest })], beforePublish: checkEligibility };
       });
-      checkEligibility();
+      const receipt = Object.freeze({}) as ToolEvidenceReservationReceipt;
+      if (created) ownedReservations.add(reservationId);
+      receipts.set(receipt, { runId, callId: input.callId, generation: input.generation, reservationId, created, attempted: false, checkEligibility });
+      try { checkEligibility(); }
+      catch (error) {
+        if (created) {
+          try { releaseUndispatched(receipt); }
+          catch { if (error instanceof Error) Object.defineProperty(error, 'persistenceDiagnostic', { value: 'TOOL_RESERVATION_RELEASE_UNCONFIRMED' }); }
+        }
+        throw error;
+      }
+      return receipt;
+    },
+    releaseUndispatchedToolEvidence: releaseUndispatched,
+    markToolEvidenceAuthorizationAttempt(receipt) {
+      const value = receiptBinding(receipt, false);
+      if (value.attempted) throw new Error('Authorization has already been attempted for this reservation');
+      // Mark memory before publication: any publication/send uncertainty must retain capacity.
+      value.attempted = true;
+      store.withRunTransaction(value.runId, state => {
+        live(state);
+        const binding = state.harnessExecution!, evidence = binding.evidence, reserved = evidence?.calls[value.callId];
+        if (!evidence || !reserved || reserved.reservationId !== value.reservationId || reserved.generation !== value.generation ||
+          reserved.resultDigest) throw new Error('Evidence reservation cannot authorize a replay');
+        if (!value.created) {
+          // A live worker checks the SAME public tool call after preview and at
+          // fs-intent. This is only revalidation of our already-attempted grant,
+          // never a new owner's first grant or a recovered/replayed call.
+          if (reserved.phase !== 'authorization_attempted') throw new Error('A repeated receipt cannot acquire first-dispatch authority');
+          return { beforePublish: () => { live(state); value.checkEligibility(); } };
+        }
+        if (reserved.phase !== 'prepared') throw new Error('Evidence reservation cannot authorize a replay');
+        return { patch: { harnessExecution: { ...binding, evidence: { ...evidence,
+          calls: { ...evidence.calls, [value.callId]: { ...reserved, phase: 'authorization_attempted' } },
+        } } }, beforePublish: () => { live(state); value.checkEligibility(); } };
+      });
+      value.checkEligibility();
     },
     recordToolEvidenceCall(runId, callId) {
       store.withRunTransaction(runId, state => {
-        if (!state.harnessExecution?.evidence || !Object.hasOwn(state.harnessExecution.evidence.calls, callId)) throw new Error('Tool call was not reserved before effects');
+        if (state.harnessExecution?.evidence?.calls[callId]?.phase !== 'authorization_attempted') throw new Error('Tool call was not authorized before effects');
         return {};
       });
     },
@@ -158,10 +230,11 @@ export function createRunRecorder(store: AgentRunStore, root?: string): RunRecor
           if (reserved.resultDigest !== resultDigest) throw new Error('Tool result differs from the persisted receipt');
           return {};
         }
+        if (reserved.phase !== 'authorization_attempted') throw new Error('Tool result has no attempted authorization receipt');
         const observed = event('tool_result', { callId, toolName: reserved.toolName, output: result });
         if (Buffer.byteLength(JSON.stringify(observed) + '\n') > reserved.maxResultBytes) throw new Error('Tool result exceeds its pre-effect evidence reservation; outcome is unknown');
         return { patch: { harnessExecution: { ...binding, evidence: { reservedBytes: evidence.reservedBytes - reserved.maxResultBytes,
-          calls: { ...evidence.calls, [callId]: { ...reserved, resultDigest } } } } }, events: [observed] };
+          calls: { ...evidence.calls, [callId]: { ...reserved, resultDigest, phase: 'settled' } } } } }, events: [observed] };
       });
     },
   };

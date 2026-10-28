@@ -5,7 +5,7 @@ import { diagnoseAbyRuntime } from './agent-runtime-doctor.js';
 import { BridgeAdapterError } from './bridge-adapter.js';
 import { createBridgeRuntimeResolver } from './bridge-runtime-resolver.js';
 import { createOpenSlackAgentLauncher } from './launcher.js';
-import { createRunStore } from './run-store.js';
+import { createRunStore, observeRun, listRunObservations, RUN_ID_RE } from './run-store.js';
 import { readTranscript } from './transcript.js';
 
 export type AbyRuntimeSmokeStatus = 'PASS' | 'FAIL';
@@ -65,7 +65,7 @@ export async function runAbyRuntimeSmoke(
     };
   }
 
-  const store = createRunStore(rootDir);
+  const store = createRunStore(rootDir, { sweepOrphans: false });
   const launcher = createOpenSlackAgentLauncher({
     runStore: store,
     rootDir,
@@ -102,14 +102,10 @@ export async function runAbyRuntimeSmoke(
   } catch (err) {
     const bridgeError = err instanceof BridgeAdapterError ? err : null;
     const rejectedRunId =
-      err && typeof err === 'object' && typeof (err as { runId?: unknown }).runId === 'string'
+      err && typeof err === 'object' && typeof (err as { runId?: unknown }).runId === 'string' && RUN_ID_RE.test((err as { runId: string }).runId)
         ? (err as { runId: string }).runId
         : undefined;
     runId = runId ?? rejectedRunId;
-    const failedRun = runId
-      ? store.getRun(runId)
-      : store.listRuns({ agentId }).find((run) => run.status === 'failed');
-    runId = runId ?? failedRun?.runId;
     return buildSmokeReport({
       status: 'FAIL',
       rootDir,
@@ -136,8 +132,12 @@ function buildSmokeReport(input: {
   stderrSummary?: string;
 }): AbyRuntimeSmokeReport {
   const evidence = input.runId ? buildEvidencePaths(input.rootDir, input.runId) : {};
-  const transcript = input.runId ? readTranscript(input.runId, input.rootDir) : [];
+  const listing = listRunObservations(input.rootDir);
+  const observation = input.runId ? observeRun(input.runId, input.rootDir) : undefined;
+  const transcript = input.runId && observation?.kind === 'ready' ? readTranscript(input.runId, input.rootDir) : [];
   const checks = [
+    ...(listing.storageIssue || listing.unavailable.length ? [{ name: 'run-storage-availability', status: 'FAIL' as const,
+      detail: `Unavailable run evidence: ${listing.unavailable.map(value => `${value.runId}:${value.reason}`).join(', ') || listing.storageIssue}. Inspect without replay.` }] : []),
     {
       name: 'doctor',
       status: input.doctor.status,

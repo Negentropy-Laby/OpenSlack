@@ -27,6 +27,14 @@ function fixture() {
 }
 
 describe('external plugin and Node input identities', () => {
+  it.each([1000, 25_000, 60_000])('rejects legacy exitGraceMs=%i before filesystem observation or process startup', exitGraceMs => {
+    const root = join(tmpdir(), 'must-not-be-read-r36-cleanup');
+    const deployment = { harnessRoot: root, pluginRoot: root, pluginBuildHash: 'a'.repeat(64), nodeExecutable: process.execPath,
+      nodeVersion: '24.18.1' as const, nodeSha256: 'b'.repeat(64), dshHome: root, agentId: 'fixed', provider: 'fixture', model: 'fixture',
+      workerPatch: join(root, 'patch'), workerBinding: join(root, 'binding'), timeoutMs: 1000, exitGraceMs };
+    expect(() => createDeepSeekHarnessProvider(deployment, async () => {}).resolve({ agentId: 'fixed', source: 'fixture' }))
+      .toThrow('Harness exitGraceMs must be 30000');
+  });
   it.runIf(process.platform === 'win32')('normalizes an actual 8.3 spelling when the test volume supplies one', ({ skip }) => {
     const { pluginRoot } = fixture();
     if (!process.env.SystemRoot) throw new Error('A native Windows system directory is required');
@@ -108,7 +116,7 @@ describe('external plugin and Node input identities', () => {
     const deployment = { harnessRoot: root, pluginRoot, pluginBuildHash: hashHarnessPluginArtifacts(pluginRoot),
       nodeExecutable: process.execPath, nodeVersion: '24.18.1' as const, nodeSha256: hashHarnessNodeExecutable(process.execPath),
       dshHome: root, agentId: 'fixed', provider: 'fixture', model: 'fixture', workerPatch: join(root, 'patch.json'),
-      workerBinding: join(root, 'binding.json'), timeoutMs: 1_000, exitGraceMs: 1_000 };
+      workerBinding: join(root, 'binding.json'), timeoutMs: 1_000, exitGraceMs: 30_000 };
     unlinkSync(join(pluginRoot, HARNESS_NATIVE_SUPERVISOR_FILE));
     let failure: unknown;
     try { createDeepSeekHarnessProvider(deployment, async () => {}).resolve({ agentId: 'fixed', source: 'fixture' }); }
@@ -210,7 +218,7 @@ describe('external plugin and Node input identities', () => {
     const deployment = { harnessRoot: root, pluginRoot, pluginBuildHash: hashHarnessPluginArtifacts(pluginRoot),
       nodeExecutable: process.execPath, nodeVersion: '24.18.1' as const, nodeSha256: hashHarnessNodeExecutable(process.execPath),
       dshHome: root, agentId: 'fixed', provider: 'fixture', model: 'fixture', workerPatch: join(root, 'patch.json'),
-      workerBinding: join(root, 'binding.json'), timeoutMs: 1_000, exitGraceMs: 1_000 };
+      workerBinding: join(root, 'binding.json'), timeoutMs: 1_000, exitGraceMs: 30_000 };
     if (kind === 'plugin') writeFileSync(join(pluginRoot, 'dist/index.js'), 'export const changed=true;');
     if (kind === 'node') deployment.nodeSha256 = '0'.repeat(64);
     if (kind === 'version') Object.assign(deployment, { nodeVersion: '24.18.0' });

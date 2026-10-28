@@ -151,7 +151,7 @@ export function createHarnessTaskAuthority(options: HarnessTaskAuthorityOptions)
       if (callback === 'preview' && (row.workflowId !== 'harness.task.report' || !row.input || typeof row.input !== 'object' || !('runId' in row.input) || row.input.runId !== context.runId)) throw new Error('Harness callbacks cannot dispatch or report another run');
       if ((callback === 'confirm' || callback === 'cancel') && (Object.keys(row).join(',') !== 'planId' || typeof row.planId !== 'string' || !row.planId.startsWith('GPLAN-'))) throw new Error('Harness callback confirmation must use its private current-task vault');
       const state = await readRunStateSnapshotWhenAvailable(context.runId, binding.identityRoot,
-        context.executionDeadline ?? Date.now() + 1000);
+        { waitMs: context.executionDeadline === undefined ? 1000 : Math.max(0, context.executionDeadline - Date.now()), signal: context.signal });
       if (!state?.harnessExecution || state.harnessExecution.stopRequestedAt || state.status !== 'running' || state.worktreePath !== context.worktreePath) {
         throw new Error('Harness tool is not bound to the live canonical run');
       }
@@ -171,7 +171,7 @@ export function createHarnessTaskAuthority(options: HarnessTaskAuthorityOptions)
       const phase = callback ? 'report' : 'execute';
       const eligibility = await authorize(task, phase);
       const currentRun = await readRunStateSnapshotWhenAvailable(context.runId, binding.identityRoot,
-        context.executionDeadline ?? Date.now() + 1000);
+        { waitMs: context.executionDeadline === undefined ? 1000 : Math.max(0, context.executionDeadline - Date.now()), signal: context.signal });
       const currentPrincipal = principal();
       if (currentRun?.status !== 'running' || currentRun.harnessExecution?.stopRequestedAt || currentRun.worktreePath !== context.worktreePath ||
         currentRun.harnessExecution?.requestHash !== state.harnessExecution.requestHash || currentRun.harnessExecution.lifecycle?.phase !== 'started' ||

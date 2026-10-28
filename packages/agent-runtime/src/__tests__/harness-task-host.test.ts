@@ -261,14 +261,25 @@ describe('canonical Harness task lifecycle (keyless host fixtures)', () => {
 
   it('starts a governed admission only after its durable confirmation and never activates a historical route', async () => {
     const { host, execute } = setup();
-    const receipt = await host.dispatch('TASK-1', 'governed', true);
+    const binding = { planId: 'GPLAN-FIXTURE', executionId: 'GEXEC-FIXTURE', confirmationAttemptId: 'fixture-owner' };
+    const receipt = await host.dispatch('TASK-1', 'governed', true, binding);
     await new Promise(resolve => setImmediate(resolve));
     expect(execute).not.toHaveBeenCalled();
     expect(host.read(receipt.runId)?.status).toBe('pending');
-    host.releaseConfirmedAdmission(receipt.runId);
+    host.settleConfirmedAdmissions(binding.planId, { state: 'succeeded', ...binding });
     await vi.waitFor(() => expect(host.read(receipt.runId)?.status).toBe('completed'));
-    host.releaseConfirmedAdmission(receipt.runId);
+    host.settleConfirmedAdmissions(binding.planId, { state: 'succeeded', ...binding });
     expect(execute).toHaveBeenCalledTimes(1);
+  });
+  it('makes read-only reconciliation unavailable instead of turning a busy snapshot into execution or an empty result', async () => {
+    const { host, options } = setup(); const receipt = await host.dispatch('TASK-1', 'held-confirmation', true);
+    const path = join(options.identityRoot, '.openslack.local/agents/runs', receipt.runId, 'run.transaction.lock');
+    writeFileSync(path, 'preserved historical writer');
+    const inspect = vi.fn();
+    const result = await reconcileHarnessTask({ ...options, inspect }, receipt.runId);
+    expect(result).toEqual({ runId: receipt.runId, readStatus: 'unavailable', reason: 'locked', disposition: 'preserve_and_reconcile' });
+    expect(result).not.toHaveProperty('status'); expect(inspect).not.toHaveBeenCalled();
+    expect(readFileSync(path, 'utf8')).toBe('preserved historical writer');
   });
 
   it('stops a scheduled-but-not-confirmed admission without starting its executor', async () => {

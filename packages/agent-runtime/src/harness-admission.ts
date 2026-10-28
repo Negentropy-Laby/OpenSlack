@@ -7,6 +7,8 @@ import { join } from 'node:path';
 import { types as utilTypes } from 'node:util';
 import { canonicalHarnessRoot, readHarnessFile } from './harness-read.js';
 import { RUN_ID_RE, validateRunId } from './run-id.js';
+import { isCode } from './io-errors.js';
+import { performance } from 'node:perf_hooks';
 
 export interface HarnessAdmissionRecord {
   schema: 'openslack.harness_admission.v1'; key: string; requestHash: string; runId: string;
@@ -16,7 +18,6 @@ export interface HarnessAdmissionObservation {
   kind: 'admission'; runId: string; requestHash: string; canonicalRunPresent: boolean;
   disposition: 'in_progress' | 'reconcile_required';
 }
-
 /** Typed outcomes that must never cause an automatic redispatch. */
 export class HarnessAdmissionError extends Error {
   constructor(readonly code: 'CONFLICT' | 'INDETERMINATE' | 'BUSY' | 'IN_PROGRESS', message: string,
@@ -87,7 +88,7 @@ export class HarnessAdmissionStore {
   }
 
   /** Exclusive publication, including across independent processes. A damaged record is never replaced. */
-  admit(key: string, requestHash: string, owner?: { ownerGeneration: string; admittedAt: string; deadlineAt: string }): { record: HarnessAdmissionRecord; created: boolean } {
+  admit(key: string, requestHash: string, owner?: { ownerGeneration: string; admittedAt: string; deadlineAt: string }): { record: HarnessAdmissionRecord; created: boolean; publicationUnconfirmed?: true } {
     if (!/^[a-f0-9]{64}$/.test(key) || !/^[a-f0-9]{64}$/.test(requestHash)) {
       throw new HarnessAdmissionError('INDETERMINATE', 'Invalid admission digest');
     }
@@ -101,17 +102,32 @@ export class HarnessAdmissionStore {
     const temporary = join(this.directory, `${key}.${randomUUID()}.tmp`);
     const file = openSync(temporary, 'wx', 0o600);
     try { writeFileSync(file, JSON.stringify(record)); fsyncSync(file); } finally { closeSync(file); }
+    let result: { record: HarnessAdmissionRecord; created: boolean } | undefined;
+    let failed = false;
+    let failure: unknown;
     try {
-      try { linkSync(temporary, target); return { record, created: true }; }
+      try { linkSync(temporary, target); result = { record, created: true }; }
       catch (error) {
         if (!isCode(error, 'EEXIST')) throw new HarnessAdmissionError('INDETERMINATE', 'Admission publication is unconfirmed; reconcile without replay');
       }
-      const existing = this.read(target);
-      if (existing.key !== key || existing.requestHash !== requestHash) {
-        throw new HarnessAdmissionError('CONFLICT', 'This logical task already has different execution input');
+      if (!result) {
+        const existing = this.read(target);
+        if (existing.key !== key || existing.requestHash !== requestHash) {
+          throw new HarnessAdmissionError('CONFLICT', 'This logical task already has different execution input');
+        }
+        result = { record: existing, created: false };
       }
-      return { record: existing, created: false };
-    } finally { unlinkSync(temporary); }
+    } catch (error) { failed = true; failure = error; }
+    try { unlinkSync(temporary); }
+    catch {
+      // The newly published route still belongs to this caller. Hand it back
+      // explicitly for stop/persistence settlement, never as ordinary success.
+      if (!failed && result?.created) return { ...result, publicationUnconfirmed: true };
+      if (!failed) throw new HarnessAdmissionError('INDETERMINATE', 'Admission temporary cleanup is unconfirmed; preserve and reconcile');
+      if (failure instanceof Error) Object.defineProperty(failure, 'persistenceDiagnostic', { value: 'ADMISSION_TEMPORARY_CLEANUP_UNCONFIRMED' });
+    }
+    if (failed) throw failure;
+    return result!;
   }
 
   /** Hold only a short synchronous canonical-run read/update; a stale lock blocks instead of being repaired. */
@@ -138,9 +154,9 @@ export class HarnessAdmissionStore {
 
   private read(path: string): HarnessAdmissionRecord {
     try {
-      const until = Date.now() + 1000;
+      const until = performance.now() + 1000;
       while (lstatSync(path).nlink !== 1) {
-        if (Date.now() >= until) throw new HarnessAdmissionError('IN_PROGRESS', 'Admission publication has not released its temporary link; query without replay');
+        if (performance.now() >= until) throw new HarnessAdmissionError('IN_PROGRESS', 'Admission publication has not released its temporary link; query without replay');
         Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 5);
       }
       const value: unknown = JSON.parse(readHarnessFile(path, 4096).toString('utf8'));
@@ -159,8 +175,4 @@ export class HarnessAdmissionStore {
       throw new HarnessAdmissionError('INDETERMINATE', 'Admission record is unreadable; preserve it and reconcile without replay');
     }
   }
-}
-
-function isCode(error: unknown, code: string): boolean {
-  return !!error && typeof error === 'object' && 'code' in error && error.code === code;
 }

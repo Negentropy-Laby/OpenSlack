@@ -2,12 +2,18 @@ import { closeSync, constants, fstatSync, lstatSync, openSync, realpathSync } fr
 import { dirname, resolve } from 'node:path';
 import { readStableDescriptor, stableFileIdentity, StableDescriptorError } from '@openslack/core';
 
+/** Safe startup diagnosis; never carries a configured path or raw OS error. */
+export class HarnessRootUnsafeError extends Error {
+  readonly code = 'HARNESS_ROOT_UNSAFE';
+  constructor() { super('Harness root cannot traverse a directory link; select an approved physical path.'); this.name = 'HarnessRootUnsafeError'; }
+}
+
 /** Normalize trusted Windows spelling only after rejecting each lexical directory link. */
 export function canonicalHarnessRoot(root: string): string {
   const path = resolve(root);
   for (let current = path;; current = dirname(current)) {
     const stamp = lstatSync(current);
-    if (!stamp.isDirectory() || stamp.isSymbolicLink()) throw new Error('Harness root cannot traverse a directory link');
+    if (!stamp.isDirectory() || stamp.isSymbolicLink()) throw new HarnessRootUnsafeError();
     if (current === dirname(current)) break;
   }
   return process.platform === 'win32' ? realpathSync.native(path) : path;

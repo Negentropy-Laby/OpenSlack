@@ -71,6 +71,11 @@
       "status": "active"
     },
     {
+      "id": "qa-ledger-harness-r36-2026-10-28",
+      "path": "production/qa/qa-ledger-harness-r36-2026-10-28.md",
+      "status": "active"
+    },
+    {
       "id": "service-cleanup-broker",
       "path": "services/cleanup-broker/README.md",
       "status": "active"
@@ -213,6 +218,11 @@
     {
       "id": "architecture-adr-harness-closed-loop-repair",
       "path": "docs/architecture/adr/adr-0003-harness-closed-loop-repair.md",
+      "status": "active"
+    },
+    {
+      "id": "architecture-adr-run-storage-recovery",
+      "path": "docs/architecture/adr/adr-0004-run-storage-recovery.md",
       "status": "active"
     },
     {

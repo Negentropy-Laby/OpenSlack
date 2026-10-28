@@ -31,9 +31,16 @@ export {
   createRunStore,
   generateRunId,
   readRunStateSnapshot,
+  RunStateInvalidError,
+  RunStateSnapshotChangedError,
+  observeRun,
+  listRunObservations,
   sweepOrphanRunTempFiles,
 } from './run-store.js';
 export type { ReadRunStateSnapshotOptions, SweepOrphanRunTempOptions } from './run-store.js';
+export type { RunObservation, RunListing, RunUnavailableReason, WaitRunSnapshotOptions } from './run-store.js';
+export { inspectRunRepair, authorizeRunRepair, applyRunRepair, createRunRepairAuthorityPort, RunRepairError } from './run-repair.js';
+export type { RunRepairAuthorityPort, RunRepairCapability, RunRepairInspection, RunRepairReceipt, RunRepairScope } from './run-repair.js';
 
 export { appendTranscriptEvent, readTranscript } from './transcript.js';
 

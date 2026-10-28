@@ -1,6 +1,10 @@
 /** Bounded, provider-neutral Bridge transport. This leaf is also bundled into the external plugin. */
 import { createHash } from 'node:crypto';
 import { TextDecoder } from 'node:util';
+/** Shared frozen governed cleanup durations, not clock readings. */
+export const HARNESS_CLEANUP_BUDGET = Object.freeze({
+  ownedMs: 24_000, graceMs: 25_000, forceMs: 5_000, totalMs: 30_000,
+} as const);
 
 export const BRIDGE_WIRE_VERSION = '2025-06-03';
 export const BRIDGE_FRAME_MAX_BYTES = 1024 * 1024;

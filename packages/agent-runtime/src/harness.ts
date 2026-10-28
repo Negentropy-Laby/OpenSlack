@@ -13,7 +13,9 @@ export type { HarnessReconciliationOptions, HarnessRecoveryObservation } from '.
 export type { HarnessDeploymentFile, HarnessWorkspaceTaskFile } from './harness-deployment.js';
 export type { HarnessTaskExecutionOptions, HarnessTextVerification } from './harness-task-execution.js';
 export { RUN_ID_RE, validateRunId } from './run-id.js';
-export { readRunStateSnapshot } from './run-store.js';
+export { readRunStateSnapshot, observeRun } from './run-store.js';
+export type { RunObservation, RunUnavailableReason } from './run-store.js';
+export { assertHarnessRunStorage } from './harness-task-host.js';
 export { readHarnessStopIntent } from './harness-stop.js';
-export { readHarnessFile, canonicalHarnessRoot } from './harness-read.js';
+export { readHarnessFile, canonicalHarnessRoot, HarnessRootUnsafeError } from './harness-read.js';
 export type { HarnessGovernedBinding, HarnessTaskReceipt } from './harness-task-host.js';

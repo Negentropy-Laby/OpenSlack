@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { channel } from 'node:diagnostics_channel';
 import { ChildProcess } from 'node:child_process';
+import { performance } from 'node:perf_hooks';
 import { BridgeProcessAdapter } from '../bridge-adapter.js';
 import { buildBridgeEnvelope } from '../bridge-contract.js';
 import { createRunStore } from '../run-store.js';
@@ -20,7 +21,7 @@ afterEach(() => { vi.restoreAllMocks(); for (const root of roots.splice(0)) rmSy
 
 // These internal minted observations are synthetic test restrictions. They do
 // not stand in for a formal principal, approved task source or live authority.
-function fixture(toolName: string, kind: 'matching' | 'missing' | 'forged' | 'wrong-domain' | 'expired', preprocessArgs?: () => void) {
+function fixture(toolName: string, kind: 'matching' | 'missing' | 'forged' | 'wrong-domain' | 'expired', preprocessArgs?: () => void, authorizationChecks = 1) {
   const root = mkdtempSync(join(tmpdir(), 'bridge-eligibility-')); roots.push(root);
   const marker = join(root, 'effect');
   const peerMarker = join(root, 'peer-started'), requestMarker = join(root, 'run-request');
@@ -55,6 +56,7 @@ function fixture(toolName: string, kind: 'matching' | 'missing' | 'forged' | 'wr
     writeFileSync(${JSON.stringify(peerMarker)},'peer-started');
     const lines=readline.createInterface({input:process.stdin});
     const toolName=${JSON.stringify(toolName)},input=${JSON.stringify(input)},targetPath=${JSON.stringify(targetPath)};
+    let authorized=0;
     const reply=(frame,kind,payload)=>process.stdout.write(JSON.stringify({...frame,kind,payload})+'\\n');
     lines.on('line',text=>{const frame=JSON.parse(text);
       if(frame.kind==='handshake_request')reply(frame,'handshake_response',{accepted:true});
@@ -64,6 +66,8 @@ function fixture(toolName: string, kind: 'matching' | 'missing' | 'forged' | 'wr
           evidence:{callId:'effect-1',generation:${JSON.stringify(generation)},input,targetPath,maxResultBytes:4096}});
       }
       if(frame.kind==='tool_response'&&frame.payload.allowed===true){
+        if(++authorized<${authorizationChecks}){reply(frame,'tool_request',{phase:'authorize',authorizationRequestId:'auth-'+authorized,toolName,input,
+          evidence:{callId:'effect-1',generation:${JSON.stringify(generation)},input,targetPath,maxResultBytes:4096}});return;}
         writeFileSync(${JSON.stringify(marker)},'effect');
         reply(frame,'tool_request',{phase:'observed',callId:'effect-1',toolName,input});
         reply(frame,'tool_response',{phase:'observed',callId:'effect-1',toolName,output:{restriction:frame.payload.restriction}});
@@ -88,6 +92,14 @@ function fixture(toolName: string, kind: 'matching' | 'missing' | 'forged' | 'wr
 }
 
 describe('nominal eligibility across Bridge pre-effect authorization', () => {
+  it('permits the same native call\'s initial, preview and fs-intent checks without allocating or executing it three times', async () => {
+    const f = fixture('Read', 'matching', undefined, 3);
+    await expect(f.adapter.execute(f.context)).resolves.toBeDefined();
+    expect(f.authorizeTool).toHaveBeenCalledTimes(3);
+    expect(existsSync(f.marker)).toBe(true);
+    expect(f.store.readRun(f.runId)?.toolCalls).toBe(1);
+    expect(f.store.readRun(f.runId)?.harnessExecution?.evidence?.reservedBytes).toBe(0);
+  });
   it.each(['Read', HARNESS_CALLBACK_TOOLS.query.bridge])('passes only an explicit matching %s observation through the live authority and durable reservation', async tool => {
     const f = fixture(tool, 'matching');
     expect((await f.adapter.execute(f.context)).data).toEqual({ mode: 'not_applicable' });
@@ -128,6 +140,18 @@ function requiredStart(f: ReturnType<typeof fixture>, expiresAt: number, overrid
 }
 
 describe('known start cutoff at actual peer dispatch', () => {
+  it('does not regrant a sampled duration after resolve/preflight consumes the same-process cutoff and the wall clock rolls back', async () => {
+    const f = fixture('Read', 'matching'), wall = Date.now(), started = performance.now();
+    const cutoff = started + 1000; // Host sampled before expensive provider resolution.
+    vi.spyOn(performance, 'now').mockReturnValue(started + 1500);
+    vi.spyOn(Date, 'now').mockReturnValue(wall - 60_000);
+    const context = { ...f.context, executionDeadline: wall + 1000, executionMonotonicDeadline: cutoff };
+    expect(await countChildren(async () => {
+      await expect(f.adapter.execute(context)).rejects.toMatchObject({ kind: 'timeout' });
+    })).toBe(0);
+    expect(existsSync(f.peerMarker)).toBe(false); expect(existsSync(f.requestMarker)).toBe(false);
+    expect(f.authorizeTool).not.toHaveBeenCalled(); expect(f.adapter.processExitReceipt).toBeNull();
+  });
   it('accepts an explicit matching live required observation without replacing native/callback tool authority', async () => {
     for (const tool of ['Read', HARNESS_CALLBACK_TOOLS.query.bridge]) {
       const f = fixture(tool, 'matching');

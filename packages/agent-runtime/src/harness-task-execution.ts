@@ -6,6 +6,7 @@ import {
 } from 'node:fs';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { performance } from 'node:perf_hooks';
 import { parseDocument } from 'yaml';
 import { ToolGuard } from './adapter.js';
 import type { BridgeProcessAdapterOptions } from './bridge-adapter.js';
@@ -25,6 +26,7 @@ import type { AgentRunState } from './types.js';
 import type { HarnessRecoveryObservation } from './harness-reconciliation.js';
 import { assertHarnessTaskEligibility, assertHarnessRunStartEligibility, bindHarnessRunStartEligibility } from './harness-eligibility.js';
 import { assertHarnessNotStopped } from './harness-stop.js';
+import { HARNESS_CLEANUP_BUDGET, assertHarnessCleanupBudget } from './bridge-cleanup.js';
 import { HarnessRuntimePackageClosure, readRuntimeWorkspacePackage, type RuntimeWorkspacePackage } from './harness-runtime-closure.js';
 
 /** Trusted first-delivery verification. Never derive checks or commands from success_criteria or model output. */
@@ -46,11 +48,13 @@ export interface HarnessTaskExecutionOptions {
 
 /** Approve the deployment separately from its task-run route and temporary worktree. */
 export function hashHarnessDeployment(deployment: HarnessTaskExecutionOptions['deployment']): string {
+  assertHarnessCleanupBudget(deployment.exitGraceMs);
   return deploymentDigest(deployment, harnessRuntimeArtifacts(deployment.harnessRoot),
     captureHarnessArtifactObservation(deployment.pluginRoot, deployment.nodeExecutable));
 }
 
 function deploymentDigest(deployment: HarnessTaskExecutionOptions['deployment'], runtime: ReturnType<typeof harnessRuntimeArtifacts>, proof: HarnessArtifactObservation): string {
+  assertHarnessCleanupBudget(deployment.exitGraceMs);
   const publicEntries = new Map(Object.entries(runtime.entries));
   const observed = inspectHarnessArtifactObservation(proof, deployment.pluginRoot, deployment.nodeExecutable);
   const plugin = observed.pluginHash;
@@ -278,11 +282,15 @@ function assertNoPeerOverrides(roots: string[], entries: Record<string, string>)
 /** Concrete prepare-before-execute path: exclusive fresh worktree, SDK peer, read-only text acceptance, no cleanup. */
 export function createHarnessTaskExecution(options: HarnessTaskExecutionOptions): HarnessTaskHostOptions['prepare'] {
   if (!isAbsolute(options.workspaceRoot) || !isAbsolute(options.identityRoot)) throw new Error('Harness host roots must be absolute native paths');
+  assertHarnessCleanupBudget(options.deployment.exitGraceMs);
   return async (task: ApprovedHarnessTask, runId, signal) => {
     signal.throwIfAborted();
-    const admission = options.store.getRun(runId);
-    const earlyCutoff = Date.parse(admission?.harnessExecution?.lifecycle?.deadlineAt ?? '') - 30_000;
-    if (!Number.isFinite(earlyCutoff) || Date.now() >= earlyCutoff) throw new Error('Harness preparation cannot fit the required cleanup within the total deadline');
+    const admission = options.store.readRun(runId);
+    const earlyCutoff = Date.parse(admission?.harnessExecution?.lifecycle?.deadlineAt ?? '') - HARNESS_CLEANUP_BUDGET.totalMs;
+    const localDeadline = performance.now() + Math.min(task.timeoutMs, earlyCutoff + HARNESS_CLEANUP_BUDGET.totalMs - Date.now());
+    const executionRemaining = () => Math.floor(Math.min(earlyCutoff - Date.now(), localDeadline - HARNESS_CLEANUP_BUDGET.totalMs - performance.now()));
+    const checkPreparation = () => { signal.throwIfAborted(); if (!Number.isFinite(earlyCutoff) || executionRemaining() <= 0) throw new Error('Harness preparation cannot fit the required cleanup within the total deadline'); };
+    checkPreparation();
     const runtime = harnessRuntimeArtifacts(options.deployment.harnessRoot);
     const proof = captureHarnessArtifactObservation(options.deployment.pluginRoot, options.deployment.nodeExecutable);
     const definition = structuredClone(options.verification(task.taskId));
@@ -331,18 +339,19 @@ export function createHarnessTaskExecution(options: HarnessTaskExecutionOptions)
     if (existsSync(worktree) || git(options.workspaceRoot, 'for-each-ref', '--format=%(refname)', `refs/heads/${branch}`).trim()) {
       throw new Error('Harness worktree or branch already exists; preserve and reconcile without reuse');
     }
-    signal.throwIfAborted();
+    checkPreparation();
     git(options.workspaceRoot, 'worktree', 'add', '-b', branch, worktree, task.baseline);
     const index = hash(git(worktree, 'ls-files', '--stage', '-z'));
     if (git(worktree, 'status', '--porcelain=v1', '--untracked-files=all').trim()) throw new Error('Fresh task worktree is not clean');
     const bindingDirectory = join(options.identityRoot, '.openslack.local/agents/harness-bindings');
     directories(options.identityRoot, bindingDirectory, true);
     const workerBinding = join(bindingDirectory, `${runId}.json`);
-    const state = options.store.getRun(runId);
+    const state = options.store.readRun(runId);
     if (!state?.harnessExecution) throw new Error('Canonical pending Harness run is missing');
     const deadline = Date.parse(state.harnessExecution.lifecycle?.deadlineAt ?? '');
-    const executionDeadline = deadline - 30_000;
-    if (!Number.isFinite(deadline) || Date.now() >= executionDeadline) throw new Error('Harness task cannot fit execution and its required cleanup within the total deadline');
+    const executionDeadline = deadline - HARNESS_CLEANUP_BUDGET.totalMs;
+    if (executionDeadline !== earlyCutoff) throw new Error('Harness admission deadline changed during preparation');
+    checkPreparation();
     options.store.withRunTransaction(runId, current => ({ patch: { harnessExecution: { ...current.harnessExecution!,
       lifecycle: { ...current.harnessExecution!.lifecycle!, executionDeadlineAt: new Date(executionDeadline).toISOString() } } } }));
     writeFileSync(workerBinding, JSON.stringify({
@@ -360,7 +369,8 @@ export function createHarnessTaskExecution(options: HarnessTaskExecutionOptions)
     } });
     // Resolve once within this synchronous observation phase to validate the prepared
     // provider; execution obtains its own fresh proof and remaining absolute budget.
-    createDeepSeekHarnessProvider({ ...options.deployment, workerBinding, timeoutMs: Math.max(1, executionDeadline - Date.now()) },
+    checkPreparation();
+    createDeepSeekHarnessProvider({ ...options.deployment, workerBinding, timeoutMs: Math.max(1, executionRemaining()) },
       options.authorizeTool, definition.requireReport ? ['openslack'] : [], proof).resolve(task.request.resolvedConfig);
     const recorder = createRunRecorder(options.store, options.identityRoot);
     const guard = new ToolGuard(task.request.permissionProfile, recorder, runId);
@@ -374,7 +384,7 @@ export function createHarnessTaskExecution(options: HarnessTaskExecutionOptions)
     return {
       async execute(executionSignal, eligibility) {
         executionSignal.throwIfAborted();
-        if (Date.now() >= executionDeadline) throw new Error('Harness execution cutoff elapsed before deployment observation');
+        if (executionRemaining() <= 0) throw new Error('Harness execution cutoff elapsed before deployment observation');
         const expectedEligibility = { taskId: task.taskId, taskHash: hashHarnessTask(task), principalId: task.principalId!, principalHash: task.principalHash, phase: 'execute' as const };
         assertHarnessTaskEligibility(eligibility, expectedEligibility);
         const executionRuntime = harnessRuntimeArtifacts(options.deployment.harnessRoot);
@@ -383,7 +393,7 @@ export function createHarnessTaskExecution(options: HarnessTaskExecutionOptions)
           hashHarnessInput(options.verification(task.taskId)) !== task.verificationHash) {
           throw new Error('Harness deployment or verifier changed before execution');
         }
-        const current = options.store.getRun(runId)!;
+        const current = options.store.readRun(runId)!;
         const currentBinding = current?.harnessExecution, lifecycle = currentBinding?.lifecycle;
         if (current.status !== 'running' || currentBinding?.taskId !== task.taskId || currentBinding.requestHash !== hashHarnessTask(task) ||
           currentBinding.principalHash !== task.principalHash || lifecycle?.phase !== 'started' ||
@@ -393,7 +403,7 @@ export function createHarnessTaskExecution(options: HarnessTaskExecutionOptions)
         }
         assertHarnessNotStopped(options.identityRoot, current);
         executionSignal.throwIfAborted();
-        const remaining = executionDeadline - Date.now();
+        const remaining = executionRemaining();
         if (remaining <= 0) throw new Error('Harness execution cutoff elapsed during deployment observation');
         assertHarnessTaskEligibility(eligibility, expectedEligibility);
         const startEligibility = bindHarnessRunStartEligibility(eligibility, { runId, generation: lifecycle.ownerGeneration });
@@ -405,7 +415,8 @@ export function createHarnessTaskExecution(options: HarnessTaskExecutionOptions)
         const result = await adapter.execute({
           prompt: task.request.prompt, runId, agentId: task.request.agentId, resolvedConfig: task.request.resolvedConfig,
           permissionProfile: task.request.permissionProfile, worktreePath: worktree,
-          recorder, runState: current, signal: executionSignal, executionDeadline, startEligibility, toolGuard: guard,
+          recorder, runState: current, signal: executionSignal, executionDeadline,
+          executionMonotonicDeadline: localDeadline - HARNESS_CLEANUP_BUDGET.totalMs, startEligibility, toolGuard: guard,
           toolExecutor: new RepositoryToolExecutor({ rootPath: worktree, toolGuard: guard, recorder, runId }),
         });
         return { data: result.data, exitConfirmed: true, ...(result.tokenUsage === undefined ? {} : { tokenUsage: result.tokenUsage }) };
@@ -413,7 +424,7 @@ export function createHarnessTaskExecution(options: HarnessTaskExecutionOptions)
       async accept(_data, acceptanceSignal, eligibility) {
         const checkEligibility = () => {
           acceptanceSignal.throwIfAborted();
-          if (Date.now() >= deadline) throw new Error('Harness total deadline expired before acceptance evidence publication');
+          if (performance.now() >= localDeadline || Date.now() >= deadline) throw new Error('Harness total deadline expired before acceptance evidence publication');
           assertHarnessTaskEligibility(eligibility, { taskId: task.taskId, taskHash: hashHarnessTask(task), principalId: task.principalId!, principalHash: task.principalHash, phase: 'accept' });
         };
         checkEligibility();
@@ -422,7 +433,7 @@ export function createHarnessTaskExecution(options: HarnessTaskExecutionOptions)
           throw new Error('Harness deployment or verifier changed before acceptance');
         }
         const changes = new Set(changeNames());
-        const current = options.store.getRun(runId);
+        const current = options.store.readRun(runId);
         const summary = git(worktree, 'diff', '--summary', '--no-ext-diff', '--no-textconv', task.baseline, '--');
         const metadataSafe = git(worktree, 'rev-parse', 'HEAD').trim() === task.baseline &&
           hash(git(worktree, 'ls-files', '--stage', '-z')) === index && !/mode change|delete mode|rename/.test(summary) &&

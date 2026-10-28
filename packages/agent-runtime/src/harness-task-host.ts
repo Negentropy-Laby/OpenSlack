@@ -12,6 +12,8 @@ import { randomUUID } from 'node:crypto';
 import { lstatSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { performance } from 'node:perf_hooks';
+import { isCode } from './io-errors.js';
 
 /** Read-only storage guard; it never creates missing storage. */
 export function assertHarnessRunStorage(root: string, runId?: string): void {
@@ -56,9 +58,11 @@ interface OwnedAdmission {
   work: Promise<void>; release: () => void; ready: ReturnType<typeof Promise.withResolvers<HarnessTaskReceipt>>;
   governed?: HarnessGovernedBinding; started: boolean; exitConfirmed: boolean;
   dispatchEligibility?: HarnessTaskEligibility;
+  localDeadline: number;
   stopReason?: HarnessStopIntent['reason'];
   timer: ReturnType<typeof setTimeout>;
 }
+type HarnessHostRole = Readonly<{ mode: 'worker'; runId: string } | { mode: 'initiator' }>;
 
 const event = (type: AgentRunEvent['type'], data: Record<string, unknown>): AgentRunEvent => ({ timestamp: new Date().toISOString(), type, data });
 
@@ -70,21 +74,24 @@ export class HarnessTaskHost {
   private readonly uncertainPersistence = new Set<string>();
   private readonly unknownExits = new Set<string>();
   private closing = false;
+  private readonly role: HarnessHostRole;
   private readonly sourceObserver = new HarnessHostSourceObserver(dirname(fileURLToPath(import.meta.url)), import.meta.url.endsWith('.ts') ? '.ts' : '.js');
 
   constructor(options: HarnessTaskHostOptions) {
+    if (options.callbackRunId !== undefined) validateRunId(options.callbackRunId);
+    this.role = Object.freeze(options.callbackRunId !== undefined ? { mode: 'worker', runId: options.callbackRunId } : { mode: 'initiator' });
     this.options = { ...options, identityRoot: canonicalHarnessRoot(options.identityRoot) };
     assertHarnessRunStorage(this.options.identityRoot);
     this.admissions = new HarnessAdmissionStore(this.options.identityRoot);
   }
 
-  governanceBinding(): Readonly<{ identityRoot: string; workspaceId: string; principalId?: string; targets: readonly string[] }> {
+  governanceBinding(): Readonly<{ identityRoot: string; workspaceId: string; principalId?: string; role: HarnessHostRole; targets: readonly string[] }> {
     return Object.freeze({ identityRoot: this.options.identityRoot, workspaceId: this.options.workspaceId, principalId: this.options.principalId,
-      targets: Object.freeze([this.options.callbackRunId ? 'harness.task.report' : 'harness.task.dispatch']) });
+      role: this.role, targets: Object.freeze([this.role.mode === 'worker' ? 'harness.task.report' : 'harness.task.dispatch']) });
   }
 
   async dispatch(taskId: string, requestId: string, waitForCommittedConfirmation = false, governed?: HarnessGovernedBinding): Promise<HarnessTaskReceipt> {
-    if (this.options.callbackRunId) throw new Error('Worker callbacks cannot dispatch another task');
+    if (this.role.mode === 'worker') throw new Error('Worker callbacks cannot dispatch another task');
     if (this.closing) throw new Error('Harness task host is closing');
     if (!safeId(taskId) || !safeId(requestId)) throw new TypeError('Invalid task or request ID');
     const governedIntent = waitForCommittedConfirmation && governed && safeId(governed.planId) && governed.planId.startsWith('GPLAN-') &&
@@ -111,13 +118,13 @@ export class HarnessTaskHost {
     const gate = Promise.withResolvers<void>();
     const route = admission.record;
     const owned: OwnedAdmission = { task, route, ready, work: done.promise, release: gate.resolve, controller: new AbortController(),
-      started: false, exitConfirmed: false, ...(governed ? { governed: structuredClone(governed) } : {}),
+      started: false, exitConfirmed: false, localDeadline: performance.now() + task.timeoutMs, ...(governed ? { governed: structuredClone(governed) } : {}),
       ...(eligibility ? { dispatchEligibility: eligibility } : {}),
       timer: setTimeout(() => this.stopOwned(owned, 'deadline'), Math.max(1, Date.parse(route.deadlineAt!) - Date.now())),
     };
     // Register before create/publish can throw or await. close owns the entire acceptance, not only execute.
     this.active.set(route.runId, owned);
-    void this.ownAdmission(owned, gate.promise, waitForCommittedConfirmation).catch(error => {
+    void this.ownAdmission(owned, gate.promise, waitForCommittedConfirmation, admission.publicationUnconfirmed === true).catch(error => {
       this.uncertainPersistence.add(route.runId); ready.reject(error);
     }).finally(() => { clearTimeout(owned.timer); this.active.delete(route.runId); done.resolve(); });
     return ready.promise;
@@ -131,12 +138,6 @@ export class HarnessTaskHost {
       if (result.state === 'succeeded' && result.executionId === owned.governed.executionId) this.authorizeOwned(owned);
       else this.stopOwned(owned, 'confirmation_failed');
     }
-  }
-
-  /** Trusted fixture/non-governed host path; it never activates a historical route. */
-  releaseConfirmedAdmission(runId: string): void {
-    const owned = this.active.get(runId);
-    if (owned && !owned.governed) this.authorizeOwned(owned);
   }
 
   private authorizeOwned(owned: OwnedAdmission): void {
@@ -159,7 +160,7 @@ export class HarnessTaskHost {
     } catch { this.stopOwned(owned, 'confirmation_failed'); }
   }
 
-  private async ownAdmission(owned: OwnedAdmission, gate: Promise<void>, governed: boolean): Promise<void> {
+  private async ownAdmission(owned: OwnedAdmission, gate: Promise<void>, governed: boolean, publicationUnconfirmed: boolean): Promise<void> {
     const { task, route } = owned;
     try {
       const checkEligibility = this.eligibility(owned.dispatchEligibility, task, 'dispatch');
@@ -172,6 +173,13 @@ export class HarnessTaskHost {
         lifecycle: { ownerGeneration: route.ownerGeneration!, deadlineAt: route.deadlineAt!, phase: 'awaiting_confirmation',
           ...(owned.governed ? { governed: owned.governed } : {}) }, evidence: { reservedBytes: 0, calls: {} },
       } }, events: [event('progress', { step: 'harness_admitted', taskId: task.taskId, requestHash: route.requestHash })], beforePublish: checkEligibility }));
+      if (publicationUnconfirmed) {
+        this.uncertainPersistence.add(route.runId);
+        this.stopOwned(owned, 'persistence_failed');
+        throw new HarnessAdmissionError('INDETERMINATE', 'Admission publication cleanup is unconfirmed; preserve the owned route and reconcile', {
+          kind: 'admission', runId: route.runId, requestHash: route.requestHash, canonicalRunPresent: true, disposition: 'reconcile_required',
+        });
+      }
       this.checkOwned(owned, state);
       await this.options.publish(state);
       this.checkOwned(owned);
@@ -194,7 +202,7 @@ export class HarnessTaskHost {
 
   async report(input: HarnessTaskReport): Promise<{ runId: string; reportId: string; recorded: true }> {
     const report = structuredClone(input);
-    if (this.closing || !this.options.callbackRunId || report.runId !== this.options.callbackRunId) throw new Error('Report is not bound to this worker callback host');
+    if (this.closing || this.role.mode !== 'worker' || report.runId !== this.role.runId) throw new Error('Report is not bound to this worker callback host');
     this.validateReport(report);
     const before = await this.readCurrent(report.runId);
     if (!before?.harnessExecution) throw new Error('Run is not a bound Harness task');
@@ -232,19 +240,19 @@ export class HarnessTaskHost {
     if (this.closing) throw new Error('Harness host is closing');
     let taskId: string;
     if (target === 'harness.task.dispatch') {
-      if (this.options.callbackRunId || Object.keys(value).sort().join(',') !== 'requestId,taskId' || !safeId(value.taskId) || !safeId(value.requestId)) throw new TypeError('Invalid task dispatch intent');
+      if (this.role.mode === 'worker' || Object.keys(value).sort().join(',') !== 'requestId,taskId' || !safeId(value.taskId) || !safeId(value.requestId)) throw new TypeError('Invalid task dispatch intent');
       taskId = value.taskId;
     } else {
-      if (!this.options.callbackRunId || value.runId !== this.options.callbackRunId) throw new TypeError('Invalid current-task report intent');
+      if (this.role.mode !== 'worker' || value.runId !== this.role.runId) throw new TypeError('Invalid current-task report intent');
       this.validateReport(value);
-      const state = await this.readCurrent(this.options.callbackRunId);
+      const state = await this.readCurrent(this.role.runId);
       if (!state?.harnessExecution || !['pending', 'running'].includes(state.status)) throw new Error('Callback run is not writable');
       taskId = state.harnessExecution.taskId;
     }
     const task = structuredClone(await this.options.readTask(taskId));
     if (task.taskId !== taskId || (this.options.principalId && task.principalId !== this.options.principalId)) throw new Error('Approved task source returned another task or principal');
     await this.options.authorize(structuredClone(task), target === 'harness.task.dispatch' ? 'dispatch' : 'report');
-    if (target === 'harness.task.report') this.assertReportCurrent(this.boundState((await this.readCurrent(this.options.callbackRunId!))!, task), task);
+    if (target === 'harness.task.report') this.assertReportCurrent(await this.rebind(value.runId as string, task), task);
     const source = this.observeSource();
     return Object.freeze({ target, taskId, taskHash: hashHarnessTask(task), principalHash: task.principalHash,
       ...(task.principalId ? { principalId: task.principalId } : {}), baseline: task.baseline, hostSourceHash: source.hash, hostSourceDomain: source.domain });
@@ -262,7 +270,7 @@ export class HarnessTaskHost {
   }
 
   private checkOwned(owned: OwnedAdmission, state?: Readonly<AgentRunState>): void {
-    if (Date.now() >= Date.parse(owned.route.deadlineAt!)) { owned.stopReason ??= 'deadline'; owned.controller.abort(new Error('Harness total deadline exceeded')); }
+    if (performance.now() >= owned.localDeadline || Date.now() >= Date.parse(owned.route.deadlineAt!)) { owned.stopReason ??= 'deadline'; owned.controller.abort(new Error('Harness total deadline exceeded')); }
     if (this.closing) { owned.stopReason ??= 'closing'; owned.controller.abort(new Error('Harness host closing')); }
     owned.controller.signal.throwIfAborted();
     if (state) assertHarnessNotStopped(this.options.identityRoot, state);
@@ -307,12 +315,12 @@ export class HarnessTaskHost {
     const { task, route, controller } = owned;
     const preparationEligibility = await this.options.authorize(structuredClone(task), 'execute');
     this.checkOwned(owned);
-    this.boundState((await this.readCurrent(route.runId))!, structuredClone(await this.options.readTask(task.taskId)));
+    await this.rebind(route.runId, task);
     this.eligibility(preparationEligibility, task, 'execute')();
     const execution = await this.options.prepare(structuredClone(task), route.runId, controller.signal);
     const startEligibility = await this.options.authorize(structuredClone(task), 'execute');
     const checkStartEligibility = this.eligibility(startEligibility, task, 'execute');
-    this.boundState((await this.readCurrent(route.runId))!, structuredClone(await this.options.readTask(task.taskId)));
+    await this.rebind(route.runId, task);
     this.checkOwned(owned);
     this.options.store.withRunTransaction(route.runId, state => {
       this.boundState(state, task); this.checkOwned(owned, state);
@@ -333,13 +341,13 @@ export class HarnessTaskHost {
     this.checkOwned(owned);
     assertAgentResultSchema(result.data, task.outputSchema);
     const acceptanceEligibility = await this.options.authorize(structuredClone(task), 'accept');
-    this.boundState((await this.readCurrent(route.runId))!, structuredClone(await this.options.readTask(task.taskId)));
+    await this.rebind(route.runId, task);
     this.checkOwned(owned);
     this.eligibility(acceptanceEligibility, task, 'accept')();
     const acceptance = await execution.accept(result.data, controller.signal, acceptanceEligibility || undefined);
     const completionEligibility = await this.options.authorize(structuredClone(task), 'accept');
     const checkCompletionEligibility = this.eligibility(completionEligibility, task, 'accept');
-    this.boundState((await this.readCurrent(route.runId))!, structuredClone(await this.options.readTask(task.taskId)));
+    await this.rebind(route.runId, task);
     this.checkOwned(owned);
     if (acceptance.outcome !== 'verified') {
       this.options.store.withRunTransaction(route.runId, state => ({ patch: { status: 'failed', completedAt: new Date().toISOString(),
@@ -370,6 +378,11 @@ export class HarnessTaskHost {
       state.harnessExecution.principalHash !== task.principalHash) throw new Error('Task input or principal binding changed');
     return state;
   }
+  private async rebind(runId: string, task: ApprovedHarnessTask): Promise<Readonly<AgentRunState>> {
+    const state = await this.readCurrent(runId);
+    const currentTask = structuredClone(await this.options.readTask(task.taskId));
+    return this.boundState(state!, currentTask);
+  }
   private eligibility(value: void | HarnessTaskEligibility, task: ApprovedHarnessTask, phase: HarnessEligibilityPhase): () => void {
     const principalId = task.principalId ?? this.options.principalId;
     if (!principalId && value === undefined) return () => {}; // Explicitly unbound host-only fixture, not a production fallback.
@@ -378,8 +391,9 @@ export class HarnessTaskHost {
   }
   private async readCurrent(runId: string): Promise<AgentRunState | null> {
     assertHarnessRunStorage(this.options.identityRoot, runId);
+    const owned = this.active.get(runId);
     return readRunStateSnapshotWhenAvailable(runId, this.options.identityRoot,
-      Date.parse(this.active.get(runId)?.route.deadlineAt ?? '') || Infinity);
+      { waitMs: owned ? Math.max(0, Math.min(owned.localDeadline - performance.now(), Date.parse(owned.route.deadlineAt!) - Date.now())) : 1000, signal: owned?.controller.signal });
   }
   private assertReportCurrent(state: Readonly<AgentRunState>, task: ApprovedHarnessTask): void {
     assertHarnessNotStopped(this.options.identityRoot, state);
@@ -426,4 +440,3 @@ export function hashHarnessTask(task: ApprovedHarnessTask): string {
   return hashHarnessInput({ ...task, idempotencyKey: task.idempotencyKey ?? task.taskId, request: { ...task.request, correlationId: undefined, worktreePath: undefined } });
 }
 function safeId(value: unknown): value is string { return typeof value === 'string' && /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(value); }
-function isCode(value: unknown, code: string): boolean { return !!value && typeof value === 'object' && 'code' in value && value.code === code; }
