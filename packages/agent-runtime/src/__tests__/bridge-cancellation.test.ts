@@ -129,8 +129,11 @@ describe('test-only observer teardown', () => {
     const observation = observeExactChild(args, { subscribe, unsubscribe });
     // Inert emitter: no OS process/PID is created. This is a test-cleanup
     // branch oracle, never actual resource-stop or platform qualification.
-    const candidate = new ChildProcess();
-    candidate.spawnfile = process.execPath; candidate.spawnargs = [process.execPath, ...args];
+    class InertTestChild extends ChildProcess {
+      override readonly spawnfile = process.execPath;
+      override readonly spawnargs = [process.execPath, ...args];
+    }
+    const candidate = new InertTestChild();
     const failure = new Error('Synthetic test cleanup signal failed');
     const kill = vi.spyOn(candidate, 'kill').mockImplementation(() => {
       if (mode === 'kill-error') throw failure;
