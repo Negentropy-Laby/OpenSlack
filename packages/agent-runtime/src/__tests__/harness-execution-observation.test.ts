@@ -123,7 +123,9 @@ describe('fresh phase-local deployment observations', () => {
     }
   }, 60_000);
 
-  it.runIf(process.env.DEEPSEEK_HARNESS_CHECKOUT)('measures phase-local hashes, enforces absolute cutoffs and rejects unbalanced persisted evidence at acceptance and inspection', async () => {
+  // Each behavioral probe owns its complete profile, worktree and run. Sharing
+  // setup code must not share mutable state or cache a prior phase's authority.
+  async function phaseFixture() {
     const repository = resolve(dirname(fileURLToPath(import.meta.url)), '../../../..');
     const pluginRoot = join(repository, 'integrations/deepseek-harness');
     const harnessRoot = resolve(process.env.DEEPSEEK_HARNESS_CHECKOUT!);
@@ -158,6 +160,11 @@ describe('fresh phase-local deployment observations', () => {
       authorizeTool: async () => { throw new Error('Preparation cannot invoke a tool'); }, verification: () => verification });
     reads.mockClear();
     const prepared = await prepare(task, runId, new AbortController().signal);
+    return { workspaceRoot, harnessRoot, store, runId, initial, task, deployment, verification, prepared };
+  }
+
+  it.runIf(process.env.DEEPSEEK_HARNESS_CHECKOUT)('measures real phase-local reads and rejects execute cutoffs before and during deployment observation', async () => {
+    const { harnessRoot, store, runId, initial, task, prepared } = await phaseFixture();
     expect(prepared).toHaveProperty('execute');
     const observed = reads.mock.calls.map(([path]) => path);
     // These are observed reader calls, not inferred timing/cost estimates.
@@ -186,7 +193,12 @@ describe('fresh phase-local deployment observations', () => {
     await expect(prepared.execute(new AbortController().signal, executeEligibility)).rejects.toThrow('cutoff elapsed during deployment observation');
     expect(store.getRun(runId)?.status).toBe('running');
     duringObservation.mockRestore(); reads.mockImplementation(nativeRead);
+  }, 60_000);
 
+  it.runIf(process.env.DEEPSEEK_HARNESS_CHECKOUT)('rejects expired and unmatched acceptance before verifying the same fixture after its tool evidence is balanced', async () => {
+    const { workspaceRoot, store, runId, task, prepared } = await phaseFixture();
+    store.withRunTransaction(runId, current => ({ patch: { status: 'running', harnessExecution: { ...current.harnessExecution!,
+      lifecycle: { ...current.harnessExecution!.lifecycle!, phase: 'started' } } } }));
     // Verifier-entry fixtures only: no SDK, peer or model was started. The
     // explicit observation restricts this synthetic accept phase, not a live identity.
     const eligibility = createHarnessTaskEligibility({ taskId: task.taskId, taskHash: hashHarnessTask(task), principalId: task.principalId!, principalHash: task.principalHash, phase: 'accept' }, { mode: 'not_applicable' });
@@ -202,9 +214,23 @@ describe('fresh phase-local deployment observations', () => {
     store.withRunTransaction(runId, () => ({ events: [{ timestamp: new Date().toISOString(), type: 'tool_result',
       data: { toolName: 'Write', callId: 'evidence-call', output: { message: 'changed' } } }] }));
     expect((await prepared.accept({}, new AbortController().signal, eligibility)).outcome).toBe('verified');
+  }, 60_000);
+
+  it.runIf(process.env.DEEPSEEK_HARNESS_CHECKOUT)('matches its own verified receipt then rejects rehashed unbalanced evidence without rewriting retained inputs', async () => {
+    const { workspaceRoot, store, runId, task, deployment, verification, prepared } = await phaseFixture();
+    store.withRunTransaction(runId, current => ({ patch: { status: 'running', harnessExecution: { ...current.harnessExecution!,
+      lifecycle: { ...current.harnessExecution!.lifecycle!, phase: 'started' } } } }));
+    const eligibility = createHarnessTaskEligibility({ taskId: task.taskId, taskHash: hashHarnessTask(task), principalId: task.principalId!, principalHash: task.principalHash, phase: 'accept' }, { mode: 'not_applicable' });
+    writeFileSync(join(store.getRun(runId)!.worktreePath!, 'fixture.txt'), 'after');
+    store.withRunTransaction(runId, () => ({ events: [{ timestamp: new Date().toISOString(), type: 'tool_call',
+      data: { toolName: 'Write', callId: 'evidence-call', input: { file_path: 'fixture.txt', content: 'after' } } }] }));
+    store.withRunTransaction(runId, () => ({ events: [{ timestamp: new Date().toISOString(), type: 'tool_result',
+      data: { toolName: 'Write', callId: 'evidence-call', output: { message: 'changed' } } }] }));
+    expect((await prepared.accept({}, new AbortController().signal, eligibility)).outcome).toBe('verified');
     const state = store.getRun(runId)!;
     const inspection = { workspaceRoot, identityRoot: workspaceRoot, deployment, verification: () => verification };
     expect((await inspectHarnessTaskExecution(inspection, task, state)).workspace).toBe('matched');
+    const acceptanceFile = join(workspaceRoot, '.openslack.local/agents/runs', runId, 'acceptance.json');
     const transcript = readFileSync(state.transcriptPath), receipt = readFileSync(acceptanceFile);
     const runBytes = readFileSync(join(workspaceRoot, '.openslack.local/agents/runs', runId, 'run.json'));
     const unbalanced = transcript.toString('utf8').replace('"callId":"evidence-call"', '"callId":"mismatch-call"');
