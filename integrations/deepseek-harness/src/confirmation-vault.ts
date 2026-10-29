@@ -50,6 +50,19 @@ export class ConfirmationVault {
   /** Irreversibly invalidate all pending confirmation capabilities. */
   dispose(): void { this.disposed = true; this.entries.clear() }
 
+  /** Model-visible input metadata from the trusted role; it grants no confirmation or execution capability. */
+  get previewParameters(): ToolDefinition['parameters'] {
+    const worker = this.scope.mode === 'worker'
+    const properties = this.scope.mode === 'worker'
+      ? { runId: { type: 'string', const: this.scope.runId }, reportId: { type: 'string' },
+        summary: { type: 'string' }, evidenceRefs: { type: 'array', items: { type: 'string' } } }
+      : { taskId: { type: 'string', const: this.scope.taskId }, requestId: { type: 'string' } }
+    return { type: 'object', properties: {
+      workflowId: { type: 'string', const: worker ? 'harness.task.report' : 'harness.task.dispatch' },
+      input: { type: 'object', properties, required: Object.keys(properties), additionalProperties: false },
+    }, required: ['workflowId', 'input'], additionalProperties: false }
+  }
+
   /**
    * No model-supplied run becomes a query capability.
    * @param runId - proposed query target, not a source of authority.

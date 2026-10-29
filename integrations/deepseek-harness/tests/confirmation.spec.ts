@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { ToolDefinition, ToolRunContext } from '@deepseek-ai/dsh-tools'
 import { ConfirmationVault } from '../src/confirmation-vault.ts'
+import { projectCallbackTool } from '../src/callback-tools.ts'
+import { Ajv2020 } from 'ajv/dist/2020.js'
 
 const token = 'SENTINEL_CONFIRMATION_BEARER_12345678901234567890'
 const exec = {} as ToolRunContext
@@ -22,6 +24,61 @@ function setup() {
 }
 
 describe('per-agent confirmation vault', () => {
+  it.each(['worker', 'initiator'] as const)('advertises only the trusted %s preview and rejects upstream-only optional fields', async mode => {
+    const vault = mode === 'worker' ? setup().vault : new ConfirmationVault({ mode, taskId: 'TASK-1',
+      principalId: 'principal', generation: 'g1', assertCurrent: async () => {} })
+    const input = mode === 'worker' ? args : { workflowId: 'harness.task.dispatch', input: { taskId: 'TASK-1', requestId: 'request' } }
+    const raw = { ...tool(preview()), parameters: { type: 'object' as const,
+      properties: { workflowId: { type: 'string' as const }, input: { type: 'object' as const }, repository: { type: 'string' as const } },
+      required: ['workflowId', 'input'], additionalProperties: false } }
+    const original = JSON.stringify(raw.parameters)
+    const projected = projectCallbackTool({ operation: 'preview', definition: raw, vault,
+      current: async () => {}, permitsQuery: runId => vault.permitsQuery(runId) })
+    const validate = new Ajv2020({ strict: true }).compile(projected.parameters)
+    expect(validate(input), JSON.stringify(validate.errors)).toBe(true)
+    expect(validate({ ...input, repository: 'openslack/openslack' })).toBe(false)
+    expect(validate({ ...input, input: { ...input.input, completed: true } })).toBe(false)
+    expect(validate(mode === 'worker' ? { ...input, workflowId: 'harness.task.dispatch' }
+      : { ...input, input: { taskId: 'TASK-OTHER', requestId: 'request' } })).toBe(false)
+    await expect(projected.execute({ ...input, repository: 'openslack/openslack' }, exec)).rejects.toBeDefined()
+    expect(raw.execute).not.toHaveBeenCalled()
+    const result = await projected.execute(input, exec)
+    expect(raw.execute).toHaveBeenCalledOnce()
+    expect(raw.execute).toHaveBeenCalledWith(input, exec)
+    expect(JSON.stringify(result)).not.toContain(token)
+    expect(JSON.stringify(raw.parameters)).toBe(original)
+    expect(JSON.stringify(projected.parameters)).not.toContain('confirmationToken')
+  })
+
+  it.each(['worker', 'initiator'] as const)('advertises the bounded %s query without converting schema data into run authority', async mode => {
+    const vault = mode === 'worker' ? setup().vault : new ConfirmationVault({ mode, taskId: 'TASK-1',
+      principalId: 'principal', generation: 'g1', assertCurrent: async () => {} })
+    const raw = { ...tool({ structuredContent: { status: 'completed' }, content: [] }), parameters: { type: 'object' as const,
+      properties: { objectKind: { type: 'string' as const }, objectId: { type: 'string' as const },
+        sinceHours: { type: 'integer' as const }, limit: { type: 'integer' as const } } } }
+    const projected = projectCallbackTool({ operation: 'query', definition: raw, vault,
+      current: async () => {}, permitsQuery: runId => vault.permitsQuery(runId) })
+    const validate = new Ajv2020({ strict: true }).compile(projected.parameters)
+    const input = { objectKind: 'workflow', objectId: mode === 'worker' ? 'RUN-TEST' : 'RUN-OWN', limit: 100 }
+    expect(validate(input), JSON.stringify(validate.errors)).toBe(true)
+    for (const invalid of [{ ...input, sinceHours: 24 }, { objectKind: 'workflow' }, { ...input, objectKind: 'plan' },
+      { ...input, limit: 101 }, { ...input, limit: 0 }, { ...input, limit: 1.5 }]) expect(validate(invalid)).toBe(false)
+    await expect(projected.execute({ ...input, sinceHours: 24 }, exec)).rejects.toThrow('Query only this bound')
+    expect(raw.execute).not.toHaveBeenCalled()
+    if (mode === 'initiator') {
+      await expect(projected.execute(input, exec)).rejects.toThrow('Query only this bound')
+      expect(raw.execute).not.toHaveBeenCalled()
+      await vault.preview(tool(preview()), { workflowId: 'harness.task.dispatch', input: { taskId: 'TASK-1', requestId: 'request' } }, exec)
+      await vault.settle(tool({ structuredContent: { status: 'completed', data: { outcomes: [{
+        data: { taskId: 'TASK-1', runId: 'RUN-OWN', status: 'pending' },
+      }] } } }), { planId: 'PLAN-1' }, exec)
+    }
+    await projected.execute(input, exec)
+    expect(raw.execute).toHaveBeenCalledOnce()
+    await expect(projected.execute({ ...input, objectId: 'RUN-OTHER' }, exec)).rejects.toThrow('Query only this bound')
+    expect(raw.execute).toHaveBeenCalledOnce()
+  })
+
   it.each(['valid', 'task', 'plan', 'action', 'state', 'outcome', 'blocker', 'settlement', 'reconciliation', 'kind'])(
     'learns only the exact durable-succeeded settlement-unconfirmed query route: %s', async variant => {
       const vault = new ConfirmationVault({ mode: 'initiator', taskId: 'TASK-1', principalId: 'principal', generation: 'g1', assertCurrent: async () => {} })

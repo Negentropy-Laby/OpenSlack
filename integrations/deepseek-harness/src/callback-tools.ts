@@ -24,7 +24,10 @@ export function projectCallbackTool(options: CallbackProjection): ToolDefinition
     name: definition.name, description: definition.description,
     parameters: operation === 'confirm' || operation === 'cancel'
       ? { type: 'object', properties: { planId: { type: 'string' } }, required: ['planId'], additionalProperties: false }
-      : definition.parameters,
+      : operation === 'preview' ? vault.previewParameters
+      : { type: 'object', properties: { objectKind: { type: 'string', const: 'workflow' },
+        objectId: { type: 'string', minLength: 1, maxLength: 160 }, limit: { type: 'integer', minimum: 1, maximum: 100 } },
+        required: ['objectKind', 'objectId'], additionalProperties: false },
     output: { schema: {}, render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }] },
     async execute(args, exec) {
       const input = structuredClone(args)
