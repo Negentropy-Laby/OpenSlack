@@ -1,5 +1,11 @@
 import { defineConfig } from 'vitest/config';
 
+const harnessCheckout = process.env.DEEPSEEK_HARNESS_CHECKOUT?.trim();
+if (!harnessCheckout && (process.env.OPENSLACK_HARNESS_COMPATIBILITY === 'required' ||
+  process.env.OPENSLACK_TEST_INVENTORY === 'collect')) {
+  throw new Error('Complete Harness compatibility/inventory requires DEEPSEEK_HARNESS_CHECKOUT pointing to the built original dependency.');
+}
+
 export function resolveTestMaxWorkers(platform: NodeJS.Platform): number | undefined {
   return platform === 'win32' ? 4 : undefined;
 }
@@ -10,6 +16,7 @@ export default defineConfig({
     projects: [
       'packages/*',
       'apps/*',
+      ...(harnessCheckout ? ['integrations/deepseek-harness'] : []),
       'scripts/release',
       'scripts/public-pack',
       'scripts/live-capstone',

@@ -1,4 +1,4 @@
-import { createRunStore } from './run-store.js';
+import { observeRun, type RunObservation } from './run-store.js';
 import { readTranscript } from './transcript.js';
 import type { AgentRunEvent } from './types.js';
 import { buildMcpServerDescriptors, validateMcpToolNamespace } from './bridge-mcp-scope.js';
@@ -35,6 +35,7 @@ export interface AgentRuntimeMcpStatusReport {
   invalidTools: Array<{ tool: string; reason: string }>;
   toolEvidence: AgentRuntimeMcpToolEvidence[];
   remediations: string[];
+  runRead?: Exclude<RunObservation, { kind: 'ready' }>;
 }
 
 export function getAgentRuntimeMcpStatus(
@@ -47,8 +48,9 @@ export function getAgentRuntimeMcpStatus(
   }
 
   const agent = options.agentId ? findAgentRuntimeRegistryEntry(options.agentId, rootDir) : null;
-  const run = options.runId ? createRunStore(rootDir).getRun(options.runId) : null;
-  const transcript = options.runId ? readTranscript(options.runId, rootDir) : [];
+  const observation = options.runId ? observeRun(options.runId, rootDir) : undefined;
+  const run = observation?.kind === 'ready' ? observation.state : null;
+  const transcript = observation?.kind === 'ready' ? readTranscript(observation.runId, rootDir) : [];
   const startEvent = transcript.find((event) => event.type === 'start');
   const availabilityEvent = [...transcript]
     .reverse()
@@ -74,7 +76,7 @@ export function getAgentRuntimeMcpStatus(
   const invalidTools = namespaceValidation.invalid;
 
   const status: AgentRuntimeMcpStatus =
-    missingRequiredServers.length > 0 || invalidTools.length > 0
+    observation?.kind === 'unavailable' || missingRequiredServers.length > 0 || invalidTools.length > 0
       ? 'FAIL'
       : requiredServers.length === 0 && availableServers.length === 0 && toolEvidence.length === 0
         ? 'WARN'
@@ -86,6 +88,7 @@ export function getAgentRuntimeMcpStatus(
     scopeNote: 'OpenSlack validates MCP descriptors and namespaces; Aby owns MCP client lifecycle.',
     agentId: agent?.agentId ?? run?.agentId ?? options.agentId,
     runId: options.runId,
+    ...(observation && observation.kind !== 'ready' ? { runRead: observation } : {}),
     requiredServers,
     availableServers,
     missingRequiredServers,
@@ -102,13 +105,13 @@ export function getAgentRuntimeMcpStatus(
     })),
     invalidTools,
     toolEvidence,
-    remediations: remediationForMcp(
+    remediations: [...(observation?.kind === 'unavailable' ? ['Run evidence is unavailable; inspect the single run without replay or automatic repair.'] : []), ...remediationForMcp(
       status,
       options.agentId,
       options.runId,
       missingRequiredServers,
       invalidTools,
-    ),
+    )],
   };
 }
 

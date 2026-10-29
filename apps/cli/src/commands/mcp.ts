@@ -1,4 +1,5 @@
 import { Command, Option } from 'commander';
+import { canonicalHarnessRoot, HarnessRootUnsafeError, createConfiguredHarnessTaskHost, createHarnessHostCloser, type HarnessTaskHost } from '@openslack/agent-runtime/internal/harness';
 import {
   normalizeGraphServiceOrigin,
   type GraphReadAuthorityPort,
@@ -51,6 +52,9 @@ export interface McpCommandDependencies {
     options: BindLocalHumanSubjectOptions,
   ) => LocalHumanAttestationStatus;
   readonly createServer?: typeof createOpenSlackMcpServer;
+  /** Opt-in host owned by this command's lifetime; provisioned by the embedding application, never by MCP flags. */
+  readonly harnessTaskHost?: HarnessTaskHost;
+  readonly createConfiguredHarnessTaskHost?: typeof createConfiguredHarnessTaskHost;
 }
 
 interface McpServeOptions {
@@ -59,6 +63,8 @@ interface McpServeOptions {
   readonly principalRef?: string;
   readonly humanPrincipal?: string;
   readonly workspaceId?: string;
+  readonly harnessWorkerBinding?: string;
+  readonly harnessTaskHost?: boolean;
   readonly graphReadMirrorOrigin?: string;
   readonly graphReadMirrorNetwork?: 'loopback' | 'internal';
   readonly graphReadCanaryBackend?: 'go' | 'ts-local';
@@ -403,6 +409,7 @@ async function createProfileContext(
       provider: 'cli',
       ...(options.workspaceId === undefined ? {} : { workspaceIdAssertion: options.workspaceId }),
       ...(governanceAuthority === undefined ? {} : { governanceAuthority }),
+      ...(dependencies.harnessTaskHost === undefined ? {} : { harnessTaskHost: dependencies.harnessTaskHost }),
     });
     const graphReadMirror = bindGraphReadMirror(dependencies, options);
     return createContext({
@@ -505,6 +512,8 @@ export function mcpCommands(dependencies: McpCommandDependencies): Command {
       'Assert the separately mapped human principal for human-attested',
     )
     .option('--workspace-id <workspace-id>', 'Assert the canonical workspace ID')
+    .option('--harness-task-host', 'Explicitly own the approved configured Harness task dispatcher')
+    .option('--harness-worker-binding <file>', 'Use a host-created per-run callback binding; requires a configured agent-bound Harness deployment')
     .option(
       '--graph-read-mirror-origin <origin>',
       'Mirror Graph query/explain reads to one exact credential-free Go service origin',
@@ -618,21 +627,57 @@ export function mcpCommands(dependencies: McpCommandDependencies): Command {
     )
     .action(async (options: McpServeOptions) => {
       let server: OpenSlackMcpServer | undefined;
+      let everServed = false;
+      let closeRequested = false;
+      let failureRendered = false;
+      const renderFailure = (error?: unknown): void => {
+        if (failureRendered) return;
+        failureRendered = true;
+        console.error(!everServed
+          ? error instanceof HarnessRootUnsafeError
+            ? 'OPENSLACK_MCP_START_FAILED: HARNESS_ROOT_UNSAFE; use an approved physical workspace path without links or junction ancestors.'
+            : 'OPENSLACK_MCP_START_FAILED: the requested stdio profile did not start.'
+          : 'OPENSLACK_MCP_SHUTDOWN_UNCONFIRMED: preserve task evidence and reconcile before retrying.');
+        process.exitCode = 1;
+      };
       try {
-        const context = await createProfileContext(dependencies, options);
-        server = (dependencies.createServer ?? createOpenSlackMcpServer)(context);
+        if ((options.harnessWorkerBinding !== undefined || options.harnessTaskHost) && options.profile !== 'agent-bound') {
+          throw new McpProfileArgumentError('Harness callbacks require agent-bound.');
+        }
+        if ((dependencies.harnessTaskHost && (options.harnessTaskHost || options.harnessWorkerBinding !== undefined)) ||
+          (options.harnessTaskHost && options.harnessWorkerBinding !== undefined)) {
+          throw new McpProfileArgumentError('Select exactly one injected, configured dispatcher, or worker-bound Harness owner.');
+        }
+        const configuredRequested = options.harnessTaskHost || options.harnessWorkerBinding !== undefined;
+        if (configuredRequested && !options.principalRef) throw new McpProfileArgumentError('agent-bound requires --principal-ref.');
+        const taskHost = options.profile === 'agent-bound'
+          ? dependencies.harnessTaskHost ?? (configuredRequested && options.principalRef
+            ? (dependencies.createConfiguredHarnessTaskHost ?? createConfiguredHarnessTaskHost)(dependencies.workspaceRoot, options.principalRef, options.harnessWorkerBinding)
+            : undefined)
+          : undefined;
+        if (configuredRequested && !taskHost) throw new Error('The explicitly selected Harness owner is unavailable');
+        const configured = taskHost ? { ...dependencies, workspaceRoot: canonicalHarnessRoot(dependencies.workspaceRoot), harnessTaskHost: taskHost } : dependencies;
+        const context = await createProfileContext(configured, options);
+        const createServer = dependencies.createServer ?? createOpenSlackMcpServer;
+        server = taskHost
+          ? createServer(context, {}, { closeOwnedResources: createHarnessHostCloser(taskHost) })
+          : createServer(context);
 
         const close = async (): Promise<void> => {
+          closeRequested = true;
           try {
             await server?.close();
-          } finally {
-            process.exitCode = 0;
+            if (!failureRendered) process.exitCode = 0;
+          } catch {
+            renderFailure();
           }
         };
         process.once('SIGINT', close);
         process.once('SIGTERM', close);
         try {
           await server.serveStdio();
+          if (!closeRequested) everServed = true;
+          await server.whenClosed;
         } finally {
           process.off('SIGINT', close);
           process.off('SIGTERM', close);
@@ -642,7 +687,7 @@ export function mcpCommands(dependencies: McpCommandDependencies): Command {
         if (error instanceof McpProfileArgumentError) {
           console.error(`OPENSLACK_MCP_PROFILE_ARGUMENT_INVALID: ${error.message}`);
         } else {
-          console.error('OPENSLACK_MCP_START_FAILED: the requested stdio profile did not start.');
+          renderFailure(error);
         }
         process.exitCode = 1;
       }

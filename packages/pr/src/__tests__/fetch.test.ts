@@ -82,6 +82,105 @@ describe('fetchPRDetails', () => {
     ]);
     expect(report.humanApprovals).toEqual([{ user: 'wsman' }]);
     expect(hoisted.mockGetPRFilePatches).not.toHaveBeenCalled();
+    expect(hoisted.mockGetPR).toHaveBeenCalledTimes(2);
+    expect(hoisted.mockGetPR.mock.invocationCallOrder[0]).toBeLessThan(
+      hoisted.mockListPRFiles.mock.invocationCallOrder[0]!,
+    );
+    expect(hoisted.mockGetPR.mock.invocationCallOrder[1]).toBeGreaterThan(
+      hoisted.mockGetPRReviews.mock.invocationCallOrder[0]!,
+    );
+  });
+
+  it.each([
+    ['head SHA', { head: { ref: 'prms/live-evidence-hardening', sha: 'new-head' } }],
+    ['base SHA', { base: { ref: 'main', sha: 'new-base' } }],
+    ['head ref', { head: { ref: 'another-branch', sha: 'head-sha' } }],
+    ['base ref', { base: { ref: 'another-base', sha: 'base-sha' } }],
+    [
+      'head repository',
+      {
+        head: {
+          ref: 'prms/live-evidence-hardening',
+          sha: 'head-sha',
+          repoFullName: 'another/repo',
+        },
+      },
+    ],
+    ['base repository', { base: { ref: 'main', sha: 'base-sha', repoFullName: 'another/repo' } }],
+    ['Draft state', { draft: true }],
+    ['open state', { state: 'closed' }],
+    ['merged state', { merged: true }],
+    ['classification body', { body: 'updated governance or profile metadata' }],
+    ['classification title', { title: 'updated title' }],
+    ['author', { user: { login: 'another-author' } }],
+  ])('refuses a report when %s changes during evidence collection', async (_field, overrides) => {
+    hoisted.mockGetPR.mockResolvedValueOnce(mockPR()).mockResolvedValueOnce(mockPR(overrides));
+    await expect(fetchPRDetails(138, { strictEvidence: true })).rejects.toMatchObject({
+      code: 'PR_EVIDENCE_SNAPSHOT_CHANGED',
+    });
+  });
+
+  it('refuses missing initial PR evidence before collecting dependent data', async () => {
+    hoisted.mockGetPR.mockResolvedValueOnce(null);
+    await expect(fetchPRDetails(138, { strictEvidence: true })).rejects.toMatchObject({
+      code: 'PR_EVIDENCE_SNAPSHOT_UNAVAILABLE',
+    });
+    expect(hoisted.mockListPRFiles).not.toHaveBeenCalled();
+  });
+
+  it('refuses a report if the final PR read is unavailable', async () => {
+    hoisted.mockGetPR.mockResolvedValueOnce(mockPR()).mockResolvedValueOnce(null);
+    await expect(fetchPRDetails(138, { strictEvidence: true })).rejects.toMatchObject({
+      code: 'PR_EVIDENCE_SNAPSHOT_UNAVAILABLE',
+    });
+  });
+
+  it('retains the cause when the final PR request fails', async () => {
+    const cause = new Error('final PR request failed');
+    hoisted.mockGetPR.mockResolvedValueOnce(mockPR()).mockRejectedValueOnce(cause);
+    await expect(fetchPRDetails(138, { strictEvidence: true })).rejects.toMatchObject({
+      code: 'PR_EVIDENCE_SNAPSHOT_UNAVAILABLE',
+      cause,
+    });
+  });
+
+  it('does not treat settled mergeability as an input identity change', async () => {
+    hoisted.mockGetPR
+      .mockResolvedValueOnce(mockPR({ mergeable: null }))
+      .mockResolvedValueOnce(mockPR({ mergeable: true, updated_at: '2026-06-01T14:33:00Z' }));
+    await expect(fetchPRDetails(138, { strictEvidence: true })).resolves.toMatchObject({
+      headSha: 'head-sha',
+      mergeable: true,
+    });
+  });
+
+  it.each(['initial', 'final'])(
+    'rejects a foreign PR returned at the %s evidence boundary',
+    async (boundary) => {
+      if (boundary === 'initial') hoisted.mockGetPR.mockResolvedValueOnce(mockPR({ number: 999 }));
+      else
+        hoisted.mockGetPR
+          .mockResolvedValueOnce(mockPR())
+          .mockResolvedValueOnce(mockPR({ number: 999 }));
+      await expect(fetchPRDetails(138, { strictEvidence: true })).rejects.toMatchObject({
+        code: 'PR_EVIDENCE_SNAPSHOT_CHANGED',
+      });
+      if (boundary === 'initial') expect(hoisted.mockListPRFiles).not.toHaveBeenCalled();
+    },
+  );
+
+  it('keeps the initial PR inputs isolated from mutation across an evidence await', async () => {
+    const original = mockPR();
+    hoisted.mockGetPR.mockResolvedValueOnce(original).mockResolvedValueOnce(mockPR());
+    hoisted.mockListPRFiles.mockImplementationOnce(async () => {
+      original.body = '```openslack-profile-sync-metadata\nchanged after collection began';
+      original.head.sha = 'mutated-head';
+      return ['packages/pr/src/fetch.ts'];
+    });
+    const report = await fetchPRDetails(138, { strictEvidence: true });
+    expect(report.body).toBe('');
+    expect(report.headSha).toBe('head-sha');
+    expect(hoisted.mockGetPRFilePatches).not.toHaveBeenCalled();
   });
 
   it('uses only the latest review state per reviewer', async () => {

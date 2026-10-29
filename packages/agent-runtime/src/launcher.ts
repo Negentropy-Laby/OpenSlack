@@ -1,4 +1,4 @@
-import type { AgentRunRequest, ResolvedAgentConfig, WorktreeHandoff } from './types.js';
+import type { AgentRunRequest, AgentRunState, ResolvedAgentConfig, WorktreeHandoff } from './types.js';
 import {
   PermissionDeniedError,
   AgentUnavailableError,
@@ -17,8 +17,9 @@ import {
 import { buildPermissionProfile, validatePermissionProfile } from './permissions.js';
 import { createRunRecorder } from './recorder.js';
 import type { AgentRunStore } from './run-store.js';
-import { generateRunId } from './run-store.js';
-import type { AgentExecutionAdapter } from './adapter.js';
+import { generateRunId, RUN_ID_RE } from './run-store.js';
+import type { AgentExecutionAdapter, AdapterExecutionContext } from './adapter.js';
+import type { BridgeProcessAdapterOptions } from './bridge-adapter.js';
 import { ToolGuard } from './adapter.js';
 import type { BridgeMode } from './bridge-factory.js';
 import { createBridgeAdapter } from './bridge-factory.js';
@@ -28,7 +29,7 @@ import {
   createBridgeRuntimeResolver,
 } from './bridge-runtime-resolver.js';
 import type { ProviderResolution, ProviderTransport } from './provider-registry.js';
-import { ProviderRegistry } from './provider-registry.js';
+import { ProviderRegistry, providerExecutionPolicy, type ProviderExecutionPolicy } from './provider-registry.js';
 import { RepositoryToolExecutor } from './tool-executor.js';
 import type { OpenAICompatibleRuntimeOptions } from './openai-compatible-runtime.js';
 import {
@@ -51,6 +52,7 @@ import {
 } from './provider-usage-evidence.js';
 import type { ProviderAttemptPort, ProviderAttemptReservation } from './provider-attempt-port.js';
 import { createProviderAttemptBoundary } from './internal/provider-attempt-boundary.js';
+import { createDeepSeekHarnessProvider, type DeepSeekHarnessDeployment } from './deepseek-harness-provider.js';
 
 export interface OpenAICompatibleRuntimeHostOptions extends OpenAICompatibleRuntimeOptions {
   fetchImpl?: typeof fetch;
@@ -69,6 +71,8 @@ export interface LauncherOptions {
    * that construct a governed adapter directly. There is no production default.
    */
   adapter?: AgentExecutionAdapter;
+  /** Lifecycle capabilities for an explicitly injected trusted adapter. */
+  adapterExecutionPolicy?: Readonly<ProviderExecutionPolicy>;
   /**
    * Legacy transport metadata for an explicitly injected adapter. This value
    * never selects or constructs an adapter.
@@ -76,6 +80,12 @@ export interface LauncherOptions {
   bridgeMode?: BridgeMode;
   /** Instance-scoped provider registry. Defaults to an opt-in Aby registration. */
   providerRegistry?: ProviderRegistry;
+  /** Trusted, opt-in SDK deployment; not an agent-config or MCP override. */
+  deepSeekHarness?: DeepSeekHarnessDeployment;
+  /** Required for Harness: current task/principal/delegation checks before native tool effects. */
+  harnessToolAuthorization?: BridgeProcessAdapterOptions['authorizeTool'];
+  /** Required host-owned validation before a Harness result may reach recorder.complete. */
+  harnessResultAcceptance?: (context: AdapterExecutionContext, data: unknown) => Promise<void>;
   /**
    * Resolves provider-specific process bridge configuration. Defaults to the
    * OpenSlack local resolver, which uses OPENSLACK_ABY_ROOT or
@@ -136,6 +146,8 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
       rootDir,
       options.openAICompatible,
       providerAttemptPort,
+      options.deepSeekHarness,
+      options.harnessToolAuthorization,
     );
 
   const recorder = createRunRecorder(runStore, rootDir);
@@ -148,6 +160,7 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
             `injected:${explicitlyConfiguredAdapter.adapterId}`,
           transport: transportForExplicitAdapter(bridgeMode),
           adapter: explicitlyConfiguredAdapter,
+          ...(options.adapterExecutionPolicy ? { policy: options.adapterExecutionPolicy } : {}),
         }
       : providerRegistry.resolve(resolvedConfig);
   }
@@ -201,10 +214,14 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
     let providerResolution: ProviderResolution;
     try {
       providerResolution = resolveProvider(resolvedConfig);
+      if (providerExecutionPolicy(providerResolution).requiresHostAcceptance && !options.harnessResultAcceptance) {
+        throw new RuntimeMisconfiguredError('DeepSeek Harness requires host-owned acceptance before execution.');
+      }
     } catch (error) {
       const runtimeError = normalizeRuntimeResolutionError(error);
       runtimeError.runId = runId;
-      recorder.reject(request, runtimeError);
+      try { recorder.reject(request, runtimeError); }
+      catch { attachRunDiagnostics(runtimeError, runId, ['RUN_REJECTION_RECORD_UNCONFIRMED']); }
       throw runtimeError;
     }
 
@@ -218,7 +235,8 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
           : error instanceof PermissionDeniedError
             ? 'RUNTIME_MISCONFIGURED'
             : getAgentRunFailureCode(error);
-      recorder.reject(request, rejection, failureCode);
+      try { recorder.reject(request, rejection, failureCode); }
+      catch { attachRunDiagnostics(rejection, runId, ['RUN_REJECTION_RECORD_UNCONFIRMED']); }
       throw error;
     }
 
@@ -233,9 +251,11 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
     tokenUsage?: number;
     usageEvidence?: readonly ProviderUsageReceipt[];
     runId: string;
+    runtimeDiagnostics?: readonly string[];
   }> {
     const { resolvedConfig, runId, permissionProfile, request, providerResolution } =
       prepareAndValidate(prompt, agentOptions);
+    const executionPolicy = providerExecutionPolicy(providerResolution);
 
     // Enforce worktree isolation for implementer agents and write-capable
     // Aby bridge agents.
@@ -254,7 +274,7 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
       resolvedConfig.isolation === 'worktree' ||
       agentOptions.isolation === 'worktree' ||
       isImplementer ||
-      (isAbyBridgeRun && isWriteCapable) ||
+      (executionPolicy.worktreeForFileWrites && isWriteCapable) ||
       (isOpenAICompatibleRun && permissionProfile.allowedTools.includes('repo.apply_patch'));
 
     if (needsWorktree) {
@@ -271,7 +291,9 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
     }
 
     // Start run
-    const state = recorder.start(request);
+    let state: AgentRunState;
+    try { state = recorder.start(request); }
+    catch (error) { if (RUN_ID_RE.test(runId)) attachRunDiagnostics(error, runId, ['RUN_INITIALIZATION_RECORD_UNCONFIRMED']); throw error; }
     const abortController = new AbortController();
     const unregisterControl = registerActiveAgentRunControl({
       runId,
@@ -282,6 +304,11 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
 
     const runAdapter = providerResolution.adapter;
     let adapterUsageEvidence: readonly ProviderUsageReceipt[] = [];
+    const diagnostics: RunDiagnostic[] = [];
+    const secondary = <T>(code: RunDiagnostic, action: () => T): T | undefined => {
+      try { return action(); }
+      catch { if (!diagnostics.includes(code)) diagnostics.push(code); return undefined; }
+    };
 
     try {
       // Delegate execution to the adapter
@@ -339,6 +366,10 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
       }
 
       if (agentOptions.schema) assertAgentResultSchema(adapterResult.data, agentOptions.schema);
+      if (executionPolicy.requiresHostAcceptance) {
+        await options.harnessResultAcceptance!(executionContext, adapterResult.data);
+        abortController.signal.throwIfAborted();
+      }
 
       // Complete run with adapter-provided token usage
       recorder.complete(
@@ -350,11 +381,11 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
 
       // Record bridge lifecycle marker only when the adapter is actually a bridge
       if (runAdapter.bridgeContract) {
-        recorder.progress(runId, {
+        secondary('RUN_LIFECYCLE_RECORD_UNCONFIRMED', () => recorder.progress(runId, {
           step: 'bridge_lifecycle_complete',
           runId,
           status: 'completed',
-        });
+        }));
       }
 
       return {
@@ -362,58 +393,63 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
         tokenUsage: adapterResult.tokenUsage,
         usageEvidence: adapterUsageEvidence.length > 0 ? adapterUsageEvidence : undefined,
         runId,
+        ...(diagnostics.length ? { runtimeDiagnostics: Object.freeze([...diagnostics]) } : {}),
       };
     } catch (err) {
+      diagnostics.push(...readRunDiagnostics(err));
       const attachedEvidenceInspection = inspectAttachedProviderUsageEvidence(err);
       if (attachedEvidenceInspection.status === 'invalid') {
-        recorder.progress(runId, {
+        secondary('RUN_LIFECYCLE_RECORD_UNCONFIRMED', () => recorder.progress(runId, {
           step: 'provider_usage_evidence_invalid',
           source: 'thrown_error',
-        });
+        }));
       }
       const attachedUsageEvidence =
         attachedEvidenceInspection.status === 'valid' ? attachedEvidenceInspection.receipts : [];
       const usageEvidence =
         attachedUsageEvidence.length > 0 ? attachedUsageEvidence : adapterUsageEvidence;
       attachProviderUsageEvidence(err, usageEvidence);
-      const chargedUsage = runStore.getRun(runId)?.tokensUsed ?? 0;
-      attachTokenUsage(err, chargedUsage);
+      const chargedUsage = secondary('RUN_USAGE_READ_UNCONFIRMED', () => runStore.readRun(runId)?.tokensUsed);
+      if (chargedUsage !== undefined) attachTokenUsage(err, chargedUsage);
       if (safeInstanceOf(err, AgentRunRestartRequestedError)) {
-        recorder.progress(runId, {
+        secondary('RUN_LIFECYCLE_RECORD_UNCONFIRMED', () => recorder.progress(runId, {
           step: 'agent_restart_handoff',
           reason: err.reason,
-        });
-        recorder.cancel(runId);
+        }));
+        secondary('RUN_CANCELLATION_RECORD_UNCONFIRMED', () => recorder.cancel(runId));
         if (runAdapter.bridgeContract) {
-          recorder.progress(runId, {
+          secondary('RUN_LIFECYCLE_RECORD_UNCONFIRMED', () => recorder.progress(runId, {
             step: 'bridge_lifecycle_complete',
             runId,
             status: 'cancelled',
             reason: err.reason,
-          });
+          }));
         }
+        attachRunDiagnostics(err, runId, diagnostics);
         throw err;
       }
       if (abortController.signal.aborted || safeInstanceOf(err, AgentRunCancelledError)) {
         const reason = safeInstanceOf(err, AgentRunCancelledError)
           ? err.reason
           : (readErrorMessage(err) ?? 'agent run cancelled');
-        recorder.cancel(runId);
+        secondary('RUN_CANCELLATION_RECORD_UNCONFIRMED', () => recorder.cancel(runId));
         if (runAdapter.bridgeContract) {
-          recorder.progress(runId, {
+          secondary('RUN_LIFECYCLE_RECORD_UNCONFIRMED', () => recorder.progress(runId, {
             step: 'bridge_lifecycle_complete',
             runId,
             status: 'cancelled',
             reason,
-          });
+          }));
         }
-        if (safeInstanceOf(err, AgentRunCancelledError)) throw err;
+        if (safeInstanceOf(err, AgentRunCancelledError)) { attachRunDiagnostics(err, runId, diagnostics); throw err; }
         const cancellationError = new AgentRunCancelledError(runId, reason);
         attachProviderUsageEvidence(cancellationError, usageEvidence);
+        attachRunDiagnostics(cancellationError, runId, diagnostics);
         throw cancellationError;
       }
       if (safeInstanceOf(err, PermissionDeniedError)) {
-        recorder.fail(runId, err, 'TOOL_DENIED');
+        secondary('RUN_FAILURE_RECORD_UNCONFIRMED', () => recorder.fail(runId, err, 'TOOL_DENIED'));
+        attachRunDiagnostics(err, runId, diagnostics);
         throw err;
       }
       const failureCode = getAgentRunFailureCode(err);
@@ -429,24 +465,39 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
             : formatAgentResultSchemaFailureSummary(schemaError.violations),
       });
       attachProviderUsageEvidence(executionError, usageEvidence);
-      attachTokenUsage(executionError, chargedUsage);
-      recorder.fail(runId, executionError, failureCode);
+      if (chargedUsage !== undefined) attachTokenUsage(executionError, chargedUsage);
+      secondary('RUN_FAILURE_RECORD_UNCONFIRMED', () => recorder.fail(runId, executionError, failureCode));
       if (runAdapter.bridgeContract) {
-        recorder.progress(runId, {
+        secondary('RUN_LIFECYCLE_RECORD_UNCONFIRMED', () => recorder.progress(runId, {
           step: 'bridge_lifecycle_complete',
           runId,
           status: 'failed',
           failureCode,
           errorSummary: getAgentRunFailureSummary(executionError, failureCode),
-        });
+        }));
       }
+      attachRunDiagnostics(executionError, runId, diagnostics);
       throw executionError;
     } finally {
       unregisterControl();
       // Dirty-state-aware worktree cleanup: preserve worktrees with
       // uncommitted changes so real work is never destroyed by an
       // automatic cleanup sweep.
-      if (worktreePath) {
+      if (worktreePath && executionPolicy.preserveWorktree) {
+        // Harness shutdown can leave unknown child effects. Preserve even apparently clean trees;
+        // neither a signal nor a failed dirty check grants cleanup authority.
+        const branchName = worktreeBranchName ?? `agent/${resolvedConfig.agentId}/run-${runId}/${runId}`;
+        try {
+          runStore.updateRun(runId, { worktreeHandoff: {
+            worktreePath, branchName, reason: 'External execution retained for acceptance and read-only reconciliation.',
+            preservedAt: new Date().toISOString(),
+          } });
+        } catch {
+          // Preservation is unconditional; failure to record its advisory receipt
+          // must not replace an accepted result or the original execution error.
+          try { recorder.progress(runId, { step: 'worktree_preservation_receipt_unconfirmed' }); } catch { /* primary result wins */ }
+        }
+      } else if (worktreePath) {
         try {
           const { checkDirty, cleanupWorktree } = await import('@openslack/runtime');
           const dirtyResult = checkDirty(worktreePath);
@@ -487,11 +538,11 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
         } catch (cleanupErr) {
           // Log cleanup failure so orphan worktrees are discoverable, but do
           // not mask the original result or error from the run.
-          recorder.progress(runId, {
+          secondary('RUN_LIFECYCLE_RECORD_UNCONFIRMED', () => recorder.progress(runId, {
             step: 'worktree_cleanup_failed',
             worktreePath,
             error: cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr),
-          });
+          }));
         }
       }
     }
@@ -505,6 +556,26 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
   };
 
   return launchAgent;
+}
+
+type RunDiagnostic = 'RUN_INITIALIZATION_RECORD_UNCONFIRMED' | 'RUN_REJECTION_RECORD_UNCONFIRMED' | 'RUN_USAGE_READ_UNCONFIRMED' |
+  'RUN_FAILURE_RECORD_UNCONFIRMED' | 'RUN_CANCELLATION_RECORD_UNCONFIRMED' |
+  'RUN_LIFECYCLE_RECORD_UNCONFIRMED' | 'RUN_USAGE_RECORD_UNCONFIRMED';
+const RUN_DIAGNOSTICS = new WeakMap<object, readonly RunDiagnostic[]>();
+
+function readRunDiagnostics(error: unknown): readonly RunDiagnostic[] {
+  return error !== null && typeof error === 'object' ? RUN_DIAGNOSTICS.get(error) ?? [] : [];
+}
+
+/** Only host-owned codes are attached; secondary exception messages never escape. */
+function attachRunDiagnostics(error: unknown, runId: string, diagnostics: readonly RunDiagnostic[]): void {
+  if (error === null || typeof error !== 'object') return;
+  const codes = Object.freeze([...new Set([...readRunDiagnostics(error), ...diagnostics])]);
+  RUN_DIAGNOSTICS.set(error, codes);
+  try {
+    if (!Object.hasOwn(error, 'runId')) Object.defineProperty(error, 'runId', { value: runId, configurable: true });
+    if (codes.length) Object.defineProperty(error, 'runtimeDiagnostics', { value: codes, configurable: true });
+  } catch { /* Frozen or hostile errors cannot replace the original outcome. */ }
 }
 
 function safeInstanceOf<T>(
@@ -574,6 +645,9 @@ async function executeAbyBridgeWithProviderAttempt<T>(options: {
   modelId: string;
   onUsageEvidence(receipt: ProviderUsageReceipt): void;
 }): Promise<Awaited<ReturnType<AgentExecutionAdapter['execute']>> & { data: T }> {
+  const recordSecondary = (primary: unknown, code: RunDiagnostic, action: () => unknown): void => {
+    try { action(); } catch { attachRunDiagnostics(primary, options.context.runId, [code]); }
+  };
   const requestedTokens = options.context.runState.tokensRemaining;
   if (
     typeof requestedTokens !== 'number' ||
@@ -596,10 +670,10 @@ async function executeAbyBridgeWithProviderAttempt<T>(options: {
       requestedTokens: String(requestedTokens),
     });
   } catch (error) {
-    options.context.recorder.progress(options.context.runId, {
+    recordSecondary(error, 'RUN_LIFECYCLE_RECORD_UNCONFIRMED', () => options.context.recorder.progress(options.context.runId, {
       step: 'provider_attempt_reserve_failed',
       errorCode: readProviderAttemptErrorCode(error),
-    });
+    }));
     throw error;
   }
   const requestBytes = JSON.stringify({
@@ -637,12 +711,12 @@ async function executeAbyBridgeWithProviderAttempt<T>(options: {
     try {
       await options.port.settle(reservation, receipt);
     } catch (error) {
-      options.context.recorder.progress(options.context.runId, {
+      recordSecondary(error, 'RUN_LIFECYCLE_RECORD_UNCONFIRMED', () => options.context.recorder.progress(options.context.runId, {
         step: 'provider_attempt_settle_failed',
         errorCode: readProviderAttemptErrorCode(error),
-      });
+      }));
       if (!result.tokenUsageRecorded) {
-        options.context.recorder.chargeUsage(options.context.runId, tokenUsage);
+        recordSecondary(error, 'RUN_USAGE_RECORD_UNCONFIRMED', () => options.context.recorder.chargeUsage(options.context.runId, tokenUsage));
       }
       attachProviderUsageEvidence(error, [receipt]);
       throw error;
@@ -666,11 +740,11 @@ async function executeAbyBridgeWithProviderAttempt<T>(options: {
       try {
         await options.port.settle(reservation, receipt);
       } catch (settlementError) {
-        options.context.recorder.progress(options.context.runId, {
+        const combined = combineProviderAttemptFailures(error, settlementError);
+        recordSecondary(combined, 'RUN_LIFECYCLE_RECORD_UNCONFIRMED', () => options.context.recorder.progress(options.context.runId, {
           step: 'provider_attempt_settle_failed',
           errorCode: readProviderAttemptErrorCode(settlementError),
-        });
-        const combined = combineProviderAttemptFailures(error, settlementError);
+        }));
         attachProviderUsageEvidence(combined, [receipt]);
         throw combined;
       }
@@ -730,8 +804,11 @@ function createDefaultProviderRegistry(
   rootDir?: string,
   openAICompatible?: OpenAICompatibleRuntimeHostOptions,
   providerAttemptPort?: ProviderAttemptPort,
+  deepSeekHarness?: DeepSeekHarnessDeployment,
+  harnessToolAuthorization?: BridgeProcessAdapterOptions['authorizeTool'],
 ): ProviderRegistry {
   const registry = new ProviderRegistry();
+  registry.register(createDeepSeekHarnessProvider(deepSeekHarness, harnessToolAuthorization, availableMcpServers));
   registry.register({
     id: 'aby',
     resolve(config) {
@@ -756,6 +833,7 @@ function createDefaultProviderRegistry(
       return {
         providerId: 'aby',
         transport: 'process',
+        policy: { requiresHostAcceptance: false, worktreeForFileWrites: true, preserveWorktree: false },
         adapter: createBridgeAdapter({
           bridgeMode: 'process',
           availableMcpServers,

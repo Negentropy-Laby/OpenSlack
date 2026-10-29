@@ -66,6 +66,16 @@
       "status": "active"
     },
     {
+      "id": "qa-ledger-harness-pr426-2026-10-27",
+      "path": "production/qa/qa-ledger-harness-pr426-2026-10-27.md",
+      "status": "active"
+    },
+    {
+      "id": "qa-ledger-harness-r36-2026-10-28",
+      "path": "production/qa/qa-ledger-harness-r36-2026-10-28.md",
+      "status": "active"
+    },
+    {
       "id": "service-cleanup-broker",
       "path": "services/cleanup-broker/README.md",
       "status": "active"
@@ -203,6 +213,16 @@
     {
       "id": "architecture-adr-multi-go-service-workspace",
       "path": "docs/architecture/adr/adr-0002-multi-go-service-workspace.md",
+      "status": "active"
+    },
+    {
+      "id": "architecture-adr-harness-closed-loop-repair",
+      "path": "docs/architecture/adr/adr-0003-harness-closed-loop-repair.md",
+      "status": "active"
+    },
+    {
+      "id": "architecture-adr-run-storage-recovery",
+      "path": "docs/architecture/adr/adr-0004-run-storage-recovery.md",
       "status": "active"
     },
     {

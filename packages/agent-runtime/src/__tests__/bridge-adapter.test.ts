@@ -379,11 +379,15 @@ describe('BridgeProcessAdapter', () => {
     expect(result.healthy).toBe(false);
   });
 
-  it('negotiateCapabilities returns requested caps', async () => {
-    const adapter = new BridgeProcessAdapter({ command: 'echo' });
-    const caps = await adapter.negotiateCapabilities([{ name: 'Read' }]);
+  it('negotiateCapabilities returns only explicitly available capabilities', async () => {
+    const requested = [{ name: 'Read', supportedTools: ['read'] }];
+    const adapter = new BridgeProcessAdapter({ command: 'echo', availableCapabilities: [{ name: 'Read', supportedTools: ['read'] }] });
+    const caps = await adapter.negotiateCapabilities([...requested, { name: 'unsupported' }]);
     expect(caps).toHaveLength(1);
     expect(caps[0].name).toBe('Read');
+    caps[0].supportedTools?.push('mutated');
+    expect(requested[0].supportedTools).toEqual(['read']);
+    expect(await new BridgeProcessAdapter({ command: 'echo' }).negotiateCapabilities(requested)).toEqual([]);
   });
 
   it('BridgeAdapterError carries error kind', () => {

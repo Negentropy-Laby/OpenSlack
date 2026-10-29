@@ -12,6 +12,7 @@ sources:
   - docs/architecture/architecture.md
   - docs/architecture/adr/adr-0001-single-root-memory-bank.md
   - docs/architecture/adr/adr-0002-multi-go-service-workspace.md
+  - docs/architecture/adr/adr-0003-harness-closed-loop-repair.md
 ---
 
 # Architecture Decision Records
@@ -24,3 +25,4 @@ architecture review identifies which decisions need formal ADR extraction.
 | -------------------------------------------------- | --------- | ----------------------------------------------------------- |
 | [ADR-0001](adr-0001-single-root-memory-bank.md)    | In Review | Use one root Memory Bank and one JSON control plane         |
 | [ADR-0002](adr-0002-multi-go-service-workspace.md) | In Review | Aggregate independent Go modules in a development workspace |
+| [ADR-0003](adr-0003-harness-closed-loop-repair.md) | Accepted | Preserve governed execution, full evidence and owned process shutdown across Bridge failures |

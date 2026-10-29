@@ -7,6 +7,7 @@ import {
   RuntimeNotConfiguredError,
   inferProviderId,
 } from '../index.js';
+import { providerExecutionPolicy } from '../provider-registry.js';
 
 function registration(id: string, adapter: AgentExecutionAdapter = new LocalExecutionAdapter()) {
   return {
@@ -16,12 +17,29 @@ function registration(id: string, adapter: AgentExecutionAdapter = new LocalExec
 }
 
 describe('ProviderRegistry', () => {
+  it('binds lifecycle to trusted capabilities rather than the provider name and defaults unknown processes to preservation', () => {
+    const adapter = new LocalExecutionAdapter();
+    const capabilities = { requiresHostAcceptance: true, worktreeForFileWrites: true, preserveWorktree: true };
+    expect(providerExecutionPolicy({ providerId: 'renamed-peer', transport: 'process', adapter, policy: capabilities })).toEqual(capabilities);
+    expect(providerExecutionPolicy({ providerId: 'next-external-peer', transport: 'process', adapter }).preserveWorktree).toBe(true);
+    expect(providerExecutionPolicy({ providerId: 'next-external-command', transport: 'external-command', adapter }).preserveWorktree).toBe(true);
+    expect(providerExecutionPolicy({ providerId: 'aby', transport: 'process', adapter,
+      policy: { requiresHostAcceptance: false, worktreeForFileWrites: true, preserveWorktree: false } }).preserveWorktree).toBe(false);
+    const snapshot = providerExecutionPolicy({ providerId: 'renamed-peer', transport: 'process', adapter, policy: capabilities });
+    capabilities.preserveWorktree = false;
+    expect(snapshot.preserveWorktree).toBe(true);
+  });
   it('rejects duplicate provider IDs in one registry', () => {
     const registry = new ProviderRegistry();
     registry.register(registration('fixture'));
 
     expect(() => registry.register(registration('FIXTURE'))).toThrow(ProviderRegistryError);
     expect(() => registry.register(registration('fixture'))).toThrow(/already registered/);
+  });
+  it('rejects Object.prototype names rather than treating them as lifecycle capabilities', () => {
+    const adapter = new LocalExecutionAdapter();
+    expect(() => providerExecutionPolicy({ providerId: 'fixture', transport: 'process', adapter,
+      policy: JSON.parse('{"toString":false}') })).toThrow('known Boolean capabilities');
   });
 
   it('keeps registrations isolated between instances', () => {

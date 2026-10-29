@@ -16,7 +16,7 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "pretest": "git worktree prune",
+    "pretest": "bun run build",
     "test": "vitest run",
     "test:watch": "vitest",
     "build": "tsc --build && bun run schema:stage",

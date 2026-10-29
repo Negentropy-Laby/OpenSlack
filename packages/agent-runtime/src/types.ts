@@ -109,6 +109,52 @@ export interface AgentRunState {
    * was cleaned up normally or no worktree was used.
    */
   worktreeHandoff?: WorktreeHandoff;
+  /** Optional task-host data. Historical runs without this field remain unchanged. */
+  harnessExecution?: HarnessExecutionBinding;
+  /** New writer checkpoint only; absence on historical rows never authorizes repair. */
+  persistence?: { revision: number; transcriptBytes: number;
+    schemaVersion?: 2; creationId?: string; transactionId?: string; metadataSha256?: string;
+    /** Maintenance receipt is evidence only, never restored execution permission. */
+    recovery?: { inspectionSha256: string; previousTransactionId: string; outcome: 'preserved_commit' | 'indeterminate' };
+  };
+}
+
+/** Canonical task binding; lifecycle status remains AgentRunState.status. */
+export interface HarnessExecutionBinding {
+  schema: 'openslack.harness_execution.v1';
+  taskId: string;
+  requestHash: string;
+  principalHash: string;
+  baseline: string;
+  acceptance: 'pending' | 'verified' | 'rejected' | 'indeterminate';
+  summary: string;
+  evidenceRefs: string[];
+  /** Bounded per-run report idempotency, not a task index or another state store. */
+  reports: Record<string, string>;
+  /** Committed only after the host's visible activity anchor has been published. */
+  visible?: boolean;
+  /** Recorded by the host only after the prepared executor confirms owned process exit. */
+  processExit?: 'confirmed';
+  /** Cancellation intent only; never proof of process or descendant termination. */
+  stopRequestedAt?: string;
+  /** Host-owned admission generation, never the runtime identity's run ID. */
+  lifecycle?: {
+    ownerGeneration: string;
+    deadlineAt: string;
+    /** Concrete native execution cutoff; cleanup must finish within deadlineAt. */
+    executionDeadlineAt?: string;
+    phase: 'awaiting_confirmation' | 'authorized' | 'started' | 'stopped_before_start' | 'indeterminate';
+    governed?: { planId: string; executionId: string; confirmationAttemptId?: string };
+  };
+  /** Bounded reservation metadata only; complete tool payloads live once in JSONL. */
+  evidence?: {
+    reservedBytes: number;
+    terminalBytes?: number;
+    calls: Record<string, { toolName: string; inputDigest: string; targetPath: string; generation: string;
+      maxResultBytes: number; resultDigest?: string; reservationId?: string;
+      /** Missing in legacy records means unknown, never permission to reclaim capacity. */
+      phase?: 'prepared' | 'authorization_attempted' | 'settled' | 'not_dispatched' }>;
+  };
 }
 
 export interface AgentRunEvent {

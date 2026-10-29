@@ -46,7 +46,7 @@ standalone P0 completion.
 | ---- | -------- | -------- | ------------------------ | ------ | -------- | ----- |
 | None | DEFERRED | PLANNED  | NO                       |        | None     |       |
 
-## Packages (27 active)
+## Packages (28 active)
 
 - @openslack/kernel
 - @openslack/plugin-api
@@ -70,6 +70,7 @@ standalone P0 completion.
 - @openslack/collaboration
 - @openslack/workflows
 - @openslack/agent-runtime
+- @openslack/deepseek-harness-plugin
 - @openslack/integration-negentropy
 - @openslack/organization-graph
 - @openslack/scenario-runtime
@@ -170,9 +171,9 @@ standalone P0 completion.
 
 ## Test Inventory
 
-8077 Vitest tests across 550 test files are recorded in `.openslack/modules.yaml`.
+8697 Vitest tests across 585 test files are recorded in `.openslack/modules.yaml`.
 
-Module-attributed coverage: 11100 tests across 784 module test files (packages shared across modules are counted per module).
+Module-attributed coverage: 11763 tests across 817 module test files (packages shared across modules are counted per module).
 
 Note: The Vitest line is a repository inventory, not a current execution result. The module-attributed coverage line is the per-module sum from .openslack/modules.yaml, where each test file is counted once per module that claims it. Use module counts for coverage tracking; use current bun run test or CI output for pass, fail, and skip evidence.
 

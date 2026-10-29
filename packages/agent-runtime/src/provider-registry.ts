@@ -8,6 +8,27 @@ export interface ProviderResolution {
   providerId: string;
   transport: ProviderTransport;
   adapter: AgentExecutionAdapter;
+  /** Trusted provider-owned lifecycle policy; never copied from agent/model input. */
+  policy?: Readonly<ProviderExecutionPolicy>;
+}
+
+export interface ProviderExecutionPolicy {
+  requiresHostAcceptance: boolean;
+  worktreeForFileWrites: boolean;
+  preserveWorktree: boolean;
+}
+
+/** Unspecified external processes default to isolation/preservation, not destructive cleanup. */
+export function providerExecutionPolicy(resolution: ProviderResolution): Readonly<ProviderExecutionPolicy> {
+  const external = resolution.transport === 'process' || resolution.transport === 'external-command';
+  const defaults = { requiresHostAcceptance: false, worktreeForFileWrites: external,
+    preserveWorktree: external };
+  const input = resolution.policy;
+  if (input && (Object.keys(input).some(key => !Object.hasOwn(defaults, key)) ||
+    Object.values(input).some(value => typeof value !== 'boolean'))) {
+    throw new ProviderRegistryError('INVALID_PROVIDER_RESOLUTION', 'Provider lifecycle policy must contain only known Boolean capabilities.');
+  }
+  return Object.freeze({ ...defaults, ...input });
 }
 
 export interface ProviderRegistration {
@@ -74,7 +95,7 @@ export class ProviderRegistry {
 
     const resolution = registration.resolve(config);
     validateResolution(providerId, resolution);
-    return resolution;
+    return { ...resolution, policy: providerExecutionPolicy(resolution) };
   }
 }
 

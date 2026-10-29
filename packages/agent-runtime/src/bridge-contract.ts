@@ -6,6 +6,7 @@
  */
 
 import type { PermissionMode } from '@openslack/kernel';
+import { validateBridgeWireEnvelope } from './bridge-wire.js';
 
 /**
  * Protocol version for bridge envelope compatibility.
@@ -312,60 +313,6 @@ export function buildBridgeEnvelope<T>(
  * Returns validation result; does not throw.
  */
 export function validateBridgeEnvelope(envelope: unknown): { valid: boolean; error?: string } {
-  if (!envelope || typeof envelope !== 'object') {
-    return { valid: false, error: 'Envelope must be an object' };
-  }
-
-  const e = envelope as Record<string, unknown>;
-
-  if (typeof e.protocolVersion !== 'string' || e.protocolVersion.length === 0) {
-    return { valid: false, error: 'Missing or invalid protocolVersion' };
-  }
-
-  if (typeof e.sessionId !== 'string' || e.sessionId.length === 0) {
-    return { valid: false, error: 'Missing or invalid sessionId' };
-  }
-
-  if (typeof e.correlationId !== 'string' || e.correlationId.length === 0) {
-    return { valid: false, error: 'Missing or invalid correlationId' };
-  }
-
-  if (typeof e.timestamp !== 'string' || e.timestamp.length === 0) {
-    return { valid: false, error: 'Missing or invalid timestamp' };
-  }
-
-  if (typeof e.kind !== 'string' || e.kind.length === 0) {
-    return { valid: false, error: 'Missing or invalid kind' };
-  }
-
-  if (!e.payload || typeof e.payload !== 'object') {
-    return { valid: false, error: 'Missing or invalid payload' };
-  }
-
-  if (e.protocolVersion !== BRIDGE_PROTOCOL_VERSION) {
-    return {
-      valid: false,
-      error: `Protocol version mismatch: got ${e.protocolVersion}, expected ${BRIDGE_PROTOCOL_VERSION}`,
-    };
-  }
-
-  const validKinds: BridgeEnvelopeKind[] = [
-    'handshake_request',
-    'handshake_response',
-    'run_request',
-    'run_started',
-    'assistant_text',
-    'approval_required',
-    'tool_request',
-    'tool_response',
-    'progress',
-    'error',
-    'heartbeat',
-    'complete',
-  ];
-  if (!validKinds.includes(e.kind as BridgeEnvelopeKind)) {
-    return { valid: false, error: `Unknown envelope kind: ${e.kind}` };
-  }
-
-  return { valid: true };
+  try { validateBridgeWireEnvelope(envelope); return { valid: true }; }
+  catch (error) { return { valid: false, error: error instanceof Error ? error.message : 'Invalid Bridge envelope' }; }
 }

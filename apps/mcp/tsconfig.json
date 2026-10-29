@@ -6,6 +6,7 @@
   },
   "include": ["src"],
   "references": [
+    { "path": "../../packages/agent-runtime" },
     { "path": "../../packages/kernel" },
     { "path": "../../packages/runtime" },
     { "path": "../../packages/workspace" },

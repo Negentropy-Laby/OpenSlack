@@ -20,9 +20,12 @@ import type {
   AgentRuntimeCredentialImportInput,
   AgentRuntimeCredentialImportPlan,
   AgentRuntimeCredentialImportResult,
+  RunRepairAuthorityPort,
 } from '@openslack/agent-runtime';
 
 interface AgentRuntimeCommandDependencies {
+  /** Trusted host composition only. Stock CLI has no implicit repair authority. */
+  runRepairAuthority?: RunRepairAuthorityPort;
   diagnoseAbyRuntime?: (options: DiagnoseAbyRuntimeOptions) => AbyRuntimeDoctorReport;
   setupAbyRuntime?: (options: SetupAbyRuntimeOptions) => AbyRuntimeSetupReport;
   runAbyRuntimeSmoke?: (options: RunAbyRuntimeSmokeOptions) => Promise<AbyRuntimeSmokeReport>;
@@ -59,6 +62,32 @@ function findRepoRoot(): string {
 
 export function agentRuntimeCommands(dependencies: AgentRuntimeCommandDependencies = {}): Command {
   const cmd = new Command('agent-runtime').description('Agent runtime diagnostics');
+
+  cmd.command('repair-run <runId>')
+    .description('Inspect one unavailable run; writes require separately scoped host maintenance authority')
+    .option('--format <format>', 'Output format: plain or json', 'json')
+    .option('--write', 'Apply only the inspected, separately authorized maintenance intent')
+    .option('--inspection-sha256 <digest>', 'Bind write to the exact read-only inspection')
+    .action(async (runId: string, options: { format: string; write?: boolean; inspectionSha256?: string }) => {
+      const runtime = await import('@openslack/agent-runtime');
+      try {
+        if (!['plain', 'json'].includes(options.format) || (!options.write && options.inspectionSha256 !== undefined)) throw new runtime.RunRepairError('RUN_REPAIR_UNAVAILABLE');
+        const inspection = runtime.inspectRunRepair(findRepoRoot(), runId);
+        if (!options.write) {
+          console.log(options.format === 'json' ? JSON.stringify(inspection, null, 2) : `${inspection.runId}: ${inspection.plan} (${inspection.reason})\nInspection: ${inspection.inspectionSha256}`);
+          if (inspection.plan === 'unavailable') process.exitCode = 1;
+          return;
+        }
+        if (!dependencies.runRepairAuthority) throw new runtime.RunRepairError('RUN_REPAIR_NOT_AUTHORIZED');
+        if (options.inspectionSha256 !== inspection.inspectionSha256) throw new runtime.RunRepairError('RUN_REPAIR_INSPECTION_CHANGED');
+        const capability = runtime.authorizeRunRepair(inspection, dependencies.runRepairAuthority);
+        const receipt = runtime.applyRunRepair(inspection, capability);
+        console.log(options.format === 'json' ? JSON.stringify(receipt, null, 2) : `${receipt.runId}: ${receipt.outcome}; resources unknown; preserve ${receipt.archivePath}`);
+      } catch (error) {
+        console.error(error instanceof runtime.RunRepairError ? error.code : 'RUN_REPAIR_UNAVAILABLE');
+        process.exitCode = 1;
+      }
+    });
 
   cmd
     .command('doctor')

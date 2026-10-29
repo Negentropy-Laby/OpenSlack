@@ -11,7 +11,7 @@ import {
   resolveRuntimeCredential,
 } from './openai-compatible-runtime.js';
 import { createOpenSlackAgentLauncher } from './launcher.js';
-import { createRunStore } from './run-store.js';
+import { createRunStore, observeRun, listRunObservations, RUN_ID_RE } from './run-store.js';
 import { readTranscript } from './transcript.js';
 import {
   AGENT_RUNTIME_CONFIG_SCHEMA,
@@ -315,7 +315,9 @@ export async function runOpenAICompatibleRuntimeSmoke(
     runId = result.runId;
     return buildOpenAISmokeReport(rootDir, doctor, runId, 'PASS', 'completed');
   } catch (error) {
-    runId = store.listRuns().at(0)?.runId;
+    const errorRunId = error && typeof error === 'object' && 'runId' in error ? error.runId : undefined;
+    // An unrelated healthy run must never masquerade as this failed attempt's evidence.
+    runId = typeof errorRunId === 'string' && RUN_ID_RE.test(errorRunId) ? errorRunId : undefined;
     return buildOpenAISmokeReport(
       rootDir,
       doctor,
@@ -345,7 +347,9 @@ function buildOpenAISmokeReport(
         transcriptJsonl: join(runDir, 'transcript.jsonl'),
       }
     : {};
-  const transcript = runId ? readTranscript(runId, rootDir) : [];
+  const observation = runId ? observeRun(runId, rootDir) : undefined;
+  const listing = listRunObservations(rootDir);
+  const transcript = runId && observation?.kind === 'ready' ? readTranscript(runId, rootDir) : [];
   return {
     provider: 'openai-compatible',
     status,
@@ -355,6 +359,8 @@ function buildOpenAISmokeReport(
     failureCode,
     evidence,
     checks: [
+      ...(listing.storageIssue || listing.unavailable.length ? [{ name: 'run-storage-availability', status: 'FAIL' as const,
+        detail: `Unavailable run evidence: ${listing.unavailable.map(value => `${value.runId}:${value.reason}`).join(', ') || listing.storageIssue}. Inspect without replay.` }] : []),
       { name: 'doctor', status: doctor.status, detail: `Runtime is ${doctor.readiness}` },
       {
         name: 'terminal-event',
