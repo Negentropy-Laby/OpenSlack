@@ -475,6 +475,42 @@ their actual published commits, avoiding a self-referential documentation commit
   digests, binding sets and scope are unchanged. New-head Linux/native full
   validation remains required; no existing result is relabelled as that run.
 
+### Startup observation follow-up
+
+- Frozen `14e680f0` broadened the affected set to 68 files and recorded
+  1,062 PASS / 1 FAIL / 19 SKIP in its first run. The failure was the old
+  short authority fixture requiring one spawn observation; it observed zero.
+  Its independent rerun passed. Neither result establishes the exact cause
+  of the original failure or permits calling that attempted triple successful.
+- Production starts its deadline before synchronous recorder persistence, so
+  exhausting the original 100 ms budget before child construction is reachable.
+  A controlled 120 ms recorder stall proves this without renewing that budget.
+  The corrected oracle requires raw construction count, spawn matches and
+  pending candidates all zero, a timeout after at least 100 ms, zero authority
+  calls, no tool/result/completion and a null receipt. Zero spawn matches alone
+  never establish this outcome. The constructed-child branch retains exact
+  executable/argv/PID binding and actual close observation; later close cannot
+  upgrade the returned refusal or its cleanup evidence.
+- Two additional ordinary-setup cases require actual entry into rejected and
+  never-settling authority ports. The latter queues a controlled deadline abort
+  inside the entered callback. Both require exactly one authority call, bounded
+  public diagnostics, no effects/completion and owned close. These are distinct
+  from startup-cutoff coverage; the existing 100 ms test and cleanup budgets,
+  worker profile and outer observation limits are unchanged.
+- Independent read-only review found and corrected an await-window gap in the
+  test observer itself: uniqueness and pending checks must also hold after close
+  observation and before returning a root to recursive fixture cleanup. An inert
+  callback-only regression injects a second construction during that wait; it
+  rejects and preserves the workspace. It spawns no OS process and supplies no
+  native qualification evidence. The complete corrected file passes 44/44;
+  the first type-check and inert-counterexample implementation failures remain.
+- Native `14e680f0` formal build, 48 former-failure cases and the 8,771-case
+  inventory passed. Its full run was stopped as an obsolete candidate after
+  the Linux failure; it has no full-suite PASS. Raw cancellation and independent
+  process readback are retained. A new candidate must receive fresh full Linux
+  and native validation. The production collector now records 8,775 declarations
+  in 590 files; repeated generation and final acceptance remain separate receipts.
+
 ### All 45 dispositions
 
 `AR` means `packages/agent-runtime/src`; `MCP` means `apps/mcp/src`; `Plugin`

@@ -57,14 +57,20 @@ function observePeer(root: string, source: string) {
   const closed = Promise.withResolvers<{ code: number | null; signal: NodeJS.Signals | null }>();
   const pending = new Map<ChildProcess, () => void>();
   let child: ChildProcess | undefined, closeFact: { code: number | null; signal: NodeJS.Signals | null } | undefined;
-  let matches = 0;
+  let matches = 0, constructions = 0, observationFailure: string | undefined;
   const capture = (value: unknown) => {
-    if (!value || typeof value !== 'object' || !('process' in value) || !(value.process instanceof ChildProcess)) return;
+    if (!value || typeof value !== 'object' || !('process' in value) || !(value.process instanceof ChildProcess)) {
+      observationFailure = 'Invalid child construction observation'; return;
+    }
+    constructions++;
     const candidate = value.process;
     const spawned = () => {
       pending.delete(candidate);
-      if (candidate.spawnfile !== process.execPath || JSON.stringify(candidate.spawnargs.slice(1)) !== JSON.stringify(['--input-type=module', '-e', source])) return;
+      if (candidate.spawnfile !== process.execPath || JSON.stringify(candidate.spawnargs.slice(1)) !== JSON.stringify(['--input-type=module', '-e', source])) {
+        observationFailure = 'Unexpected child executable or arguments'; return;
+      }
       matches++; child = candidate;
+      if (matches !== 1 || !Number.isSafeInteger(candidate.pid) || candidate.pid! <= 0) observationFailure = 'Non-unique child identity';
       candidate.once('close', (code, signal) => { closeFact = { code, signal }; closed.resolve(closeFact); });
     };
     pending.set(candidate, spawned); candidate.once('spawn', spawned);
@@ -81,6 +87,8 @@ function observePeer(root: string, source: string) {
   diagnostic.subscribe(capture);
   return {
     get child() { return child; }, get matches() { return matches; },
+    get constructions() { return constructions; }, get pending() { return pending.size; },
+    get failure() { return observationFailure; }, get closeFact() { return closeFact; },
     waitForClose: () => bounded(closed.promise),
     async verify<T>(task: Promise<T>, check: () => Promise<void>) {
       let primaryFailure: unknown;
@@ -107,11 +115,72 @@ function observePeer(root: string, source: string) {
       } finally {
         diagnostic.unsubscribe(capture);
         for (const [candidate, spawned] of pending) candidate.removeListener('spawn', spawned);
-        if (matches === 1 && closeFact && !roots.includes(root)) roots.push(root);
+        if (((constructions === 1 && matches === 1 && closeFact && pending.size === 0 && !observationFailure) || (constructions === 0 && pending.size === 0 && !observationFailure)) && !roots.includes(root)) roots.push(root);
       }
     },
   };
 }
+
+async function assertRefusedChild(
+  observation: ReturnType<typeof observePeer>, adapter: BridgeProcessAdapter,
+  error: BridgeAdapterError, authorityCalls: number, startedAt: number,
+) {
+  expect(observation.failure).toBeUndefined();
+  expect(observation.pending).toBe(0);
+  if (observation.constructions === 0) {
+    // A spent startup budget can deny before the OS is asked to create a child.
+    // Zero successful spawn events alone would not establish this branch.
+    expect(observation.matches).toBe(0);
+    expect(error.kind).toBe('timeout');
+    expect(performance.now() - startedAt).toBeGreaterThanOrEqual(100);
+    expect(authorityCalls).toBe(0);
+    expect(adapter.processExitReceipt).toBeNull();
+    expect(observation.child).toBeUndefined();
+    return;
+  }
+  expect(observation.constructions).toBe(1);
+  expect(observation.matches).toBe(1);
+  expect(observation.child!.pid).toBeGreaterThan(0);
+  const receiptAtReturn = adapter.processExitReceipt;
+  if (receiptAtReturn) expect(observation.closeFact).toEqual(receiptAtReturn);
+  else {
+    expect(observation.closeFact).toBeUndefined();
+    expect(error.shutdownEvidence).toEqual({ exit: null, clean: false });
+  }
+  const actualClose = await observation.waitForClose();
+  expect(observation.constructions).toBe(1);
+  expect(observation.matches).toBe(1);
+  expect(observation.pending).toBe(0);
+  expect(observation.failure).toBeUndefined();
+  if (receiptAtReturn) expect(actualClose).toEqual(receiptAtReturn);
+  // A separately observed late close does not change the returned refusal.
+  if (!receiptAtReturn) expect(error.shutdownEvidence).toEqual({ exit: null, clean: false });
+}
+
+describe('test observer ownership', () => {
+  it('rejects a construction arriving during close observation and preserves its workspace', async () => {
+    const source = 'inert observer contract; no OS spawn';
+    const { root, adapter } = setup(source);
+    const observation = observePeer(root, source);
+    // Inert emitters only. No spawn call is made and no real PID is signalled.
+    const first = Object.assign(new ChildProcess(), { spawnfile: process.execPath, spawnargs: [process.execPath, '--input-type=module', '-e', source], pid: 123 });
+    try {
+      first.emit('spawn');
+      const refusal = new BridgeAdapterError('timeout', 'Fixed test refusal');
+      refusal.shutdownEvidence = { exit: null, clean: false };
+      const check = assertRefusedChild(observation, adapter, refusal, 0, performance.now());
+      new ChildProcess(); first.emit('close', 0, null);
+      await expect(check).rejects.toThrow();
+      await observation.release();
+      expect(observation.constructions).toBe(2); expect(observation.pending).toBe(1);
+      expect(roots).not.toContain(root);
+    } finally {
+      await observation.release();
+      // Both objects are inert; the negative ownership fixture is now disposed.
+      if (!roots.includes(root)) roots.push(root);
+    }
+  });
+});
 
 describe('Harness bridge ownership', () => {
   it('returns complete.data only after an observed clean exit', async () => {
@@ -181,13 +250,18 @@ describe('Harness bridge ownership', () => {
     expect(authorizeTool.mock.calls[0]?.slice(1)).toEqual(['Read', { file_path: '/fixture.txt' }]);
   });
 
-  it('fails closed on a rejected or non-resolving live authority port without leaking its cause', async () => {
+  it('refuses live authority or an earlier original startup cutoff without effects', async () => {
     for (const authorizeTool of [async () => { throw new Error('PRIVATE_AUTHORITY_DETAIL'); }, () => new Promise<void>(() => {})]) {
       const source = prefix + `
         reply(frame, 'tool_request', { phase: 'authorize', authorizationRequestId: 'auth-1', toolName: 'Read', input: {} });
       ` + suffix;
-      const { root, adapter, context } = setup(source, 100, { authorizeTool });
+      const authority = vi.fn(authorizeTool);
+      const { root, adapter, context } = setup(source, 100, { authorizeTool: authority });
+      const effects = vi.spyOn(context.toolExecutor, 'execute');
+      const completed = vi.spyOn(context.recorder, 'complete');
+      const progress = vi.spyOn(context.recorder, 'progress');
       const observation = observePeer(root, source);
+      const startedAt = performance.now();
       const task = adapter.execute(context).then(value => ({ value, error: undefined }), error => ({ value: undefined, error }));
       await observation.verify(task, async () => {
         const outcome = await task;
@@ -195,11 +269,65 @@ describe('Harness bridge ownership', () => {
         expect(outcome.error).toBeInstanceOf(BridgeAdapterError);
         expect(['permission_denied', 'timeout']).toContain(outcome.error.kind);
         expect(outcome.error.message).not.toContain('PRIVATE_AUTHORITY_DETAIL');
-        expect(observation.matches).toBe(1);
-        expect(await observation.waitForClose()).toEqual(adapter.processExitReceipt);
+        expect(effects).not.toHaveBeenCalled(); expect(completed).not.toHaveBeenCalled();
+        expect(progress.mock.calls.some(([, value]) => value.step === 'bridge_session_completed')).toBe(false);
+        if (observation.constructions === 0) expect(progress.mock.calls.some(([, value]) => value.step === 'bridge_session_started')).toBe(false);
+        await assertRefusedChild(observation, adapter, outcome.error as BridgeAdapterError, authority.mock.calls.length, startedAt);
       });
     }
   }, 20_000); // Two authority modes; bounded observation/teardown, not a renewed task.
+
+  it('proves zero child construction when recorder persistence spends the original startup budget', async () => {
+    const source = prefix + `reply(frame, 'complete', { data: 'forbidden' });` + suffix;
+    const authority = vi.fn(async () => {});
+    const { root, adapter, context } = setup(source, 100, { authorizeTool: authority });
+    const effects = vi.spyOn(context.toolExecutor, 'execute');
+    const completed = vi.spyOn(context.recorder, 'complete');
+    const original = context.recorder.progress.bind(context.recorder);
+    const progress = vi.spyOn(context.recorder, 'progress').mockImplementation((id, value) => {
+      original(id, value);
+      if (value.step === 'bridge_mcp_availability') {
+        const cutoff = performance.now() + 120;
+        while (performance.now() < cutoff) { /* Controlled synchronous persistence stall. */ }
+      }
+    });
+    const observation = observePeer(root, source), startedAt = performance.now();
+    const task = adapter.execute(context).then(value => ({ value, error: undefined }), error => ({ value: undefined, error }));
+    await observation.verify(task, async () => {
+      const outcome = await task;
+      expect(outcome.value).toBeUndefined(); expect(outcome.error).toBeInstanceOf(BridgeAdapterError);
+      expect(observation.constructions).toBe(0);
+      expect(effects).not.toHaveBeenCalled(); expect(completed).not.toHaveBeenCalled();
+      expect(progress.mock.calls.some(([, value]) => value.step === 'bridge_session_started' || value.step === 'bridge_session_completed')).toBe(false);
+      await assertRefusedChild(observation, adapter, outcome.error as BridgeAdapterError, authority.mock.calls.length, startedAt);
+    });
+  });
+
+  it.each(['rejected', 'pending'] as const)('enters a %s authority port once and preserves its bounded refusal', async mode => {
+    const controller = new AbortController();
+    if (mode === 'pending') vi.spyOn(AbortSignal, 'timeout').mockReturnValue(controller.signal);
+    const authority = vi.fn(async () => {
+      if (mode === 'rejected') throw new Error('PRIVATE_AUTHORITY_DETAIL');
+      queueMicrotask(() => controller.abort(new Error('PRIVATE_AUTHORITY_DETAIL')));
+      await new Promise<void>(() => {});
+    });
+    const source = prefix + `reply(frame, 'tool_request', { phase: 'authorize', authorizationRequestId: 'auth-1', toolName: 'Read', input: {} });` + suffix;
+    // The file's existing ordinary setup, not an extension of the 100ms case.
+    const { root, adapter, context } = setup(source, undefined, { authorizeTool: authority });
+    const effects = vi.spyOn(context.toolExecutor, 'execute');
+    const completed = vi.spyOn(context.recorder, 'complete');
+    const observation = observePeer(root, source), startedAt = performance.now();
+    const task = adapter.execute(context).then(value => ({ value, error: undefined }), error => ({ value: undefined, error }));
+    await observation.verify(task, async () => {
+      const outcome = await task;
+      expect(outcome.value).toBeUndefined(); expect(outcome.error).toBeInstanceOf(BridgeAdapterError);
+      expect(outcome.error).toMatchObject({ kind: mode === 'rejected' ? 'permission_denied' : 'timeout' });
+      expect(outcome.error.message).not.toContain('PRIVATE_AUTHORITY_DETAIL');
+      expect(authority).toHaveBeenCalledOnce();
+      expect(effects).not.toHaveBeenCalled(); expect(completed).not.toHaveBeenCalled();
+      await assertRefusedChild(observation, adapter, outcome.error as BridgeAdapterError, authority.mock.calls.length, startedAt);
+    });
+  });
 
   it('does not reset the deadline on heartbeat', async () => {
     const { adapter, context } = setup(prefix + `
