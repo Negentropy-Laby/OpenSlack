@@ -349,11 +349,13 @@ describe('real Bridge pipe backpressure cancellation', () => {
     ['paused-small-after-send', true, 32, true],
     ['readable-large-after-send', false, 700 * 1024, true],
     ['paused-large-during-send', true, 700 * 1024, false],
-  ] as const)('settles a real pending write before the original cleanup cutoff: %s', async (_name, paused, promptBytes, afterSend) => {
+    ['paused-large-parent-stall', true, 700 * 1024, false, true],
+  ] as const)('settles a real pending write before the original cleanup cutoff: %s', async (_name, paused, promptBytes, afterSend, stallParent = false) => {
     const root = mkdtempSync(join(tmpdir(), 'bridge-real-backpressure-'));
     roots.push(root);
     const witness = join(root, 'child-witness.json');
-    const recorder = createRunRecorder(createRunStore(root), root);
+    const store = createRunStore(root);
+    const recorder = createRunRecorder(store, root);
     const runId = 'RUN-REAL-BACKPRESSURE';
     const resolvedConfig = { agentId: 'fixture', source: 'unit-test', tools: ['Read'] };
     const permissionProfile = buildPermissionProfile(resolvedConfig);
@@ -364,7 +366,12 @@ describe('real Bridge pipe backpressure cancellation', () => {
     const reason = new Error('Real pipe caller cancellation');
     let abortedAt: number | undefined, sendBytes: number | undefined;
     let sendSettled = false, abortedWithWritePending: boolean | undefined;
-    const abort = () => { abortedAt = performance.now(); abortedWithWritePending = !sendSettled; controller.abort(reason); };
+    let stallTimer: ReturnType<typeof setTimeout> | undefined, stallOutcome: ReturnType<typeof Atomics.wait> | undefined;
+    const abort = () => {
+      abortedAt = performance.now(); abortedWithWritePending = !sendSettled;
+      if (stallParent) stallTimer = setTimeout(() => { stallOutcome = Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 120); }, 50);
+      controller.abort(reason);
+    };
     class PublicSendObserver extends BridgeProcessAdapter {
       override async sendEnvelope<T>(sessionId: string, envelope: BridgeEnvelope<T>): Promise<void> {
         if (envelope.kind !== 'run_request') return super.sendEnvelope(sessionId, envelope);
@@ -375,20 +382,61 @@ describe('real Bridge pipe backpressure cancellation', () => {
         if (afterSend) setTimeout(abort, 20);
       }
     }
-    const adapter = new PublicSendObserver({ command: process.execPath,
-      args: ['--input-type=module', '-e', pausedReaderChild, witness, paused ? 'paused' : 'readable'],
+    const args = ['--input-type=module', '-e', pausedReaderChild, witness, paused ? 'paused' : 'readable'];
+    const observation = observeExactChild(args);
+    const adapter = new PublicSendObserver({ command: process.execPath, args,
       timeoutMs: 5_000, handshakeTimeoutMs: 1_000, confirmProcessExit: true, exitGraceMs: 100 });
-    const error = await adapter.execute({ runId, agentId: 'fixture', prompt, resolvedConfig, permissionProfile,
-      recorder, runState, toolGuard, signal: controller.signal,
-      toolExecutor: new RepositoryToolExecutor({ rootPath: root, recorder, runId, toolGuard }),
-    }).then(() => undefined, failure => failure);
-    expect(sendBytes).toBeLessThanOrEqual(1024 * 1024);
-    expect(abortedAt).toBeDefined();
-    if (paused && promptBytes > 32) expect(abortedWithWritePending).toBe(true);
-    expect(JSON.parse(readFileSync(witness, 'utf8'))).toMatchObject(paused
-      ? { paused: true, flowing: false, dataListeners: 0 } : { paused: false, flowing: true });
-    expect(performance.now() - abortedAt!).toBeLessThan(600);
-    expect(error).toMatchObject({ kind: 'session_unavailable', cause: reason });
-    expect(adapter.processExitReceipt).not.toBeNull();
+    let assertionFailure: unknown;
+    try {
+      const error = await adapter.execute({ runId, agentId: 'fixture', prompt, resolvedConfig, permissionProfile,
+        recorder, runState, toolGuard, signal: controller.signal,
+        toolExecutor: new RepositoryToolExecutor({ rootPath: root, recorder, runId, toolGuard }),
+      }).then(() => undefined, failure => failure);
+      const returnedAt = performance.now(), receiptAtReturn = adapter.processExitReceipt;
+      const observedAtReturn = observation.snapshot();
+      const shutdownAtReturn = structuredClone(error.shutdownEvidence);
+      expect(sendBytes).toBeLessThanOrEqual(1024 * 1024);
+      expect(abortedAt).toBeDefined();
+      if (paused && promptBytes > 32) expect(abortedWithWritePending).toBe(true);
+      expect(JSON.parse(readFileSync(witness, 'utf8'))).toMatchObject(paused
+        ? { paused: true, flowing: false, dataListeners: 0 } : { paused: false, flowing: true });
+      expect(performance.now() - abortedAt!).toBeLessThan(600);
+      expect(error).toMatchObject({ kind: 'session_unavailable', cause: reason });
+      expect(error.cause).toBe(reason);
+      expect(observedAtReturn.matches).toBe(1);
+      expect(observedAtReturn.failure).toBeUndefined();
+      if (stallParent) { expect(stallOutcome).toBe('timed-out'); expect(receiptAtReturn).toBeNull(); }
+      if (receiptAtReturn) {
+        expect(observedAtReturn.close).toBeDefined();
+        expect(observedAtReturn.exit).toBeDefined();
+        expect(observedAtReturn.close!.observedAt).toBeLessThanOrEqual(returnedAt);
+        expect(receiptAtReturn).toEqual({ code: observedAtReturn.close!.code, signal: observedAtReturn.close!.signal });
+      } else {
+        // A spent cleanup budget must remain explicitly unconfirmed, never a
+        // guessed receipt. This does not extend the adapter's original 100ms.
+        expect(returnedAt - abortedAt!).toBeGreaterThanOrEqual(100);
+        expect(observedAtReturn.close).toBeUndefined();
+        expect(shutdownAtReturn).toEqual({ exit: null, clean: false });
+      }
+      const closed = await observation.waitForClose(returnedAt + 500 - performance.now());
+      expect(closed.observedAt).toBeLessThanOrEqual(returnedAt + 500);
+      expect(observation.snapshot().matches).toBe(1);
+      expect(observation.snapshot().failure).toBeUndefined();
+      expect(observation.snapshot().exit).toMatchObject({ pid: closed.pid, code: closed.code, signal: closed.signal });
+      expect(observation.snapshot().exit!.observedAt).toBeLessThanOrEqual(closed.observedAt);
+      expect(adapter.processExitReceipt).toEqual({ code: closed.code, signal: closed.signal });
+      expect(error).toMatchObject({ kind: 'session_unavailable', cause: reason });
+      expect(error.cause).toBe(reason);
+      expect(error.shutdownEvidence).toEqual(shutdownAtReturn);
+      const transcript = readTranscript(runId, root);
+      expect(transcript.filter(event => ['tool_call', 'tool_result', 'complete'].includes(event.type))).toEqual([]);
+      expect(transcript.some(event => event.type === 'progress' && event.data.step === 'bridge_session_completed')).toBe(false);
+      expect(store.getRun(runId)?.toolCalls).toBe(0);
+    } catch (error) { assertionFailure = error; throw error; }
+    finally {
+      if (stallTimer) clearTimeout(stallTimer);
+      try { await observation.release(); }
+      catch (error) { throw new AggregateError([...(assertionFailure ? [assertionFailure] : []), error], 'Backpressure fixture process shutdown remains unconfirmed'); }
+    }
   }, 8_000);
 });

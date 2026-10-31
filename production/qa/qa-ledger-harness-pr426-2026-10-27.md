@@ -416,6 +416,26 @@ their actual published commits, avoiding a self-referential documentation commit
   pinned Node 24 Harness execution are recorded separately; the product engines
   declaration and dependency lock are not changed to hide that tooling limit.
   The official Node 22.23.4 LTS ordinary boundary run subsequently passed 44/44.
+- Frozen `9f2efc71` initially recorded two focused passes of 898 PASS/0 FAIL/19
+  existing SKIP, followed by 897 PASS/1 FAIL/19 SKIP. The real paused-pipe case
+  returned cancellation with no timely close receipt under its original 100 ms
+  cleanup bound. Its independent rerun passed; neither observation erases the
+  failure. The old unconditional non-null assertion conflicted with the existing
+  explicitly unconfirmed cleanup contract already tested beside it. The repaired
+  matrix uses the same exact public child observer: every receipt must match the
+  real exit/close; null requires a spent original budget, no observed close, and
+  `{exit:null,clean:false}`. A separate bounded late-close observation cannot
+  upgrade that returned failure. Post-wait uniqueness, primary cause identity,
+  exit-before-close and zero-effect assertions remain mandatory. An added actual
+  paused-pipe/parent-stall case deterministically covers this branch. No production
+  behavior, cleanup/test timeout, worker count, retry or platform skip changed.
+  The full corrected cancellation file passes 21/21. The previous attempted
+  triple is not a successful three-pass acceptance record.
+  Native Windows independently passes the same 21/21 cases. The production
+  inventory now records 8,758 declarations/590 files; two subsequent generation
+  passes are byte-identical. The running native full `9f2efc71` receipt and its
+  separate MCP CLI confirmation failure remain retained; a selected-case PASS
+  and an eight-case independent file PASS do not close that full-run failure.
 
 ### All 45 dispositions
 
