@@ -350,7 +350,7 @@ describe('real Bridge pipe backpressure cancellation', () => {
     ['readable-large-after-send', false, 700 * 1024, true],
     ['paused-large-during-send', true, 700 * 1024, false],
     ['paused-large-parent-stall', true, 700 * 1024, false, true],
-  ] as const)('settles a real pending write before the original cleanup cutoff: %s', async (_name, paused, promptBytes, afterSend, stallParent = false) => {
+  ] as const)('settles a real pending write before the original cleanup cutoff: %s', async (_name, paused, promptBytes, afterSend, stallParent: boolean = false) => {
     const root = mkdtempSync(join(tmpdir(), 'bridge-real-backpressure-'));
     roots.push(root);
     const witness = join(root, 'child-witness.json');
