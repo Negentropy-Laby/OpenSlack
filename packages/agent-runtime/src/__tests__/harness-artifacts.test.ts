@@ -125,7 +125,7 @@ describe('external plugin and Node input identities', () => {
     expect(error.message).not.toContain('SECRET_PATH_SENTINEL');
     if (code !== 'ENOENT') { expect(error.message).toContain(code); expect(error.message).not.toContain('build the matching'); }
   });
-  it('classifies a real missing approved artifact through provider resolution rather than leaking an fs exception', () => {
+  it('refuses an unqualified local Node or classifies a real missing approved artifact without leaking an fs exception', () => {
     const { root, pluginRoot } = fixture();
     const deployment = { harnessRoot: root, pluginRoot, pluginBuildHash: hashHarnessPluginArtifacts(pluginRoot),
       nodeExecutable: process.execPath, nodeVersion: '24.18.1' as const, nodeSha256: hashHarnessNodeExecutable(process.execPath),
@@ -135,7 +135,10 @@ describe('external plugin and Node input identities', () => {
     let failure: unknown;
     try { createDeepSeekHarnessProvider(deployment, async () => {}).resolve({ agentId: 'fixed', source: 'fixture' }); }
     catch (error) { failure = error; }
-    expect(failure).toMatchObject({ code: 'RUNTIME_MISCONFIGURED', filesystemCode: 'ENOENT' });
+    expect(failure).toMatchObject({ code: 'RUNTIME_MISCONFIGURED' });
+    const qualified = process.versions.node === '24.18.1';
+    expect((failure as { filesystemCode?: string }).filesystemCode).toBe(qualified ? 'ENOENT' : undefined);
+    if (!qualified) expect((failure as Error).message).toContain('Harness Node identity');
     expect((failure as Error).message).not.toContain(pluginRoot);
   });
   it.each(['dist', 'workspace-peer'] as const)('rejects callback %s redirection even when its copied JS bytes match', kind => {

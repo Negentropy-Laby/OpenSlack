@@ -280,7 +280,7 @@ describe('approved installed runtime dependency bytes', () => {
     expect(() => closure.visitWorkspace('fixture-root')).toThrow(/would resolve outside its approved root/);
   });
 
-  it('rejects deployment drift before creating a worktree or SDK when only a previously approved nested split changes', async () => {
+  it('refuses an unqualified local Node or approved nested split drift before creating a worktree or SDK', async () => {
     const f = fixture('harness'), plugin = join(f.root, 'external-plugin');
     manifest(plugin, { name: '@openslack/deepseek-harness-plugin' }); put(join(plugin, 'plugin.patch.yml'), '[]');
     put(join(plugin, 'THIRD-PARTY-NOTICES.txt'), 'fixture notice');
@@ -291,6 +291,14 @@ describe('approved installed runtime dependency bytes', () => {
     const deployment = { harnessRoot: f.root, pluginRoot: plugin, pluginBuildHash: hashHarnessPluginArtifacts(plugin), nodeExecutable: process.execPath,
       nodeVersion: '24.18.1' as const, nodeSha256: hashHarnessNodeExecutable(process.execPath), dshHome: home,
       agentId: 'fixture', provider: 'fixture', model: 'fixture', workerPatch: patch, exitGraceMs: 30_000 };
+    if (process.versions.node !== '24.18.1') {
+      // Ordinary OpenSlack supports Node22; actual Harness execution retains
+      // its exact approved local-Node identity and must refuse before effects.
+      expect(() => hashHarnessDeployment(deployment)).toThrow('Harness plugin or Node differs from its approved deployment');
+      expect(existsSync(join(f.root, '.worktrees'))).toBe(false);
+      expect(existsSync(join(f.root, '.openslack.local/agents/runs'))).toBe(false);
+      return;
+    }
     const verification = { resultMode: 'text' as const, requireReport: false, checks: [{ path: 'fixture.txt', expectedText: 'after' }] };
     const config = { agentId: 'fixture', source: 'unit-fixture', runtimeProvider: 'deepseek-harness', model: 'fixture', tools: ['Read', 'Write', 'Edit'], permissionMode: 'acceptEdits' as const };
     const task: ApprovedHarnessTask = { taskId: 'TASK-CLOSURE-FIXTURE', principalId: 'fixture-only', principalHash: 'a'.repeat(64), baseline: 'b'.repeat(40), timeoutMs: 240_000,

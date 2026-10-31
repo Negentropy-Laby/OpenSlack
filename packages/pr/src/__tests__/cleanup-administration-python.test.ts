@@ -67,10 +67,14 @@ function run(args: string[]) {
   });
 }
 
-function expectPythonReport(stdout: string, portableOnly: boolean): void {
+function expectPythonReport(stdout: string, portableOnly: boolean, selection = portableOnly ? 'portable' : 'all'): void {
   const report = JSON.parse(stdout.trim().split(/\r?\n/).at(-1)!);
   expect(report.schema).toBe('openslack.cleanup_python_test_run.v1');
   expect(report.portableOnly).toBe(portableOnly);
+  expect(report.selection).toBe(selection);
+  expect(Object.keys(report.portability).sort()).toEqual(['linux', 'portable']);
+  expect(report.portability.linux + report.portability.portable).toBe(report.discovered);
+  expect(report.selected).toBe(selection === 'all' ? report.discovered : report.portability[selection]);
   expect(report.selected).toBeGreaterThan(0);
   expect(report.discovered).toBeGreaterThanOrEqual(report.selected);
   expect(report.executed).toBe(report.selected);
@@ -162,14 +166,28 @@ describe('cleanup administrator Python tools', () => {
   });
 
   it('runs real Linux owned-FD fixtures, or native zero-IO refusal outside Linux', () => {
-    const result = run([
-      join(tools, 'administration_test.py'),
-      ...(process.platform === 'linux' ? [] : ['--portable']),
-    ]);
-    expect(result.error).toBeUndefined();
-    expect(result.status, result.stderr).toBe(0);
-    expectPythonReport(result.stdout, process.platform !== 'linux');
-    expect(result.stderr).toContain('OK');
+    if (process.platform === 'linux') {
+      // Portable cases ran in their own invocation above. Run the disjoint
+      // Linux group, preserving the full discovered union without duplicates.
+      const result = run([join(tools, 'administration_test.py'), '--linux-only']);
+      expect(result.error).toBeUndefined();
+      expect(result.status, result.stderr).toBe(0);
+      expectPythonReport(result.stdout, false, 'linux');
+      expect(result.stderr).toContain('OK');
+    } else {
+      const owned = mkdtempSync(join(tmpdir(), 'cleanup-python-native-'));
+      try {
+        for (const entry of entries) {
+          const output = join(owned, `${entry}.json`);
+          const result = run([join(tools, `${entry}.py`), '--output', output]);
+          expect(result.error).toBeUndefined();
+          expect(result.status, result.stderr).toBe(2);
+          expect(result.stderr).toMatch(/LINUX_(DESCRIPTOR_CAPABILITY|ROOT_OBSERVER)_REQUIRED/);
+          expect(existsSync(output)).toBe(false);
+        }
+        expect(readdirSync(owned)).toEqual([]);
+      } finally { rmSync(owned, { recursive: true, force: true }); }
+    }
   });
 
   it('runs independently reviewed load-time closure fixtures, or native collector refusal', () => {

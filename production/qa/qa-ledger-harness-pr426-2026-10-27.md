@@ -511,6 +511,106 @@ their actual published commits, avoiding a self-referential documentation commit
   and native validation. The production collector now records 8,775 declarations
   in 590 files; repeated generation and final acceptance remain separate receipts.
 
+### Transcript and paired-writer follow-up
+
+- Frozen `206b3b92` passed its first expanded affected run, then recorded
+  1,065 PASS / 2 FAIL / 19 SKIP in its second. The failures were the original
+  five-second oversized-event case and pre-acquisition RUN_STATE_BUSY in the
+  two-process writer fixture. Both independently passed afterward; those passes
+  do not replace the failed acceptance attempt.
+- A deterministic work counter proves the reader's repeated-prefix cost:
+  the existing 9 MiB case measured 693,601,717 string bytes scanned. The reader
+  now decodes each complete 64 KiB block once with the same persistent fatal
+  decoder, scans only that new chunk, counts each new fragment and joins once
+  per completed record. It preserves 64 MiB/file and 16 MiB/event limits,
+  file-leading BOM semantics, block-wide invalid-UTF8 rejection before visits,
+  strict JSON, final-LF checks and the stable descriptor boundary. No duration
+  threshold is used. The existing case adds split-multibyte and later-BOM
+  checks; the invalid-UTF8 case requires zero callbacks for a valid row followed
+  by bad bytes in the same block.
+- The run lock deliberately promises a bounded wait, not greedy-writer fairness.
+  The fixture now releases both ready OS writers once per round and waits for
+  both durable acknowledgements before the next round. It sends no retry and
+  replays no callback. Final assertions retain 20 tool increments, 20 reports
+  and all 40 distinct role/round events. IPC/exit failure stops owned children;
+  both normal and after-test cleanup observe their close before deleting roots.
+  Existing bounded-busy and indeterminate-publication tests remain intact.
+- The 33-case file passes after these changes. Production lock/test deadlines,
+  default workers, authority, event schema and durable format are unchanged.
+  The transcript source is absent from all 32 existing source-lock manifests;
+  no binding or authority scope is expanded. The next acceptance record must
+  identify its actual uncommitted inputs or frozen SHA; it cannot inherit a
+  successful triple from the earlier candidate.
+
+### Canonical-creation observation follow-up
+
+- The first transcript working-input acceptance attempt recorded 1,066 PASS /
+  1 FAIL / 19 SKIP. The real two-host publication case observed
+  RUN_INITIALIZATION_INCOMPLETE after a stale absence probe. Both selected
+  process cases subsequently passed independently; no successful triple is
+  inferred. A deterministic interleave then reproduced the production error
+  using one real createRun publisher and a stale ENOENT observation.
+- Before classifying leftover metadata as orphan evidence, the missing-canonical
+  branch now verifies its protected directories and re-observes maintenance,
+  foreign ownership and canonical arrival. Publication evolution yields the
+  existing same-run SnapshotChanged observation. A genuinely incomplete orphan
+  still fails; no bytes are repaired, created, accepted unvalidated or replayed,
+  and no retry bound or private owned-read restriction changes. The regression
+  checks Changed then ready, one publisher only, and preserved orphan metadata.
+  The complete state/host pair passes 63 cases.
+- Native `206b3b92` full execution finished with 8,380 PASS / 1 FAIL / 88 SKIP.
+  Its sole failure was the actual SDK composition case exceeding its original
+  300-second outer test budget; that budget was not expanded. An independent
+  same-source execution passed the case in 177.83 seconds (34 other cases
+  deselected, not platform skips). The retained full-run fixture reached
+  completed/verified in about 90 seconds within its own unchanged task window;
+  this does not turn the failed outer test into PASS or establish its exact
+  timing cause. Final platform suites are scheduled separately with their
+  unchanged default worker profiles and all original test/runtime deadlines.
+- The initial targeted invocation after the source edit stopped before collection
+  because its formal compatibility witness was stale. That is a retained
+  zero-case preparation failure. The ordinary package invocation passes 63/63;
+  complete compatibility acceptance requires fresh explicit preparation and a
+  new input-bound result.
+
+### Ordinary Node 22 and disjoint Python execution follow-up
+
+- The read-race working inputs completed three affected passes, each 1,068 PASS /
+  0 FAIL / 19 SKIP. Their recorded input manifest is
+  `5ff9b92ea98064afa244986a93bc58d316c1dc8c20ef3204877ce77d3bad7747`;
+  these are uncommitted-input results, not executions of a later frozen commit.
+- The subsequent ordinary Node 22.23.4 full run, without a Harness checkout,
+  recorded 8,588 PASS / 3 FAIL / 21 SKIP. Two fixture expectations assumed the
+  qualified Node 24.18.1 path, although production correctly refused the local
+  Node identity earlier. Those cases now assert the real unsupported-runtime
+  refusal and lack of execution artifacts on ordinary Node, while retaining the
+  original missing-artifact and nested-drift assertions on qualified Node.
+  The production runtime pin, product engines and execution gates are unchanged.
+- The third failure was the administrator Python wrapper exceeding its existing
+  five-second test budget. It ran portable cases once and then repeated them in
+  the all-platform invocation. The private test runner now selects disjoint
+  portable and Linux groups. Measured discovery is 6 portable plus 41 Linux =
+  47 total; each group and the unchanged all selector executes its entire
+  selected set with zero skipped cases. Conflicting selectors refuse. Native
+  non-Linux execution retains actual zero-I/O CLI refusal checks. No timeout,
+  worker count, retry or production administrator entrypoint changes.
+- The three affected files pass independently on both Node 22.23.4 and
+  24.18.1: 75 PASS / 0 FAIL / 3 existing platform SKIP each. This does not erase
+  the earlier failed full run or establish final whole-suite acceptance.
+- The subsequent complete 69-file affected set passed three consecutive times:
+  each 1,080 PASS / 0 FAIL / 19 existing SKIP. Ordinary Node 22.23.4, without
+  an external Harness checkout, then passed the complete ordinary suite:
+  8,591 PASS / 0 FAIL / 21 existing SKIP, ending 2026-10-31T21:50:05Z.
+  Those receipts share uncommitted input collection
+  `afa3422416874ef9997ac9d42580dc76ee4772f295c2f4a426ce3e1f7ceedd8e`.
+  Independent static review found no concrete blocker in the eight-file delta;
+  its captured bytes and the later committed mapping remain separate from
+  runtime execution, native qualification and human approval.
+- The production inventory subsequently collected 8,776 declared cases in
+  590 files, including platform/opt-in declarations. Count, status and document
+  generation ran twice; the second pass produced no new differences. These
+  declarations are not a count of executed cases or overall qualification.
+
 ### All 45 dispositions
 
 `AR` means `packages/agent-runtime/src`; `MCP` means `apps/mcp/src`; `Plugin`
