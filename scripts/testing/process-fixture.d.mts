@@ -33,3 +33,4 @@ export function testPowerShellEnvironment(
   parent?: NodeJS.ProcessEnv,
   platform?: NodeJS.Platform,
 ): NodeJS.ProcessEnv;
+export function testWindowsDriveAlias(root: string): Readonly<{ drive: string; dispose(): void }>;

@@ -30,6 +30,29 @@ export interface RunOwnershipRecord {
 }
 const active = new Set<string>();
 
+/** Private pre-acquisition boundary. No transaction or publication has started. */
+export function acquireRunTransactionLock(lockPath: string, verifyDirectories: () => void,
+  platform: NodeJS.Platform = process.platform): number {
+  const until = performance.now() + 1000;
+  while (true) {
+    verifyDirectories();
+    try { return openSync(lockPath, 'wx', 0o600); }
+    catch (error) {
+      const existing = isCode(error, 'EEXIST');
+      // Windows can deny a fresh exclusive open while a retiring lock handle
+      // is still present. This wait precedes all ownership/effects; it never
+      // retries callbacks, publication, cleanup or an acquired descriptor.
+      const windowsContention = platform === 'win32' && (isCode(error, 'EPERM') || isCode(error, 'EBUSY'));
+      if (!existing && !windowsContention) throw error;
+      if (performance.now() >= until) {
+        if (!existing) throw error;
+        throw new RunPersistenceError('RUN_STATE_BUSY', 'Run transaction is busy; preserve and query without replay.');
+      }
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 5);
+    }
+  }
+}
+
 export function assertNoRunMaintenance(directory: string): void {
   if (runEntryExists(join(directory, RUN_MAINTENANCE_BARRIER))) {
     throw new RunPersistenceError('RUN_MAINTENANCE_REQUIRED', 'Run maintenance is unresolved; preserve and inspect without replay.');
@@ -47,16 +70,7 @@ export function withRunOwnership<T>(root: string | undefined, runId: string, ope
   if (active.has(key)) throw new RunPersistenceError('RUN_TRANSACTION_REENTRY', 'Run transaction reentry is forbidden.');
   // A Windows CIM startup is bounded, cached and never paid while holding the run lock.
   const writer = ownRunWriterWitness();
-  const until = performance.now() + 1000;
-  let fd: number;
-  while (true) {
-    try { fd = openSync(lockPath, 'wx', 0o600); break; }
-    catch (error) {
-      if (!isCode(error, 'EEXIST')) throw error;
-      if (performance.now() >= until) throw new RunPersistenceError('RUN_STATE_BUSY', 'Run transaction is busy; preserve and query without replay.');
-      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 5);
-    }
-  }
+  const fd = acquireRunTransactionLock(lockPath, verifyDirectories);
   active.add(key);
   let touched = false, succeeded = false;
   const record: RunOwnershipRecord = { schema: 'openslack.run_transaction.v2', runId, transactionId: randomUUID(),

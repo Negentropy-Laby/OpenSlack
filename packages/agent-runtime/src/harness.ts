@@ -4,7 +4,7 @@ export { hashHarnessInput, HarnessAdmissionError } from './harness-admission.js'
 export type { HarnessTaskHostOptions, ApprovedHarnessTask, PreparedHarnessExecution, HarnessTaskReport, HarnessAcceptance } from './harness-task-host.js';
 export { createHarnessTaskAuthority } from './harness-task-authority.js';
 export type { HarnessTaskAuthorityOptions, HarnessApprovedTaskSource } from './harness-task-authority.js';
-export { createHarnessTaskExecution, inspectHarnessTaskExecution, hashHarnessRuntimeArtifacts, hashHarnessDeployment, harnessPublicRuntimeEntries } from './harness-task-execution.js';
+export { createHarnessTaskExecution, inspectHarnessTaskExecution, hashHarnessRuntimeArtifacts, hashHarnessDeployment } from './harness-task-execution.js';
 export { createConfiguredHarnessTaskHost, createHarnessHostCloser } from './harness-deployment.js';
 export { buildHarnessTaskPermissionProfile } from './harness-permissions.js';
 export { hashHarnessPluginArtifacts, hashHarnessNodeExecutable } from './harness-artifacts.js';
@@ -17,5 +17,6 @@ export { readRunStateSnapshot, observeRun } from './run-store.js';
 export type { RunObservation, RunUnavailableReason } from './run-store.js';
 export { assertHarnessRunStorage } from './harness-task-host.js';
 export { readHarnessStopIntent } from './harness-stop.js';
+export { assertHarnessTaskReport, assertHarnessExecutionBinding } from './harness-task-contracts.js';
 export { readHarnessFile, canonicalHarnessRoot, HarnessRootUnsafeError } from './harness-read.js';
 export type { HarnessGovernedBinding, HarnessTaskReceipt } from './harness-task-host.js';

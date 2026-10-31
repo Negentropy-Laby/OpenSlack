@@ -77,10 +77,11 @@ export function createHarnessTaskAuthority(options: HarnessTaskAuthorityOptions)
       throw new Error('Harness task capability declaration is not canonical');
     }
     const paths = [...value.task.scope.readPaths, ...value.task.scope.writePaths];
+    const allowed = value.allowedPaths.map(pattern => compilePathGlob(pattern));
+    const forbidden = [...value.forbiddenPaths, ...value.task.scope.forbiddenPaths].map(pattern => compilePathGlob(pattern));
     for (const path of paths) {
       if (isAbsolute(path) || path.includes('\\') || path.split('/').some(part => !part || part === '.' || part === '..') ||
-        !value.allowedPaths.some(pattern => compilePathGlob(pattern)(path)) ||
-        [...value.forbiddenPaths, ...value.task.scope.forbiddenPaths].some(pattern => compilePathGlob(pattern)(path))) {
+        !allowed.some(matches => matches(path)) || forbidden.some(matches => matches(path))) {
         throw new Error('File is outside the formal task scope');
       }
     }

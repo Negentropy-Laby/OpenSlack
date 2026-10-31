@@ -14,6 +14,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { performance } from 'node:perf_hooks';
 import { isCode } from './io-errors.js';
+import { assertHarnessTaskReport, HARNESS_STATE_EVIDENCE_LIMIT } from './harness-task-contracts.js';
 
 /** Read-only storage guard; it never creates missing storage. */
 export function assertHarnessRunStorage(root: string, runId?: string): void {
@@ -234,7 +235,7 @@ export class HarnessTaskHost {
       if (existing) { if (existing !== hash) throw new HarnessAdmissionError('CONFLICT', 'Report ID already binds different evidence'); return {}; }
       if (binding.acceptance !== 'pending' || Object.keys(binding.reports).length >= 128) throw new Error('Task no longer accepts progress');
       return { patch: { harnessExecution: { ...binding, summary: report.summary,
-        evidenceRefs: [...new Set([...binding.evidenceRefs, ...report.evidenceRefs])].slice(-128), reports: { ...binding.reports, [report.reportId]: hash },
+        evidenceRefs: [...new Set([...binding.evidenceRefs, ...report.evidenceRefs])].slice(-HARNESS_STATE_EVIDENCE_LIMIT), reports: { ...binding.reports, [report.reportId]: hash },
       } }, events: [event('progress', { step: 'harness_task_report', ...report })],
       beforePublish: () => { this.assertReportCurrent(state, task); checkEligibility(); } };
     });
@@ -412,9 +413,7 @@ export class HarnessTaskHost {
     if (state.status !== 'running' || lifecycle?.phase !== 'started' || !lifecycle.ownerGeneration) throw new Error('Harness callback is not bound to a confirmed started execution; preserve and reconcile');
   }
   private validateReport(value: Record<string, unknown> | HarnessTaskReport): void {
-    if (Object.keys(value).sort().join(',') !== 'evidenceRefs,reportId,runId,summary' || !safeId(value.reportId) ||
-      typeof value.summary !== 'string' || Buffer.byteLength(value.summary) > 4096 || !Array.isArray(value.evidenceRefs) || value.evidenceRefs.length > 32 ||
-      value.evidenceRefs.some(ref => typeof ref !== 'string' || !/^[a-z][a-z0-9-]*:[A-Za-z0-9._/-]{1,256}$/.test(ref))) throw new TypeError('Invalid current-task report');
+    assertHarnessTaskReport(value);
   }
   private receipt(taskId: string, state: AgentRunState): HarnessTaskReceipt {
     const binding = state.harnessExecution!;

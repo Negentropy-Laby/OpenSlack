@@ -1,6 +1,9 @@
 import type { GovernedPlanRecord, GovernedPlanService } from '@openslack/operator';
 import type { HarnessTaskHost } from '@openslack/agent-runtime/internal/harness';
 import type { GovernedMutationSettlementOutcome } from './mutations.js';
+import { fileURLToPath } from 'node:url';
+
+export const GOVERNED_CONFIRMATION_SOURCE = fileURLToPath(import.meta.url);
 
 type Settlement =
   | { kind: 'committed'; record: GovernedPlanRecord }

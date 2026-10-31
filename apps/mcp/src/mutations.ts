@@ -1,6 +1,8 @@
 import { types as utilTypes } from 'node:util';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { randomUUID } from 'node:crypto';
+import { fileURLToPath } from 'node:url';
+export const MUTATION_PORT_BUILD_SOURCE_PATH = fileURLToPath(import.meta.url);
 import {
   assertGovernedPlanService,
   createGovernedPlanCompiler,

@@ -1,13 +1,15 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { createHash } from 'node:crypto';
 import { ChildProcess, execFileSync } from 'node:child_process';
 import { channel } from 'node:diagnostics_channel';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
+import { createInstalledRuntimeFixture } from './fixtures/harness-installed-runtime.js';
 import type * as HarnessRead from '../harness-read.js';
 import { readHarnessFile } from '../harness-read.js';
-import { createHarnessTaskExecution, inspectHarnessTaskExecution, hashHarnessDeployment, hashHarnessRuntimeArtifacts } from '../harness-task-execution.js';
+import { createHarnessTaskExecution, inspectHarnessTaskExecution, hashHarnessDeployment, hashHarnessRuntimeArtifacts, type HarnessTaskExecutionOptions } from '../harness-task-execution.js';
 import { hashHarnessNodeExecutable, hashHarnessPluginArtifacts } from '../harness-artifacts.js';
 import { hashHarnessInput } from '../harness-admission.js';
 import { createRunStore } from '../run-store.js';
@@ -24,20 +26,63 @@ vi.mock('../harness-read.js', async original => {
 const reads = vi.mocked(readHarnessFile);
 const nativeRead = reads.getMockImplementation()!;
 const roots: string[] = [];
-afterEach(() => { vi.restoreAllMocks(); reads.mockReset().mockImplementation(nativeRead); for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
+const peerCandidates = new Set<ChildProcess>();
+const childDiagnostic = channel('child_process');
+const childObserved = (value: unknown) => {
+  if (value && typeof value === 'object' && 'process' in value && value.process instanceof ChildProcess) peerCandidates.add(value.process);
+};
+const peerStarts = () => [...peerCandidates].filter(child => child.spawnargs.some(arg =>
+  arg.replaceAll('\\', '/').endsWith('/integrations/deepseek-harness/dist/startup.js'))).length;
+beforeEach(() => { peerCandidates.clear(); childDiagnostic.subscribe(childObserved); });
+afterEach(() => {
+  childDiagnostic.unsubscribe(childObserved);
+  try { expect(peerStarts()).toBe(0); }
+  finally { vi.restoreAllMocks(); reads.mockReset().mockImplementation(nativeRead); for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); }
+});
+
+// Candidate approval values are inert expectations, not a cached live verdict.
+// Every prepare/accept/inspection still independently reads the actual runtime.
+type ApprovedFixture = { deployment: HarnessTaskExecutionOptions['deployment']; executionBuildHash: string; deploymentHash: string };
+let approvedFixture: Promise<ApprovedFixture> | undefined;
+let approvedRoot: string | undefined;
+const approvedFiles = new Map<string, string>();
+const fileHash = (path: string) => createHash('sha256').update(readFileSync(path)).digest('hex');
+afterAll(async () => {
+  if (!approvedRoot) return;
+  for (const [path, digest] of approvedFiles) expect(fileHash(path)).toBe(digest);
+  const approved = await approvedFixture!;
+  expect(hashHarnessRuntimeArtifacts(approved.deployment.harnessRoot)).toBe(approved.executionBuildHash);
+  expect(existsSync(join(approvedRoot, 'requests.jsonl'))).toBe(false);
+  rmSync(approvedRoot, { recursive: true, force: true });
+});
+async function prepareApprovedFixture(): Promise<ApprovedFixture> {
+  const repository = resolve(dirname(fileURLToPath(import.meta.url)), '../../../..');
+  const pluginRoot = join(repository, 'integrations/deepseek-harness');
+  // These tests must stop before any SDK/model action. A complete small installed
+  // tree exercises the SAME descriptor, hash, prepare, acceptance and inspection
+  // code. Actual original-SDK/packed-process compatibility remains in its own suite.
+  const installed = createInstalledRuntimeFixture('harness');
+  approvedRoot = installed.root;
+  const harnessRoot = installed.root, home = join(approvedRoot, 'home'), patch = join(approvedRoot, 'worker.patch.yml');
+  mkdirSync(join(home, 'profiles/sdk'), { recursive: true });
+  writeFileSync(join(home, 'profiles/sdk/package.json'), '{"name":"phase-observation-sdk","type":"module"}');
+  writeFileSync(join(home, 'profiles/sdk/cordis.patch.yml'), '[]');
+  writeFileSync(patch, '[]');
+  const deployment = Object.freeze({ harnessRoot, pluginRoot, pluginBuildHash: hashHarnessPluginArtifacts(pluginRoot),
+    nodeExecutable: process.execPath, nodeVersion: '24.18.1' as const, nodeSha256: hashHarnessNodeExecutable(process.execPath),
+    dshHome: home, agentId: 'fixture', provider: 'openslack-fixture', model: 'fixture', workerPatch: patch, exitGraceMs: 30_000 });
+  for (const path of [patch, join(home, 'profiles/sdk/package.json'), join(home, 'profiles/sdk/cordis.patch.yml')]) approvedFiles.set(path, fileHash(path));
+  return Object.freeze({ deployment, executionBuildHash: installed.hash(), deploymentHash: hashHarnessDeployment(deployment) });
+}
 
 describe('fresh phase-local deployment observations', () => {
   it.runIf(process.env.DEEPSEEK_HARNESS_CHECKOUT)('keeps a production required lease effective across concrete deployment observation before any peer, SDK or model starts', async () => {
-    const repository = resolve(dirname(fileURLToPath(import.meta.url)), '../../../..');
-    const pluginRoot = join(repository, 'integrations/deepseek-harness');
-    const harnessRoot = resolve(process.env.DEEPSEEK_HARNESS_CHECKOUT!);
-    const { prepareSdkFixture } = await import(pathToFileURL(join(pluginRoot, 'tests/fixtures/sdk-profile.ts')).href) as {
-      prepareSdkFixture(root: string, script: string[]): { home: string; patch: string; workspace: string };
-    };
+    const approved = await (approvedFixture ??= prepareApprovedFixture());
+    const deployment = structuredClone(approved.deployment);
     const root = mkdtempSync(join(tmpdir(), 'harness-start-lease-')); roots.push(root);
-    const profile = prepareSdkFixture(root, ['Keyless fixture; no real credential or network model.']);
-    const workspaceRoot = profile.workspace;
-    const git = (...args: string[]) => execFileSync('git', ['-c', 'core.hooksPath=/dev/null', ...args], { cwd: workspaceRoot, encoding: 'utf8' }).trim();
+    const workspaceRoot = join(root, 'workspace'); mkdirSync(workspaceRoot); writeFileSync(join(workspaceRoot, 'fixture.txt'), 'before');
+    const fixtureHooks = join(root, 'empty-fixture-hooks'); mkdirSync(fixtureHooks);
+    const git = (...args: string[]) => execFileSync('git', ['-c', `core.hooksPath=${fixtureHooks}`, ...args], { cwd: workspaceRoot, encoding: 'utf8' }).trim();
     git('init', '--initial-branch=main'); git('add', 'fixture.txt');
     git('-c', 'user.name=Keyless Harness Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-m', 'fixture baseline');
     const baseline = git('rev-parse', 'HEAD');
@@ -62,15 +107,12 @@ describe('fresh phase-local deployment observations', () => {
       agent_uid: uid, run_id: runtimeRunId, public_key_jwk: null, key_id: null, key_generated_at: null, provider: 'cli', started_at: '2026-07-28T00:00:00.000Z' }));
     const principal = resolveAgentPrincipal({ root: workspaceRoot, agentId, provider: 'cli' });
     if ('error' in principal) throw new Error('Synthetic phase fixture production principal did not resolve');
-    const deployment = { harnessRoot, pluginRoot, pluginBuildHash: hashHarnessPluginArtifacts(pluginRoot),
-      nodeExecutable: process.execPath, nodeVersion: '24.18.1' as const, nodeSha256: hashHarnessNodeExecutable(process.execPath),
-      dshHome: profile.home, agentId, provider: 'openslack-fixture', model: 'fixture', workerPatch: profile.patch, exitGraceMs: 30_000 };
     const verification = { resultMode: 'text' as const, requireReport: false, checks: [{ path: 'fixture.txt', expectedText: 'before' }] };
     const config = { agentId, source: 'fixture', runtimeProvider: 'deepseek-harness', model: 'fixture', tools: ['Read', 'Write', 'Edit'], permissionMode: 'acceptEdits' as const };
     const definition: Omit<ApprovedHarnessTask, 'principalHash'> = { taskId: 'TASK-START-LEASE', baseline, timeoutMs: 240_000,
       request: { agentId, prompt: 'Return the fixed keyless fixture result.', resolvedConfig: config, permissionProfile: buildHarnessTaskPermissionProfile(config) },
       scope: { readPaths: ['fixture.txt'], writePaths: ['fixture.txt'], forbiddenPaths: ['.git/**'] }, outputSchema: { type: 'object' },
-      executionBuildHash: hashHarnessRuntimeArtifacts(harnessRoot), verificationHash: hashHarnessInput(verification), deploymentHash: hashHarnessDeployment(deployment) };
+      executionBuildHash: approved.executionBuildHash, verificationHash: hashHarnessInput(verification), deploymentHash: approved.deploymentHash };
     const base = Date.now(), leaseExpiresAt = base + 100;
     let expired = false, executing = false, observedNode = false, executionFailure: unknown;
     const clock = vi.spyOn(Date, 'now').mockImplementation(() => expired ? leaseExpiresAt + 1 : base);
@@ -80,14 +122,6 @@ describe('fresh phase-local deployment observations', () => {
     } });
     const store = createRunStore(workspaceRoot, { sweepOrphans: false });
     const prepare = createHarnessTaskExecution({ workspaceRoot, identityRoot: workspaceRoot, store, deployment, authorizeTool: authority.authorizeTool, verification: () => verification });
-    let peerStarts = 0;
-    const diagnostic = channel('child_process');
-    const observe = (value: unknown) => {
-      if (!value || typeof value !== 'object' || !('process' in value) || !(value.process instanceof ChildProcess)) return;
-      const child = value.process;
-      child.once('spawn', () => { if (child.spawnargs.includes(join(pluginRoot, 'dist/startup.js'))) peerStarts++; });
-    };
-    diagnostic.subscribe(observe);
     reads.mockImplementation((path, ...args) => {
       const result = nativeRead(path, ...args);
       if (executing && path === process.execPath) { observedNode = true; expired = true; }
@@ -114,42 +148,33 @@ describe('fresh phase-local deployment observations', () => {
       expect(executionFailure).toBeInstanceOf(Error);
       expect((executionFailure as Error).message).toMatch(/eligibility observation.*lease expired/);
       const requests = join(root, 'requests.jsonl');
-      expect({ peerStarts, modelRequests: existsSync(requests) ? readFileSync(requests, 'utf8').trim().split('\n').filter(Boolean).length : 0 })
+      expect({ peerStarts: peerStarts(), modelRequests: existsSync(requests) ? readFileSync(requests, 'utf8').trim().split('\n').filter(Boolean).length : 0 })
         .toEqual({ peerStarts: 0, modelRequests: 0 });
       expect(readFileSync(join(store.getRun(receipt.runId)!.worktreePath!, 'fixture.txt'), 'utf8')).toBe('before');
       expect(store.getRun(receipt.runId)?.harnessExecution?.acceptance).not.toBe('verified');
     } finally {
-      await host.close(30_000); diagnostic.unsubscribe(observe); clock.mockRestore(); reads.mockImplementation(nativeRead);
+      await host.close(30_000); clock.mockRestore(); reads.mockImplementation(nativeRead);
     }
   }, 60_000);
 
-  // Each behavioral probe owns its complete profile, worktree and run. Sharing
-  // setup code must not share mutable state or cache a prior phase's authority.
+  // Each probe owns its workspace, worktree, run, transcript and receipt. Only
+  // immutable candidate approval inputs are shared, never phase authority.
   async function phaseFixture() {
-    const repository = resolve(dirname(fileURLToPath(import.meta.url)), '../../../..');
-    const pluginRoot = join(repository, 'integrations/deepseek-harness');
-    const harnessRoot = resolve(process.env.DEEPSEEK_HARNESS_CHECKOUT!);
-    const { prepareSdkFixture } = await import(pathToFileURL(join(pluginRoot, 'tests/fixtures/sdk-profile.ts')).href) as {
-      prepareSdkFixture(root: string, script: string[]): { home: string; patch: string; workspace: string };
-    };
+    const approved = await (approvedFixture ??= prepareApprovedFixture());
+    const deployment = structuredClone(approved.deployment), harnessRoot = deployment.harnessRoot;
     const root = mkdtempSync(join(tmpdir(), 'harness-phase-observation-')); roots.push(root);
-    // This public test fixture prepares only an isolated keyless profile. No SDK,
-    // peer or model is started; original Harness/lib must already be built.
-    const profile = prepareSdkFixture(root, ['unused; no model request']);
-    const workspaceRoot = profile.workspace;
-    const git = (...args: string[]) => execFileSync('git', ['-c', 'core.hooksPath=/dev/null', ...args], { cwd: workspaceRoot, encoding: 'utf8' }).trim();
+    const workspaceRoot = join(root, 'workspace'); mkdirSync(workspaceRoot); writeFileSync(join(workspaceRoot, 'fixture.txt'), 'before');
+    const fixtureHooks = join(root, 'empty-fixture-hooks'); mkdirSync(fixtureHooks);
+    const git = (...args: string[]) => execFileSync('git', ['-c', `core.hooksPath=${fixtureHooks}`, ...args], { cwd: workspaceRoot, encoding: 'utf8' }).trim();
     git('init', '--initial-branch=main'); git('add', 'fixture.txt');
     git('-c', 'user.name=Keyless Harness Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-m', 'fixture baseline');
     const baseline = git('rev-parse', 'HEAD');
-    const deployment = { harnessRoot, pluginRoot, pluginBuildHash: hashHarnessPluginArtifacts(pluginRoot),
-      nodeExecutable: process.execPath, nodeVersion: '24.18.1' as const, nodeSha256: hashHarnessNodeExecutable(process.execPath),
-      dshHome: profile.home, agentId: 'fixture', provider: 'openslack-fixture', model: 'fixture', workerPatch: profile.patch, exitGraceMs: 30_000 };
     const verification = { resultMode: 'text' as const, requireReport: false, checks: [{ path: 'fixture.txt', expectedText: 'after' }] };
     const config = { agentId: 'fixture', source: 'fixture', runtimeProvider: 'deepseek-harness', model: 'fixture', tools: ['Read', 'Write', 'Edit'], permissionMode: 'acceptEdits' as const };
     const task: ApprovedHarnessTask = { taskId: 'TASK-PHASE-OBSERVATION', principalId: 'fixture-principal', principalHash: 'a'.repeat(64), baseline, timeoutMs: 240_000,
       request: { agentId: 'fixture', prompt: 'Update the approved fixture.', resolvedConfig: config, permissionProfile: buildHarnessTaskPermissionProfile(config) },
       scope: { readPaths: ['fixture.txt'], writePaths: ['fixture.txt'], forbiddenPaths: ['.git/**'] }, outputSchema: { type: 'object' },
-      executionBuildHash: hashHarnessRuntimeArtifacts(harnessRoot), verificationHash: hashHarnessInput(verification), deploymentHash: hashHarnessDeployment(deployment) };
+      executionBuildHash: approved.executionBuildHash, verificationHash: hashHarnessInput(verification), deploymentHash: approved.deploymentHash };
     const store = createRunStore(workspaceRoot, { sweepOrphans: false });
     const runId = 'RUN-PHASE-OBSERVATION';
     const initial = store.createRun({ ...task.request, runId });
@@ -217,7 +242,7 @@ describe('fresh phase-local deployment observations', () => {
   }, 60_000);
 
   it.runIf(process.env.DEEPSEEK_HARNESS_CHECKOUT)('matches its own verified receipt then rejects rehashed unbalanced evidence without rewriting retained inputs', async () => {
-    const { workspaceRoot, store, runId, task, deployment, verification, prepared } = await phaseFixture();
+    const { workspaceRoot, harnessRoot, store, runId, task, deployment, verification, prepared } = await phaseFixture();
     store.withRunTransaction(runId, current => ({ patch: { status: 'running', harnessExecution: { ...current.harnessExecution!,
       lifecycle: { ...current.harnessExecution!.lifecycle!, phase: 'started' } } } }));
     const eligibility = createHarnessTaskEligibility({ taskId: task.taskId, taskHash: hashHarnessTask(task), principalId: task.principalId!, principalHash: task.principalHash, phase: 'accept' }, { mode: 'not_applicable' });
@@ -241,5 +266,10 @@ describe('fresh phase-local deployment observations', () => {
       expect(readFileSync(state.transcriptPath, 'utf8')).toBe(unbalanced);
       expect(readFileSync(join(workspaceRoot, '.openslack.local/agents/runs', runId, 'run.json')).equals(runBytes)).toBe(true);
     } finally { writeFileSync(state.transcriptPath, transcript); writeFileSync(acceptanceFile, receipt); }
+    // Only inert approval setup was shared. Each of the four live phases still
+    // reads both the installed runtime manifest and executable independently.
+    const observed = reads.mock.calls.map(([path]) => path);
+    expect(observed.filter(path => path === join(harnessRoot, 'packages/sdk/server/package.json'))).toHaveLength(4);
+    expect(observed.filter(path => path === process.execPath)).toHaveLength(4);
   }, 60_000);
 });

@@ -219,7 +219,7 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
       }
     } catch (error) {
       const runtimeError = normalizeRuntimeResolutionError(error);
-      runtimeError.runId = runId;
+      attachRunDiagnostics(runtimeError, runId, []);
       try { recorder.reject(request, runtimeError); }
       catch { attachRunDiagnostics(runtimeError, runId, ['RUN_REJECTION_RECORD_UNCONFIRMED']); }
       throw runtimeError;
@@ -229,6 +229,7 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
       validatePrerequisites(resolvedConfig, permissionProfile);
     } catch (error) {
       const rejection = error instanceof Error ? error : new Error('Runtime prerequisite failed.');
+      attachRunDiagnostics(rejection, runId, []);
       const failureCode =
         error instanceof AgentUnavailableError
           ? 'PROVIDER_UNAVAILABLE'
@@ -562,6 +563,12 @@ type RunDiagnostic = 'RUN_INITIALIZATION_RECORD_UNCONFIRMED' | 'RUN_REJECTION_RE
   'RUN_FAILURE_RECORD_UNCONFIRMED' | 'RUN_CANCELLATION_RECORD_UNCONFIRMED' |
   'RUN_LIFECYCLE_RECORD_UNCONFIRMED' | 'RUN_USAGE_RECORD_UNCONFIRMED';
 const RUN_DIAGNOSTICS = new WeakMap<object, readonly RunDiagnostic[]>();
+const RUN_ORIGINS = new WeakMap<object, string>();
+
+/** A host-recorded origin, including frozen errors; caller-supplied runId properties grant no association. */
+export function readOwnedRunIdentity(error: unknown): string | undefined {
+  return error !== null && typeof error === 'object' ? RUN_ORIGINS.get(error) : undefined;
+}
 
 function readRunDiagnostics(error: unknown): readonly RunDiagnostic[] {
   return error !== null && typeof error === 'object' ? RUN_DIAGNOSTICS.get(error) ?? [] : [];
@@ -570,10 +577,13 @@ function readRunDiagnostics(error: unknown): readonly RunDiagnostic[] {
 /** Only host-owned codes are attached; secondary exception messages never escape. */
 function attachRunDiagnostics(error: unknown, runId: string, diagnostics: readonly RunDiagnostic[]): void {
   if (error === null || typeof error !== 'object') return;
+  if (RUN_ID_RE.test(runId)) RUN_ORIGINS.set(error, runId);
   const codes = Object.freeze([...new Set([...readRunDiagnostics(error), ...diagnostics])]);
   RUN_DIAGNOSTICS.set(error, codes);
   try {
-    if (!Object.hasOwn(error, 'runId')) Object.defineProperty(error, 'runId', { value: runId, configurable: true });
+    const runField = Object.getOwnPropertyDescriptor(error, 'runId');
+    if (!runField) Object.defineProperty(error, 'runId', { value: runId, configurable: true });
+    else if ('value' in runField && runField.writable) Object.defineProperty(error, 'runId', { value: runId });
     if (codes.length) Object.defineProperty(error, 'runtimeDiagnostics', { value: codes, configurable: true });
   } catch { /* Frozen or hostile errors cannot replace the original outcome. */ }
 }

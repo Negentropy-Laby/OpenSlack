@@ -27,6 +27,43 @@ export function testTemporaryDirectory(prefix, parent = tmpdir()) {
   // to production code whose redirect/reparse checks deliberately stay strict.
   return realpathSync.native(mkdtempSync(join(realpathSync.native(parent), prefix)));
 }
+
+/** Reserve an OS namespace atomically; never delete a pre-existing drive alias. */
+export function testWindowsDriveAlias(root) {
+  if (process.platform !== 'win32' || !process.env.SystemRoot) throw new Error('TEST_DRIVE_ALIAS_WINDOWS_REQUIRED');
+  root = realpathSync.native(root);
+  const expected = statSync(root, { bigint: true });
+  const same = value => value.isDirectory() && value.dev === expected.dev && value.ino === expected.ino;
+  const verifyRoot = () => { if (!same(statSync(root, { bigint: true }))) throw new Error('TEST_DRIVE_ALIAS_ROOT_CHANGED'); };
+  const subst = join(process.env.SystemRoot, 'System32', 'subst.exe');
+  const invoke = args => {
+    const result = spawnSync(subst, args, { encoding: 'utf8', timeout: 10_000, windowsHide: true });
+    if (result.error || result.signal || result.status === null) throw new Error('TEST_DRIVE_ALIAS_OPERATION_UNCONFIRMED');
+    return result.status;
+  };
+  const mapsToRoot = drive => {
+    try { return same(statSync(`${drive}\\`, { bigint: true })); }
+    catch (error) { if (error.code === 'ENOENT' || error.code === 'ENOTDIR') return false; throw error; }
+  };
+  for (const letter of 'ZYXWVUTSRQPONMLKJIHGFE') {
+    verifyRoot();
+    const drive = `${letter}:`, status = invoke([drive, root]);
+    // Do not inspect a pre-existing drive (which could be a network share).
+    // A definitive refusal selects a different resource, not a test retry.
+    if (status !== 0) continue;
+    verifyRoot();
+    if (!mapsToRoot(drive)) throw new Error('TEST_DRIVE_ALIAS_IDENTITY_CHANGED');
+    let disposed = false;
+    return Object.freeze({ drive, dispose() {
+      if (disposed) return;
+      verifyRoot();
+      if (!mapsToRoot(drive)) throw new Error('TEST_DRIVE_ALIAS_IDENTITY_CHANGED');
+      if (invoke([drive, '/D']) !== 0 || mapsToRoot(drive)) throw new Error('TEST_DRIVE_ALIAS_OPERATION_UNCONFIRMED');
+      disposed = true;
+    } });
+  }
+  throw new Error('TEST_DRIVE_ALIAS_ALLOCATION_FAILED');
+}
 export function testPowerShells(env = testProcessEnvironment()) {
   // Use the same PATH/PATHEXT candidates as other fixtures. Discovering an
   // optional shell does not need another process or a separate startup timer.

@@ -1361,9 +1361,11 @@ export function createDefaultOpenSlackReadModelPorts(
       const filter: EventFilter = {};
       if (objectKind) filter.objectKind = objectKind as EventFilter['objectKind'];
       if (objectId) filter.objectId = objectId;
-      const events = filterEvents(eventsForWindow(rootDir, sinceHours), filter).slice(0, limit);
+      const anchors = filterEvents(eventsForWindow(rootDir, 0), filter);
+      const cutoff = sinceHours <= 0 ? Number.NEGATIVE_INFINITY : Date.now() - sinceHours * 60 * 60 * 1000;
+      const events = anchors.filter(event => Date.parse(event.timestamp) >= cutoff).slice(0, limit);
       const execution = objectKind === 'workflow' && objectId
-        ? readHarnessExecutionProjection(rootDir, objectId, events) : undefined;
+        ? readHarnessExecutionProjection(rootDir, objectId, anchors) : undefined;
       return {
         generatedAt: new Date().toISOString(),
         events: events.map(eventDto),

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import type { CollaborationEvent } from '@openslack/collaboration';
 import { createOpenSlackMcpContext, type OperatorApplicationContextPort } from '../context.js';
@@ -31,6 +31,21 @@ function fixture(runId = 'RUN-TEST') {
 }
 
 describe('Harness activity readback', () => {
+  it.each([true, false])('requires an existing same-run anchor beyond the activity window: %s', async anchored => {
+    const { root, runId, directory, state, event } = fixture();
+    state.status = 'running'; state.harnessExecution.acceptance = 'pending';
+    writeFileSync(join(directory, 'run.json'), JSON.stringify(state));
+    event.timestamp = new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString();
+    if (!anchored) event.object.id = 'RUN-OTHER';
+    const events = join(root, '.openslack.local/collaboration/events.jsonl');
+    mkdirSync(dirname(events), { recursive: true });
+    writeFileSync(events, `${JSON.stringify(event)}\n`);
+    const result = await new OpenSlackMcpCore(createOpenSlackMcpContext({ workspaceRoot: root,
+      operator: {} as OperatorApplicationContextPort })).callTool('openslack_get_activity', { objectKind: 'workflow', objectId: runId });
+    expect(result.structuredContent.data).toMatchObject({ events: [] });
+    if (anchored) expect(result.structuredContent.data).toMatchObject({ execution: { runId, status: 'running' } });
+    else expect(result.structuredContent.data).not.toHaveProperty('execution');
+  });
   it('bounds corrupt persistent stop evidence without leaking its raw parser error', () => {
     const { root, runId, event } = fixture();
     const admissions = join(root, '.openslack.local/agents/harness-admissions');

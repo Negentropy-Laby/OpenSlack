@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import type * as OperatorModule from '@openslack/operator';
 import type * as FsPromises from 'node:fs/promises';
+import type * as FsSync from 'node:fs';
 import { execFileSync, spawn } from 'node:child_process';
 import {
   cpSync,
@@ -65,7 +66,14 @@ import {
 } from '../index.js';
 
 const settlementFault = vi.hoisted(() => ({ afterAudit: undefined as (() => void) | undefined,
-  failNextPlanRead: false, postCommitReads: 0 }));
+  failNextPlanRead: false, postCommitReads: 0, forbidHarnessSource: undefined as string | undefined }));
+vi.mock('node:fs', async importOriginal => {
+  const actual = await importOriginal<typeof FsSync>();
+  return { ...actual, openSync: ((...args: Parameters<typeof actual.openSync>) => {
+    if (settlementFault.forbidHarnessSource && String(args[0]).replaceAll('\\', '/').endsWith(`/${settlementFault.forbidHarnessSource}`)) throw Object.assign(new Error('Disabled family source must not be read'), { code: 'ENOENT' });
+    return actual.openSync(...args);
+  }) };
+});
 vi.mock('@openslack/operator', async importOriginal => {
   const actual = await importOriginal<typeof OperatorModule>();
   return { ...actual, createGovernedPlanService: (options: Parameters<typeof actual.createGovernedPlanService>[0]) =>
@@ -105,6 +113,7 @@ beforeAll(async () => {
 
 afterEach(() => {
   settlementFault.afterAudit = undefined; settlementFault.failNextPlanRead = false; settlementFault.postCommitReads = 0;
+  settlementFault.forbidHarnessSource = undefined;
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
 });
 
@@ -823,7 +832,7 @@ describe('production agent-bound governed mutation composition', () => {
           confirmationToken: workflowMetadata.confirmationToken,
         },
       });
-      expect(workflowConfirmation.structuredContent).toMatchObject({
+      expect(workflowConfirmation.structuredContent, JSON.stringify(workflowConfirmation.structuredContent)).toMatchObject({
         status: 'completed',
         data: {
           state: 'succeeded',
@@ -1266,6 +1275,13 @@ describe('production agent-bound governed mutation composition', () => {
     }
   });
 
+  it.each(['harness-workflow.ts', 'governed-harness-family.ts', 'governed-confirmation.ts'])('does not read disabled Harness source %s to compose Scenario and Contract capabilities', async file => {
+    const workspaceRoot = createWorkspace();
+    settlementFault.forbidHarnessSource = file;
+    const composition = await createOpenSlackAgentBoundMutationComposition({ workspaceRoot, principalRef: PRINCIPAL_REF });
+    expect(composition.scenarioIds.length).toBeGreaterThan(0);
+  });
+
   it('fails composition for workspace assertion or audit-storage mismatch', async () => {
     const assertionRoot = createWorkspace();
     await expect(
@@ -1670,7 +1686,9 @@ describe('production agent-bound governed mutation composition', () => {
     writeFileSync(registry, readFileSync(registry, 'utf8').replace('  github:',
       '    harness.task.dispatch: allow\n    harness.task.report: allow\n  github:'));
     writeFileSync(join(workspaceRoot, 'fixture.txt'), 'before');
-    const git = (...args: string[]) => execFileSync('git', ['-c', 'core.hooksPath=/dev/null', ...args], { cwd: workspaceRoot, encoding: 'utf8' }).trim();
+    const fixtureHooks = join(fixtureRoot, 'empty-fixture-hooks');
+    mkdirSync(fixtureHooks);
+    const git = (...args: string[]) => execFileSync('git', ['-c', `core.hooksPath=${fixtureHooks}`, ...args], { cwd: workspaceRoot, encoding: 'utf8' }).trim();
     git('init', '--initial-branch=main');
     git('add', 'fixture.txt');
     git('-c', 'user.name=Keyless Harness Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-m', 'fixture baseline');

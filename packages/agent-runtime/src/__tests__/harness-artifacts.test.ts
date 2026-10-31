@@ -1,14 +1,15 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { closeSync, existsSync, fstatSync, futimesSync, mkdirSync, mkdtempSync, openSync, renameSync, rmSync, symlinkSync, unlinkSync, writeFileSync, writeSync } from 'node:fs';
+import { closeSync, fstatSync, futimesSync, mkdirSync, mkdtempSync, openSync, renameSync, rmSync, symlinkSync, unlinkSync, writeFileSync, writeSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { execFileSync, spawnSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import { HARNESS_PLUGIN_ENTRIES, HARNESS_NATIVE_SUPERVISOR_FILE, harnessPluginMountFiles, hashHarnessNodeExecutable, hashHarnessPluginArtifacts, hashOpenSlackHarnessCallback,
   captureHarnessArtifactObservation, inspectHarnessArtifactObservation, type HarnessArtifactObservation } from '../harness-artifacts.js';
 import { createDeepSeekHarnessProvider, classifyHarnessDeploymentFailure } from '../deepseek-harness-provider.js';
 import { hashHarnessRuntimeArtifacts } from '../harness-task-execution.js';
 import { canonicalHarnessRoot } from '../harness-read.js';
+import { testWindowsDriveAlias } from '../../../../scripts/testing/process-fixture.mjs';
 
 const roots: string[] = [];
 afterEach(() => { for (const path of roots.splice(0)) rmSync(path, { recursive: true, force: true }); });
@@ -53,10 +54,7 @@ describe('external plugin and Node input identities', () => {
   });
   it.runIf(process.platform === 'win32')('normalizes a real Windows drive alias while still rejecting directory junctions', () => {
     const { root, pluginRoot } = fixture();
-    const drive = ['Z:', 'Y:', 'X:', 'W:', 'V:'].find(value => !existsSync(`${value}\\`));
-    if (!drive || !process.env.SystemRoot) throw new Error('A free temporary test drive and native Windows system directory are required');
-    const subst = join(process.env.SystemRoot, 'System32/subst.exe');
-    execFileSync(subst, [drive, root], { stdio: 'pipe' });
+    const reservation = testWindowsDriveAlias(root), drive = reservation.drive;
     try {
       const alias = join(`${drive}\\`, 'plugin');
       expect(canonicalHarnessRoot(alias).toLowerCase()).toBe(canonicalHarnessRoot(pluginRoot).toLowerCase());
@@ -69,7 +67,7 @@ describe('external plugin and Node input identities', () => {
     } finally {
       // Remove only the exact fresh mapping created by this fixture, never a
       // pre-existing drive or worktree.
-      execFileSync(subst, [drive, '/D'], { stdio: 'pipe' });
+      reservation.dispose();
     }
   });
   it('reuses bytes only within one phase, rejects stale proofs and rereads a same-size mutation while its writer remains open', async () => {

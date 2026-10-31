@@ -1,4 +1,5 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { createHash } from 'node:crypto';
 import {
   existsSync,
   mkdirSync,
@@ -6,14 +7,20 @@ import {
   openSync,
   closeSync,
   readFileSync,
+  readdirSync,
+  renameSync,
   rmSync,
   utimesSync,
   writeFileSync,
 } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { createRunStore, readRunStateSnapshot } from '../run-store.js';
+import { createRunStore, observeRun, readRunStateSnapshot } from '../run-store.js';
 import type { AgentRunRequest } from '../types.js';
+import type * as Fs from 'node:fs';
+
+vi.mock('node:fs', async original => { const fs = await original<typeof Fs>(); return { ...fs, renameSync: vi.fn(fs.renameSync) }; });
+const rename = vi.mocked(renameSync), nativeRename = rename.getMockImplementation()!;
 
 function makeTempRoot(): string {
   return mkdtempSync(join(tmpdir(), 'agent-runtime-test-'));
@@ -56,6 +63,7 @@ describe('createRunStore', () => {
   });
 
   afterEach(() => {
+    rename.mockReset().mockImplementation(nativeRename);
     cleanup(root);
   });
 
@@ -104,7 +112,7 @@ describe('createRunStore', () => {
     expect(found!.agentId).toBe('test-agent');
   });
 
-  it('publishes Harness updates atomically while preserving a previously opened complete snapshot', () => {
+  it('preserves the old opened snapshot across atomic publication or a verified Windows replacement refusal', () => {
     const store = createRunStore(root, { sweepOrphans: false });
     const request = makeRequest();
     store.createRun(request);
@@ -114,12 +122,38 @@ describe('createRunStore', () => {
     } });
     const path = join(root, '.openslack.local/agents/runs', request.runId, 'run.json');
     const before = readFileSync(path);
+    let nativeRefusal: NodeJS.ErrnoException | undefined;
+    rename.mockImplementation((...args) => {
+      try { return nativeRename(...args); }
+      catch (error) { nativeRefusal = error as NodeJS.ErrnoException; throw error; }
+    });
     const descriptor = openSync(path, 'r');
+    let refused = false;
     try {
-      store.updateRun(request.runId, { status: 'running' });
+      let failure: unknown;
+      try { store.updateRun(request.runId, { status: 'running' }); }
+      catch (error) { failure = error; }
       expect(readFileSync(descriptor)).toEqual(before);
-      expect(readRunStateSnapshot(request.runId, root)?.status).toBe('running');
+      if (failure !== undefined) {
+        if (process.platform !== 'win32') throw failure;
+        expect(['EPERM', 'EBUSY']).toContain(nativeRefusal?.code);
+        expect(failure).toMatchObject({ code: 'RUN_PERSISTENCE_INDETERMINATE' });
+        expect(readFileSync(path)).toEqual(before);
+        const directory = join(root, '.openslack.local/agents/runs', request.runId);
+        const owner = JSON.parse(readFileSync(join(directory, 'run.transaction.lock'), 'utf8'));
+        const intentFile = `run.intent.${owner.transactionId}.json`;
+        expect(readdirSync(directory)).toContain(intentFile);
+        const intent = JSON.parse(readFileSync(join(directory, intentFile), 'utf8'));
+        expect(intent).toMatchObject({ runId: request.runId, transactionId: owner.transactionId, operation: 'update' });
+        expect(intent.target.stateFile).toBe(`run.json.${owner.transactionId}.tmp`);
+        const temporary = readFileSync(join(directory, intent.target.stateFile));
+        expect(createHash('sha256').update(temporary).digest('hex')).toBe(intent.target.stateSha256);
+        expect(JSON.parse(temporary.toString('utf8')).status).toBe('running');
+        expect(observeRun(request.runId, root)).toMatchObject({ kind: 'unavailable', reason: 'locked' });
+        refused = true;
+      } else expect(readRunStateSnapshot(request.runId, root)?.status).toBe('running');
     } finally { closeSync(descriptor); }
+    if (refused) expect(observeRun(request.runId, root)).toMatchObject({ kind: 'unavailable', reason: 'locked' });
   });
 
   it('reads a bounded snapshot without sweeping stale atomic-write evidence', () => {

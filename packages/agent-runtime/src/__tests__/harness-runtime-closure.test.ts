@@ -1,3 +1,5 @@
+import { createInstalledRuntimeFixture } from './fixtures/harness-installed-runtime.js';
+import { testWindowsDriveAlias } from '../../../../scripts/testing/process-fixture.mjs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { execFileSync } from 'node:child_process';
 import { createRequire } from 'node:module';
@@ -25,35 +27,7 @@ afterEach(() => { vi.mocked(readHarnessFile).mockClear(); vi.mocked(withHarnessD
 function put(path: string, value: string): void { mkdirSync(dirname(path), { recursive: true }); writeFileSync(path, value); }
 function manifest(path: string, value: object): void { put(join(path, 'package.json'), JSON.stringify(value)); }
 function fixture(kind: 'harness' | 'callback') {
-  const root = mkdtempSync(join(tmpdir(), 'harness-installed-closure-')); roots.push(root);
-  const packages = kind === 'harness' ? [
-    ['packages/sdk/client', '@deepseek-ai/dsh-sdk-client'], ['packages/sdk/server', '@deepseek-ai/dsh-sdk-jsonrpc-server'],
-    ['packages/mcp/client', '@deepseek-ai/dsh-mcp-client'], ['apps/cli', '@deepseek-ai/dsh'],
-    ['packages/llm/llm', '@deepseek-ai/dsh-llm'], ['vendor/cordis', '@deepseek-ai/cordis'],
-    ['vendor/schemastery', '@deepseek-ai/schemastery'], ['packages/sdk/protocol', '@deepseek-ai/dsh-sdk-protocol'],
-  ] : [['apps/cli', '@openslack/cli'], ['apps/mcp', '@openslack/mcp']];
-  mkdirSync(join(root, 'packages'), { recursive: true }); mkdirSync(join(root, 'vendor'), { recursive: true });
-  for (const [path, name] of packages) {
-    const directory = join(root, path!), output = kind === 'harness' ? 'lib' : 'dist';
-    manifest(directory, { name, version: '0.2.1-rc.3', type: 'module', exports: { '.': `./${output}/index.js` },
-      dependencies: { '@modelcontextprotocol/client': '2.2.0', ...(name === '@deepseek-ai/dsh-sdk-client'
-        ? Object.fromEntries(packages.filter(([, dependency]) => dependency !== name).map(([, dependency]) => [dependency, 'workspace:*'])) : {}) } });
-    put(join(directory, output, 'index.js'), 'export {};');
-    const link = join(root, 'node_modules', name!);
-    mkdirSync(dirname(link), { recursive: true }); symlinkSync(directory, link, process.platform === 'win32' ? 'junction' : 'dir');
-  }
-  const peer = join(root, 'node_modules/@modelcontextprotocol/client');
-  manifest(peer, { name: '@modelcontextprotocol/client', version: '2.2.0', type: 'module',
-    exports: { '.': './dist/index.js', './stdio': './dist/stdio.js' }, dependencies: { 'fixture-transitive': '1.0.0' } });
-  for (const name of ['index', 'stdio']) put(join(peer, `dist/${name}.js`), 'export { observed } from "./chunks/session.js";');
-  const split = join(peer, 'dist/chunks/session.js');
-  put(split, 'import { value } from "fixture-transitive";export const observed=value+"A";');
-  const transitive = join(peer, 'node_modules/fixture-transitive');
-  manifest(transitive, { name: 'fixture-transitive', version: '1.0.0', type: 'module', exports: './index.js' });
-  put(join(transitive, 'index.js'), 'export const value="one";');
-  const lock = join(root, kind === 'harness' ? 'pnpm-lock.yaml' : 'bun.lock'); put(lock, 'fixed fixture lock');
-  const hash = () => kind === 'harness' ? hashHarnessRuntimeArtifacts(root) : hashOpenSlackHarnessCallback(join(root, 'apps/cli/dist/index.js'));
-  return { root, peer, split, transitive, lock, hash };
+  const result = createInstalledRuntimeFixture(kind); roots.push(result.root); return result;
 }
 
 function applicationFixture() {
@@ -285,17 +259,13 @@ describe('approved installed runtime dependency bytes', () => {
   });
 
   it.runIf(process.platform === 'win32')('normalizes one real drive alias for both full Harness and callback hash consumers', () => {
-    if (!process.env.SystemRoot) throw new Error('A native Windows system directory is required');
-    const drive = ['Z:', 'Y:', 'X:', 'W:', 'V:'].find(value => !existsSync(`${value}\\`));
-    if (!drive) throw new Error('This isolated alias regression needs one free temporary drive');
-    const subst = join(process.env.SystemRoot, 'System32/subst.exe');
     for (const kind of ['harness', 'callback'] as const) {
       const f = fixture(kind), expected = f.hash();
-      execFileSync(subst, [drive, f.root], { stdio: 'pipe' });
+      const reservation = testWindowsDriveAlias(f.root), drive = reservation.drive;
       try {
         const actual = kind === 'harness' ? hashHarnessRuntimeArtifacts(`${drive}\\`) : hashOpenSlackHarnessCallback(join(`${drive}\\`, 'apps/cli/dist/index.js'));
         expect(actual).toBe(expected);
-      } finally { execFileSync(subst, [drive, '/D'], { stdio: 'pipe' }); }
+      } finally { reservation.dispose(); }
     }
   });
 

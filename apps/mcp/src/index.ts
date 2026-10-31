@@ -47,6 +47,8 @@ export type {
 } from './core.js';
 
 export { createOpenSlackMcpServer } from './server.js';
+export { createOpenSlackMcpStdioHost, selectMcpHarnessOwner, McpStdioProfileError, McpStdioLifecycleError } from './stdio-host.js';
+export type { McpHarnessOwnerOptions, McpHarnessOwner, McpStdioHostOptions } from './stdio-host.js';
 export type { OpenSlackMcpServer, OpenSlackMcpServerLifecycle } from './server.js';
 
 export { createGovernedPlanCollaborationAuditSink } from './audit.js';

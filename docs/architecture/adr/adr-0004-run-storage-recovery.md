@@ -118,6 +118,14 @@ success requires confirmed publication and required cleanup. Any uncertain stage
 retains lock, intent and temporary evidence and returns a stable incomplete or
 indeterminate result. No rollback, replay, fake success or implicit retry.
 
+On native Windows an open reader can cause snapshot replacement to return EPERM.
+That is a refused publication: the old descriptor/canonical bytes stay intact,
+the exact intent/temporary/lock are retained, and reads remain unavailable even
+after the reader closes. Do not report atomic-update success or automatically
+retry that touched transaction. Only pre-acquisition exclusive-lock opens may
+wait through Windows EPERM/EBUSY within the existing monotonic one-second bound;
+directory identity is rechecked and a persistent permission error is preserved.
+
 This decision covers process-crash consistency. File fsync plus link/rename does
 not claim arbitrary power-loss durability; directory-persistence guarantees need
 their own implementation and platform evidence before such a claim.

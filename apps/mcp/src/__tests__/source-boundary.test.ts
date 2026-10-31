@@ -2,8 +2,34 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import ts from 'typescript';
 
 const sourceRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
+const familyFiles = ['governed-workflow-family.ts', 'governed-contract-family.ts', 'governed-harness-family.ts',
+  'governed-confirmation.ts', 'harness-workflow.ts', 'stdio-host.ts'];
+
+function unreviewedAuthorityCalls(path: string, text: string): string[] {
+  const source = ts.createSourceFile(path, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+  const reviewed: Record<string, readonly string[]> = {
+    'governed-composition.ts': ['target.family', 'restored.target.family'],
+    'governed-workflow-family.ts': ['family'],
+  };
+  const forbidden: string[] = [];
+  const visit = (node: ts.Node): void => {
+    if (ts.isCallExpression(node)) {
+      const target = node.expression;
+      const name = ts.isIdentifier(target) ? target.text : ts.isPropertyAccessExpression(target) ? target.name.text : undefined;
+      if (name && /^(?:authorize|claim|complete|reconcile)(?:WorkflowEffect|EffectExecution)?$/.test(name)) {
+        const allowed = name === 'authorize' && ts.isPropertyAccessExpression(target) &&
+          reviewed[path]?.includes(target.expression.getText(source));
+        if (!allowed) forbidden.push(target.getText(source));
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+  return forbidden;
+}
 
 describe('QW2 MCP source boundary', () => {
   it('uses the official stdio SDK and reserves stdout for protocol frames', () => {
@@ -24,6 +50,7 @@ describe('QW2 MCP source boundary', () => {
       'graph-read-mirror.ts',
       'graph-read-canary.ts',
       'governed-composition.ts',
+      ...familyFiles,
       'mutations.ts',
       'workflow-approvals.ts',
       'server.ts',
@@ -44,6 +71,7 @@ describe('QW2 MCP source boundary', () => {
       'core.ts',
       'contract-delivery-rehearsal.ts',
       'governed-composition.ts',
+      ...familyFiles,
       'mutations.ts',
       'workflow-approvals.ts',
       'tools/mutations.ts',
@@ -63,9 +91,11 @@ describe('QW2 MCP source boundary', () => {
     expect(source).not.toMatch(
       /\b(?:executeRun|executeResume|createRuntime|createRuntimeWithHostAuthorities|createWorkflowEffectAuthorizationPort|LocalWorkflowEffectAuthorityStore)\b/,
     );
-    expect(source).not.toMatch(
-      /\b(?:authorize|claim|complete|reconcile)(?:WorkflowEffect|EffectExecution)?\s*\(/,
-    );
+    for (const path of files) expect(unreviewedAuthorityCalls(path, readFileSync(join(sourceRoot, path), 'utf8')), path).toEqual([]);
+    expect(unreviewedAuthorityCalls('governed-workflow-family.ts', 'family.authorize(snapshot, entry)')).toEqual([]);
+    for (const text of ['authorize()', 'other.authorize()', 'family.authorizeWorkflowEffect()']) {
+      expect(unreviewedAuthorityCalls('governed-workflow-family.ts', text)).not.toEqual([]);
+    }
     expect(source).not.toMatch(
       /\b(?:createLocalHumanAttestationProvider|bindLocalHumanSubject|resolveProductionSubject)\b|local-human-attestation/,
     );
@@ -85,8 +115,10 @@ describe('QW2 MCP source boundary', () => {
       'rehydrateScenarioInstantiationPlan',
       'LocalScenarioInstanceStore',
       'compileWorkflowStartPlan',
-      'createContractDeliveryLiteWorkflowResolverEntry',
-      'executeContractDeliveryLiteWorkflow',
+      'createGovernedWorkflowFamilies',
+      'families.restore',
+      'families.executors',
+      'families.confirmationObserver',
       'createGovernedPlanCollaborationAuditSink',
     ]) {
       expect(source).toContain(required);
@@ -95,6 +127,9 @@ describe('QW2 MCP source boundary', () => {
       /\b(?:generateRuntimeIdentity|executePlan|executeWorkflowTemplate|findWorkflow|loadWorkflow|issueHumanDecisionBinding|createWorkflowEffectDecisionAuthority)\b/,
     );
     expect(source).not.toMatch(/apps\/cli|@openslack\/cli|node:child_process|execFile|spawn\s*\(/);
+    const contract = readFileSync(join(sourceRoot, 'governed-contract-family.ts'), 'utf8');
+    for (const required of ['createContractDeliveryLiteWorkflowResolverEntry', 'rehydrateWorkflowStartPlan',
+      'assertContractDeliveryLiteWorkflowPlan', 'authorizeAgentAction', 'executeContractDeliveryLiteWorkflow']) expect(contract).toContain(required);
   });
 
   it('assembles rehearsal evidence before explicit sealed graph publication', () => {

@@ -1,5 +1,5 @@
 import type { CollaborationEvent } from '@openslack/collaboration';
-import { RUN_ID_RE, observeRun, assertHarnessRunStorage, readHarnessStopIntent, type RunUnavailableReason } from '@openslack/agent-runtime/internal/harness';
+import { RUN_ID_RE, observeRun, assertHarnessRunStorage, readHarnessStopIntent, assertHarnessExecutionBinding, type RunUnavailableReason } from '@openslack/agent-runtime/internal/harness';
 import { LocalReadBoundError } from './bounded-read.js';
 
 /** Optional bounded read model; contains no principal data, paths, transcripts or bearer material. */
@@ -38,21 +38,13 @@ export function readHarnessExecutionProjection(
   const state: unknown = observation.state;
   if (!row(state) || state.harnessExecution === undefined) return undefined;
   const binding = state.harnessExecution;
-  if (state.runId !== runId || !row(binding) || binding.schema !== 'openslack.harness_execution.v1' ||
-    typeof binding.taskId !== 'string' || binding.taskId.length > 128 ||
-    typeof state.status !== 'string' || !['pending', 'running', 'paused', 'completed', 'failed', 'cancelled'].includes(state.status) ||
-    typeof binding.acceptance !== 'string' || !['pending', 'verified', 'rejected', 'indeterminate'].includes(binding.acceptance) ||
-    (state.status === 'completed' && binding.acceptance !== 'verified') ||
-    typeof binding.summary !== 'string' || Buffer.byteLength(binding.summary) > 4096 ||
-    !Array.isArray(binding.evidenceRefs) || binding.evidenceRefs.length > 128 ||
-    binding.evidenceRefs.some(ref => typeof ref !== 'string' || !/^[a-z][a-z0-9-]*:[A-Za-z0-9._/-]{1,256}$/.test(ref))) {
-    throw new LocalReadBoundError('HARNESS_RUN_BINDING_INVALID');
-  }
+  try { if (state.runId !== runId) throw new Error('Run binding changed'); assertHarnessExecutionBinding(binding, state.status); }
+  catch { throw new LocalReadBoundError('HARNESS_RUN_BINDING_INVALID'); }
   let stopRequested: boolean;
   try { stopRequested = !!readHarnessStopIntent(root, runId); }
   catch { return { runId, readStatus: 'unavailable', reason: 'corrupt' }; }
   if (stopRequested && state.status === 'completed') throw new LocalReadBoundError('HARNESS_RUN_STOP_UNRESOLVED');
-  return { taskId: binding.taskId, runId, status: state.status, acceptance: stopRequested ? 'indeterminate' : binding.acceptance,
+  return { taskId: binding.taskId, runId, status: state.status as string, acceptance: stopRequested ? 'indeterminate' : binding.acceptance,
     summary: stopRequested ? 'Stop requested; preserve evidence and reconcile without replay.' : binding.summary,
     evidenceRefs: [...binding.evidenceRefs], ...(stopRequested ? { stopRequested: true } : {}) };
 }

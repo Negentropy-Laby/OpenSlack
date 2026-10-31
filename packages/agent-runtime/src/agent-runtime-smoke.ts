@@ -4,8 +4,8 @@ import type { AbyRuntimeDoctorReport, DiagnoseAbyRuntimeOptions } from './agent-
 import { diagnoseAbyRuntime } from './agent-runtime-doctor.js';
 import { BridgeAdapterError } from './bridge-adapter.js';
 import { createBridgeRuntimeResolver } from './bridge-runtime-resolver.js';
-import { createOpenSlackAgentLauncher } from './launcher.js';
-import { createRunStore, observeRun, listRunObservations, RUN_ID_RE } from './run-store.js';
+import { createOpenSlackAgentLauncher, readOwnedRunIdentity } from './launcher.js';
+import { createRunStore, observeRun } from './run-store.js';
 import { readTranscript } from './transcript.js';
 
 export type AbyRuntimeSmokeStatus = 'PASS' | 'FAIL';
@@ -101,10 +101,7 @@ export async function runAbyRuntimeSmoke(
     });
   } catch (err) {
     const bridgeError = err instanceof BridgeAdapterError ? err : null;
-    const rejectedRunId =
-      err && typeof err === 'object' && typeof (err as { runId?: unknown }).runId === 'string' && RUN_ID_RE.test((err as { runId: string }).runId)
-        ? (err as { runId: string }).runId
-        : undefined;
+    const rejectedRunId = readOwnedRunIdentity(err);
     runId = runId ?? rejectedRunId;
     return buildSmokeReport({
       status: 'FAIL',
@@ -132,12 +129,14 @@ function buildSmokeReport(input: {
   stderrSummary?: string;
 }): AbyRuntimeSmokeReport {
   const evidence = input.runId ? buildEvidencePaths(input.rootDir, input.runId) : {};
-  const listing = listRunObservations(input.rootDir);
   const observation = input.runId ? observeRun(input.runId, input.rootDir) : undefined;
-  const transcript = input.runId && observation?.kind === 'ready' ? readTranscript(input.runId, input.rootDir) : [];
+  let transcript: ReturnType<typeof readTranscript> = [];
+  let transcriptUnavailable = false;
+  try { if (input.runId && observation?.kind === 'ready') transcript = readTranscript(input.runId, input.rootDir); }
+  catch { transcriptUnavailable = true; }
   const checks = [
-    ...(listing.storageIssue || listing.unavailable.length ? [{ name: 'run-storage-availability', status: 'FAIL' as const,
-      detail: `Unavailable run evidence: ${listing.unavailable.map(value => `${value.runId}:${value.reason}`).join(', ') || listing.storageIssue}. Inspect without replay.` }] : []),
+    ...(observation?.kind === 'unavailable' || observation?.kind === 'missing' || transcriptUnavailable ? [{ name: 'run-storage-availability', status: 'FAIL' as const,
+      detail: `This run's evidence is unavailable: ${observation?.kind === 'unavailable' ? observation.reason : observation?.kind === 'missing' ? 'missing' : 'transcript-unavailable'}. Inspect without replay.` }] : []),
     {
       name: 'doctor',
       status: input.doctor.status,
@@ -162,13 +161,13 @@ function buildSmokeReport(input: {
     {
       name: 'evidence_files',
       status: evidenceFilesExist(evidence) ? 'PASS' : 'FAIL',
-      detail: input.runId ? `Run evidence for ${input.runId}` : 'No run evidence recorded',
+      detail: input.runId ? `Run evidence for ${input.runId}` : 'No run was created by this invocation',
     },
   ] as Array<{ name: string; status: 'PASS' | 'FAIL'; detail: string }>;
 
   return {
     provider: 'aby',
-    status: input.status,
+    status: input.status === 'PASS' && checks.every(check => check.status === 'PASS') ? 'PASS' : 'FAIL',
     agentId: input.agentId,
     doctor: input.doctor,
     runId: input.runId,

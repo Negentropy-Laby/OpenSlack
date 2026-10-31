@@ -260,10 +260,6 @@ function harnessPluginRuntimeEntries(entries: Record<string, string>): Record<st
   }));
 }
 
-export function harnessPublicRuntimeEntries(root: string): Record<string, string> {
-  return harnessPluginRuntimeEntries(harnessRuntimeArtifacts(root).entries);
-}
-
 function assertNoPeerOverrides(roots: string[], entries: Record<string, string>): void {
   for (const root of roots) for (let current = resolve(root);; current = dirname(current)) {
     for (const [specifier, expected] of Object.entries(entries)) {
@@ -376,11 +372,7 @@ export function createHarnessTaskExecution(options: HarnessTaskExecutionOptions)
     const guard = new ToolGuard(task.request.permissionProfile, recorder, runId);
     let acceptedFiles: Array<{ path: string; sha256: string }> | undefined;
     let acceptedChangeNames: string[] | undefined;
-    const changeNames = () => [...new Set([
-      ...git(worktree, 'diff', '--name-only', '--no-renames', '-z', task.baseline, '--').split('\0'),
-      ...git(worktree, 'ls-files', '--others', '--exclude-standard', '-z').split('\0'),
-      ...git(worktree, 'ls-files', '--others', '--ignored', '--exclude-standard', '-z').split('\0'),
-    ].filter(Boolean))].sort();
+    const changeNames = () => harnessChangeNames(worktree, task.baseline);
     return {
       async execute(executionSignal, eligibility) {
         executionSignal.throwIfAborted();
@@ -493,9 +485,7 @@ export async function inspectHarnessTaskExecution(options: Pick<HarnessTaskExecu
       ? 'matched' : 'changed';
     if (state.worktreePath === join(options.workspaceRoot, '.worktrees', state.runId)) {
       const root = state.worktreePath;
-      const changes = new Set([...git(root, 'diff', '--name-only', '--no-renames', '-z', task.baseline, '--').split('\0'),
-        ...git(root, 'ls-files', '--others', '--exclude-standard', '-z').split('\0'),
-        ...git(root, 'ls-files', '--others', '--ignored', '--exclude-standard', '-z').split('\0')].filter(Boolean));
+      const changes = harnessChangeNames(root, task.baseline);
       const evidenceDirectory = join(options.identityRoot, '.openslack.local/agents/runs', state.runId);
       directories(options.identityRoot, evidenceDirectory);
       const evidence = JSON.parse(readRegular(join(evidenceDirectory, 'acceptance.json'), 1024 * 1024).toString('utf8')) as Record<string, unknown>;
@@ -511,11 +501,19 @@ export async function inspectHarnessTaskExecution(options: Pick<HarnessTaskExecu
       workspace = evidenceMatches && git(root, 'rev-parse', 'HEAD').trim() === task.baseline &&
         !git(root, 'diff', '--cached', '--name-only', task.baseline, '--').trim() &&
         !/mode change|delete mode|rename/.test(git(root, 'diff', '--summary', '--no-ext-diff', '--no-textconv', task.baseline, '--')) &&
-        [...changes].every(path => task.scope.writePaths.includes(path)) && definition.checks.every(check => {
+        changes.every(path => task.scope.writePaths.includes(path)) && definition.checks.every(check => {
           safeFile(check.path); directories(root, dirname(resolve(root, check.path)));
           return readRegular(resolve(root, check.path), 1024 * 1024).toString('utf8') === check.expectedText;
         }) ? 'matched' : 'changed';
     }
   } catch { /* Missing or unsupported evidence remains unknown; do not repair the source. */ }
   return { deployment, workspace, process: state.harnessExecution?.processExit === 'confirmed' ? 'exited' : 'unknown' };
+}
+
+function harnessChangeNames(root: string, baseline: string): string[] {
+  return [...new Set([
+    ...git(root, 'diff', '--name-only', '--no-renames', '-z', baseline, '--').split('\0'),
+    ...git(root, 'ls-files', '--others', '--exclude-standard', '-z').split('\0'),
+    ...git(root, 'ls-files', '--others', '--ignored', '--exclude-standard', '-z').split('\0'),
+  ].filter(Boolean))].sort();
 }

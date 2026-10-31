@@ -207,6 +207,12 @@ retains its private temporary and any unresolved lock as evidence. Shared stable
 bytes come from Core; runtime callers retain their own path, link and ownership
 checks. Trusted Windows spelling aliases normalize before comparison, while
 directory junctions and links remain rejected.
+Native Windows can refuse replacement while an old snapshot descriptor remains
+open. Such a transaction retains its intent, temporary and lock and remains
+unavailable; it is not a successful atomic update and closing the reader does not
+authorize replay. The finite exclusive-lock acquisition wait happens before any
+intent or effects, including Windows sharing-denial observations; it does not
+retry publication or relax permission/ownership checks.
 Admission/report paths re-observe typed read conflicts within a bounded observation
 window; three immediate synchronous reads do not constitute recovery or a new
 admission. Corruption, invalid identities

@@ -9,6 +9,7 @@ import { HarnessTaskHost, type ApprovedHarnessTask } from '@openslack/agent-runt
 import { createOpenSlackGovernedMutationPort, currentGovernedMutationAttempt } from '../mutations.js';
 import { callGovernedMutationTool } from '../tools/mutations.js';
 import { createHarnessConfirmationObserver } from '../governed-confirmation.js';
+import type { GovernedPlanState } from '@openslack/operator';
 
 const roots: string[] = [];
 const hosts: HarnessTaskHost[] = [];
@@ -72,6 +73,25 @@ function setup(failure: 'hook' | 'audit' | 'busy' | 'none', wait?: Promise<void>
 }
 
 describe('originating governed confirmation settlement', () => {
+  it.each([
+    'pending', 'executing', 'succeeded', 'blocked', 'failed', 'reconciliation_required', 'cancelled', 'expired',
+  ] satisfies GovernedPlanState[])('classifies persisted %s through the production observer without granting uncertain success', async state => {
+    const value = setup('none');
+    const preview = await value.preview();
+    const record = { ...preview.record, state };
+    const get = vi.fn(async () => record);
+    const settle = vi.spyOn(value.host, 'settleConfirmedAdmissions').mockImplementation(() => {});
+    const observe = createHarnessConfirmationObserver(value.host, { ...value.service, get });
+    const attempt = { operation: 'confirm' as const, attemptId: 'fixture-observation', aborted: true };
+    await observe(record.planId, { ...attempt, failed: false, record });
+    const terminal = ['succeeded', 'blocked', 'failed', 'cancelled', 'expired'].includes(state);
+    expect(settle).toHaveBeenCalledTimes(terminal ? 1 : 0);
+    expect(get).not.toHaveBeenCalled();
+    settle.mockClear();
+    await observe(record.planId, { ...attempt, failed: true });
+    expect(get).toHaveBeenCalledOnce();
+    expect(settle).toHaveBeenCalledTimes(terminal && state !== 'succeeded' ? 1 : 0);
+  });
   it.each(['sync', 'async'] as const)('retains durable cancelled truth after a %s settlement failure without inventing an unexecuted retry', async mode => {
     const value = setup('hook', undefined, mode), preview = await value.preview();
     const result = await callGovernedMutationTool(value.mutations, 'openslack_cancel_plan',

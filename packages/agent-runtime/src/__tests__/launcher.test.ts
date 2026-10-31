@@ -16,8 +16,10 @@ import {
   AgentExecutionFailedError,
   AgentResultSchemaError,
   RuntimeNotConfiguredError,
+  RuntimeMisconfiguredError,
 } from '../index.js';
 import type { AdapterExecutionContext, AgentExecutionAdapter } from '../index.js';
+import { readOwnedRunIdentity } from '../launcher.js';
 
 function makeTempRoot(): string {
   return mkdtempSync(join(tmpdir(), 'agent-launcher-test-'));
@@ -80,6 +82,8 @@ describe('createOpenSlackAgentLauncher', () => {
     expect(failure).toBe(primary);
     expect(failure).toMatchObject({ runId: 'RUN-OWN-INITIALIZATION', code: 'RUN_INITIALIZATION_INCOMPLETE',
       runtimeDiagnostics: ['RUN_INITIALIZATION_RECORD_UNCONFIRMED'] });
+    expect(readOwnedRunIdentity(failure)).toBe('RUN-OWN-INITIALIZATION');
+    expect(readOwnedRunIdentity({ runId: 'RUN-OWN-INITIALIZATION' })).toBeUndefined();
     expect(execute).not.toHaveBeenCalled();
   });
 
@@ -152,6 +156,21 @@ describe('createOpenSlackAgentLauncher', () => {
       status: 'failed',
       failureCode: 'RUNTIME_MISCONFIGURED',
     });
+    expect(existsSync(join(root, '.worktrees'))).toBe(false);
+  });
+
+  it.each(['launch', 'preflight'] as const)('preserves the frozen resolver error and its trusted run origin in %s', async phase => {
+    const store = createRunStore(root);
+    const original = Object.freeze(new RuntimeMisconfiguredError('Frozen fixture resolver failure'));
+    const launcher = createOpenSlackAgentLauncher({ runStore: store, rootDir: root,
+      bridgeRuntimeResolver: { resolve() { throw original; } } });
+    const options = { label: 'aby-fixture', phase: 'execute', agentRunId: 'RUN-FROZEN-RESOLVER', isolation: 'worktree' as const,
+      resolvedAgentConfig: { agentId: 'aby-fixture', source: 'test', runtime: 'aby_assistant', runtimeProvider: 'aby', bridgeMode: 'process' as const } };
+    const operation = phase === 'launch' ? launcher('fixture', options) : launcher.preflight('fixture', options);
+    const failure = await operation.catch(error => error);
+    expect(failure).toBe(original);
+    expect(readOwnedRunIdentity(failure)).toBe(options.agentRunId);
+    expect(store.getRun(options.agentRunId)).toMatchObject({ status: 'failed', failureCode: 'RUNTIME_MISCONFIGURED' });
     expect(existsSync(join(root, '.worktrees'))).toBe(false);
   });
 
@@ -980,6 +999,7 @@ describe('createOpenSlackAgentLauncher', () => {
 
       expect(failure).toMatchObject({ code: 'EXECUTION_FAILED', tokenUsage: 3 });
       const runId = (failure as { runId: string }).runId;
+      expect(readOwnedRunIdentity(failure)).toBe(runId);
       expect(store.getRun(runId)).toMatchObject({ status: 'failed', tokensUsed: 3 });
       expect(readTranscript(runId, root)).toContainEqual(
         expect.objectContaining({
