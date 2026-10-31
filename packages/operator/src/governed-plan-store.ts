@@ -173,6 +173,9 @@ async function retryPublication(
   }
 }
 
+/** Internal publication policy; deliberately absent from the public package barrel. */
+export { retryPublication as retryGovernedPlanPublication };
+
 /** Only this invocation's inode may be cleaned; replacement evidence is retained. */
 async function removeOwned(path: string, trusted: Stats): Promise<void> {
   await retryPublication(async (assertBudget) => {

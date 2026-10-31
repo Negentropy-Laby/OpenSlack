@@ -437,6 +437,44 @@ their actual published commits, avoiding a self-referential documentation commit
   separate MCP CLI confirmation failure remain retained; a selected-case PASS
   and an eight-case independent file PASS do not close that full-run failure.
 
+### Native full-run follow-up and preserved uncertainty
+
+- Frozen `45c04134` completed three consecutive affected runs of 913 PASS /
+  0 FAIL / 19 existing SKIP, then full Linux 8,733 PASS / 0 FAIL / 25 SKIP.
+  These results remain tied to that exact candidate, not later edits.
+- The clean native Windows `9f2efc71` full run completed, rather than hung:
+  8,361 PASS / 2 FAIL / 88 SKIP. Its long-running real Workflow effect-boundary
+  file passed. Neither worker count nor test timeout was changed. One failure
+  was an authority audit-journal rename returning EPERM; the other was an MCP
+  CLI positive confirmation returning blocked. Independent selected-case and
+  whole-file passes are retained without erasing either full-run failure or
+  attributing the second failure to the first. The CLI assertion now includes
+  only bounded status/blocker codes; its strict completed/result check remains.
+- Two real service-path RED regressions explicitly refuse the policy or journal
+  rename once. The same existing Windows publication policy is now reused for
+  these files: one fixed one-second budget, only refused rename retried, fresh
+  prepared-directory, temporary and original-target checks before each attempt.
+  Bytes are written and fsynced once. Directory fsync and readback are not
+  retried, and no HTTP request, confirmation or executor is replayed.
+- The 19-case authority chain passes. It covers EPERM/EACCES/EBUSY for both
+  publication roles, persistent refusal, source/target replacement, a rename
+  that moved its inode before reporting failure, synchronization failure and
+  primary-plus-cleanup errors. Terminal-response-loss paths still execute once,
+  send one completion mutation, retain durable remote succeeded/uncertainty,
+  refuse a duplicate confirmation and leave the local fallback store empty.
+- Independent read-only review found an avoidable cleanup observation gap in
+  the first follow-up. Its controlled old-order counterexample deletes foreign
+  replacement bytes and fails. The corrected cleanup verifies all directories
+  before the final temporary-inode observation, immediately preceding removal;
+  the same regression retains the replacement and primary failure. No recovery
+  format, RunStore indeterminate-publication policy or authority is changed.
+- The production collector records 8,771 declarations/590 files after these
+  regressions. Repeated generation and final candidate acceptance are recorded
+  separately. The 32 existing source/contract manifests have an empty changed
+  path intersection, including the two operator implementation files; their
+  digests, binding sets and scope are unchanged. New-head Linux/native full
+  validation remains required; no existing result is relabelled as that run.
+
 ### All 45 dispositions
 
 `AR` means `packages/agent-runtime/src`; `MCP` means `apps/mcp/src`; `Plugin`

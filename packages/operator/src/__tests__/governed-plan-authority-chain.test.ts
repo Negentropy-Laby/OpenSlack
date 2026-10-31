@@ -2,7 +2,16 @@ import { createHash } from 'node:crypto';
 import { mkdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  readFile,
+  writeFile,
+  open as openFile,
+  rename as renameFile,
+  rm as removeFile,
+  realpath as realpathFile,
+} from 'node:fs/promises';
+import type * as AsyncFs from 'node:fs/promises';
 import { createGovernedActionExecutionRegistry } from '../action-execution-registry.js';
 import {
   createGovernanceAuthorityHttpClient,
@@ -27,6 +36,26 @@ const ROUTE: GovernedPlanAuthorityRoute = Object.freeze({
 });
 const AUTHORITY = Object.freeze({ actorId: 'qoder.local', workspaceId: WORKSPACE_ID });
 const roots: string[] = [];
+
+vi.mock('node:fs/promises', async (original) => {
+  const fs = await original<typeof AsyncFs>();
+  return {
+    ...fs,
+    open: vi.fn(fs.open),
+    rename: vi.fn(fs.rename),
+    rm: vi.fn(fs.rm),
+    realpath: vi.fn(fs.realpath),
+  };
+});
+const open = vi.mocked(openFile);
+const rename = vi.mocked(renameFile),
+  remove = vi.mocked(removeFile);
+const nativeRename = rename.getMockImplementation()!,
+  nativeRemove = remove.getMockImplementation()!;
+const nativeOpen = open.getMockImplementation()!;
+const realpath = vi.mocked(realpathFile);
+const nativeRealpath = realpath.getMockImplementation()!;
+const platformDescriptor = Object.getOwnPropertyDescriptor(process, 'platform')!;
 
 interface MutationEnvelope {
   readonly operation: GovernanceAuthorityMutationOperation;
@@ -348,5 +377,225 @@ describe('governance authority end-to-end failure chain', () => {
     });
     expect(harness.execute).toHaveBeenCalledOnce();
     expect(await harness.local.list()).toEqual([]);
+  });
+});
+
+/** Platform-policy model only; the service, durable store and HTTP receipt client
+ * remain real. Native Windows runs separately, without replacing its FS. */
+describe('bounded Windows authority file publication', () => {
+  beforeEach(() =>
+    Object.defineProperty(process, 'platform', { ...platformDescriptor, value: 'win32' }),
+  );
+  afterEach(() => {
+    Object.defineProperty(process, 'platform', platformDescriptor);
+    rename.mockReset().mockImplementation(nativeRename);
+    remove.mockReset().mockImplementation(nativeRemove);
+    open.mockReset().mockImplementation(nativeOpen);
+    realpath.mockReset().mockImplementation(nativeRealpath);
+  });
+
+  it.each(
+    ['policy', 'journal'].flatMap((scope) =>
+      ['EPERM', 'EACCES', 'EBUSY'].map((code) => ({ scope, code })),
+    ),
+  )(
+    'retains one terminal invocation after a $scope rename is explicitly refused once with $code',
+    async ({ scope, code }) => {
+      let refused: string | undefined;
+      rename.mockImplementation(async (from, to) => {
+        const path = String(from).replaceAll('\\', '/');
+        if (
+          !refused &&
+          (scope === 'policy'
+            ? /\/\.policy\.[^/]+\.tmp$/.test(path)
+            : /\/audit-journal\/\.[^/]+\.tmp$/.test(path))
+        ) {
+          refused = String(from);
+          throw Object.assign(new Error('Controlled rename refusal'), { code });
+        }
+        await nativeRename(from, to);
+      });
+      const harness = await system({
+        operation: 'complete_execution',
+        post: 'timeout',
+        receipt: '404',
+        commit: true,
+      });
+      const preview = await harness.service.preview(harness.compiler, AUTHORITY);
+      const request = {
+        planId: preview.record.planId,
+        confirmationToken: preview.confirmationToken,
+      };
+      await expect(harness.service.confirm(request, AUTHORITY)).rejects.toMatchObject({
+        code: 'GOVERNANCE_AUTHORITY_EXECUTION_UNCERTAIN',
+      });
+      expect(refused).toBeDefined();
+      expect(rename.mock.calls.filter(([from]) => String(from) === refused)).toHaveLength(2);
+      expect(harness.execute).toHaveBeenCalledOnce();
+      expect(harness.remote.records.get(preview.record.planId)).toMatchObject({
+        state: 'succeeded',
+      });
+      const completions = () =>
+        vi
+          .mocked(harness.remote.transport)
+          .mock.calls.filter(
+            ([, init]) =>
+              init?.method === 'POST' &&
+              JSON.parse(String(init.body)).operation === 'complete_execution',
+          );
+      expect(completions()).toHaveLength(1);
+      await expect(harness.service.confirm(request, AUTHORITY)).rejects.toMatchObject({
+        code: 'GOVERNED_PLAN_STATE_INVALID',
+      });
+      expect(harness.execute).toHaveBeenCalledOnce();
+      expect(completions()).toHaveLength(1);
+      expect(await harness.local.list()).toEqual([]);
+    },
+  );
+
+  it.each(['temporary', 'target'] as const)(
+    'refuses %s drift between refused rename attempts without overwriting foreign bytes',
+    async (drift) => {
+      let changed: string | undefined;
+      rename.mockImplementation(async (from, to) => {
+        if (!changed && /[\\/]\.policy\.[^\\/]+\.tmp$/.test(String(from))) {
+          changed = String(drift === 'temporary' ? from : to);
+          if (drift === 'temporary') await nativeRename(from, `${String(from)}.retained`);
+          await writeFile(changed, 'foreign bytes', { flag: 'wx' });
+          throw Object.assign(new Error('Controlled rename refusal'), { code: 'EPERM' });
+        }
+        await nativeRename(from, to);
+      });
+      await expect(
+        system({ operation: 'complete_execution', post: 'timeout', commit: true }),
+      ).rejects.toMatchObject(
+        drift === 'temporary'
+          ? { cause: { code: 'GOVERNED_PLAN_AUTHORITY_ROUTE_UNSAFE' } }
+          : { code: 'GOVERNED_PLAN_AUTHORITY_ROUTE_CONFLICT' },
+      );
+      expect(await readFile(changed!, 'utf8')).toBe('foreign bytes');
+      expect(
+        rename.mock.calls.filter(([from]) => /[\\/]\.policy\.[^\\/]+\.tmp$/.test(String(from))),
+      ).toHaveLength(1);
+      expect(remove.mock.calls.some(([path]) => String(path) === changed)).toBe(false);
+    },
+  );
+
+  it('does not replay an unconfirmed rename that actually moved the inode', async () => {
+    let published: string | undefined;
+    rename.mockImplementation(async (from, to) => {
+      await nativeRename(from, to);
+      if (!published && /[\\/]\.policy\.[^\\/]+\.tmp$/.test(String(from))) {
+        published = String(to);
+        throw Object.assign(new Error('Controlled uncertain rename result'), { code: 'EPERM' });
+      }
+    });
+    await expect(
+      system({ operation: 'complete_execution', post: 'timeout', commit: true }),
+    ).rejects.toMatchObject({ code: 'GOVERNED_PLAN_AUTHORITY_ROUTE_UNSAFE' });
+    expect(JSON.parse(await readFile(published!, 'utf8'))).toMatchObject({
+      schema: 'openslack.governed_plan_authority_policy.v1',
+    });
+    expect(rename.mock.calls.filter(([, to]) => String(to) === published)).toHaveLength(1);
+  });
+
+  it('retains the original publication failure when owned cleanup also fails', async () => {
+    const primary = Object.assign(new Error('Controlled storage failure'), { code: 'EIO' });
+    const secondary = Object.assign(new Error('Controlled cleanup failure'), { code: 'EBUSY' });
+    let temporary: string | undefined;
+    rename.mockImplementation(async (from, to) => {
+      if (/[\\/]\.policy\.[^\\/]+\.tmp$/.test(String(from))) {
+        temporary = String(from);
+        throw primary;
+      }
+      await nativeRename(from, to);
+    });
+    remove.mockImplementation(async (path, options) => {
+      if (String(path) === temporary) throw secondary;
+      return nativeRemove(path, options);
+    });
+    await expect(
+      system({ operation: 'complete_execution', post: 'timeout', commit: true }),
+    ).rejects.toMatchObject({ cause: primary, errors: [primary, secondary] });
+    expect(rename.mock.calls.filter(([from]) => String(from) === temporary)).toHaveLength(1);
+    expect(await readFile(temporary!, 'utf8')).toContain(
+      'openslack.governed_plan_authority_policy.v1',
+    );
+  });
+
+  it('does not retry or publish after a file synchronization failure', async () => {
+    const failure = Object.assign(new Error('Controlled synchronization failure'), {
+      code: 'EBUSY',
+    });
+    let temporary: string | undefined;
+    const sync = vi.fn(async () => {
+      throw failure;
+    });
+    open.mockImplementation(async (...args) => {
+      const handle = await nativeOpen(...args);
+      if (/[\\/]\.policy\.[^\\/]+\.tmp$/.test(String(args[0]))) {
+        temporary = String(args[0]);
+        vi.spyOn(handle, 'sync').mockImplementation(sync);
+      }
+      return handle;
+    });
+    await expect(
+      system({ operation: 'complete_execution', post: 'timeout', commit: true }),
+    ).rejects.toBe(failure);
+    expect(sync).toHaveBeenCalledOnce();
+    expect(rename.mock.calls.filter(([from]) => String(from) === temporary)).toHaveLength(0);
+    expect(remove.mock.calls.filter(([path]) => String(path) === temporary)).toHaveLength(1);
+  });
+
+  it('rechecks temporary ownership after cleanup directory verification', async () => {
+    const primary = Object.assign(new Error('Controlled storage failure'), { code: 'EIO' });
+    let temporary: string | undefined;
+    let replaced = false;
+    rename.mockImplementation(async (from, to) => {
+      if (/[\\/]\.policy\.[^\\/]+\.tmp$/.test(String(from))) {
+        temporary = String(from);
+        throw primary;
+      }
+      await nativeRename(from, to);
+    });
+    realpath.mockImplementation(async (...args) => {
+      const result = await nativeRealpath(...args);
+      if (temporary && !replaced) {
+        replaced = true;
+        await nativeRename(temporary, `${temporary}.retained`);
+        await writeFile(temporary, 'foreign cleanup bytes', { flag: 'wx' });
+      }
+      return result;
+    });
+    const failure = await system({
+      operation: 'complete_execution',
+      post: 'timeout',
+      commit: true,
+    }).then(
+      () => undefined,
+      (error) => error as unknown,
+    );
+    expect(replaced).toBe(true);
+    expect(await readFile(temporary!, 'utf8')).toBe('foreign cleanup bytes');
+    expect(remove.mock.calls.some(([path]) => String(path) === temporary)).toBe(false);
+    expect(failure).toMatchObject({ cause: primary });
+  });
+
+  it('bounds persistent refusal instead of replaying the caller', async () => {
+    let temporary: string | undefined;
+    rename.mockImplementation(async (from, to) => {
+      if (/[\\/]\.policy\.[^\\/]+\.tmp$/.test(String(from))) {
+        temporary = String(from);
+        throw Object.assign(new Error('Controlled persistent refusal'), { code: 'EBUSY' });
+      }
+      await nativeRename(from, to);
+    });
+    await expect(
+      system({ operation: 'complete_execution', post: 'timeout', commit: true }),
+    ).rejects.toMatchObject({ code: 'GOVERNED_PLAN_STORE_BUSY' });
+    const calls = rename.mock.calls.filter(([from]) => String(from) === temporary);
+    expect(calls.length).toBeGreaterThan(1);
+    expect(calls.length).toBeLessThan(20);
+    expect(remove.mock.calls.filter(([path]) => String(path) === temporary)).toHaveLength(1);
   });
 });
