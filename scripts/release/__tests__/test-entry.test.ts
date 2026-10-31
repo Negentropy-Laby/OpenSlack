@@ -12,7 +12,7 @@ function loadConfig(relative: string, overrides: Record<string, string> = {}) {
   Object.assign(env, overrides);
   const program = `const loaded = await import(${JSON.stringify(pathToFileURL(resolve(root, relative)).href)});
     const config = loaded.default.default ?? loaded.default;
-    process.stdout.write(JSON.stringify(config.test.projects ?? []));`;
+    process.stdout.write(JSON.stringify(config.test.projects ?? { name: config.test.name, include: config.test.include }));`;
   return spawnSync(process.execPath, ['--import', 'tsx', '--input-type=module', '-e', program], {
     cwd: root, env, encoding: 'utf8', timeout: 20_000,
   });
@@ -29,14 +29,26 @@ describe('ordinary tests and explicit external compatibility', () => {
     expect(projects).not.toContain('integrations/deepseek-harness');
   });
 
-  it.each([
-    { OPENSLACK_HARNESS_COMPATIBILITY: 'required' },
-    { OPENSLACK_TEST_INVENTORY: 'collect' },
-  ])('rejects incomplete required compatibility/inventory before collecting a partial suite %#', overrides => {
-    const result = loadConfig('vitest.config.ts', overrides);
+  it('rejects incomplete required execution compatibility before running a partial suite', () => {
+    const result = loadConfig('vitest.config.ts', { OPENSLACK_HARNESS_COMPATIBILITY: 'required' });
     expect(result.error).toBeUndefined();
     expect(result.status).not.toBe(0);
     expect(result.stderr).toContain('DEEPSEEK_HARNESS_CHECKOUT');
+  });
+
+  it.each([false, true])('includes every plugin declaration project without loading external peers, required=%s', required => {
+    const overrides: Record<string, string> = { OPENSLACK_TEST_INVENTORY: 'collect' };
+    if (required) overrides.OPENSLACK_HARNESS_COMPATIBILITY = 'required';
+    const root = loadConfig('vitest.config.ts', overrides);
+    expect(root.error).toBeUndefined();
+    expect(root.status, root.stderr).toBe(0);
+    expect(JSON.parse(root.stdout)).toContain('integrations/deepseek-harness');
+    const plugin = loadConfig('integrations/deepseek-harness/vitest.config.ts', overrides);
+    expect(plugin.error).toBeUndefined();
+    expect(plugin.status, plugin.stderr).toBe(0);
+    expect(JSON.parse(plugin.stdout)).toMatchObject({ name: '@openslack/deepseek-harness-plugin', include: ['tests/**/*.spec.ts'] });
+    // Actual completeness is enforced by the production collector, including
+    // the Node22 job which has no external checkout, not by a copied case count.
   });
 
   it('fails an explicitly selected plugin config with an actionable missing-checkout error', () => {

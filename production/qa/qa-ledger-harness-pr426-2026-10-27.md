@@ -7,7 +7,7 @@ audience:
   - contributors
   - reviewers
 owner: qa
-updated: 2026-10-27
+updated: 2026-11-01
 sources:
   - docs/architecture/adr/adr-0003-harness-closed-loop-repair.md
   - design/cdd/workstreams/agent-runtime-and-aby/README.md
@@ -286,3 +286,197 @@ need their own receipts; 23/40/38 are not summed into a whole-suite result.
 U01, the stated nonblocking P2 follow-ups, real approved-subject/model Windows/
 WSL execution and human acceptance retain their prior boundaries. #426 remains
 open Draft: no approval, merge, release, automatic redispatch or provisioning.
+
+
+## 2026-11-01: subsequent 45-finding repair
+
+This section is a new review batch with its own numbering 1–45. It does not
+replace the 51-finding or R36 records above. The existing Draft PR #426 was
+refreshed from `4cdb212a1b111a40269fca78fee6a1fd04574af0`, still targeting
+`main@184adb088c6157ceec148061a6b8cef5f8444377`. Repairs remain on the same
+`feat/openslack-harness-bridge-20261024` branch, without history rewriting.
+
+The maintainer selected the complete family-port migration and a reviewed MCP
+allowlist. Required reviewed tools must be uniquely present with matching schemas;
+extra catalog entries are ignored and never registered. No original Harness/Aby
+input, credential, identity, production run or deployment is modified. The proposed
+business principal is not used as the repair or publishing actor. No live model,
+approval, Ready conversion or merge is part of this batch.
+
+### Evidence interpretation
+
+`Implemented` below records a source-level disposition and the named regression,
+not final-candidate acceptance. Final full-suite, package and hosted results are
+reported for their actual source inputs and head in the update-only PR delivery.
+Raw local evidence is retained outside the repository at
+`/var/tmp/openslack-pr426-evidence-20261031`; this is not a public attachment claim.
+Native records use `D:\Temp\openslack-pr426-repair-20261031`.
+
+The P0 commit is `d53af8a8` (`runtime: preserve committed confirmation and terminal
+ownership`). The remaining rows identify their additive commit group: **B**,
+Bridge/catalog/resource boundaries; **F**, family/host/read boundaries; **G**,
+inventory/CI and canonical projections. The PR delivery maps these group names to
+their actual published commits, avoiding a self-referential documentation commit.
+
+- P0 real counterexamples are in `p0-red-real.json` and
+  `settlement-production-red.json`; the later expanded P0 run recorded 139 PASS
+  and one existing optional-compatibility SKIP. The two settlement setup errors in
+  the first RED file are not behavioral counterexamples.
+- `disabled-family-red.json` and `disabled-settlement-source-red.json` record the
+  actual disabled-family dependency failures before migration. The subsequent
+  independent read-only review confirmed optional source closure and the corrected
+  stdio startup classification/cleanup through production functions.
+- `reused-adapter-old-encoder-red.json` is the controlled old-encoder counterexample:
+  the first session succeeds and the next large-message session fails. The earlier
+  `reused-adapter-red*.json` fixtures failed before reaching that condition and are
+  retained as invalid counterexamples, not regression proof.
+- `protocol-vault-red.json` retains strict-JSON/envelope/capacity counterexamples.
+  `read-smoke-red.json` retains the old-window omission and unrelated-history
+  contradiction. No failures are erased by later passing runs.
+- The first ports run had 217 passing assertions but two collection failures caused
+  by a missing internal-catalog test alias. The next run had 228 passing assertions
+  and eight new fixture setup failures from spying on a frozen service; those
+  failures are not production defects. The corrected actual observer matrix passed
+  all 17 settlement cases (`settlement-eight-states.json`).
+- The first final focused pass recorded 790 PASS/12 existing platform/live SKIP
+  (802 declarations). The second recorded 789 PASS/1 FAIL/12 SKIP: a 60-second
+  observation test took 70.32 seconds. Independent CPU profiling reproduced the
+  timeout and attributed 90.98 seconds to complete runtime closure observation,
+  including duplicated fixed approval setup. At that stage only immutable expected
+  approval material was shared; workspaces/runs/receipts remained private
+  and the four real prepare/accept/inspection phases each reread the executable
+  and runtime manifest. An unprofiled independent regression passed with those
+  four-read assertions; the earlier timeouts remain retained.
+- Whole-delta read-only review additionally reproduced a frozen typed resolver
+  error being replaced by TypeError before rejection recording. Two actual launch
+  and preflight regressions fail before the repair (`frozen-resolver-origin-red.json`).
+  The fix uses the authoritative private origin plus best-effort writable data
+  compatibility fields; three selected frozen/mutable cases then pass. Accessor,
+  frozen and hostile public properties do not prevent rejection recording.
+- The first native focused run recorded 235 PASS/1 FAIL because a fixture Git
+  commit treated `/dev/null` as a hooks path. An owned empty fixture hooks directory
+  fixes that platform assumption; the original failed real SDK case subsequently
+  passed independently (1 selected PASS / 34 name deselections, not 34 platform skips).
+  No original Harness or global Git configuration was patched.
+- The first native full run used the recorded pre-follow-up source overlay, not
+  the final Git candidate: 8,342 PASS/11 FAIL/88 existing platform or opt-in SKIP.
+  Its raw JSON and input manifest remain retained. The failures covered stale
+  inventory/source-owner assertions, hard-coded shared drive aliases, fixture
+  hooks paths, exclusive lock acquisition contention, and an open old state-file
+  descriptor preventing Windows replacement. No failed full run is reclassified
+  as passing because a focused rerun succeeds.
+- The lock repair waits only before any descriptor, ownership record or effect
+  exists, within the original monotonic one-second bound. Windows EPERM/EBUSY may
+  clear; persistent denial retains its original error. Seven portable cases and
+  the actual cross-process contention exercise this boundary. It does not retry
+  publication, callbacks, rename, fsync or cleanup. If Windows refuses replacement
+  while an old descriptor is open, the test requires the unchanged old state,
+  exact retained transaction/intent/temporary bytes and unavailable projection
+  even after close. That is a verified indeterminate outcome, not successful
+  replacement or automatic recovery. ADR-0004 documents this existing boundary.
+- Windows alias fixtures now atomically reserve an unused drive mapping and
+  verify the physical target identity before cleanup; they never remove an
+  existing unrelated mapping. Source-boundary checks inspect the migrated family
+  and host closure, retaining the forbidden-authority lists and negative cases.
+- The next native run recorded 139 PASS/4 FAIL/1 existing SKIP; all remaining
+  failures were the four pre-SDK observation cases exceeding the unchanged
+  60-second case bound. An independent first-case run confirmed the timeout.
+  A read-only native measurement of the complete original runtime recorded
+  695,675 metadata calls and 27.35 seconds for one capture. No production cache,
+  ancestor check, hash phase, timeout, worker limit or retry was relaxed.
+  Those tests never start an SDK or model, so they now use the existing complete
+  small synthetic installed-runtime fixture builder, with real production
+  prepare/cutoff/accept/inspect readers, actual Node and built plugin proofs,
+  four fresh phase reads, private mutable run evidence, and an explicit zero-peer
+  assertion for every case. Original SDK composition and linked/packed process
+  integration tests remain separate and unchanged. The failed native case then
+  passed independently; all eight previously failing files passed together:
+  143 PASS/0 FAIL/1 existing platform SKIP. This proves the focused behavior,
+  not original-SDK performance or a final whole-suite result.
+- Official Linux Node 24.18.1, Bun 1.4.0 and Go 1.26.5 build the external plugin.
+  Original Harness remains pinned to `22ddee3792402c3e70ec5f86a63c3e3e895a2f60`;
+  its actual Linux and native-Windows artifact/check commands passed, with no
+  original source patch. Original tracked/index/ref preservation is checked
+  separately from generated artifacts.
+- Actual Windows handle tests passed under the pinned Node 24.18.1 PATH:
+  `native-supervisor-pinned24.log`. Cross-compilation is not substituted for those
+  native waits, cancellation and zero-execution creation-failure observations.
+- Full typecheck and contract-family checks passed. Earlier no-checkout and
+  with-checkout collections agreed at 8,747 declarations/589 files; the resolver
+  regression phase then recorded 8,749/589. After the native follow-ups, the
+  production collector records 8,757 declarations/590 files. Two actual generation
+  passes produce identical canonical/projection bytes. These are declaration
+  inventories, not execution pass counts. ESLint's one unused fixture import was
+  removed and the corrected run reports zero errors and zero warnings. The source-lock
+  intersection covers 32 source/contract manifests and is empty; no digest,
+  binding set or authority scope is widened.
+- A minimum-version Node 22.0.0 test attempt stopped before collection because
+  the existing main lock already uses Vite 7's ESM loader contract. It ran zero
+  cases and proves no compatibility outcome. Node 22 LTS ordinary execution and
+  pinned Node 24 Harness execution are recorded separately; the product engines
+  declaration and dependency lock are not changed to hide that tooling limit.
+  The official Node 22.23.4 LTS ordinary boundary run subsequently passed 44/44.
+
+### All 45 dispositions
+
+`AR` means `packages/agent-runtime/src`; `MCP` means `apps/mcp/src`; `Plugin`
+means `integrations/deepseek-harness`. Portable behavior, Linux-only I/O, native
+Windows execution and opt-in real-model work remain distinct evidence classes.
+
+| # | Original finding | Priority | Disposition and behavioral evidence | Commit / platform |
+| --- | --- | --- | --- | --- |
+| 1 | Late abort misclassifies committed confirmation | P0 | Consume the trusted returned record. Real composition confirms durable success despite late abort; no second execute or false stop. | d53af8a8; portable |
+| 2 | One transient settlement read kills admission | P0 | Success performs no readback. Failure observation retries only known transient contention; unresolved state holds without replay. Real composition and observer matrix cover both paths. | d53af8a8; portable |
+| 3 | Long timeout becomes a 1 ms timer | P0 | Segment delays at 2^31−1 while preserving the absolute and monotonic budget; reject unrepresentable dates before admission. Host boundary regression covers long deadlines. | d53af8a8; portable |
+| 4 | Read failure publishes a late stop on completed run | P0 | Stop/fail use the canonical run transaction and owner generation; completed state is a no-op and uncertainty does not publish a guessed stop fact. Completed/stop and lock regressions remain. | d53af8a8; portable + actual file transactions |
+| 5 | Close while Windows wait is outstanding | P0 | A cancellable waiter owns a separate SYNCHRONIZE duplicate and closes it after its wait returns. Native cancellation/exit tests pass. | d53af8a8; native Windows |
+| 6 | Job handle closed twice in failure hook | P1 | Corrected attribution: the private hook caused the old ownership violation. Inject an independent invalid association parameter without closing the production-owned Job. Real creation failure executes no child. | d53af8a8; native Windows |
+| 7 | Zero token budget omitted | P0 | Only null is unbounded. Preserve zero and negative constrained values; request payload matrix retains the distinction. | d53af8a8; portable |
+| 8 | Three immediate snapshot retries exhaust contention budget | P0 | Synchronous read remains one observation. Waiting production paths use the bounded asynchronous snapshot wait within the remaining task deadline. Cross-process lock regression retained. | d53af8a8; actual file transactions |
+| 9 | Corrupt stop file escapes bounded read taxonomy | P0 | Return bounded unavailable/corrupt projection; retain the file, no raw JSON exception or automatic replay. Corrupt-stop regression covers it. | d53af8a8; portable |
+| 10 | Active run disappears beyond event window | P1 | Resolve the same visible run anchor separately from feed-window trimming. Old active run is visible, while invisible/other-run anchors grant nothing. | F; portable |
+| 11 | Directory count hard-codes 12/16 | P1 | Use the host-owned reviewed names/schemas, reject missing/duplicate required tools, ignore extras. Actual MCP fixture advertises an extra unreviewed tool without exposing it. | B; portable + actual SDK process |
+| 12 | Inventory requires an external checkout | P1 | Collect lazy declarations without SDK imports or a witness. Actual no-checkout and with-checkout production collections agree. Execution still requires the real dependency. | G; portable |
+| 13 | Smoke loses trusted failure/run association | P1 | Use host-recorded error origin, including non-extensible errors; never scan for the latest run or trust an arbitrary runId property. Existing launcher rejection/hostile-error regressions verify origin. | F; portable |
+| 14 | Unrelated storage lock makes a PASS report contain FAIL | P1 | Inspect only this invocation's run. Its unavailable required evidence makes the whole report FAIL; unrelated locked history does not. Actual smoke positive/negative fixture covers this. | F; portable |
+| 15 | Main gates lost Node 22 coverage | P1 | Add ordinary Node 22 OpenSlack jobs to both existing workflows; retain pinned Node 24 Harness qualification, original required names/permissions and product engines. | G; hosted Node 22 + local pinned probe |
+| 16 | Strict result JSON leaks SyntaxError/upstream text | P1 | Emit fixed PeerFailure(PROTOCOL), no cause/model sentinel and no complete frame. Real receiver regression covers malformed strict JSON. | B; portable |
+| 17 | Reused adapter retains previous chunk identity | P1 | Reset encoder/decoder per session and guard callbacks by their child instance. Controlled old-encoder counterexample proves the second large-message session boundary. | B; portable process fixture |
+| 18 | Direct receiver skips envelope validation | P1 | Both entrypoints validate before payload/SDK access. Invalid version/envelope rejects with the same typed failure and zero SDK start. | B; portable |
+| 19 | Witness ordering depends on locale | P1 | Sort final witness paths by explicit UTF-8 bytes, not localeCompare. Preserve old reports; new inputs receive new witnesses. | B; Bun/Node tooling |
+| 20 | Workflow/executor family keys disagree | P1 | Separate sealed workflow, executor and adapter indexes. A test-only unequal-ID family previews, binds, confirms and executes; collisions/swaps reject. | F; portable |
+| 21 | Disabled family source is always read | P1 | Enabled family factories own their source closure and optional settlement observer. Three disabled-Harness source tripwires verify no read. | F; portable |
+| 22 | Repeated live tool authorization reads | P2 | Retain independent task/principal/lease checks across awaits and effects; do not memoize authorization. Freshness/permission drift negatives are retained. This is a cost observation, not a proven authorization defect. | F; retained safety boundary |
+| 23 | Compile each glob for each path | P2 | Compile the allow/deny matchers once per fresh task capture, then apply them to each path. No cross-call permission cache. | F; portable |
+| 24 | Source cache still walks the tree | P2 | Retain independent source membership/stamp checks at admission/effect stages; they detect added/replaced files and do not claim a zero-I/O cache. Avoid unsafe long-lived cached authorization. | retained safety boundary; AR source drift tests |
+| 25 | Repeated dispatch authorization/rebind | P2 | Preserve before/after preparation and acceptance authorization and canonical CAS rebinds. These are different await/effect boundaries, not one permanently immutable authorization result. | retained safety boundary; host drift tests |
+| 26 | Windows polls Job-empty during normal execution | P2 | Start the Job-empty ticker only on closing, retaining original cleanup deadlines and observed exit requirements. | d53af8a8; native Windows |
+| 27 | Vault grows without a bound | P1 | Sweep expired entries and reserve before the first await; cap pending plus in-flight previews at 128. Capacity refuses before upstream and does not evict live capabilities. | B; portable concurrent/expiry regressions |
+| 28 | Family-specific branches scattered through composition | P1 | Complete GovernedWorkflowFamily ports own restoration, authorization, observation, compile, execute and optional settlement; both existing families migrate. Direct Scenario remains separate. | F; portable actual composition |
+| 29 | Settlement inference is not exhaustive | P1 | One exhaustive union covers all eight persisted states; unknown reads hold. The real production observer is used by tests, including returned versus uncertain succeeded records. | d53af8a8 + F; portable |
+| 30 | Harness guards copied across composition | P1 | Each family owns its authorization and the sealed registry calls it at binding/execution boundaries; front/shared paths do not duplicate Harness-name predicates. | F; portable |
+| 31 | Git change-name logic copied twice | P2 | Execution and reconciliation share one change-name reader, while independent acceptance/reconciliation observations remain. | F; Git fixture |
+| 32 | Unconsumed public runtime-entry helper | P2 | Remove only the new unpublished no-consumer helper and its barrel export. Keep the actual verified deployment entry mapping. | F; build/typecheck |
+| 33 | Repeated completion checks | P2 | Retain stop/lease/CAS checks around the host revalidation callback and each store publication boundary. A synchronous host hook can invalidate evidence; reduction is not a gate. | retained safety boundary; host mutation/stop tests |
+| 34 | Write/Edit handlers repeat the same guard sequence | P2 | One generic handler preserves actor, live authorization, path, expiry and preview ordering; typed wrappers retain their distinct native intent semantics. | B; actual SDK file fixtures |
+| 35 | Owner-source exclusivity expressed as boolean algebra | P2 | Use the package-owned three-source selection list and cardinality check; all conflicting pairs reject before composition. | F; CLI/package tests |
+| 36 | Eligibility aliases reparse owned values | P2 | Own frozen parsed restrictions privately; reuse structure validation only for owned values and recheck expiry at live boundaries. Raw input still validates independently. | B; expiry/foreign-object tests |
+| 37 | Call-ID regex copies have different semantics | P1 | Share SDK call-ID semantics only. Task/report business references retain their own intentional character sets; different concepts are not unified. | B; corrected attribution |
+| 38 | Startup frame cap duplicates the wire limit | P1 | Consume the pure Bridge frame-limit contract in startup. Chunk/message bounds remain separately enforced. | B; wire/process negatives |
+| 39 | Private parseFrame duplicates decoder | P1 | Remove the test-only parser; tests exercise the actual bounded Bridge decoder and receiver. | B; portable |
+| 40 | Vault repeats RUN-ID grammar | P1 | Consume canonical RUN_ID_RE through the controlled pure Bridge leaf; packed declarations include that leaf's run-id dependency. | B; build/packed consumer |
+| 41 | Read-side binding validation appears to diverge | P1 | Corrected attribution:32 is per report,128 cumulative state. Separate shared validators preserve both, including completed⇒verified. Boundary matrix rejects33/129 in the corresponding contexts. | F; portable |
+| 42 | Coupled derived readiness booleans | P2 | A single ready/unavailable Scenario result supplies definitions; registered family entries supply workflow readiness. No claim of a proven authorization bypass. | F; portable |
+| 43 | repair-run missing from command authority | P1 | Register the existing command in modules.yaml and generate its status projection; no new top-level command. | G; status verification |
+| 44 | ADR-0004 absent from ADR index | P1 | Add its existing Accepted decision to the index and source list. This is navigation synchronization, not a new approval decision. | G; docs verification |
+| 45 | CLI owns Harness selection and server lifecycle | P1 | MCP package owns selection, canonical root, principal/profile gates and stdio lifecycle. CLI parses/wires signals/renders only; startup failure drains exactly once with accurate phase. | F; real transport failure + CLI signals |
+
+### Remaining acceptance boundary
+
+Required final validation remains mandatory on the repaired source: three consecutive
+focused passes, full Linux and native Windows, independent plugin build, actual saved
+TGZ install/smoke, full typecheck/build/lint0/0, applicable Go/contract checks,
+workspace/golden/Genesis/docs/status, unchanged original dependency witnesses,
+independent read-only review and synchronized head CI/PRMS. Pending evidence is not
+substituted by old green CI, a deselected case, cross-compilation or a source-only
+review. Real integration identity/deployment/model and human approval are separate.

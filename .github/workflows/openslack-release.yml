@@ -255,10 +255,41 @@ jobs:
           compression-level: 0
           retention-days: 14
 
+  node22-core:
+    name: OpenSlack Node 22
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: '22'
+          package-manager-cache: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16
+        with:
+          go-version: '1.26.5'
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        with:
+          bun-version: 1.4.0
+      - run: bun install --frozen-lockfile
+      - run: bun run typecheck
+      - run: bun run build
+      - run: bun run lint
+      - run: node node_modules/vitest/vitest.mjs run
+      - run: node scripts/verify-test-counts.mjs
+      - run: bun run openslack workspace validate
+      - run: bun run openslack self eval --suite golden
+      - run: bun run docs:verify
+      - run: bun run openslack status verify
+
   publish:
     name: Publish tag release
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: build
+    needs: [build, node22-core]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
