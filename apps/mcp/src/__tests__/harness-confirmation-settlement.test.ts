@@ -8,6 +8,7 @@ import { createRunStore, buildPermissionProfile } from '@openslack/agent-runtime
 import { HarnessTaskHost, type ApprovedHarnessTask } from '@openslack/agent-runtime/internal/harness';
 import { createOpenSlackGovernedMutationPort, currentGovernedMutationAttempt } from '../mutations.js';
 import { callGovernedMutationTool } from '../tools/mutations.js';
+import { createHarnessConfirmationObserver } from '../governed-confirmation.js';
 
 const roots: string[] = [];
 const hosts: HarnessTaskHost[] = [];
@@ -56,14 +57,13 @@ function setup(failure: 'hook' | 'audit' | 'busy' | 'none', wait?: Promise<void>
     actions: [{ actionId: 'harness.task.dispatch', input: {} }], effects: [{ type: 'harness.task.dispatch', summary: 'Admit fixture', risk: 'medium' as const, target: task.taskId }],
   });
   const outcomes: Array<{ attemptId: string; failed: boolean }> = [];
+  const observeSettlement = createHarnessConfirmationObserver(host, service);
   const mutations = createOpenSlackGovernedMutationPort({ service, authority: { actorId: 'fixture-principal', workspaceId: 'fixture' },
     compileScenario: compile, compileWorkflow: compile,
     onConfirmationSettled: hookMode === 'sync' ? () => { throw new Error('Fixture synchronous observer failure'); } : async (planId, outcome) => {
       outcomes.push(outcome);
-      const record = await service.get(planId);
-      host.settleConfirmedAdmissions(planId, { state: outcome.failed || outcome.aborted || failure === 'hook' ? 'uncertain' : record?.state ?? 'uncertain',
-        confirmationAttemptId: outcome.attemptId, ...(record?.execution?.executionId ? { executionId: record.execution.executionId } : {}) });
       if (failure === 'hook') throw new Error('Fixture actual settlement observer failure');
+      await observeSettlement(planId, outcome);
     },
   });
   const invocation = () => ({ signal: new AbortController().signal, deadlineAt: new Date(Date.now() + 10_000).toISOString() });
@@ -101,16 +101,18 @@ describe('originating governed confirmation settlement', () => {
     expect(value.outcomes).toHaveLength(1);
     expect(value.execute).not.toHaveBeenCalled();
   });
-  it.each(['hook', 'audit', 'busy'] as const)('stops admission after %s failure without interpreting durable success as execution permission', async failure => {
+  it.each(['hook', 'audit', 'busy'] as const)('holds admission after %s failure without interpreting durable success as execution permission', async failure => {
     const value = setup(failure);
     const preview = await value.preview();
     await expect(value.mutations.confirm({ planId: preview.record.planId, confirmationToken: preview.confirmationToken }, value.invocation())).rejects.toThrow();
     const runId = value.getRunId();
-    await vi.waitFor(() => expect(value.host.read(runId)?.status).toBe('failed'));
-    expect(value.host.read(runId)?.harnessExecution?.lifecycle?.phase).toBe('stopped_before_start');
+    expect(value.host.read(runId)?.status).toBe('pending');
+    expect(value.host.read(runId)?.harnessExecution?.lifecycle?.phase).toBe('awaiting_confirmation');
     expect(value.execute).not.toHaveBeenCalled();
     expect(value.outcomes).toEqual([expect.objectContaining({ failed: failure !== 'hook' })]);
     if (failure !== 'busy') expect((await value.service.get(preview.record.planId))?.state).toBe('succeeded');
+    await value.host.close(100);
+    expect(value.host.read(runId)?.harnessExecution?.lifecycle?.phase).toBe('stopped_before_start');
   });
 
   it('does not cancel the owner when duplicate-active and bad-token confirmations settle first', async () => {

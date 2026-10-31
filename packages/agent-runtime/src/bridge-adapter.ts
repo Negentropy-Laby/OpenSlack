@@ -440,7 +440,7 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
         model: resolvedConfig.model,
         correlationId: context.correlationId ?? runId,
         threadId: context.threadId,
-        budget: context.runState.tokensRemaining
+        budget: context.runState.tokensRemaining !== null
           ? { tokens: context.runState.tokensRemaining, costUsd: 0 }
           : undefined,
         resolvedConfig: resolvedConfig as unknown as Record<string, unknown>,

@@ -32,8 +32,8 @@ type childTree struct {
 }
 
 type creationHooks struct {
-	createJob    func() (windows.Handle, error)
-	beforeCreate func(windows.Handle)
+	createJob      func() (windows.Handle, error)
+	associationJob func(windows.Handle) windows.Handle
 }
 
 func createChild(config options) (*childTree, error) {
@@ -71,7 +71,11 @@ func createChildWithHooks(config options, hooks creationHooks) (_ *childTree, re
 	defer attrs.Delete()
 	// Association is part of CreateProcess, so even a helper crash between creation
 	// and ResumeThread cannot leave an unowned suspended process behind.
-	if err = attrs.Update(procThreadAttributeJobList, unsafe.Pointer(&tree.job), unsafe.Sizeof(tree.job)); err != nil {
+	associationJob := tree.job
+	if hooks.associationJob != nil {
+		associationJob = hooks.associationJob(tree.job)
+	}
+	if err = attrs.Update(procThreadAttributeJobList, unsafe.Pointer(&associationJob), unsafe.Sizeof(associationJob)); err != nil {
 		return nil, err
 	}
 	var inputRead, inputWrite, outputRead, outputWrite, errorRead, errorWrite windows.Handle
@@ -123,14 +127,12 @@ func createChildWithHooks(config options, hooks creationHooks) (_ *childTree, re
 		return nil, err
 	}
 	var created windows.ProcessInformation
-	if hooks.beforeCreate != nil {
-		hooks.beforeCreate(tree.job)
-	}
 	err = windows.CreateProcess(application, command, nil, nil, true,
 		windows.CREATE_SUSPENDED|windows.EXTENDED_STARTUPINFO_PRESENT|windows.CREATE_UNICODE_ENVIRONMENT,
 		nil, nil, &startup.StartupInfo, &created)
 	runtime.KeepAlive(handles)
 	runtime.KeepAlive(tree)
+	runtime.KeepAlive(associationJob)
 	if err != nil {
 		return nil, err
 	}
@@ -178,6 +180,46 @@ func (tree *childTree) empty() (bool, error) {
 		err = errors.New("incomplete Job accounting receipt")
 	}
 	return info.ActiveProcesses == 0, err
+}
+
+// Only this waiter owns its duplicate. Cleanup may close the tree's original
+// handle, but cannot close a handle on which WaitForSingleObject is pending.
+// Cancellation is observed between bounded kernel waits; the waiter closes its
+// own handle after the last wait has returned, including on a cleanup timeout.
+func startProcessWait(process windows.Handle) (<-chan error, func(), error) {
+	var owned windows.Handle
+	current := windows.CurrentProcess()
+	if err := windows.DuplicateHandle(current, process, current, &owned, windows.SYNCHRONIZE, false, 0); err != nil {
+		return nil, nil, err
+	}
+	done := make(chan error, 1)
+	cancelled := make(chan struct{})
+	var once sync.Once
+	go func() {
+		defer windows.CloseHandle(owned)
+		for {
+			select {
+			case <-cancelled:
+				done <- errors.New("root process wait cancelled without an exit receipt")
+				return
+			default:
+			}
+			status, err := windows.WaitForSingleObject(owned, 25)
+			if err != nil {
+				done <- err
+				return
+			}
+			if status == windows.WAIT_OBJECT_0 {
+				done <- nil
+				return
+			}
+			if status != uint32(windows.WAIT_TIMEOUT) {
+				done <- errors.New("root process wait was not signaled")
+				return
+			}
+		}
+	}()
+	return done, func() { once.Do(func() { close(cancelled) }) }, nil
 }
 
 func supervise(config options) error {
@@ -255,22 +297,23 @@ func supervise(config options) error {
 			}
 		}
 	}()
+	rootDone, cancelRootWait, err := startProcessWait(tree.process)
+	if err != nil {
+		return err
+	}
+	defer cancelRootWait()
 	if _, err = windows.ResumeThread(tree.thread); err != nil {
 		return err
 	}
 	windows.CloseHandle(tree.thread)
 	tree.thread = 0
-	rootDone := make(chan error, 1)
-	processHandle := tree.process
-	go func() {
-		status, err := windows.WaitForSingleObject(processHandle, windows.INFINITE)
-		if err == nil && status != windows.WAIT_OBJECT_0 {
-			err = errors.New("root process wait was not signaled")
+	var ticker *time.Ticker
+	var tick <-chan time.Time
+	defer func() {
+		if ticker != nil {
+			ticker.Stop()
 		}
-		rootDone <- err
 	}()
-	ticker := time.NewTicker(10 * time.Millisecond)
-	defer ticker.Stop()
 	var deadline, forceAt time.Time
 	rootStopped, stdoutStopped, stderrStopped := false, false, false
 	forced, uncertain := false, false
@@ -278,6 +321,8 @@ func supervise(config options) error {
 		if deadline.IsZero() {
 			deadline = time.Now().Add(config.cleanup)
 			forceAt = deadline.Add(-config.cleanup / 6)
+			ticker = time.NewTicker(10 * time.Millisecond)
+			tick = ticker.C
 			// EOF closes the queue; its writer must drain already accepted tail
 			// bytes before closing child stdin. The independent deadline never
 			// waits for that writer, including when the child does not read.
@@ -314,7 +359,10 @@ func supervise(config options) error {
 			if err != nil {
 				beginClosing()
 			}
-		case <-ticker.C:
+		case <-tick:
+		}
+		if deadline.IsZero() {
+			continue
 		}
 		empty, queryErr := tree.empty()
 		if queryErr != nil {

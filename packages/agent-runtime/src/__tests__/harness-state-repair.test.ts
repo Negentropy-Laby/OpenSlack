@@ -163,18 +163,18 @@ describe('governed admission and shared canonical state repair', () => {
     expect(statSync(target).nlink).toBe(1);
   });
 
-  it('preserves corrupt canonical bytes and leaves a durable stop fact before a state-lock failure', async () => {
+  it('preserves corrupt canonical bytes as unresolved without guessing terminality to publish a stop fact', async () => {
     const { host, options, root } = fixture();
     let runId = '';
     vi.mocked(options.authorize).mockImplementation(async (_task, phase) => {
       if (phase === 'execute') writeFileSync(join(root, '.openslack.local/agents/runs', runId, 'run.json'), 'corrupt preserved fixture\n');
     });
     ({ runId } = await host.dispatch('TASK-FIXTURE', 'corrupt-before-first-execution-read'));
-    await vi.waitFor(() => expect(readHarnessStopIntent(root, runId)).not.toBeNull());
+    await vi.waitFor(() => expect(readFileSync(join(root, '.openslack.local/agents/runs', runId, 'run.json'), 'utf8')).toBe('corrupt preserved fixture\n'));
     expect(readFileSync(join(root, '.openslack.local/agents/runs', runId, 'run.json'), 'utf8')).toBe('corrupt preserved fixture\n');
     expect(await host.close(100)).toEqual({ stopped: false, unknownRunIds: [runId] });
     const admissions = join(root, '.openslack.local/agents/harness-admissions'), displaced = join(root, 'retained-admissions');
-    const stopBytes = readFileSync(join(admissions, `${runId}.stop.json`));
+    expect(readHarnessStopIntent(root, runId)).toBeNull();
     renameSync(admissions, displaced);
     try {
       symlinkSync(displaced, admissions, process.platform === 'win32' ? 'junction' : 'dir');
@@ -184,10 +184,10 @@ describe('governed admission and shared canonical state repair', () => {
       if (existsSync(admissions)) unlinkSync(admissions);
       renameSync(displaced, admissions);
     }
-    expect(readFileSync(join(admissions, `${runId}.stop.json`))).toEqual(stopBytes);
+    expect(readHarnessStopIntent(root, runId)).toBeNull();
   });
 
-  it('publishes a stop barrier despite an orphan writer lock and never acknowledges a later worker report', async () => {
+  it('retains unresolved ownership behind an orphan writer lock and never acknowledges a later worker report', async () => {
     const { host, options, root, execute } = fixture();
     let runId = '', canonical = Buffer.alloc(0);
     execute.mockImplementation(async () => {
@@ -198,7 +198,8 @@ describe('governed admission and shared canonical state repair', () => {
       throw new Error('Fixture peer failed while worker publication was unconfirmed');
     });
     ({ runId } = await host.dispatch('TASK-FIXTURE', 'orphan-writer'));
-    await vi.waitFor(() => expect(readHarnessStopIntent(root, runId)).toMatchObject({ reason: 'execution_failed' }), { timeout: 2000 });
+    await vi.waitFor(() => expect(execute).toHaveBeenCalledOnce());
+    expect(readHarnessStopIntent(root, runId)).toBeNull();
     const worker = new HarnessTaskHost({ ...options, callbackRunId: runId }); hosts.push(worker);
     await expect(worker.report({ runId, reportId: 'late', summary: 'must not be acknowledged', evidenceRefs: [] })).rejects.toThrow('changed during read');
     const directory = join(root, '.openslack.local/agents/runs', runId);

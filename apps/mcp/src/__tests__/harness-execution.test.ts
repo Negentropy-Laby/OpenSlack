@@ -31,6 +31,13 @@ function fixture(runId = 'RUN-TEST') {
 }
 
 describe('Harness activity readback', () => {
+  it('bounds corrupt persistent stop evidence without leaking its raw parser error', () => {
+    const { root, runId, event } = fixture();
+    const admissions = join(root, '.openslack.local/agents/harness-admissions');
+    mkdirSync(admissions, { recursive: true });
+    writeFileSync(join(admissions, `${runId}.stop.json`), '{private-broken-stop');
+    expect(readHarnessExecutionProjection(root, runId, [event])).toEqual({ runId, readStatus: 'unavailable', reason: 'corrupt' });
+  });
   it('requires an already visible same-run workflow anchor and never reads arbitrary paths', () => {
     const { root, runId, event } = fixture();
     expect(readHarnessExecutionProjection(root, runId, [])).toBeUndefined();

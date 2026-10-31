@@ -22,6 +22,7 @@ const originalSnapshotReader = snapshotReader.getMockImplementation()!;
 const roots: string[] = [];
 const hosts: HarnessTaskHost[] = [];
 afterEach(async () => {
+  vi.restoreAllMocks();
   snapshotReader.mockReset().mockImplementation(originalSnapshotReader);
   for (const host of hosts.splice(0)) await host.close(100);
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
@@ -63,6 +64,41 @@ describe('canonical Harness task lifecycle (keyless host fixtures)', () => {
     // are exercised separately in run-process-witness.test.ts.
     ownRunWriterWitness();
   });
+  it('segments a deadline beyond the Node timer range without stopping the admitted task immediately', async () => {
+    const { host, task, execute } = setup();
+    task.timeoutMs = 2_147_483_647 + 60_000;
+    const timers = vi.spyOn(globalThis, 'setTimeout');
+    const binding = { planId: 'GPLAN-LONG', executionId: 'GEXEC-LONG', confirmationAttemptId: 'long-owner' };
+    const { runId } = await host.dispatch(task.taskId, 'long-deadline', true, binding);
+    await new Promise(resolve => setTimeout(resolve, 20));
+    expect(timers.mock.calls.every(([, delay]) => delay === undefined || delay <= 2_147_483_647)).toBe(true);
+    expect(host.read(runId)?.status).toBe('pending');
+    expect(execute).not.toHaveBeenCalled();
+    host.settleConfirmedAdmissions(binding.planId, { state: 'succeeded', ...binding });
+    await vi.waitFor(() => expect(host.read(runId)?.status).toBe('completed'));
+    expect(execute).toHaveBeenCalledOnce();
+  });
+  it('does not publish a stop fact after completion even if a later observation is busy', async () => {
+    const { host, options, root } = setup();
+    const transaction = options.store.withRunTransaction;
+    let injected = false;
+    let closing: ReturnType<typeof host.close> | undefined;
+    vi.spyOn(options.store, 'withRunTransaction').mockImplementation((runId, update) => {
+      const state = transaction(runId, update);
+      if (state.status === 'completed' && !injected) {
+        injected = true;
+        snapshotReader.mockImplementation(() => { throw new RunStateSnapshotChangedError(runId); });
+        closing = host.close(100);
+        snapshotReader.mockImplementation(originalSnapshotReader);
+      }
+      return state;
+    });
+    const { runId } = await host.dispatch('TASK-1', 'completion-stop-race');
+    await vi.waitFor(() => expect(injected).toBe(true));
+    await closing;
+    expect(host.read(runId)?.status).toBe('completed');
+    expect(readdirSync(join(root, '.openslack.local/agents/harness-admissions')).some(name => name.endsWith('.stop.json'))).toBe(false);
+  });
   it.each(['transient', 'exhausted', 'corrupt', 'foreign-conflict'] as const)('only re-observes rejected %s snapshots without another effect', async kind => {
     const { host, root, execute, options } = setup();
     const receipt = await host.dispatch('TASK-1', 'read-only-conflict');
@@ -72,15 +108,16 @@ describe('canonical Harness task lifecycle (keyless host fixtures)', () => {
     const publications = vi.mocked(options.publish).mock.calls.length;
     snapshotReader.mockClear();
     if (kind === 'transient') {
-      for (let i = 0; i < 2; i++) snapshotReader.mockImplementationOnce(() => { throw new RunStateSnapshotChangedError(receipt.runId); });
+      snapshotReader.mockImplementationOnce(() => { throw new RunStateSnapshotChangedError(receipt.runId); });
+      expect(() => host.read(receipt.runId)).toThrow(RunStateSnapshotChangedError);
+      expect(snapshotReader).toHaveBeenCalledTimes(1);
       expect(host.read(receipt.runId)?.status).toBe('completed');
-      expect(snapshotReader).toHaveBeenCalledTimes(3);
     } else {
       const error = kind === 'corrupt' ? new Error('Corrupted run metadata')
         : new RunStateSnapshotChangedError(kind === 'foreign-conflict' ? 'RUN-OTHER' : receipt.runId);
       snapshotReader.mockImplementation(() => { throw error; });
       expect(() => host.read(receipt.runId)).toThrow(error);
-      expect(snapshotReader).toHaveBeenCalledTimes(kind === 'exhausted' ? 3 : 1);
+      expect(snapshotReader).toHaveBeenCalledTimes(1);
     }
     expect(readFileSync(path)).toEqual(before);
     expect(execute).toHaveBeenCalledTimes(1);

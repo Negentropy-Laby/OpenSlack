@@ -43,6 +43,10 @@ export interface OpenSlackGovernedPlanCompilerInput {
   readonly compilation: GovernedPlanCompilationContext;
 }
 
+export type GovernedMutationSettlementOutcome = Readonly<{
+  operation: 'confirm' | 'cancel'; attemptId: string; aborted: boolean;
+} & ({ failed: false; record: GovernedPlanRecord } | { failed: true; failureCode?: string })>;
+
 export interface CreateOpenSlackGovernedMutationPortOptions {
   readonly service: GovernedPlanService;
   readonly authority: GovernedPlanHostAuthority;
@@ -52,8 +56,8 @@ export interface CreateOpenSlackGovernedMutationPortOptions {
   readonly compileWorkflow: (
     input: OpenSlackGovernedPlanCompilerInput,
   ) => CreateCanonicalGovernedPlanInput | Promise<CreateCanonicalGovernedPlanInput>;
-  /** Always observes durable readback after confirmation/cancellation, including partial failure. */
-  readonly onConfirmationSettled?: (planId: string, outcome: Readonly<{ operation: 'confirm' | 'cancel'; attemptId: string; failed: boolean; failureCode?: string; aborted: boolean }>) => void | Promise<void>;
+  /** Success carries the service's committed return; a thrown call never grants execution. */
+  readonly onConfirmationSettled?: (planId: string, outcome: GovernedMutationSettlementOutcome) => void | Promise<void>;
 }
 
 /** The effect is already durable. This error cannot authorize a retry or claim
@@ -221,7 +225,7 @@ export function createOpenSlackGovernedMutationPort(
       }
       throw error;
     }
-    try { await onSettled?.(request.planId, { operation, attemptId, failed: false, aborted: control.signal.aborted }); }
+    try { await onSettled?.(request.planId, { operation, attemptId, failed: false, aborted: control.signal.aborted, record: result }); }
     catch (secondary) { throw new GovernedMutationSettlementUnconfirmedError(operation, result, secondary); }
     return result;
   };

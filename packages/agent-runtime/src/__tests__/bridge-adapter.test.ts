@@ -397,7 +397,7 @@ describe('BridgeProcessAdapter', () => {
     expect(err.name).toBe('BridgeAdapterError');
   });
 
-  it('sends filtered permission profile in run_request payload', async () => {
+  it.each([null, 0, -1, 7] as const)('sends filtered permissions and preserves token budget %s in the real request', async remaining => {
     const root = makeTempRoot();
     try {
       const bridgeScript = join(root, 'capture-bridge.mjs');
@@ -451,6 +451,7 @@ describe('BridgeProcessAdapter', () => {
         permissionProfile,
       });
 
+      runState.tokensRemaining = remaining;
       const result = await adapter.execute({
         prompt: 'capture permissions',
         runId,
@@ -469,6 +470,7 @@ describe('BridgeProcessAdapter', () => {
       expect(payload.deniedTools as string[]).toContain('github.pr.merge');
       expect(payload.input).toEqual([{ role: 'user', content: 'capture permissions' }]);
       expect((payload.metadata as Record<string, unknown>).integrationId).toBe('openslack');
+      expect((payload.metadata as Record<string, unknown>).budget).toEqual(remaining === null ? undefined : { tokens: remaining, costUsd: 0 });
     } finally {
       cleanup(root);
     }

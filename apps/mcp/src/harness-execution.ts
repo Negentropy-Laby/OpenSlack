@@ -48,7 +48,9 @@ export function readHarnessExecutionProjection(
     binding.evidenceRefs.some(ref => typeof ref !== 'string' || !/^[a-z][a-z0-9-]*:[A-Za-z0-9._/-]{1,256}$/.test(ref))) {
     throw new LocalReadBoundError('HARNESS_RUN_BINDING_INVALID');
   }
-  const stopRequested = !!readHarnessStopIntent(root, runId);
+  let stopRequested: boolean;
+  try { stopRequested = !!readHarnessStopIntent(root, runId); }
+  catch { return { runId, readStatus: 'unavailable', reason: 'corrupt' }; }
   if (stopRequested && state.status === 'completed') throw new LocalReadBoundError('HARNESS_RUN_STOP_UNRESOLVED');
   return { taskId: binding.taskId, runId, status: state.status, acceptance: stopRequested ? 'indeterminate' : binding.acceptance,
     summary: stopRequested ? 'Stop requested; preserve evidence and reconcile without replay.' : binding.summary,

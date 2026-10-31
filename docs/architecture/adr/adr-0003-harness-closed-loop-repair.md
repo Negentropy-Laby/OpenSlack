@@ -101,7 +101,9 @@ stopped_before_start or indeterminate. Completed/verified remains the existing
 canonical outcome, not a second completion state.
 
 Register control before any publication await. Only a newly owned admission,
-after reading matching durable succeeded confirmation, may start. Commit started
+after receiving matching committed succeeded confirmation, may start. A late
+transport abort cannot undo that return; a thrown confirmation and an uncertain
+read never grant execution. Commit started
 before any SDK/peer/tool-capable process. Preparation may create the isolated
 worktree and bindings but must not start such a process. Resolve all confirmation
 outcomes, deadlines and cancellation through one trusted settlement path.
@@ -115,7 +117,10 @@ never a fabricated pending AgentRunState or visibility anchor.
 
 An immutable stop-intent under the existing admission directory binds run,
 request hash, owner generation, fixed reason and request time. Exclusive atomic
-publication does not require the canonical state lock. Every subsequent tool,
+publication first checks nonterminal state, request hash and owner generation
+under the canonical run transaction. A completed commit receives no late stop
+fact. Unreadable or locked state retains unresolved ownership and local abort,
+without guessing terminality or deleting historical evidence. Every subsequent tool,
 report, start and completion guard checks it. It proves stop was requested, not
 that an already admitted effect ceased. Unknown in-flight operations remain so.
 An unreadable/damaged canonical run is preserved, never rebuilt by observation.

@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { createHarnessConfirmationObserver } from './governed-confirmation.js';
 import {
   closeSync,
   constants as fsConstants,
@@ -37,7 +38,6 @@ import {
   type GovernedJsonValue,
   type GovernedPlanBindingContext,
   type GovernedPlanHostAuthority,
-  type GovernedPlanRecord,
   type GovernedPlanStore,
 } from '@openslack/operator';
 import { parseRuntimeIdentityText, resolveAgentPrincipal } from '@openslack/runtime';
@@ -1518,16 +1518,7 @@ export async function createOpenSlackAgentBoundMutationComposition(
   const governedMutations = createOpenSlackGovernedMutationPort({
     service,
     authority,
-    ...(harnessHost ? { onConfirmationSettled: async (planId: string, outcome: { attemptId: string; failed: boolean; failureCode?: string; aborted: boolean }) => {
-      let record: GovernedPlanRecord | null = null;
-      try { record = await service.get(planId); } catch { /* Uncertain durable result must not release execution. */ }
-      const state = record?.state;
-      if ((state === 'pending' || state === 'executing') && !outcome.failed && !outcome.aborted &&
-        outcome.failureCode !== 'GOVERNED_PLAN_EXECUTION_UNCERTAIN' && outcome.failureCode !== 'GOVERNED_PLAN_EXECUTION_ABORTED') return;
-      harnessHost.settleConfirmedAdmissions(planId, { state: outcome.failed || outcome.aborted || state === 'executing' || !state ? 'uncertain' : state,
-        confirmationAttemptId: outcome.attemptId,
-        ...(record?.execution?.executionId ? { executionId: record.execution.executionId } : {}) });
-    } } : {}),
+    ...(harnessHost ? { onConfirmationSettled: createHarnessConfirmationObserver(harnessHost, service) } : {}),
     compileScenario: async ({ input, authority: compilerAuthority, compilation }) => {
       if (
         compilerAuthority.actorId !== authority.actorId ||

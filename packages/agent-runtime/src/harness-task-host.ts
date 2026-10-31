@@ -60,11 +60,25 @@ interface OwnedAdmission {
   dispatchEligibility?: HarnessTaskEligibility;
   localDeadline: number;
   stopReason?: HarnessStopIntent['reason'];
-  timer: ReturnType<typeof setTimeout>;
+  cancelTimer?: () => void;
 }
 type HarnessHostRole = Readonly<{ mode: 'worker'; runId: string } | { mode: 'initiator' }>;
 
 const event = (type: AgentRunEvent['type'], data: Record<string, unknown>): AgentRunEvent => ({ timestamp: new Date().toISOString(), type, data });
+
+/** Keep one absolute budget; Node turns an overflowing timer into a 1 ms timer. */
+function scheduleDeadline(remaining: () => number, expired: () => void): () => void {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let cancelled = false;
+  const tick = () => {
+    if (cancelled) return;
+    const duration = remaining();
+    if (duration <= 0) { expired(); return; }
+    timer = setTimeout(tick, Math.max(1, Math.min(2_147_483_647, duration)));
+  };
+  tick();
+  return () => { cancelled = true; clearTimeout(timer); };
+}
 
 /** Instance-owned execution; persistent routing never authorizes historical replay. */
 export class HarnessTaskHost {
@@ -108,9 +122,11 @@ export class HarnessTaskHost {
     assertHarnessRunStorage(this.options.identityRoot);
     const requestHash = hashHarnessTask(task);
     const admittedAt = new Date().toISOString();
+    const deadline = Date.parse(admittedAt) + task.timeoutMs;
+    if (!Number.isSafeInteger(deadline) || !Number.isFinite(new Date(deadline).getTime())) throw new TypeError('Approved task deadline is not representable');
     checkEligibility();
     const admission = this.admissions.admit(hashHarnessInput([this.options.workspaceId, taskId, task.idempotencyKey ?? taskId]), requestHash, {
-      ownerGeneration: randomUUID(), admittedAt, deadlineAt: new Date(Date.parse(admittedAt) + task.timeoutMs).toISOString(),
+      ownerGeneration: randomUUID(), admittedAt, deadlineAt: new Date(deadline).toISOString(),
     });
     if (!admission.created) return this.receipt(taskId, await this.waitForVisibleAdmission(admission.record));
     const ready = Promise.withResolvers<HarnessTaskReceipt>();
@@ -120,13 +136,13 @@ export class HarnessTaskHost {
     const owned: OwnedAdmission = { task, route, ready, work: done.promise, release: gate.resolve, controller: new AbortController(),
       started: false, exitConfirmed: false, localDeadline: performance.now() + task.timeoutMs, ...(governed ? { governed: structuredClone(governed) } : {}),
       ...(eligibility ? { dispatchEligibility: eligibility } : {}),
-      timer: setTimeout(() => this.stopOwned(owned, 'deadline'), Math.max(1, Date.parse(route.deadlineAt!) - Date.now())),
     };
     // Register before create/publish can throw or await. close owns the entire acceptance, not only execute.
     this.active.set(route.runId, owned);
+    owned.cancelTimer = scheduleDeadline(() => Math.min(owned.localDeadline - performance.now(), Date.parse(route.deadlineAt!) - Date.now()), () => this.stopOwned(owned, 'deadline'));
     void this.ownAdmission(owned, gate.promise, waitForCommittedConfirmation, admission.publicationUnconfirmed === true).catch(error => {
       this.uncertainPersistence.add(route.runId); ready.reject(error);
-    }).finally(() => { clearTimeout(owned.timer); this.active.delete(route.runId); done.resolve(); });
+    }).finally(() => { owned.cancelTimer?.(); this.active.delete(route.runId); done.resolve(); });
     return ready.promise;
   }
 
@@ -226,13 +242,8 @@ export class HarnessTaskHost {
   }
 
   read(runId: string): AgentRunState | null {
-    let conflict: RunStateSnapshotChangedError | undefined;
-    for (let attempt = 0; attempt < 3; attempt++) {
-      assertHarnessRunStorage(this.options.identityRoot, runId);
-      try { return readRunStateSnapshot(runId, this.options.identityRoot); }
-      catch (error) { if (!(error instanceof RunStateSnapshotChangedError) || error.runId !== runId) throw error; conflict = error; }
-    }
-    throw conflict;
+    assertHarnessRunStorage(this.options.identityRoot, runId);
+    return readRunStateSnapshot(runId, this.options.identityRoot);
   }
 
   async observe(target: 'harness.task.dispatch' | 'harness.task.report', input: Readonly<Record<string, unknown>>): Promise<Readonly<Record<string, unknown>>> {
@@ -262,9 +273,10 @@ export class HarnessTaskHost {
     if (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0) throw new TypeError('Close timeout must be positive');
     this.closing = true;
     for (const owned of this.active.values()) this.stopOwned(owned, 'closing');
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    try { await Promise.race([Promise.allSettled([...this.active.values()].map(value => value.work)), new Promise<void>(resolve => { timer = setTimeout(resolve, timeoutMs); })]); }
-    finally { if (timer) clearTimeout(timer); }
+    let cancelTimer: (() => void) | undefined;
+    const until = performance.now() + timeoutMs;
+    try { await Promise.race([Promise.allSettled([...this.active.values()].map(value => value.work)), new Promise<void>(resolve => { cancelTimer = scheduleDeadline(() => until - performance.now(), resolve); })]); }
+    finally { cancelTimer?.(); }
     const unknownRunIds = [...new Set([...this.active.keys(), ...this.uncertainPersistence, ...this.unknownExits])];
     return { stopped: unknownRunIds.length === 0, unknownRunIds };
   }
@@ -278,29 +290,25 @@ export class HarnessTaskHost {
   }
 
   private stopOwned(owned: OwnedAdmission, reason: HarnessStopIntent['reason']): void {
-    if (owned.exitConfirmed) {
-      try { if (this.read(owned.route.runId)?.status === 'completed') return; }
-      catch { /* Unconfirmed persistence remains a stop, never a guessed success. */ }
-    }
-    owned.stopReason ??= reason;
-    owned.controller.abort(new Error('Harness execution stopped; preserve and reconcile'));
-    owned.release();
-    try { publishHarnessStopIntent(this.options.identityRoot, { schema: 'openslack.harness_stop_intent.v1', runId: owned.route.runId,
-      requestHash: owned.route.requestHash, ownerGeneration: owned.route.ownerGeneration!, reason: owned.stopReason, requestedAt: new Date().toISOString() }); }
-    catch { this.uncertainPersistence.add(owned.route.runId); }
-    this.failOwned(owned, owned.stopReason);
+    this.failOwned(owned, reason);
   }
 
   private failOwned(owned: OwnedAdmission, reason: HarnessStopIntent['reason']): void {
+    owned.stopReason ??= reason;
+    owned.controller.abort(new Error('Harness execution stopped; preserve and reconcile'));
+    owned.release();
     if (owned.started && !owned.exitConfirmed) this.unknownExits.add(owned.route.runId);
     try {
-      if (!readHarnessStopIntent(this.options.identityRoot, owned.route.runId)) publishHarnessStopIntent(this.options.identityRoot, {
-        schema: 'openslack.harness_stop_intent.v1', runId: owned.route.runId, requestHash: owned.route.requestHash,
-        ownerGeneration: owned.route.ownerGeneration!, reason, requestedAt: new Date().toISOString(),
-      });
       this.options.store.withRunTransaction(owned.route.runId, state => {
         const binding = state.harnessExecution;
         if (!binding || ['completed', 'failed', 'cancelled'].includes(state.status)) return {};
+        if (binding.requestHash !== owned.route.requestHash || binding.lifecycle?.ownerGeneration !== owned.route.ownerGeneration) throw new Error('Harness stop owner changed');
+        // This immutable fact must not race a completed commit. The run's canonical
+        // transaction owns both the terminal check and stop publication.
+        publishHarnessStopIntent(this.options.identityRoot, {
+          schema: 'openslack.harness_stop_intent.v1', runId: owned.route.runId, requestHash: owned.route.requestHash,
+          ownerGeneration: owned.route.ownerGeneration!, reason: owned.stopReason!, requestedAt: new Date().toISOString(),
+        });
         return { patch: { status: 'failed', completedAt: new Date().toISOString(), failureCode: 'EXECUTION_FAILED',
           errorSummary: 'Harness task did not reach verified acceptance', error: 'Harness task did not reach verified acceptance', harnessExecution: { ...binding,
             acceptance: binding.acceptance === 'pending' ? 'indeterminate' : binding.acceptance, stopRequestedAt: new Date().toISOString(),
@@ -393,7 +401,7 @@ export class HarnessTaskHost {
     assertHarnessRunStorage(this.options.identityRoot, runId);
     const owned = this.active.get(runId);
     return readRunStateSnapshotWhenAvailable(runId, this.options.identityRoot,
-      { waitMs: owned ? Math.max(0, Math.min(owned.localDeadline - performance.now(), Date.parse(owned.route.deadlineAt!) - Date.now())) : 1000, signal: owned?.controller.signal });
+      { waitMs: owned ? Math.max(0, Math.min(1000, owned.localDeadline - performance.now(), Date.parse(owned.route.deadlineAt!) - Date.now())) : 1000, signal: owned?.controller.signal });
   }
   private assertReportCurrent(state: Readonly<AgentRunState>, task: ApprovedHarnessTask): void {
     assertHarnessNotStopped(this.options.identityRoot, state);

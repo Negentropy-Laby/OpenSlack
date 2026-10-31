@@ -1,4 +1,6 @@
 import { createHash } from 'node:crypto';
+import type * as OperatorModule from '@openslack/operator';
+import type * as FsPromises from 'node:fs/promises';
 import { execFileSync, spawn } from 'node:child_process';
 import {
   cpSync,
@@ -62,6 +64,28 @@ import {
   type OperatorApplicationContextPort,
 } from '../index.js';
 
+const settlementFault = vi.hoisted(() => ({ afterAudit: undefined as (() => void) | undefined,
+  failNextPlanRead: false, postCommitReads: 0 }));
+vi.mock('@openslack/operator', async importOriginal => {
+  const actual = await importOriginal<typeof OperatorModule>();
+  return { ...actual, createGovernedPlanService: (options: Parameters<typeof actual.createGovernedPlanService>[0]) =>
+    actual.createGovernedPlanService({ ...options, audit: async event => {
+      await options.audit?.(event);
+      if (event.type === 'plan.execution_completed') settlementFault.afterAudit?.();
+    } }) };
+});
+vi.mock('node:fs/promises', async importOriginal => {
+  const actual = await importOriginal<typeof FsPromises>();
+  return { ...actual, open: ((...args: Parameters<typeof actual.open>) => {
+    const path = String(args[0]).replaceAll('\\', '/');
+    if (settlementFault.failNextPlanRead && path.includes('/records/') && path.endsWith('.json')) {
+      settlementFault.failNextPlanRead = false; settlementFault.postCommitReads++;
+      return Promise.reject(Object.assign(new Error('Fixture transient read contention'), { code: 'EBUSY' }));
+    }
+    return actual.open(...args);
+  }) };
+});
+
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../../..');
 const sourcePack = join(repositoryRoot, 'scenarios', 'software-delivery');
 const contractDeliverySourcePack = join(repositoryRoot, 'scenarios', 'contract-to-delivery-lite');
@@ -80,6 +104,7 @@ beforeAll(async () => {
 }, 10_000);
 
 afterEach(() => {
+  settlementFault.afterAudit = undefined; settlementFault.failNextPlanRead = false; settlementFault.postCommitReads = 0;
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
 });
 
@@ -1364,6 +1389,42 @@ describe('production agent-bound governed mutation composition', () => {
       await host.close(1_000);
     }
   }, 30_000); // Serial governance/FS assertions, not a change to the 10 s task.
+
+  it.each(['late-abort', 'readback-contention'] as const)('settles the real committed confirmation despite %s without replay or a false stop', async fault => {
+    const workspaceRoot = createWorkspace({ action: 'deny', noScenarios: true });
+    const path = join(workspaceRoot, '.openslack/agents/registry', `${PRINCIPAL_REF}.yaml`);
+    writeFileSync(path, readFileSync(path, 'utf8').replace('  github:', '    harness.task.dispatch: allow\n  github:'));
+    const config = { agentId: PRINCIPAL_REF, source: 'fixture', runtimeProvider: 'deepseek-harness', tools: ['Read'] };
+    const task: ApprovedHarnessTask = { taskId: 'TASK-1', principalHash: '', baseline: 'b'.repeat(40), timeoutMs: 10_000,
+      request: { agentId: PRINCIPAL_REF, prompt: 'Read only.', resolvedConfig: config, permissionProfile: buildPermissionProfile(config) },
+      scope: { readPaths: [], writePaths: [], forbiddenPaths: ['.git/**'] }, outputSchema: { type: 'object' } };
+    const authority = createHarnessTaskAuthority({ identityRoot: workspaceRoot, agentId: PRINCIPAL_REF,
+      uid: `${PRINCIPAL_REF}-uid`, principalId: `principal:${PRINCIPAL_REF}`, runtimeRunId: 'RUN-governed-composition-001', provider: 'cli', claimMode: 'not_applicable',
+      source: { read: async () => {
+        const input = { ...task }; delete (input as Partial<ApprovedHarnessTask>).principalHash;
+        return { task: input, allowedPaths: [], forbiddenPaths: [], claimRequired: false, sourceDigest: 'c'.repeat(64) };
+      } } });
+    const execute = vi.fn(async () => ({ data: {}, exitConfirmed: true as const }));
+    const host = new HarnessTaskHost({ identityRoot: workspaceRoot, workspaceId: WORKSPACE_ID, store: createRunStore(workspaceRoot), ...authority,
+      prepare: async () => ({ execute, accept: async () => ({ outcome: 'verified', summary: 'fixture', evidenceRefs: [] }) }), publish: async () => {} });
+    const controller = new AbortController();
+    const invocation = { signal: controller.signal, deadlineAt: new Date(Date.now() + 20_000).toISOString() };
+    settlementFault.afterAudit = () => {
+      if (fault === 'late-abort') controller.abort(new Error('Fixture transport ended after durable success'));
+      else settlementFault.failNextPlanRead = true;
+    };
+    try {
+      const composition = await createOpenSlackAgentBoundMutationComposition({ workspaceRoot, principalRef: PRINCIPAL_REF, harnessTaskHost: host });
+      const preview = await composition.governedMutations.previewWorkflow({ workflowId: 'harness.task.dispatch', input: { taskId: task.taskId, requestId: fault === 'late-abort' ? 'late' : 'busy' } }, invocation);
+      const record = await composition.governedMutations.confirm({ planId: preview.record.planId, confirmationToken: preview.confirmationToken }, invocation);
+      expect(record.state).toBe('succeeded');
+      const runId = (record.execution!.outcomes[0]!.data as { runId: string }).runId;
+      await vi.waitFor(() => expect(host.read(runId)?.status).toBe('completed'));
+      expect(execute).toHaveBeenCalledOnce();
+      expect(settlementFault.postCommitReads).toBe(0);
+      expect(existsSync(join(workspaceRoot, '.openslack.local/agents/harness-admissions', `${runId}.stop.json`))).toBe(false);
+    } finally { settlementFault.afterAudit = undefined; settlementFault.failNextPlanRead = false; await host.close(1000); }
+  });
 
   it('preserves the exact admission route through governed MCP when visibility publication takes longer than the duplicate wait', async () => {
     const workspaceRoot = createWorkspace({ action: 'deny', noScenarios: true });
