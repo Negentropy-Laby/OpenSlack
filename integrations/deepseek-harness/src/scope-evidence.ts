@@ -10,20 +10,26 @@ export interface NativeEvidencePreview { version?: FsVersion; targetPath: string
 /** Host-supplied denial constraint, not a task grant or a model-selectable claim mode. */
 export type HarnessEligibilityRestriction = Readonly<{ mode: 'required'; expiresAt: number } | { mode: 'not_applicable' }>
 
+const parsedRestrictions = new WeakSet<object>()
+function ownRestriction<T extends HarnessEligibilityRestriction>(value: T): T {
+  Object.freeze(value); parsedRestrictions.add(value); return value
+}
+
 /** Validate private host ACK data independently of any execution-authorization handle. */
 export function readEligibilityRestriction(value: unknown): HarnessEligibilityRestriction {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Missing live OpenSlack eligibility restriction')
   const keys = Object.keys(value).sort().join(',')
-  if ('mode' in value && value.mode === 'not_applicable' && keys === 'mode') return Object.freeze({ mode: 'not_applicable' })
+  if ('mode' in value && value.mode === 'not_applicable' && keys === 'mode') return ownRestriction({ mode: 'not_applicable' })
   if ('mode' in value && value.mode === 'required' && keys === 'expiresAt,mode' && 'expiresAt' in value &&
     typeof value.expiresAt === 'number' && Number.isSafeInteger(value.expiresAt) && Date.now() < value.expiresAt) {
-    return Object.freeze({ mode: 'required', expiresAt: value.expiresAt })
+    return ownRestriction({ mode: 'required', expiresAt: value.expiresAt })
   }
   throw new Error('Live OpenSlack eligibility restriction is missing or its lease expired')
 }
 
 export function assertEligibilityRestriction(value: HarnessEligibilityRestriction): void {
-  readEligibilityRestriction(value)
+  if (!parsedRestrictions.has(value)) { readEligibilityRestriction(value); return }
+  if (value.mode === 'required' && Date.now() >= value.expiresAt) throw new Error('Live OpenSlack eligibility restriction is missing or its lease expired')
 }
 
 function text(value: unknown): value is string { return typeof value === 'string' && Buffer.byteLength(value) <= TEXT_LIMIT_BYTES }

@@ -1,5 +1,6 @@
 /** Real built peer → public SDK → dsh sdk profile → Loader → native files and durable Session. */
 import { execFileSync, spawn } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
@@ -91,12 +92,21 @@ describe('built peer and actual SDK lifecycle (keyless)', () => {
   }, 10_000);
   it.each(['linked', 'packed', 'mismatched-peer'] as const)('%s package authorizes before native effects, waits for SDK exit, and retains a readable Session', async (installation) => {
     const root = mkdtempSync(join(tmpdir(), 'openslack-sdk-process-'))
+    let archive: { path: string; sha256: string; bytes: number } | undefined
     const safeFailure: { stage: string; installation: string; peerExit?: { pid: number | null; code: number | null; signal: string | null; terminationRequested: boolean };
       stderrBytes: number; frameKinds: string[]; observedToolResults: number; sdkShutdownReceipt: null } = {
       stage: 'fixture-prepare', installation, stderrBytes: 0, frameKinds: [], observedToolResults: 0, sdkShutdownReceipt: null,
     }
     onTestFinished(({ task }) => {
-      if (task.result?.state === 'pass') rmSync(root, { recursive: true, force: true })
+      if (task.result?.state === 'pass') {
+        if (archive && process.env.OPENSLACK_HARNESS_KEEP_EVIDENCE === '1') {
+          const bytes = readFileSync(archive.path)
+          expect(createHash('sha256').update(bytes).digest('hex')).toBe(archive.sha256)
+          const receipt = { schema: 'openslack.harness_packed_smoke.v1', status: 'PASS', archive, ...safeFailure }
+          writeFileSync(join(root, 'packed-install-receipt.json'), JSON.stringify(receipt), { flag: 'wx' })
+          console.info(JSON.stringify({ code: 'PACKED_SMOKE_EVIDENCE_RETAINED', fixture: root, archive }))
+        } else rmSync(root, { recursive: true, force: true })
+      }
       else {
         // Only known phases, public frame kinds and actual exit facts: never
         // persist an upstream error message, raw frame payload or bearer.
@@ -129,6 +139,8 @@ describe('built peer and actual SDK lifecycle (keyless)', () => {
       expect(packed!.files.map(file => file.path)).toContain('THIRD-PARTY-NOTICES.txt')
       expect(packed!.files.some(file => /^(src|tests|node_modules|\.build)\//.test(file.path))).toBe(false)
       installSpec = join(root, packed!.filename)
+      const bytes = readFileSync(installSpec)
+      archive = { path: installSpec, sha256: createHash('sha256').update(bytes).digest('hex'), bytes: bytes.length }
     }
     const fixture = prepareSdkFixture(root, [
       { name: 'read', args: { file_path: 'fixture.txt' } },

@@ -1,8 +1,14 @@
-import { Context } from '@deepseek-ai/cordis';
-import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-testkit';
+import type * as CordisModule from '@deepseek-ai/cordis'
+import type * as AgentLoopTestkitModule from '@deepseek-ai/dsh-agent-loop-testkit'
+import type * as ConnectionModule from '../src/connection.ts'
+import { beforeAll } from 'vitest';
+let Context: typeof CordisModule.Context;
+
+let mountAgentLoopTestDependencies: typeof AgentLoopTestkitModule.mountAgentLoopTestDependencies;
+
 import { describe, expect, it, onTestFinished, vi } from 'vitest';
 import { fileURLToPath } from 'node:url';
-import * as Connection from '../src/connection.ts';
+let Connection: typeof ConnectionModule;
 import type { ToolRunContext } from '@deepseek-ai/dsh-tools';
 
 describe('externally owned native MCP over a real server process', () => {
@@ -27,6 +33,8 @@ describe('externally owned native MCP over a real server process', () => {
     await ctx.plugin(Connection, { mode: 'read-only', workspaceRoot: fileURLToPath(new URL('.', import.meta.url)),
       cliModule: fileURLToPath(new URL('./fixtures/mcp-server-stderr.js', import.meta.url)), timeoutMs: 5_000 });
     expect(ctx.openslackConnection.connected).toBe(true);
+    expect(ctx.tools.get('mcp__openslack__openslack_unreviewed_future_tool')).toBeUndefined();
+    expect(ctx.openslackConnection.tool('mcp__openslack__openslack_unreviewed_future_tool')).toBeUndefined();
     expect(await ctx.openslackConnection.stop()).toMatchObject({ code: 0, signal: null, terminationRequested: false });
   }, 10_000);
   it.each(['read-only', 'task'] as const)('connects %s, keeps raw task writes private, and observes clean process close', async mode => {
@@ -59,4 +67,14 @@ describe('externally owned native MCP over a real server process', () => {
     await expect(ctx.openslackConnection.stop()).rejects.toThrow('clean owned stop');
     expect(ctx.openslackConnection.connected).toBe(false);
   });
+});
+
+// Declaration collection loads no original runtime; execution still uses the pinned real peers.
+beforeAll(async () => {
+  const specifier1 = '@deepseek-ai/cordis';
+  ({ Context } = await import(specifier1));
+  const specifier2 = '@deepseek-ai/dsh-agent-loop-testkit';
+  ({ mountAgentLoopTestDependencies } = await import(specifier2));
+  const specifier3 = '../src/connection.ts';
+  Connection = await import(specifier3);
 });

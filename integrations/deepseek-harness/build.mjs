@@ -13,7 +13,14 @@ const aliases = publicAliases(resolve(harnessRoot), true);
 const wireModule = process.env.OPENSLACK_BRIDGE_WIRE_MODULE ?? join(root, '../../packages/agent-runtime/dist/bridge-wire.js');
 if (!isAbsolute(wireModule) || !wireModule.endsWith('bridge-wire.js')) throw new Error('The pure shared Bridge leaf must use its exact built public subpath');
 const wireTypes = wireModule.replace(/\.js$/, '.d.ts');
-aliases['@openslack/agent-runtime/internal/bridge-wire'] = wireTypes;
+const catalogModule = process.env.OPENSLACK_TOOL_CATALOG_MODULE ?? join(root, '../../packages/qoder-adapter/dist/harness-tool-catalog.js');
+if (!isAbsolute(catalogModule) || !catalogModule.endsWith('harness-tool-catalog.js')) throw new Error('The reviewed catalog must use its exact built pure subpath');
+const catalogTypes = catalogModule.replace(/\.js$/, '.d.ts');
+const pureModules = {
+  '@openslack/agent-runtime/internal/bridge-wire': wireModule,
+  '@openslack/qoder-adapter/internal/harness-tool-catalog': catalogModule,
+};
+for (const [name, path] of Object.entries(pureModules)) aliases[name] = path.replace(/\.js$/, '.d.ts');
 mkdirSync(join(root, '.build'), { recursive: true });
 const config = join(root, '.build/tsconfig.json');
 writeFileSync(config, JSON.stringify({ compilerOptions: {
@@ -29,13 +36,18 @@ if (checked.status !== 0) process.exit(checked.status ?? 1);
 // not accidentally depend on this private OpenSlack workspace after relocation.
 const typesDirectory = join(root, 'dist/types/src');
 copyFileSync(wireTypes, join(typesDirectory, 'bridge-wire.d.ts'));
+copyFileSync(join(wireModule, '../run-id.d.ts'), join(typesDirectory, 'run-id.d.ts'));
+copyFileSync(catalogTypes, join(typesDirectory, 'harness-tool-catalog.d.ts'));
+copyFileSync(join(catalogModule, '../tool-catalog.d.ts'), join(typesDirectory, 'tool-catalog.d.ts'));
 for (const name of readdirSync(typesDirectory).filter(name => name.endsWith('.d.ts'))) {
   const path = join(typesDirectory, name);
-  writeFileSync(path, readFileSync(path, 'utf8').replaceAll('@openslack/agent-runtime/internal/bridge-wire', './bridge-wire.js'));
+  writeFileSync(path, readFileSync(path, 'utf8').replaceAll('@openslack/agent-runtime/internal/bridge-wire', './bridge-wire.js')
+    .replaceAll('@openslack/qoder-adapter/internal/harness-tool-catalog', './harness-tool-catalog.js'));
 }
 const external = Object.keys(manifest.peerDependencies);
 const wirePlugin = { name: 'openslack-pure-bridge-wire', setup(builder) {
   builder.onResolve({ filter: /^@openslack\/agent-runtime\/internal\/bridge-wire$/ }, () => ({ path: wireModule }));
+  builder.onResolve({ filter: /^@openslack\/qoder-adapter\/internal\/harness-tool-catalog$/ }, () => ({ path: catalogModule }));
 } };
 const built = await Bun.build({
   entrypoints: ['index', 'initiator', 'readonly', 'sdk-host', 'startup', 'runtime', 'owned-sdk'].map(name => join(root, `src/${name}.ts`)),

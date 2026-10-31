@@ -11,6 +11,7 @@ import type { ProcessExitReceipt } from './process-observer.ts'
 import { isAbsolute } from 'node:path'
 import { statSync } from 'node:fs'
 import { adoptShutdownDeadline, shutdownRemaining, withinShutdown } from './shutdown.ts'
+import { selectReviewedTools } from './reviewed-tools.ts'
 
 export const name = 'openslack-native-connection'
 export const inject = ['tools']
@@ -101,11 +102,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     // the budget, so one signal and outer deadline cover the entire catalog.
     const listed = await withinShutdown(startupDeadline, () => client.listTools(undefined,
       { signal: startup.signal, timeout: shutdownRemaining(startupDeadline) }))
-    const expected = config.mode === 'read-only' ? 12 : 16
-    if (listed.tools.length !== expected || new Set(listed.tools.map(tool => tool.name)).size !== expected) {
-      throw new Error('Unexpected OpenSlack tool catalog')
-    }
-    for (const tool of listed.tools) {
+    for (const tool of selectReviewedTools(listed.tools, config.mode)) {
       if (!/^openslack_[a-z_]+$/.test(tool.name) || `mcp__openslack__${tool.name}`.length > 64) throw new Error('Unexpected OpenSlack tool identity')
       const publicName = `mcp__openslack__${tool.name}`
       const definition = createMcpToolDefinition(ctx, {

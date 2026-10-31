@@ -1,15 +1,25 @@
+import type * as CordisModule from '@deepseek-ai/cordis'
+import type * as AgentLoopTestkitModule from '@deepseek-ai/dsh-agent-loop-testkit'
+import type * as SdkHostModule from '../src/sdk-host.ts'
+import type * as SdkServerModule from '@deepseek-ai/dsh-sdk-jsonrpc-server'
+import type * as LlmModule from '@deepseek-ai/dsh-llm'
+import { beforeAll } from 'vitest';
 /** Real Cordis/public SDK composition; contained disposer errors cannot replace an owned stop receipt. */
 import { PassThrough } from 'node:stream';
-import { Context } from '@deepseek-ai/cordis';
-import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-testkit';
+let Context: typeof CordisModule.Context;
+
+let mountAgentLoopTestDependencies: typeof AgentLoopTestkitModule.mountAgentLoopTestDependencies;
+
 import { describe, expect, it, onTestFinished, vi } from 'vitest';
-import * as SdkHost from '../src/sdk-host.ts';
+let SdkHost: typeof SdkHostModule;
 import { RUNTIME_PEERS } from '../src/runtime-bindings.ts';
 import { pathToFileURL } from 'node:url';
 import { adoptShutdownDeadline, OWNED_SHUTDOWN_MS, shutdownBudget, shutdownDeadline, shutdownRemaining, withinShutdown } from '../src/shutdown.ts';
-import { HarnessSdkJsonRpcServer } from '@deepseek-ai/dsh-sdk-jsonrpc-server';
+let HarnessSdkJsonRpcServer: typeof SdkServerModule.HarnessSdkJsonRpcServer;
+
 import type { HarnessEligibilityRestriction } from '../src/scope-evidence.ts';
-import { LlmAdapter } from '@deepseek-ai/dsh-llm';
+let LlmAdapter: typeof LlmModule.LlmAdapter;
+
 import type { StreamChunk } from '@deepseek-ai/dsh-llm';
 import { execFileSync } from 'node:child_process';
 
@@ -247,4 +257,18 @@ describe('external strict SDK host over the unmodified public server', () => {
       expect(JSON.stringify(modelRequest)).toBe(before);
     } finally { wall?.mockRestore(); await stream.return?.(); }
   });
+});
+
+// Declaration collection loads no original runtime; execution still uses the pinned real peers.
+beforeAll(async () => {
+  const specifier1 = '@deepseek-ai/cordis';
+  ({ Context } = await import(specifier1));
+  const specifier2 = '@deepseek-ai/dsh-agent-loop-testkit';
+  ({ mountAgentLoopTestDependencies } = await import(specifier2));
+  const specifier3 = '../src/sdk-host.ts';
+  SdkHost = await import(specifier3);
+  const specifier4 = '@deepseek-ai/dsh-sdk-jsonrpc-server';
+  ({ HarnessSdkJsonRpcServer } = await import(specifier4));
+  const specifier5 = '@deepseek-ai/dsh-llm';
+  ({ LlmAdapter } = await import(specifier5));
 });

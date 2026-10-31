@@ -6,6 +6,10 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
+    "./internal/harness-tool-catalog": {
+      "types": "./dist/harness-tool-catalog.d.ts",
+      "import": "./dist/harness-tool-catalog.js"
+    },
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"

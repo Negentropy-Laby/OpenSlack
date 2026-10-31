@@ -1,6 +1,9 @@
 /** Bounded, provider-neutral Bridge transport. This leaf is also bundled into the external plugin. */
 import { createHash } from 'node:crypto';
 import { TextDecoder } from 'node:util';
+export { RUN_ID_RE } from './run-id.js';
+/** SDK tool-call identity; business task/report identifiers retain their own policies. */
+export const SDK_TOOL_CALL_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 /** Shared frozen governed cleanup durations, not clock readings. */
 export const HARNESS_CLEANUP_BUDGET = Object.freeze({
   ownedMs: 24_000, graceMs: 25_000, forceMs: 5_000, totalMs: 30_000,

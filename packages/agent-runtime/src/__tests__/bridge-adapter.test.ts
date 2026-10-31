@@ -17,6 +17,7 @@ import { createRunRecorder } from '../recorder.js';
 import { generateRunId } from '../run-store.js';
 import { ToolGuard } from '../adapter.js';
 import { buildBridgeEnvelope } from '../bridge-contract.js';
+import { BRIDGE_CHUNK_EXTENSION } from '../bridge-wire.js';
 
 function makeTempRoot(): string {
   return mkdtempSync(join(tmpdir(), 'bridge-adapter-test-'));
@@ -358,6 +359,40 @@ describe('FakeBridgeAdapter', () => {
 });
 
 describe('BridgeProcessAdapter', () => {
+  it('starts fresh chunk identities when the same adapter serves a second real process session', async () => {
+    const root = makeTempRoot();
+    try {
+      const script = join(root, 'chunk-peer.mjs');
+      const wire = new URL('../../dist/bridge-wire.js', import.meta.url).href;
+      writeFileSync(script, `import {BridgeWireDecoder, BRIDGE_CHUNK_EXTENSION} from ${JSON.stringify(wire)};
+        const decoder = new BridgeWireDecoder(); let pending = '';
+        const reply = (input, kind, payload) => process.stdout.write(JSON.stringify({ ...input, timestamp: new Date().toISOString(), kind, payload })+'\\n');
+        process.stdin.setEncoding('utf8');
+        process.stdin.on('data', value => {
+          pending += value; const lines = pending.split('\\n'); pending = lines.pop();
+          for (const line of lines) {
+            const frame = decoder.receive(line); if (!frame) continue;
+            if (frame.kind === 'handshake_request') {
+              decoder.bind({sessionId:frame.sessionId,correlationId:frame.correlationId}); decoder.setExtensions([BRIDGE_CHUNK_EXTENSION]);
+              reply(frame, 'handshake_response', {accepted:true,extensions:[BRIDGE_CHUNK_EXTENSION]});
+            } else if(frame.kind === 'run_request') {
+              const prompt = frame.payload.input.find(value => value.role === 'user').content;
+              reply(frame, 'complete', { data: { size: prompt.length }, tokenUsage: 1 });
+              process.stdin.pause(); process.stdout.end(() => process.exit(0));
+            }
+          }
+        });`);
+      const adapter = new BridgeProcessAdapter({ command: process.execPath, args: [script], wireExtensions: [BRIDGE_CHUNK_EXTENSION] });
+      const launcher = createOpenSlackAgentLauncher({ rootDir: root, runStore: createRunStore(root), adapter });
+      for (let session = 0; session < 2; session++) {
+        const result = await launcher('x'.repeat(1024 * 1024 + 4096), { label: 'reader', phase: 'review',
+          resolvedAgentConfig: { agentId: 'reader', source: 'fixture', tools: ['Read'] } }).catch(error => {
+            throw new Error(`Fixture process session ${session} failed`, { cause: error });
+          });
+        expect(result.data).toEqual({ size: 1024 * 1024 + 4096 });
+      }
+    } finally { cleanup(root); }
+  });
   it('has adapterId "bridge-process"', () => {
     const adapter = new BridgeProcessAdapter({ command: 'echo' });
     expect(adapter.adapterId).toBe('bridge-process');

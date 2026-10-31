@@ -121,12 +121,12 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
   private responseDecoder: TextDecoder;
   private inboundFailure: BridgeAdapterError | null = null;
   private terminalFrames = 0;
-  private readonly wireEncoder = new BridgeWireEncoder();
+  private wireEncoder = new BridgeWireEncoder();
   private wireDecoder = new BridgeWireDecoder();
   private queueBytes = 0;
   private deferredEnvelope: BridgeEnvelope | undefined;
   private supervisorBuffer = '';
-  private readonly supervisorDecoder = new TextDecoder('utf-8', { fatal: true });
+  private supervisorDecoder = new TextDecoder('utf-8', { fatal: true });
   private supervisorPid: number | undefined;
   private supervisorReceipt: { pid: number; rootExitCode: number; jobEmpty: boolean; streamsDrained: boolean;
     terminationRequested: boolean; graceful: boolean; timedOut: boolean } | undefined;
@@ -186,7 +186,8 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
     this.responseBuffer = '';
     this.responseDecoder = new TextDecoder('utf-8', { fatal: true });
     this.wireDecoder = new BridgeWireDecoder({ sessionId, correlationId: config.runId });
-    this.wireEncoder.setExtensions([]);
+    this.wireEncoder = new BridgeWireEncoder();
+    this.supervisorDecoder = new TextDecoder('utf-8', { fatal: true });
     this.queueBytes = 0;
     this.deferredEnvelope = undefined;
     this.supervisorBuffer = '';
@@ -875,15 +876,16 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
       const child = this.process;
       this.exitPromise = new Promise((settle) => {
         child.once('close', (code, signal) => {
-          this.exitReceipt = { code, signal };
-          settle(this.exitReceipt);
+          const receipt = { code, signal };
+          if (this.process === child) this.exitReceipt = receipt;
+          settle(receipt);
         });
       });
 
       this.process.on('error', (err) => {
         const error = new BridgeAdapterError('process_crash', 'Failed to spawn bridge process', undefined, { cause: err });
         reject(error);
-        this.rejectInbound(error);
+        if (this.process === child) this.rejectInbound(error);
       });
       // A broken pipe is a transport outcome, never an unhandled host-process error.
       child.stdin?.on('error', (error: Error) => {
@@ -893,22 +895,26 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
       });
 
       this.process.on('spawn', () => {
+        if (this.process !== child) { reject(new BridgeAdapterError('session_unavailable', 'Bridge spawn owner changed')); return; }
         if (this.activeSignal?.aborted) { this.requestPeerStop(); reject(this.activeSignal.reason); return; }
         resolve();
       });
 
       // Set up stdout data handler for envelope responses
       this.process.stdout?.on('data', (chunk: Buffer) => {
+        if (this.process !== child) return;
         if (this.options.supervisor) this.handleSupervisorChunk(chunk);
         else this.handleStdoutChunk(chunk);
       });
 
       this.process.stderr?.on('data', (chunk: Buffer) => {
+        if (this.process !== child) return;
         this.captureStderr(chunk);
       });
 
       // Handle process exit — set flag so future waitForResponse calls detect it
       this.process.on('close', (code, signal) => {
+        if (this.process !== child) return;
         try {
           this.responseBuffer += this.responseDecoder.decode();
           this.wireDecoder.finish();

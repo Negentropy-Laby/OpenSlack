@@ -1,28 +1,50 @@
+import type * as CordisModule from '@deepseek-ai/cordis'
+import type * as LlmModule from '@deepseek-ai/dsh-llm'
+import type * as SessionModule from '@deepseek-ai/dsh-session'
+import type * as AgentLoopTestkitModule from '@deepseek-ai/dsh-agent-loop-testkit'
+import type * as ToolTestkitModule from '@deepseek-ai/dsh-tool-testkit'
+import type * as McpClientModule from '@deepseek-ai/dsh-mcp-client'
+import type * as LoaderSmokeModule from '@deepseek-ai/dsh-loader-smoke'
+import type * as FsObservationPolicyModule from '@deepseek-ai/dsh-fs-observation-policy'
+import type * as FsToolsModule from '@deepseek-ai/dsh-tool-fs'
+import type * as TaskScopeModule from '../src/index.ts'
+import type * as InitiatorModule from '../src/initiator.ts'
+import { beforeAll } from 'vitest';
 import { mkdtemp, readFile, rm, writeFile, symlink, unlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { Context } from '@deepseek-ai/cordis'
-import { LlmAdapter, ToolCallId } from '@deepseek-ai/dsh-llm'
+let Context: typeof CordisModule.Context;
+
+let LlmAdapter: typeof LlmModule.LlmAdapter;
+let ToolCallId: typeof LlmModule.ToolCallId;
+
 import type { GenerateOptions, StreamChunk } from '@deepseek-ai/dsh-llm'
-import { SessionId } from '@deepseek-ai/dsh-session'
-import { mountAgentLoopTestDependencies, mountAgentLoopTestHarness } from '@deepseek-ai/dsh-agent-loop-testkit'
-import { executeToolFixture } from '@deepseek-ai/dsh-tool-testkit'
-import { createMcpToolDefinition } from '@deepseek-ai/dsh-mcp-client'
-import { runFixtureTurn } from '@deepseek-ai/dsh-loader-smoke'
-import * as FsPolicy from '@deepseek-ai/dsh-fs-observation-policy'
-import * as ToolFs from '@deepseek-ai/dsh-tool-fs'
+let SessionId: typeof SessionModule.SessionId;
+
+let mountAgentLoopTestDependencies: typeof AgentLoopTestkitModule.mountAgentLoopTestDependencies;
+let mountAgentLoopTestHarness: typeof AgentLoopTestkitModule.mountAgentLoopTestHarness;
+
+let executeToolFixture: typeof ToolTestkitModule.executeToolFixture;
+
+let createMcpToolDefinition: typeof McpClientModule.createMcpToolDefinition;
+
+let runFixtureTurn: typeof LoaderSmokeModule.runFixtureTurn;
+
+let FsPolicy: typeof FsObservationPolicyModule;
+let ToolFs: typeof FsToolsModule;
 import { describe, expect, it, onTestFinished, vi } from 'vitest'
-import * as Scope from '../src/index.ts'
-import * as Initiator from '../src/initiator.ts'
+let Scope: typeof TaskScopeModule;
+let Initiator: typeof InitiatorModule;
 import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
 
-class QuietAdapter extends LlmAdapter {
+function QuietAdapterClass() { return class QuietAdapter extends LlmAdapter {
   override async *stream(_options: GenerateOptions): AsyncIterable<StreamChunk> {
     throw new Error('This fixture never requests a model')
   }
 }
+}
 
-class ScriptedAdapter extends LlmAdapter {
+function ScriptedAdapterClass() { return class ScriptedAdapter extends LlmAdapter {
   readonly requests: GenerateOptions[] = []
   constructor(private readonly script: Array<{ name: string; args: object } | string>) { super() }
   override async *stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
@@ -44,8 +66,9 @@ class ScriptedAdapter extends LlmAdapter {
     }
   }
 }
+}
 
-async function setup(beforeScope?: (ctx: Context) => void) {
+async function setup(beforeScope?: (ctx: CordisModule.Context) => void) {
   const root = await mkdtemp(join(tmpdir(), 'openslack-scope-'))
   onTestFinished(() => rm(root, { recursive: true, force: true }))
   await writeFile(join(root, 'fixture.txt'), 'before')
@@ -56,7 +79,7 @@ async function setup(beforeScope?: (ctx: Context) => void) {
   await ctx.plugin(FsPolicy)
   await ctx.plugin(ToolFs)
   beforeScope?.(ctx)
-  ctx.llm.registerAdapter(['fixture'], new QuietAdapter())
+  ctx.llm.registerAdapter(['fixture'], new (QuietAdapterClass())())
   let current = true
   const live = vi.fn(async (): Promise<{ allowed: boolean; restriction: unknown }> => ({ allowed: current,
     restriction: { mode: 'not_applicable' } }))
@@ -198,7 +221,7 @@ describe('bearer-free local MCP projection', () => {
     await mountAgentLoopTestDependencies(ctx, { workingDirectory: true })
     await ctx.plugin(FsPolicy)
     await ctx.plugin(ToolFs)
-    const model = new ScriptedAdapter([
+    const model = new (ScriptedAdapterClass())([
       { name: 'mcp__openslack__openslack_preview_workflow', args: { workflowId: 'harness.task.report',
         input: { runId: 'RUN-TEST', reportId: 'r1', summary: 'progress', evidenceRefs: [] } } },
       { name: 'mcp__openslack__openslack_confirm_plan', args: { planId: 'PLAN-TEST' } },
@@ -288,7 +311,7 @@ describe('separate initiation scope', () => {
       const ctx = new Context()
       onTestFinished(() => ctx.fiber.dispose())
       await mountAgentLoopTestDependencies(ctx, { workingDirectory: true })
-      ctx.llm.registerAdapter(['fixture'], new QuietAdapter())
+      ctx.llm.registerAdapter(['fixture'], new (QuietAdapterClass())())
       ctx.on('openslack/connection-state', server => server === 'openslack' ? true : undefined)
       const privateTools = new Map<string, ToolDefinition>()
       ctx.provide('openslackConnection', { connected: true, tool: name => privateTools.get(name),
@@ -339,7 +362,7 @@ describe('separate initiation scope', () => {
     const ctx = new Context()
     onTestFinished(() => ctx.fiber.dispose())
     await mountAgentLoopTestDependencies(ctx, { workingDirectory: true })
-    ctx.llm.registerAdapter(['fixture'], new QuietAdapter())
+    ctx.llm.registerAdapter(['fixture'], new (QuietAdapterClass())())
     ctx.on('openslack/connection-state', server => server === 'openslack' ? true : undefined)
     const bearer = 'INITIATOR_BEARER_DO_NOT_PERSIST_01234567890123456789'
     const upstream = vi.fn(async (name: string, args: Record<string, unknown>) => {
@@ -384,3 +407,29 @@ describe('separate initiation scope', () => {
     expect(ctx.tools.schemas(agent).map(tool => tool.name)).not.toContain('write')
   })
 })
+
+// Declaration collection loads no original runtime; execution still uses the pinned real peers.
+beforeAll(async () => {
+  const specifier1 = '@deepseek-ai/cordis';
+  ({ Context } = await import(specifier1));
+  const specifier2 = '@deepseek-ai/dsh-llm';
+  ({ LlmAdapter, ToolCallId } = await import(specifier2));
+  const specifier3 = '@deepseek-ai/dsh-session';
+  ({ SessionId } = await import(specifier3));
+  const specifier4 = '@deepseek-ai/dsh-agent-loop-testkit';
+  ({ mountAgentLoopTestDependencies, mountAgentLoopTestHarness } = await import(specifier4));
+  const specifier5 = '@deepseek-ai/dsh-tool-testkit';
+  ({ executeToolFixture } = await import(specifier5));
+  const specifier6 = '@deepseek-ai/dsh-mcp-client';
+  ({ createMcpToolDefinition } = await import(specifier6));
+  const specifier7 = '@deepseek-ai/dsh-loader-smoke';
+  ({ runFixtureTurn } = await import(specifier7));
+  const specifier8 = '@deepseek-ai/dsh-fs-observation-policy';
+  FsPolicy = await import(specifier8);
+  const specifier9 = '@deepseek-ai/dsh-tool-fs';
+  ToolFs = await import(specifier9);
+  const specifier10 = '../src/index.ts';
+  Scope = await import(specifier10);
+  const specifier11 = '../src/initiator.ts';
+  Initiator = await import(specifier11);
+});

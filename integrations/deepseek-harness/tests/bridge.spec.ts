@@ -1,10 +1,17 @@
+import type * as SdkClientModule from '@deepseek-ai/dsh-sdk-client'
+import type * as LlmModule from '@deepseek-ai/dsh-llm'
+import { beforeAll } from 'vitest';
 import { describe, expect, it, vi } from 'vitest'
-import { validatedSessionEvent } from '@deepseek-ai/dsh-sdk-client'
-import { expandAssistantStream } from '@deepseek-ai/dsh-llm'
-import { createToolResultMessage, ToolCallId } from '@deepseek-ai/dsh-llm'
+let validatedSessionEvent: typeof SdkClientModule.validatedSessionEvent;
+
+let expandAssistantStream: typeof LlmModule.expandAssistantStream;
+
+let createToolResultMessage: typeof LlmModule.createToolResultMessage;
+let ToolCallId: typeof LlmModule.ToolCallId;
+
 import { BridgeWireDecoder, BRIDGE_CHUNK_EXTENSION } from '@openslack/agent-runtime/internal/bridge-wire'
 import type { RunResult } from '@deepseek-ai/dsh-sdk-client'
-import { OpenSlackPeer, parseFrame } from '../src/bridge.ts'
+import { OpenSlackPeer } from '../src/bridge.ts'
 import type { Frame, TaskSdk } from '../src/bridge.ts'
 import type { HarnessEligibilityRestriction } from '../src/scope-evidence.ts'
 
@@ -21,17 +28,44 @@ function result(reason = 'completed'): RunResult {
   return { sessionId: 'openslack-RUN-TEST', finalResponse: 'fixture output', notifications: [],
     events: [validatedSessionEvent({ type: 'turn/end', data: { reason: { kind: reason } } })] }
 }
-function setup(terminal = 'completed', startEligibility: HarnessEligibilityRestriction = { mode: 'not_applicable' }) {
+function setup(terminal = 'completed', startEligibility: HarnessEligibilityRestriction = { mode: 'not_applicable' }, resultMode: 'text' | 'json' = 'text') {
   const sdk: TaskSdk = { run: vi.fn(async () => result(terminal)), wait: vi.fn(async () => {}),
     close: vi.fn(async () => ({ shutdownAcknowledged: true, resourcesStopped: true, pid: 123, code: 0, signal: null, terminationRequested: false })) }
   const createSdk = vi.fn(async () => sdk)
   const frames: Frame[] = []
-  const peer = new OpenSlackPeer({ runId: 'RUN-TEST', resultMode: 'text', agentId: 'approved', model: 'fixture-model', root: '/fixture',
+  const peer = new OpenSlackPeer({ runId: 'RUN-TEST', resultMode, agentId: 'approved', model: 'fixture-model', root: '/fixture',
     allowedTools: ['Read'], startEligibility, createSdk, validateEvent: validatedSessionEvent, expandStream: expandAssistantStream }, value => frames.push(value))
   return { sdk, createSdk, frames, peer }
 }
 
 describe('Bridge to public SDK', () => {
+  it.each(['direct', 'line'] as const)('validates the %s envelope before accessing payload or starting the SDK', async entry => {
+    const { peer, createSdk } = setup();
+    await peer.receive(handshake());
+    const invalid = { ...request(), protocolVersion: 'unsupported' };
+    await expect(entry === 'direct' ? peer.receive(invalid) : peer.receiveLine(JSON.stringify(invalid))).rejects.toMatchObject({ name: 'PeerFailure', code: 'PROTOCOL' });
+    expect(createSdk).not.toHaveBeenCalled();
+    await peer.close();
+  });
+  it('classifies malformed strict JSON without exposing upstream model text or SyntaxError', async () => {
+    const { peer, sdk, frames } = setup('completed', { mode: 'not_applicable' }, 'json');
+    vi.mocked(sdk.run).mockResolvedValue({ ...result(), finalResponse: '```json\nPRIVATE_MODEL_SENTINEL\n```' });
+    await peer.receive(handshake());
+    const failure = await peer.receive(request()).catch(error => error);
+    expect(failure).toMatchObject({ name: 'PeerFailure', code: 'PROTOCOL' });
+    expect(String(failure)).not.toMatch(/PRIVATE_MODEL_SENTINEL|SyntaxError/);
+    expect(failure).not.toHaveProperty('cause');
+    expect(frames.some(value => value.kind === 'complete')).toBe(false);
+    await peer.close().catch(() => {});
+  });
+  it.each([0, -1])('refuses unsupported token budget %s before any model request', async tokens => {
+    const { peer, createSdk } = setup();
+    await peer.receive(handshake());
+    const input = request(); input.payload.metadata = { budget: { tokens, costUsd: 0 } };
+    await expect(peer.receive(input)).rejects.toMatchObject({ code: 'SCOPE' });
+    expect(createSdk).not.toHaveBeenCalled();
+    await peer.close().catch(() => {});
+  });
   it.each(['sigterm', 'sigkill', 'unacknowledged', 'nonzero', 'resources-missing', 'bad-pid'] as const)('refuses complete after %s SDK shutdown', async (kind) => {
     const { sdk, frames, peer } = setup()
     vi.mocked(sdk.close).mockResolvedValue({ shutdownAcknowledged: kind !== 'unacknowledged', resourcesStopped: kind !== 'resources-missing', pid: kind === 'bad-pid' ? -1 : 123,
@@ -160,9 +194,9 @@ describe('Bridge to public SDK', () => {
 
   it('bounds and validates parsed frames', () => {
     const original = handshake()
-    expect(parseFrame(JSON.stringify(original))).toEqual(original)
-    expect(() => parseFrame(JSON.stringify({ ...handshake(), protocolVersion: 'next' }))).toThrow()
-    expect(() => parseFrame('a'.repeat(1024 * 1024 + 1))).toThrow('1 MiB')
+    expect(new BridgeWireDecoder().receive(JSON.stringify(original))).toEqual(original)
+    expect(() => new BridgeWireDecoder().receive(JSON.stringify({ ...handshake(), protocolVersion: 'next' }))).toThrow()
+    expect(() => new BridgeWireDecoder().receive('a'.repeat(1024 * 1024 + 1))).toThrow('1 MiB')
   })
 
   it.each([
@@ -254,3 +288,13 @@ describe('Bridge to public SDK', () => {
     await peer.close()
   })
 })
+
+// Declaration collection loads no original runtime; execution still uses the pinned real peers.
+beforeAll(async () => {
+  const specifier1 = '@deepseek-ai/dsh-sdk-client';
+  ({ validatedSessionEvent } = await import(specifier1));
+  const specifier2 = '@deepseek-ai/dsh-llm';
+  ({ expandAssistantStream } = await import(specifier2));
+  const specifier3 = '@deepseek-ai/dsh-llm';
+  ({ createToolResultMessage, ToolCallId } = await import(specifier3));
+});

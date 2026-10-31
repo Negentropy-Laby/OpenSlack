@@ -1,5 +1,6 @@
 /** Per-agent bearer storage. No token or upstream exception crosses this module's result API. @module */
 import type { ToolDefinition, ToolRunContext } from '@deepseek-ai/dsh-tools'
+import { RUN_ID_RE } from '@openslack/agent-runtime/internal/bridge-wire'
 
 /** Host-owned task and transport identity, independent of model-supplied arguments. */
 interface ConfirmationScopeBase {
@@ -36,12 +37,13 @@ export class ConfirmationFailure extends Error {
 export class ConfirmationVault {
   private readonly entries = new Map<string, Entry>()
   private disposed = false
+  private previews = 0
   private admittedRun: string | undefined
 
   private readonly scope: ConfirmationScope
   constructor(scope: ConfirmationScope) {
     if (!scope.taskId || !scope.principalId || !scope.generation || typeof scope.assertCurrent !== 'function' ||
-      (scope.mode === 'worker' ? !/^RUN-[A-Z0-9-]+$/.test(scope.runId) : scope.mode !== 'initiator' || scope.runId !== undefined)) {
+      (scope.mode === 'worker' ? !RUN_ID_RE.test(scope.runId) : scope.mode !== 'initiator' || scope.runId !== undefined)) {
       throw new ConfirmationFailure()
     }
     this.scope = Object.freeze({ ...scope })
@@ -93,6 +95,11 @@ export class ConfirmationVault {
         Object.keys(input.input).sort().join(',') !== 'evidenceRefs,reportId,runId,summary' ||
         typeof input.input.reportId !== 'string' || typeof input.input.summary !== 'string' ||
         !Array.isArray(input.input.evidenceRefs) || input.input.evidenceRefs.some(ref => typeof ref !== 'string')) throw new ConfirmationFailure()
+    for (const [planId, entry] of this.entries) if (entry.expiresAt <= Date.now()) this.entries.delete(planId)
+    // Reserve before the first await, so concurrent previews obey the same cap.
+    if (this.entries.size + this.previews >= 128) throw new ConfirmationFailure()
+    this.previews++
+    try {
     try { await this.assertCurrent() }
     catch { this.dispose(); throw new ConfirmationFailure() }
     // A confirmation may have admitted the initiator's run during the await.
@@ -119,6 +126,7 @@ export class ConfirmationVault {
       this.dispose()
       throw new ConfirmationFailure()
     }
+    } finally { this.previews-- }
   }
 
   /**
@@ -156,7 +164,7 @@ export class ConfirmationVault {
         let observedRun: string | undefined
         if (upstream.status === 'completed') {
           if (!object(receipt) || receipt.taskId !== this.scope.taskId || typeof receipt.runId !== 'string' ||
-            !/^RUN-[A-Z0-9-]+$/.test(receipt.runId) || !['pending', 'running', 'completed', 'failed', 'cancelled'].includes(String(receipt.status))) {
+            !RUN_ID_RE.test(receipt.runId) || !['pending', 'running', 'completed', 'failed', 'cancelled'].includes(String(receipt.status))) {
             throw new ConfirmationFailure()
           }
           observedRun = receipt.runId
@@ -165,7 +173,7 @@ export class ConfirmationVault {
           if (upstream.planId !== input.planId || data.kind !== 'workflow.start' || data.state !== 'succeeded' ||
             data.settlement !== 'unconfirmed' || data.requiresReconciliation !== true || !object(governance) || governance.blocker !== 'GOVERNED_MUTATION_SETTLEMENT_UNCONFIRMED' ||
             outcome?.actionId !== 'harness.task.dispatch' || outcome.status !== 'succeeded' || !object(receipt) ||
-            receipt.taskId !== this.scope.taskId || typeof receipt.runId !== 'string' || !/^RUN-[A-Z0-9-]+$/.test(receipt.runId) ||
+            receipt.taskId !== this.scope.taskId || typeof receipt.runId !== 'string' || !RUN_ID_RE.test(receipt.runId) ||
             !['pending', 'running', 'completed', 'failed', 'cancelled'].includes(String(receipt.status))) throw new ConfirmationFailure()
           // Durable admission is not a second confirmation or execution grant.
           // It binds only the route that the original caller must reconcile.
@@ -179,7 +187,7 @@ export class ConfirmationVault {
             !object(data) || data.state !== 'blocked' || outcome?.status !== 'blocked' ||
             outcome.actionId !== 'harness.task.dispatch' || receipt.taskId !== this.scope.taskId ||
             !object(admission) || Object.keys(admission).sort().join(',') !== 'canonicalRunPresent,disposition,kind,requestHash,runId' ||
-            admission.kind !== 'admission' || typeof admission.runId !== 'string' || !/^RUN-[A-Z0-9-]+$/.test(admission.runId) ||
+            admission.kind !== 'admission' || typeof admission.runId !== 'string' || !RUN_ID_RE.test(admission.runId) ||
             typeof admission.requestHash !== 'string' || !/^[a-f0-9]{64}$/.test(admission.requestHash) ||
             typeof admission.canonicalRunPresent !== 'boolean' || !['in_progress', 'reconcile_required'].includes(String(admission.disposition))) {
             throw new ConfirmationFailure()

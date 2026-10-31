@@ -5,7 +5,7 @@ import type { SdkShutdownReceipt } from './process-observer.ts'
 import { isDeepStrictEqual } from 'node:util'
 import { assertEligibilityRestriction, readEligibilityRestriction, type HarnessEligibilityRestriction } from './scope-evidence.ts'
 import { BridgeWireEncoder, BridgeWireDecoder, validateBridgeWireEnvelope, BRIDGE_CHUNK_EXTENSION,
-  BRIDGE_MESSAGE_MAX_BYTES, HARNESS_CALLBACK_TOOLS } from '@openslack/agent-runtime/internal/bridge-wire'
+  BRIDGE_MESSAGE_MAX_BYTES, SDK_TOOL_CALL_ID_RE, HARNESS_CALLBACK_TOOLS } from '@openslack/agent-runtime/internal/bridge-wire'
 
 const version = '2025-06-03'
 
@@ -68,16 +68,6 @@ function record(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-/**
- * Parse one bounded wire frame, rejecting invalid protocol identities before execution.
- * @param text - one complete UTF-8 JSON line, excluding its newline.
- * @returns a validated Bridge envelope; this does not authorize its requested action.
- */
-export function parseFrame(text: string): Frame {
-  if (Buffer.byteLength(text) > 1024 * 1024) throw new PeerFailure('PROTOCOL', 'Bridge frame exceeds 1 MiB')
-  return validateBridgeWireEnvelope(JSON.parse(text)) as Frame
-}
-
 /** One handshake and at most one task. Closing cancels only this instance; replay is unsupported. */
 export class OpenSlackPeer {
   private handshake: Frame | undefined
@@ -98,7 +88,9 @@ export class OpenSlackPeer {
 
   /** Native startup keeps connection-local chunk state and decodes before dispatching any action. */
   receiveLine(text: string): Promise<void> {
-    const decoded = this.wireDecoder.receive(text)
+    let decoded
+    try { decoded = this.wireDecoder.receive(text) }
+    catch { return Promise.reject(new PeerFailure('PROTOCOL', 'Invalid Bridge wire frame')) }
     return decoded ? this.receive(decoded as Frame) : Promise.resolve()
   }
 
@@ -107,6 +99,8 @@ export class OpenSlackPeer {
    * @param frame - parsed envelope whose identities must match this owned run.
    */
   receive(frame: Frame): Promise<void> {
+    try { frame = validateBridgeWireEnvelope(frame) as Frame }
+    catch { return Promise.reject(new PeerFailure('PROTOCOL', 'Invalid Bridge envelope')) }
     if (this.closing) return Promise.reject(new PeerFailure('CLOSED', 'Peer is closing; query the existing run'))
     if (frame.kind === 'tool_response' && this.handshake &&
       frame.sessionId === this.handshake.sessionId && frame.correlationId === this.handshake.correlationId) {
@@ -122,7 +116,6 @@ export class OpenSlackPeer {
       return Promise.resolve()
     }
     if (frame.kind === 'handshake_request' && !this.handshake) {
-      validateBridgeWireEnvelope(frame)
       if (frame.payload.protocolVersion !== version || frame.correlationId !== this.deployment.runId) return Promise.reject(new PeerFailure('PROTOCOL', 'Unsupported or unrelated Bridge handshake'))
       const requested = frame.payload.extensions ?? []
       if (!Array.isArray(requested) || requested.some(item => item !== BRIDGE_CHUNK_EXTENSION) || requested.length > 1) {
@@ -204,7 +197,7 @@ export class OpenSlackPeer {
         throw new PeerFailure('SCOPE', 'Tool is outside the admitted request')
       }
       const id = String(++this.nextAuthorization)
-      if (!evidence || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(evidence.callId) || !evidence.generation ||
+      if (!evidence || !SDK_TOOL_CALL_ID_RE.test(evidence.callId) || !evidence.generation ||
         typeof evidence.targetPath !== 'string' || !Number.isSafeInteger(evidence.maxResultBytes) || evidence.maxResultBytes <= 0 ||
         evidence.maxResultBytes > BRIDGE_MESSAGE_MAX_BYTES) throw new PeerFailure('SCOPE', 'Tool evidence reservation is missing or unsupported')
       let call = calls.get(evidence.callId)
@@ -284,7 +277,11 @@ export class OpenSlackPeer {
         throw new PeerFailure('SHUTDOWN_UNKNOWN', 'SDK did not confirm clean owned shutdown; preserve and reconcile')
       }
       const tokenUsage = observedUsage(result, this.deployment.expandStream)
-      const data: unknown = this.deployment.resultMode === 'json' ? JSON.parse(result.finalResponse) : result.finalResponse
+      let data: unknown = result.finalResponse
+      if (this.deployment.resultMode === 'json') {
+        try { data = JSON.parse(result.finalResponse) }
+        catch { throw new PeerFailure('PROTOCOL', 'SDK output is not valid strict JSON') }
+      }
       this.emit(frame, 'complete', { data, sessionId, usage: tokenUsage === undefined ? 'unknown' : 'observed',
         ...(tokenUsage === undefined ? {} : { tokenUsage }) })
     } finally {

@@ -92,7 +92,7 @@ there is no directory-wide external-code allowance. The compiled scripted model
 under `.build/fixtures` is test-only and excluded from archives.
 
 SDK-host and read-only configuration also contain `runtimeEntries`, the serialized
-exact public ESM map produced by the host's `harnessPublicRuntimeEntries()`.
+exact public ESM map captured by the host's verified deployment binding.
 The host rejects physical peer overrides before launch; the SDK host checks its
 actual public resolver against that bound map before creating its server/MCP.
 The SDK client runs outside dsh and is independently resolved at its approved

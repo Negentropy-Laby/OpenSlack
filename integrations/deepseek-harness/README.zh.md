@@ -66,7 +66,7 @@ OpenSlack 绑定原版 Harness、插件、Node、overlay、模型和验证器摘
 `.build/fixtures` 中的脚本模型仅用于测试，不进入归档。
 
 SDK-host 与只读配置还包含 `runtimeEntries`：由宿主
-`harnessPublicRuntimeEntries()` 产生的精确公开 ESM 映射序列化值。
+经验证的部署绑定中采集的精确公开 ESM 映射序列化值。
 宿主启动前拒绝物理 peer 覆盖，SDK host 创建 Server/MCP 前再用实际公开解析器
 核对映射。外部 SDK client 另从批准包锚点解析，不在插件内安装第二份运行时。
 

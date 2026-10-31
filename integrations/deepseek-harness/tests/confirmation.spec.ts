@@ -24,6 +24,53 @@ function setup() {
 }
 
 describe('per-agent confirmation vault', () => {
+  it('reserves concurrent previews before any authority or upstream await', async () => {
+    const { vault, assertCurrent } = setup();
+    const gate = Promise.withResolvers<void>();
+    assertCurrent.mockImplementation(async () => gate.promise);
+    let sequence = 0;
+    const raw = { ...tool(preview()), execute: vi.fn(async () => {
+      const value = preview(); value.structuredContent.planId = `PLAN-${sequence++}`; return value;
+    }) };
+    const results = Promise.allSettled(Array.from({ length: 129 }, () => vault.preview(raw, args, exec)));
+    expect(raw.execute).not.toHaveBeenCalled();
+    gate.resolve();
+    const settled = await results;
+    expect(settled.filter(value => value.status === 'fulfilled')).toHaveLength(128);
+    expect(settled.filter(value => value.status === 'rejected')).toHaveLength(1);
+    expect(raw.execute).toHaveBeenCalledTimes(128);
+  });
+  it('sweeps expired entries before testing capacity without evicting a live capability', async () => {
+    const { vault } = setup();
+    const now = Date.now();
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(now);
+    try {
+      let sequence = 0;
+      const raw = { ...tool(preview()), execute: vi.fn(async () => {
+        const value = preview(); value.structuredContent.planId = `PLAN-${sequence++}`; return value;
+      }) };
+      for (let index = 0; index < 128; index++) await vault.preview(raw, args, exec);
+      clock.mockReturnValue(now + 60_001);
+      await expect(vault.preview(raw, args, exec)).resolves.toBeDefined();
+      expect(raw.execute).toHaveBeenCalledTimes(129);
+      const cancel = tool({ structuredContent: { status: 'completed', data: { state: 'cancelled' } } });
+      await vault.settle(cancel, { planId: 'PLAN-128' }, exec, 'cancel');
+      expect(cancel.execute).toHaveBeenCalledOnce();
+    } finally { clock.mockRestore(); }
+  });
+  it('bounds live pending plans at 128 before an upstream preview and preserves existing capabilities', async () => {
+    const { vault } = setup();
+    let sequence = 0;
+    const raw = { ...tool(preview()), execute: vi.fn(async () => {
+      const value = preview(); value.structuredContent.planId = `PLAN-${sequence++}`; return value;
+    }) };
+    for (let index = 0; index < 128; index++) await vault.preview(raw, args, exec);
+    await expect(vault.preview(raw, args, exec)).rejects.toMatchObject({ code: 'OPENSLACK_CONFIRMATION_UNAVAILABLE' });
+    expect(raw.execute).toHaveBeenCalledTimes(128);
+    const cancel = tool({ structuredContent: { status: 'completed', data: { state: 'cancelled' } } });
+    await vault.settle(cancel, { planId: 'PLAN-0' }, exec, 'cancel');
+    expect(cancel.execute).toHaveBeenCalledOnce();
+  });
   it.each(['worker', 'initiator'] as const)('advertises only the trusted %s preview and rejects upstream-only optional fields', async mode => {
     const vault = mode === 'worker' ? setup().vault : new ConfirmationVault({ mode, taskId: 'TASK-1',
       principalId: 'principal', generation: 'g1', assertCurrent: async () => {} })

@@ -11,7 +11,7 @@ import type {} from '@deepseek-ai/dsh-mcp-client'
 import type {} from '@deepseek-ai/dsh-sdk-jsonrpc-server'
 import type { ToolDefinition, ToolRunContext } from '@deepseek-ai/dsh-tools'
 import { ConfirmationVault } from './confirmation-vault.ts'
-import { HARNESS_CALLBACK_TOOLS, BRIDGE_MESSAGE_MAX_BYTES } from '@openslack/agent-runtime/internal/bridge-wire'
+import { HARNESS_CALLBACK_TOOLS, BRIDGE_MESSAGE_MAX_BYTES, SDK_TOOL_CALL_ID_RE } from '@openslack/agent-runtime/internal/bridge-wire'
 import { previewNativeEvidence, assertPreviewIntent, readEligibilityRestriction, assertEligibilityRestriction } from './scope-evidence.ts'
 import type { NativeEvidencePreview, HarnessEligibilityRestriction } from './scope-evidence.ts'
 import type { ToolEvidenceReservation } from './bridge.ts'
@@ -137,24 +137,17 @@ export function apply(ctx: Context, config: Config): void {
     return capacity
   }
   // Prepend the denial and delegate the actual stale-write intent to existing policy.
-  ctx.on('fs/write-intent', async (target, actor, next) => {
+  const checkedIntent = async <T>(target: FsTarget, actor: object | undefined, next: () => T | Promise<T>, edit: boolean): Promise<T> => {
     const capacity = await targetCheck(target, actor)
     const intent = await next()
     checkActor(actor)
     assertEligibilityRestriction(capacity.restriction)
     checkPath(ctx.fs.processPath(target), true)
-    assertPreviewIntent(capacity.preview, intent, false)
+    assertPreviewIntent(capacity.preview, intent, edit)
     return intent
-  }, true)
-  ctx.on('fs/edit-intent', async (target, actor, next) => {
-    const capacity = await targetCheck(target, actor)
-    const intent = await next()
-    checkActor(actor)
-    assertEligibilityRestriction(capacity.restriction)
-    checkPath(ctx.fs.processPath(target), true)
-    assertPreviewIntent(capacity.preview, intent, true)
-    return intent
-  }, true)
+  }
+  ctx.on('fs/write-intent', (target, actor, next) => checkedIntent(target, actor, next, false), true)
+  ctx.on('fs/edit-intent', (target, actor, next) => checkedIntent(target, actor, next, true), true)
 
   const disposers = new Set<() => void | Promise<void>>()
   const agents = new Set<Agent>()
@@ -210,7 +203,7 @@ export function apply(ctx: Context, config: Config): void {
             const target = await ctx.fs.resolve(input.file_path, { cwd: root, signal: exec.signal })
             checkActor(exec)
             checkPath(ctx.fs.processPath(target), toolName !== 'read')
-            if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(exec.callId)) throw new Error('Invalid native tool call identity')
+            if (!SDK_TOOL_CALL_ID_RE.test(exec.callId)) throw new Error('Invalid native tool call identity')
             // Live authorization precedes even the private read-only capacity
             // inspection. Reserve the supported maximum first; never expose a
             // revoked file while attempting to compute a tighter reservation.

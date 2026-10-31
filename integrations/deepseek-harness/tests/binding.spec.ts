@@ -1,8 +1,11 @@
+import type * as StartupModule from '../src/startup.ts'
+import { beforeAll } from 'vitest';
 import { linkSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { describe, expect, it, onTestFinished } from 'vitest';
-import { readBinding } from '../src/startup.ts';
+let readBinding: typeof StartupModule.readBinding;
+
 
 function fixture() {
   const root = mkdtempSync(join(tmpdir(), 'openslack-stable-binding-'));
@@ -36,4 +39,10 @@ describe('portable stable worker binding bytes', () => {
     else writeFileSync(path, mode === 'oversized' ? Buffer.alloc(128 * 1024 + 1, 65) : Buffer.from([0xff]));
     expect(() => readBinding(path)).toThrow();
   });
+});
+
+// Declaration collection loads no original runtime; execution still uses the pinned real peers.
+beforeAll(async () => {
+  const specifier1 = '../src/startup.ts';
+  ({ readBinding } = await import(specifier1));
 });

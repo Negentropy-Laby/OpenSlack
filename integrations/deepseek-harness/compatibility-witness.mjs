@@ -70,7 +70,7 @@ export function captureCompatibilityInputs(root, harnessRoot) {
     files(harnessRoot, pkg.manifestPath, dependency);
     for (const name of ['lib', 'dist']) files(harnessRoot, join(pkg.directory, name), dependency);
   }
-  return { source: source.sort(([a], [b]) => a.localeCompare(b)), dependency: dependency.sort(([a], [b]) => a.localeCompare(b)), tools: tools(root, harnessRoot) };
+  return { source: source.sort(([a], [b]) => Buffer.compare(Buffer.from(a, 'utf8'), Buffer.from(b, 'utf8'))), dependency: dependency.sort(([a], [b]) => Buffer.compare(Buffer.from(a, 'utf8'), Buffer.from(b, 'utf8'))), tools: tools(root, harnessRoot) };
 }
 
 export function captureCompatibilityOutputs(root) {
@@ -82,7 +82,7 @@ export function captureCompatibilityOutputs(root) {
   files(root, join(root, 'integrations/deepseek-harness/.build/fixtures'), output);
   if (!output.some(([path]) => path === 'packages/agent-runtime/dist/harness.js') ||
     !output.some(([path]) => path === 'integrations/deepseek-harness/dist/startup.js')) fail();
-  return output.sort(([a], [b]) => a.localeCompare(b));
+  return output.sort(([a], [b]) => Buffer.compare(Buffer.from(a, 'utf8'), Buffer.from(b, 'utf8')));
 }
 
 export function assertCompatibilityWitness(root, harnessRoot) {

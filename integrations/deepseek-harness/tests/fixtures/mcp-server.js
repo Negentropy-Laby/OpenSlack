@@ -6,9 +6,10 @@ const { Server } = await import(pathToFileURL(require.resolve('@modelcontextprot
 const { StdioServerTransport } = await import(pathToFileURL(require.resolve('@modelcontextprotocol/sdk/server/stdio.js')).href);
 const { ListToolsRequestSchema, CallToolRequestSchema } = await import(pathToFileURL(require.resolve('@modelcontextprotocol/sdk/types.js')).href);
 const server = new Server({ name: 'keyless-openslack-endpoint', version: '1.0.0' }, { capabilities: { tools: {} } });
-const names = ['openslack_get_activity', ...Array.from({ length: 11 }, (_, index) => `openslack_fixture_${String.fromCharCode(97 + index)}`),
-  ...(process.argv.includes('agent-bound') ? ['openslack_preview_workflow', 'openslack_confirm_plan', 'openslack_cancel_plan', 'openslack_preview_scenario'] : [])];
-server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: names.map(name => ({ name, inputSchema: { type: 'object' } })) }));
+const { getReviewedHarnessToolCatalog } = await import('../../../../packages/qoder-adapter/dist/harness-tool-catalog.js');
+const tools = getReviewedHarnessToolCatalog(process.argv.includes('agent-bound') ? 'task' : 'read-only');
+server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: [...tools,
+  { name: 'openslack_unreviewed_future_tool', inputSchema: { type: 'object' } }] }));
 server.setRequestHandler(CallToolRequestSchema, async request => {
   if (request.params.arguments?.disconnect === true) setImmediate(() => { void server.close().then(() => { process.exit(0); }); });
   return { content: [{ type: 'text', text: 'fixture response' }], structuredContent: { status: 'completed' } };

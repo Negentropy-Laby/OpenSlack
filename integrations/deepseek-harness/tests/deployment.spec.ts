@@ -53,15 +53,18 @@ describe('external plugin build inputs', () => {
     const wireSource = join(root, '.build/wire-source/bridge-wire.ts');
     mkdirSync(dirname(wireSource), { recursive: true });
     cpSync(join(packageRoot, '../../packages/agent-runtime/src/bridge-wire.ts'), wireSource);
+    cpSync(join(packageRoot, '../../packages/agent-runtime/src/run-id.ts'), join(dirname(wireSource), 'run-id.ts'));
+    const catalogSource = join(dirname(wireSource), 'harness-tool-catalog.ts');
+    for (const name of ['harness-tool-catalog.ts', 'tool-catalog.ts']) cpSync(join(packageRoot, '../../packages/qoder-adapter/src', name), join(dirname(wireSource), name));
     const wireOutput = join(root, '.build/wire-output');
-    const wireProgram = ts.createProgram([wireSource], { target: ts.ScriptTarget.ES2024,
+    const wireProgram = ts.createProgram([wireSource, catalogSource], { target: ts.ScriptTarget.ES2024,
       module: ts.ModuleKind.ESNext, moduleResolution: ts.ModuleResolutionKind.Bundler, strict: true,
       declaration: true, skipLibCheck: true, rootDir: dirname(wireSource), outDir: wireOutput,
       types: ['node'], typeRoots: [join(harnessRoot, 'node_modules/@types')] });
     expect(ts.getPreEmitDiagnostics(wireProgram).map(d => ts.flattenDiagnosticMessageText(d.messageText, '\n'))).toEqual([]);
     expect(wireProgram.emit().emitSkipped).toBe(false);
     const env = { ...testProcessEnvironment(), DEEPSEEK_HARNESS_CHECKOUT: harnessRoot,
-      OPENSLACK_BRIDGE_WIRE_MODULE: join(wireOutput, 'bridge-wire.js') };
+      OPENSLACK_BRIDGE_WIRE_MODULE: join(wireOutput, 'bridge-wire.js'), OPENSLACK_TOOL_CATALOG_MODULE: join(wireOutput, 'harness-tool-catalog.js') };
     const built = spawnSync(testExecutable('bun', env), [join(root, 'build.mjs')], {
       cwd: root,
       env,

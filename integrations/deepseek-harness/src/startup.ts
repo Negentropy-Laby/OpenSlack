@@ -6,7 +6,7 @@ import { loadPublicHarness } from './runtime.ts'
 import { createOwnedSdk } from './owned-sdk.ts'
 import { OpenSlackPeer } from './bridge.ts'
 import type { Config } from './index.ts'
-import { HARNESS_CALLBACK_TOOLS } from '@openslack/agent-runtime/internal/bridge-wire'
+import { HARNESS_CALLBACK_TOOLS, BRIDGE_FRAME_MAX_BYTES } from '@openslack/agent-runtime/internal/bridge-wire'
 import { assertEligibilityRestriction, readEligibilityRestriction } from './scope-evidence.ts'
 
 interface WorkerBinding extends Config {
@@ -98,7 +98,6 @@ async function main(): Promise<void> {
     throw new Error('Task start restriction is not bound to this run and generation')
   }
   const startEligibility = readEligibilityRestriction(start.restriction)
-  assertEligibilityRestriction(startEligibility)
   const runtime = await loadPublicHarness(required(deployment, '--harness-root'))
   assertEligibilityRestriction(startEligibility)
   if (performance.now() >= deadline) { clearTimeout(timer); throw new Error('Peer startup deadline exceeded') }
@@ -170,10 +169,10 @@ async function main(): Promise<void> {
       while ((newline = pending.indexOf('\n')) !== -1) {
         const line = pending.slice(0, newline).replace(/\r$/, '')
         pending = pending.slice(newline + 1)
-        if (Buffer.byteLength(line) > 1024 * 1024) throw new Error('Peer wire frame exceeded its bound')
+        if (Buffer.byteLength(line) > BRIDGE_FRAME_MAX_BYTES) throw new Error('Peer wire frame exceeded its bound')
         void peer.receiveLine(line).catch(fail)
       }
-      if (Buffer.byteLength(pending) > 1024 * 1024) throw new Error('Peer wire frame exceeded its bound')
+      if (Buffer.byteLength(pending) > BRIDGE_FRAME_MAX_BYTES) throw new Error('Peer wire frame exceeded its bound')
     } catch { fail() }
   }
   const onEnd = (): void => {
