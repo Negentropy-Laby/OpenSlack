@@ -1,11 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { spawn } from 'node:child_process';
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync, openSync, closeSync, ftruncateSync, unlinkSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync, openSync, closeSync, ftruncateSync, unlinkSync, lstatSync as FsModuleLstat } from 'node:fs';
 import type * as FsModule from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { HarnessTaskHost, type ApprovedHarnessTask, type HarnessTaskHostOptions } from '../harness-task-host.js';
-import { createRunStore, HARNESS_TRANSCRIPT_MAX_BYTES, HARNESS_TERMINAL_RESERVE_BYTES, readRunStateSnapshot, readRunStateSnapshotWhenAvailable } from '../run-store.js';
+import { createRunStore, HARNESS_TRANSCRIPT_MAX_BYTES, HARNESS_TERMINAL_RESERVE_BYTES, readRunStateSnapshot, readRunStateSnapshotWhenAvailable, RunStateSnapshotChangedError } from '../run-store.js';
 import { createRunRecorder, type ToolEvidenceReservation } from '../recorder.js';
 import { buildPermissionProfile } from '../permissions.js';
 import { readHarnessStopIntent } from '../harness-stop.js';
@@ -14,17 +14,24 @@ import { reconcileHarnessTask } from '../harness-reconciliation.js';
 import { HarnessAdmissionStore } from '../harness-admission.js';
 import { bindHarnessToolEligibility, createHarnessTaskEligibility } from '../harness-eligibility.js';
 
-vi.mock('node:fs', async original => { const fs = await original<typeof FsModule>(); return { ...fs, renameSync: vi.fn(fs.renameSync), unlinkSync: vi.fn(fs.unlinkSync) }; });
+vi.mock('node:fs', async original => { const fs = await original<typeof FsModule>(); return { ...fs, renameSync: vi.fn(fs.renameSync), unlinkSync: vi.fn(fs.unlinkSync), lstatSync: vi.fn(fs.lstatSync) }; });
 const rename = vi.mocked(renameSync);
 const nativeRename = rename.getMockImplementation()!;
 const unlink = vi.mocked(unlinkSync), nativeUnlink = unlink.getMockImplementation()!;
+const lstat = vi.mocked(FsModuleLstat);
+const nativeLstat = lstat.getMockImplementation()!;
 const roots: string[] = [];
 const hosts: HarnessTaskHost[] = [];
+const recorderWriters = new Set<{ process: ReturnType<typeof spawn>; finished: Promise<void> }>();
 afterEach(async () => {
   rename.mockReset().mockImplementation(nativeRename);
   unlink.mockReset().mockImplementation(nativeUnlink);
+  lstat.mockReset().mockImplementation(nativeLstat);
   vi.useRealTimers();
   vi.restoreAllMocks();
+  for (const writer of recorderWriters) if (writer.process.exitCode === null && writer.process.signalCode === null) writer.process.kill();
+  await Promise.all([...recorderWriters].map(writer => writer.finished));
+  recorderWriters.clear();
   for (const host of hosts.splice(0)) await host.close(100);
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
 });
@@ -340,6 +347,36 @@ describe('owned RunStore transactions and full evidence quota', () => {
     expect(store.getRun(runId)).toEqual(before);
   });
 
+  it('re-observes a canonical creation completed after the initial absence probe without bootstrapping or accepting an orphan', () => {
+    const { root, store, task } = fixture();
+    const runId = 'RUN-CREATION-OBSERVATION';
+    const directory = join(root, '.openslack.local/agents/runs', runId);
+    mkdirSync(directory, { recursive: true, mode: 0o700 });
+    const canonical = join(directory, 'run.json');
+    const creation = vi.spyOn(store, 'createRun');
+    let observed = false;
+    lstat.mockImplementation((...args) => {
+      if (!observed && String(args[0]) === canonical) {
+        observed = true;
+        // Return the stale absence observed just before another publisher's
+        // complete real transaction; no decoded bytes or state are fabricated.
+        store.createRun({ ...task.request, runId });
+        throw Object.assign(new Error('Controlled stale absence'), { code: 'ENOENT' });
+      }
+      return nativeLstat(...args);
+    });
+    expect(() => readRunStateSnapshot(runId, root)).toThrow(RunStateSnapshotChangedError);
+    expect(observed).toBe(true);
+    expect(creation).toHaveBeenCalledOnce();
+    lstat.mockReset().mockImplementation(nativeLstat);
+    expect(readRunStateSnapshot(runId, root)).toMatchObject({ runId, agentId: task.request.agentId });
+    const metadata = readFileSync(join(directory, 'metadata.json'));
+    unlinkSync(canonical);
+    expect(() => readRunStateSnapshot(runId, root)).toThrow('Run creation is incomplete');
+    expect(readFileSync(join(directory, 'metadata.json'))).toEqual(metadata);
+    expect(creation).toHaveBeenCalledOnce();
+  });
+
   it('yields for a healthy cross-process transaction rather than failing three immediate reads', async () => {
     const { root, runId } = runningFixture();
     const module = new URL('../../dist/run-store.js', import.meta.url).href;
@@ -484,13 +521,40 @@ describe('owned RunStore transactions and full evidence quota', () => {
   });
 
   it('strictly streams complete evidence beyond the old 8 MiB reader limit', () => {
-    const { recorder, store, runId, reserve } = runningFixture();
+    const { recorder, store, runId, reserve, root } = runningFixture();
     const receipt = reserve({ callId: 'large', toolName: 'Read', input: {}, targetPath: '/fixture', generation: 'fixture-owner', maxResultBytes: 16 * 1024 * 1024 });
     recorder.markToolEvidenceAuthorizationAttempt!(receipt);
     recorder.recordToolEvidenceResult!(runId, 'large', { message: 'x'.repeat(9 * 1024 * 1024), meta: { complete: true } });
     let count = 0;
-    visitStrictTranscript(store.getRun(runId)!.transcriptPath, () => count++);
+    const path = store.getRun(runId)!.transcriptPath;
+    const size = statSync(path).size;
+    const originalLength = Buffer.byteLength;
+    let measuredStringBytes = 0;
+    const length = vi.spyOn(Buffer, 'byteLength').mockImplementation((value, encoding) => {
+      const bytes = originalLength(value, encoding);
+      if (typeof value === 'string') measuredStringBytes += bytes;
+      return bytes;
+    });
+    try { visitStrictTranscript(path, () => count++); }
+    finally { length.mockRestore(); }
     expect(count).toBe(2);
+    // A bounded reader must not rescan each growing prefix. This counts work,
+    // not elapsed time, and keeps the actual >8MiB evidence path.
+    expect(measuredStringBytes).toBeLessThanOrEqual(size * 2);
+    const prefix = '{"type":"progress","data":{"text":"';
+    const message = 'x'.repeat(64 * 1024 - Buffer.byteLength(prefix) - 1) + '双';
+    const boundary = join(root, 'utf8-boundary.jsonl');
+    const row = JSON.stringify({ type: 'progress', data: { text: message } });
+    writeFileSync(boundary, `${row}\n${row}\n`);
+    const observed: unknown[] = [];
+    visitStrictTranscript(boundary, event => observed.push(event.data.text));
+    expect(observed).toEqual([message, message]);
+    // Only the file-leading BOM is stripped by the single decoder. A BOM at
+    // a later record must not be silently accepted by per-record decoding.
+    writeFileSync(boundary, `\ufeff${row}\n${row}\n`);
+    count = 0; visitStrictTranscript(boundary, () => count++); expect(count).toBe(2);
+    writeFileSync(boundary, `${row}\n\ufeff${row}\n`);
+    expect(() => visitStrictTranscript(boundary, () => {})).toThrow();
   });
 
   it.each(['bad-json', 'missing-final-lf', 'invalid-utf8', 'oversized-event', 'oversized-transcript'] as const)('rejects persisted %s evidence without rewriting its original bytes', kind => {
@@ -498,11 +562,13 @@ describe('owned RunStore transactions and full evidence quota', () => {
     const path = join(root, 'strict-evidence.jsonl');
     if (kind === 'bad-json') writeFileSync(path, '{not JSON}\n');
     if (kind === 'missing-final-lf') writeFileSync(path, JSON.stringify({ type: 'progress', data: {} }));
-    if (kind === 'invalid-utf8') writeFileSync(path, Buffer.from([0xc3, 0x28, 0x0a]));
+    if (kind === 'invalid-utf8') writeFileSync(path, Buffer.concat([Buffer.from('{"type":"progress","data":{}}\n'), Buffer.from([0xc3, 0x28, 0x0a])]));
     if (kind === 'oversized-event') writeFileSync(path, JSON.stringify({ type: 'progress', data: { text: 'x'.repeat(16 * 1024 * 1024) } }) + '\n');
     if (kind === 'oversized-transcript') { const fd = openSync(path, 'wx'); try { ftruncateSync(fd, 64 * 1024 * 1024 + 1); } finally { closeSync(fd); } }
     const before = statSync(path), bytes = kind === 'oversized-transcript' ? undefined : readFileSync(path);
-    expect(() => visitStrictTranscript(path, () => {})).toThrow();
+    let callbacks = 0;
+    expect(() => visitStrictTranscript(path, () => callbacks++)).toThrow();
+    if (kind === 'invalid-utf8') expect(callbacks).toBe(0);
     const after = statSync(path);
     expect([after.size, after.mtimeMs, after.ctimeMs]).toEqual([before.size, before.mtimeMs, before.ctimeMs]);
     if (bytes) expect(readFileSync(path).equals(bytes)).toBe(true);
@@ -513,16 +579,70 @@ describe('owned RunStore transactions and full evidence quota', () => {
     const module = new URL('../../dist/run-store.js', import.meta.url).href;
     const source = `import { createRunStore } from ${JSON.stringify(module)};
       const store=createRunStore(process.argv[1],{sweepOrphans:false}), id=process.argv[2], role=process.argv[3];
-      for(let i=0;i<20;i++) store.withRunTransaction(id,s=>({patch:role==='host'?{toolCalls:s.toolCalls+1}:{harnessExecution:{...s.harnessExecution,reports:{...s.harnessExecution.reports,['report-'+i]:'ack'}}},events:[{timestamp:new Date().toISOString(),type:'progress',data:{role,i}}]}));`;
-    const child = (role: string) => new Promise<void>((resolve, reject) => {
-      const process = spawn(globalThis.process.execPath, ['--input-type=module', '-e', source, root, runId, role], { stdio: ['ignore', 'ignore', 'pipe'] });
-      let error = ''; process.stderr.on('data', bytes => { error += bytes; });
-      process.once('error', reject); process.once('close', code => code === 0 ? resolve() : reject(new Error(error)));
-    });
-    await Promise.all([child('host'), child('worker')]);
+      let next=0;
+      process.on('message', request => {
+        if(request?.round!==next) throw new Error('Unexpected fixture round');
+        const i=next++;
+        store.withRunTransaction(id,s=>({patch:role==='host'?{toolCalls:s.toolCalls+1}:{harnessExecution:{...s.harnessExecution,reports:{...s.harnessExecution.reports,['report-'+i]:'ack'}}},events:[{timestamp:new Date().toISOString(),type:'progress',data:{role,i}}]}));
+        const final=next===20;
+        process.send({role,round:i}, error=>{if(error)throw error;if(final)process.disconnect();});
+      });
+      process.send({role,ready:true});`;
+    const child = (role: string) => {
+      const process = spawn(globalThis.process.execPath, ['--input-type=module', '-e', source, root, runId, role], { stdio: ['ignore', 'ignore', 'pipe', 'ipc'] });
+      const ready = Promise.withResolvers<void>(), finished = Promise.withResolvers<void>(), failed = Promise.withResolvers<never>();
+      let pending: { round: number; resolve(): void; reject(error: Error): void } | undefined;
+      const acknowledged = new Set<number>();
+      let error = '', failure: Error | undefined, isReady = false;
+      const fail = (cause: Error) => { failure ??= cause; ready.reject(cause); failed.reject(cause); pending?.reject(cause); };
+      process.stderr!.on('data', bytes => { error = (error + bytes).slice(-8192); });
+      process.once('error', fail);
+      process.on('message', message => {
+        if (!message || typeof message !== 'object' || Array.isArray(message)) { fail(new Error('Invalid fixture acknowledgement')); return; }
+        const value = message as { role?: unknown; ready?: unknown; round?: unknown };
+        if (value.role !== role) { fail(new Error('Unexpected fixture writer')); return; }
+        if (value.ready === true) {
+          if (isReady) { fail(new Error('Duplicate fixture readiness')); return; }
+          isReady = true; ready.resolve(); return;
+        }
+        if (!pending || value.round !== pending.round || acknowledged.has(pending.round)) { fail(new Error('Unexpected fixture acknowledgement')); return; }
+        acknowledged.add(pending.round); pending.resolve(); pending = undefined;
+      });
+      process.once('close', code => {
+        if (code !== 0 || acknowledged.size !== 20) fail(new Error(error || 'Fixture writer closed before all durable acknowledgements'));
+        finished.resolve();
+      });
+      recorderWriters.add({ process, finished: finished.promise });
+      void ready.promise.catch(() => {});
+      void failed.promise.catch(() => {});
+      return { process, ready: ready.promise, finished: finished.promise, failed: failed.promise,
+        round: (round: number) => new Promise<void>((resolve, reject) => {
+          if (failure) { reject(failure); return; }
+          pending = { round, resolve, reject };
+          process.send({ round }, cause => { if (cause) fail(cause); });
+        }),
+        assertComplete: () => { if (failure) throw failure; expect(acknowledged.size).toBe(20); },
+      };
+    };
+    const writers = [child('host'), child('worker')];
+    const failure = Promise.race(writers.map(writer => writer.failed));
+    void failure.catch(() => {});
+    try {
+      await Promise.race([Promise.all(writers.map(writer => writer.ready)), failure]);
+      // Race both real processes once per round, then wait for both durable
+      // acknowledgements. No greedy re-acquisition, retry or callback replay.
+      for (let round = 0; round < 20; round++) await Promise.race([Promise.all(writers.map(writer => writer.round(round))), failure]);
+      await Promise.race([Promise.all(writers.map(writer => writer.finished)), failure]);
+      for (const writer of writers) writer.assertComplete();
+    } finally {
+      for (const writer of writers) if (writer.process.exitCode === null && writer.process.signalCode === null) writer.process.kill();
+      await Promise.all(writers.map(writer => writer.finished));
+    }
     expect(store.getRun(runId)?.toolCalls).toBe(20);
     expect(Object.keys(store.getRun(runId)!.harnessExecution!.reports)).toHaveLength(20);
-    let count = 0; visitStrictTranscript(store.getRun(runId)!.transcriptPath, () => count++);
+    let count = 0; const events = new Set<string>();
+    visitStrictTranscript(store.getRun(runId)!.transcriptPath, event => { count++; events.add(`${event.data.role}:${event.data.i}`); });
     expect(count).toBe(40);
+    expect(events).toEqual(new Set(['host', 'worker'].flatMap(role => Array.from({ length: 20 }, (_, round) => `${role}:${round}`))));
   });
 });

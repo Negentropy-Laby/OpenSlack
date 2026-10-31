@@ -62,23 +62,33 @@ export function visitStrictTranscript(path: string, visit: (event: AgentRunEvent
   withHarnessDescriptor(path, maxBytes, {}, fd => {
     const decoder = new TextDecoder('utf-8', { fatal: true });
     const block = Buffer.alloc(64 * 1024);
-    let pending = '';
+    let parts: string[] = [];
+    let eventBytes = 0;
+    const append = (part: string) => {
+      if (!part) return;
+      eventBytes += Buffer.byteLength(part);
+      if (eventBytes > 16 * 1024 * 1024) throw new Error('Transcript event exceeds its bound');
+      parts.push(part);
+    };
     let read = 0;
     while (true) {
       const count = readSync(fd, block, 0, block.length, null);
       if (!count) break;
       read += count;
       if (read > maxBytes) throw new Error('Transcript evidence exceeds its bound');
-      pending += decoder.decode(block.subarray(0, count), { stream: true });
-      let end;
-      while ((end = pending.indexOf('\n')) >= 0) {
-        const line = pending.slice(0, end); pending = pending.slice(end + 1);
-        if (Buffer.byteLength(line) > 16 * 1024 * 1024) throw new Error('Transcript event exceeds its bound');
+      // Decode each block once with the same persistent decoder, preserving
+      // fatal UTF-8 validation and first-file BOM semantics before any visit.
+      const text = decoder.decode(block.subarray(0, count), { stream: true });
+      let start = 0, end;
+      while ((end = text.indexOf('\n', start)) >= 0) {
+        append(text.slice(start, end));
+        const line = parts.join(''); parts = []; eventBytes = 0;
         if (line.trim()) visit(parseLine(line, true));
+        start = end + 1;
       }
-      if (Buffer.byteLength(pending) > 16 * 1024 * 1024) throw new Error('Transcript event exceeds its bound');
+      append(text.slice(start));
     }
-    pending += decoder.decode();
-    if (pending.length) throw new Error('Transcript evidence has an incomplete final record');
+    append(decoder.decode());
+    if (parts.length) throw new Error('Transcript evidence has an incomplete final record');
   });
 }

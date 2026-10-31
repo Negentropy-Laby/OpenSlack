@@ -81,9 +81,16 @@ function readSnapshot(runId: string, root: string | undefined, maxBytes: number,
   if (runEntryExists(barrier) || (!owned && runEntryExists(lock))) throw new RunStateSnapshotChangedError(runId);
   const path = getRunMetaPath(runId, root);
   if (!runEntryExists(path)) {
-    if (runEntryExists(join(getRunDir(runId, root), 'metadata.json')) ||
-      (!owned && readdirSync(getRunDir(runId, root)).length > 0)) throw new RunPersistenceError('RUN_INITIALIZATION_INCOMPLETE', 'Run creation is incomplete; inspect without replay.');
+    const incomplete = runEntryExists(join(getRunDir(runId, root), 'metadata.json')) ||
+      (!owned && readdirSync(getRunDir(runId, root)).length > 0);
     verifyDirectories();
+    // The first absence probe can precede a healthy creator's lock and durable
+    // publication. Re-observe that phase before classifying preserved leftovers
+    // as an orphan. This never creates, repairs or grants execution authority.
+    if (runEntryExists(barrier) || (!owned && runEntryExists(lock)) || runEntryExists(path)) {
+      throw new RunStateSnapshotChangedError(runId);
+    }
+    if (incomplete) throw new RunPersistenceError('RUN_INITIALIZATION_INCOMPLETE', 'Run creation is incomplete; inspect without replay.');
     return null;
   }
   const state = decodeRunState(readRunBytes(path, maxBytes, runId), runId);
