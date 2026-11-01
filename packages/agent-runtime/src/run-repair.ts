@@ -8,7 +8,7 @@ import { scanValue } from '@openslack/collaboration';
 import { decodeRunState, HARNESS_TRANSCRIPT_MAX_BYTES, readRunStateSnapshot } from './run-store.js';
 import type { AgentRunState } from './types.js';
 import { captureRunDirectories, captureStorageDirectories, inspectRunDirectories, readRunBytes, RUN_MAINTENANCE_BARRIER, RUN_SNAPSHOT_MAX_BYTES,
-  RUN_TRANSACTION_LOCK, runBase, runDirectory, runEntryExists, runSha256, writeRunExclusive } from './run-files.js';
+  RUN_TRANSACTION_LOCK, runBase, runDirectory, runEntryExists, runFileIdentity, runSha256, writeRunExclusive } from './run-files.js';
 import type { RunStorageIntent, RunOwnershipRecord } from './run-ownership.js';
 import { observeRunWriter, ownRunWriterWitness } from './run-process-witness.js';
 import { isCode } from './io-errors.js';
@@ -59,8 +59,7 @@ function inertObject(value: unknown): value is Record<string, unknown> { return 
 function safe(value: unknown): void { if (scanValue(value, 'run repair').found) throw new RunRepairError('RUN_REPAIR_UNAVAILABLE'); }
 
 function identity(path: string): string {
-  const s = lstatSync(path, { bigint: true });
-  return [s.dev, s.ino, s.mode, s.uid, s.gid, s.nlink, s.size, s.mtimeNs, s.ctimeNs].join(':');
+  return runFileIdentity(lstatSync(path, { bigint: true }));
 }
 
 /** Bounded protected membership. Two links are accepted only as a bound canonical
@@ -81,8 +80,9 @@ function collect(root: string, runId: string, ignore: readonly string[] = []): I
     const limit = name === 'transcript.jsonl' ? HARNESS_TRANSCRIPT_MAX_BYTES : INTENT.test(name) || name === RUN_TRANSACTION_LOCK || name === RUN_MAINTENANCE_BARRIER ? 16 * 1024 : RUN_SNAPSHOT_MAX_BYTES;
     if (s.size > BigInt(limit) || (total += Number(s.size)) > RUN_STORAGE_MAX_BYTES) throw new RunRepairError('RUN_REPAIR_UNAVAILABLE');
     const key = `${s.dev}:${s.ino}`; const linked = pairs.get(key) ?? []; linked.push(name); pairs.set(key, linked);
-    const bytes = readRunBytes(join(directory, name), limit, runId, Number(s.nlink));
-    files.set(name, bytes); manifest.push({ name, bytes: bytes.length, sha256: runSha256(bytes), identity: identity(join(directory, name)) });
+    const capturedIdentity = runFileIdentity(s);
+    const bytes = readRunBytes(join(directory, name), limit, runId, Number(s.nlink), capturedIdentity);
+    files.set(name, bytes); manifest.push({ name, bytes: bytes.length, sha256: runSha256(bytes), identity: capturedIdentity });
   }
   for (const linked of pairs.values()) {
     const nlink = stats.get(linked[0]!)!.nlink;
@@ -272,19 +272,23 @@ export function authorizeRunRepair(inspection: RunRepairInspection, port: RunRep
 }
 
 function assertCurrent(inspection: RunRepairInspection, source: InspectionSource, extra: readonly string[] = []): void {
-  source.verifyDirectories();
-  const names = inspectRunCapacity(source.directory).entries.map(file => file.name).filter(name => !extra.includes(name)).sort();
-  if (JSON.stringify(names) !== JSON.stringify([...source.files.keys()].sort())) throw new RunRepairError('RUN_REPAIR_INSPECTION_CHANGED');
-  // Recapture every source byte at each CAS boundary. Reuse only the private
-  // original digests, not parsed authority or previous validation conclusions.
-  for (const file of source.manifest) {
-    const path = join(source.directory, file.name), stat = lstatSync(path, { bigint: true });
-    if (identity(path) !== file.identity || runSha256(readRunBytes(path, file.bytes, source.runId, Number(stat.nlink))) !== file.sha256 ||
-      identity(path) !== file.identity) throw new RunRepairError('RUN_REPAIR_INSPECTION_CHANGED');
+  try {
+    source.verifyDirectories();
+    const names = inspectRunCapacity(source.directory).entries.map(file => file.name).filter(name => !extra.includes(name)).sort();
+    if (JSON.stringify(names) !== JSON.stringify([...source.files.keys()].sort())) throw new RunRepairError('RUN_REPAIR_INSPECTION_CHANGED');
+    // Recapture every source byte at each CAS boundary. Reuse only the private
+    // original digests, not parsed authority or previous validation conclusions.
+    for (const file of source.manifest) {
+      const path = join(source.directory, file.name), links = Number(file.identity.split(':')[5]);
+      if (runSha256(readRunBytes(path, file.bytes, source.runId, links, file.identity)) !== file.sha256) throw new RunRepairError('RUN_REPAIR_INSPECTION_CHANGED');
+    }
+    const root = lstatSync(source.root, { bigint: true });
+    if (runSha256(JSON.stringify([realpathSync.native(source.root), String(root.dev), String(root.ino), String(root.uid), String(root.gid)])) !== inspection.workspaceIdentity) throw new RunRepairError('RUN_REPAIR_INSPECTION_CHANGED');
+    source.verifyDirectories();
+  } catch (error) {
+    if (error instanceof RunRepairError) throw error;
+    throw new RunRepairError('RUN_REPAIR_INSPECTION_CHANGED', { cause: error });
   }
-  const root = lstatSync(source.root, { bigint: true });
-  if (runSha256(JSON.stringify([realpathSync.native(source.root), String(root.dev), String(root.ino), String(root.uid), String(root.gid)])) !== inspection.workspaceIdentity) throw new RunRepairError('RUN_REPAIR_INSPECTION_CHANGED');
-  source.verifyDirectories();
 }
 function archive(source: InspectionSource, inspection: RunRepairInspection): { path: string; manifestSha256: string; verify(): void } {
   let parent = runBase(source.root);
@@ -296,9 +300,11 @@ function archive(source: InspectionSource, inspection: RunRepairInspection): { p
   const leaf = `${inspection.inspectionSha256}-${randomUUID()}`, path = join(parent, leaf); mkdirSync(path, { mode: 0o700 });
   const verifyDirectories = captureStorageDirectories(source.root, ['.openslack.local', 'agents', 'runs', '.recovery', source.runId, leaf], source.runId);
   const sourceDigests = new Map(source.manifest.map(file => [file.name, file.sha256]));
+  verifyDirectories();
   for (const [name, bytes] of source.files) {
-    verifyDirectories();
     writeRunExclusive(join(path, name), bytes);
+    // Also the next iteration's precheck: only the private Map iterator runs
+    // between this check and the next exclusive write, with no await or effect.
     verifyDirectories();
   }
   const bytes = jsonBytes({ schema: 'openslack.run_repair_archive.v1', runId: source.runId, inspectionSha256: inspection.inspectionSha256,
@@ -349,10 +355,13 @@ export function applyRunRepair(inspection: RunRepairInspection, capability: RunR
   if (!permission || permission.consumed || permission.inspection !== inspection) throw new RunRepairError('RUN_REPAIR_NOT_AUTHORIZED');
   permission.consumed = true;
   if (!source || !source.lock || !source.intent || !source.state || !source.metadata || !['preserve_committed', 'fail_incomplete'].includes(inspection.plan)) throw new RunRepairError('RUN_REPAIR_UNAVAILABLE');
-  assertAuthority(inspection, permission.port); assertCurrent(inspection, source);
+  assertAuthority(inspection, permission.port);
   // An early positive check avoids fencing a known live/unknown writer. Repeat
   // after the barrier/CAS; the first check is not permission to retire a lock.
   if (observeRunWriter(source.lock.writer) !== 'exited') throw new RunRepairError('RUN_REPAIR_UNAVAILABLE');
+  // A read-only OS probe grants no authority. Recapture the entire approved
+  // source after it and before publishing anything, including the barrier.
+  assertCurrent(inspection, source);
   const maintenance = { schema: 'openslack.run_maintenance.v1', runId: source.runId, transactionId: randomUUID(), ownerGeneration: randomUUID(),
     inspectionSha256: inspection.inspectionSha256, writer: ownRunWriterWitness() };
   const barrier = join(source.directory, RUN_MAINTENANCE_BARRIER), barrierBytes = jsonBytes(maintenance);
@@ -371,10 +380,9 @@ export function applyRunRepair(inspection: RunRepairInspection, capability: RunR
   } catch (error) { throw new RunRepairError('RUN_REPAIR_UNAVAILABLE', { cause: error }); }
   assertAuthority(inspection, permission.port);
   try { writeRunExclusive(barrier, barrierBytes); }
-  catch { throw new RunRepairError('RUN_REPAIR_INDETERMINATE'); }
+  catch (error) { throw new RunRepairError('RUN_REPAIR_INDETERMINATE', { cause: error }); }
   const held: Array<{ close(): void }> = [];
   try {
-    assertCurrent(inspection, source, [RUN_MAINTENANCE_BARRIER]);
     if (observeRunWriter(source.lock.writer) !== 'exited') throw new RunRepairError('RUN_REPAIR_UNAVAILABLE');
     assertCurrent(inspection, source, [RUN_MAINTENANCE_BARRIER]);
     assertAuthority(inspection, permission.port);
@@ -403,7 +411,7 @@ export function applyRunRepair(inspection: RunRepairInspection, capability: RunR
     return receipt;
   } catch (error) {
     if (error instanceof RunRepairError) throw error;
-    throw new RunRepairError('RUN_REPAIR_INDETERMINATE');
+    throw new RunRepairError('RUN_REPAIR_INDETERMINATE', { cause: error });
   } finally {
     for (const file of held) { try { file.close(); } catch { /* A failed stop never becomes a business success. */ } }
   }

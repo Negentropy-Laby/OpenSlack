@@ -19,7 +19,14 @@
     "baseline": "b526be6d",
     "red": "6 behavioral regressions failed",
     "working_targeted": "8 files, 161 passed",
-    "final_acceptance": "NOT_COMPLETE"
+    "final_acceptance": "NOT_COMPLETE",
+    "followup_source_base": "412f14071035e9d2d2e89b14db1aedc9f0966483",
+    "working_boundary": "5 files, 83 passed; extra-byte and source-probe controls retained",
+    "declaration_closure": "real producer RED missing dependency, GREEN 25 declarations and 16 relative dependencies",
+    "native_history_gate": "FAIL: unchanged 20000ms bound, latest working-source observation 21549ms"
   },
-  "errors": []
+  "errors": [
+    "REVIEW38_NATIVE_HISTORY_TIME_BOUND_UNRESOLVED",
+    "FINAL_CANDIDATE_PLATFORM_AND_CI_VALIDATION_PENDING"
+  ]
 }

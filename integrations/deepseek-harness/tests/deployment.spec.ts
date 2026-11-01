@@ -87,11 +87,17 @@ describe('external plugin build inputs', () => {
     );
     expect(existsSync(join(root, 'dist/types/src/index.d.ts'))).toBe(true);
     expect(existsSync(join(root, 'dist/openslack-harness-supervisor.exe'))).toBe(true);
-    for (const name of readdirSync(join(root, 'dist/types/src')).filter(name => name.endsWith('.d.ts'))) {
-      expect(readFileSync(join(root, 'dist/types/src', name), 'utf8')).not.toContain('@openslack/agent-runtime');
-      expect(readFileSync(join(root, 'dist/types/src', name), 'utf8')).not.toContain('@openslack/core');
-    }
     const normalize = (path: string) => resolve(path).replaceAll('\\', '/');
+    for (const name of readdirSync(join(root, 'dist/types/src')).filter(name => name.endsWith('.d.ts'))) {
+      const file = join(root, 'dist/types/src', name), text = readFileSync(file, 'utf8');
+      expect(text).not.toContain('@openslack/agent-runtime');
+      expect(text).not.toContain('@openslack/core');
+      for (const reference of ts.preProcessFile(text).importedFiles.filter(item => item.fileName.startsWith('.'))) {
+        const target = ts.resolveModuleName(reference.fileName, file, { moduleResolution: ts.ModuleResolutionKind.Bundler }, ts.sys).resolvedModule;
+        expect(target, `${name} requires ${reference.fileName} in the relocated package`).toBeDefined();
+        expect(normalize(target?.resolvedFileName ?? '').startsWith(normalize(join(root, 'dist')) + '/')).toBe(true);
+      }
+    }
     const inputs = (directory: string): string[] =>
       readdirSync(directory, { withFileTypes: true })
         .flatMap((entry) =>

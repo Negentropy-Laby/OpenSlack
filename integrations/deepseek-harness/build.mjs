@@ -44,7 +44,7 @@ copyFileSync(wireTypes, join(typesDirectory, 'bridge-wire.d.ts'));
 copyFileSync(join(wireModule, '../run-id.d.ts'), join(typesDirectory, 'run-id.d.ts'));
 copyFileSync(catalogTypes, join(typesDirectory, 'harness-tool-catalog.d.ts'));
 copyFileSync(join(catalogModule, '../tool-catalog.d.ts'), join(typesDirectory, 'tool-catalog.d.ts'));
-for (const name of ['runtime-contracts', 'owned-file', 'strict-json']) {
+for (const name of ['runtime-contracts', 'owned-file', 'stable-descriptor', 'strict-json']) {
   copyFileSync(join(coreLeafDirectory, `${name}.d.ts`), join(typesDirectory, `${name}.d.ts`));
 }
 for (const name of readdirSync(typesDirectory).filter(name => name.endsWith('.d.ts'))) {

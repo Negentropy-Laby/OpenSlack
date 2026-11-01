@@ -1,7 +1,7 @@
-import { closeSync, constants, fstatSync, lstatSync, mkdirSync, openSync, fsyncSync, writeFileSync } from 'node:fs';
+import { closeSync, constants, fstatSync, lstatSync, mkdirSync, openSync, fsyncSync, writeFileSync, type BigIntStats } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { createHash } from 'node:crypto';
-import { readStableDescriptor, StableDescriptorError } from '@openslack/core';
+import { readObservedDescriptorBytes, StableDescriptorError } from '@openslack/core/internal/owned-file';
 import { validateRunId } from './run-id.js';
 import { isCode } from './io-errors.js';
 
@@ -11,6 +11,8 @@ export const RUN_MAINTENANCE_BARRIER = 'run.maintenance.json';
 export const runBase = (root?: string): string => join(root ?? process.cwd(), '.openslack.local', 'agents', 'runs');
 export function runDirectory(runId: string, root?: string): string { validateRunId(runId); return join(runBase(root), runId); }
 export const runSha256 = (bytes: Uint8Array | string): string => createHash('sha256').update(bytes).digest('hex');
+export const runFileIdentity = (s: BigIntStats): string =>
+  [s.dev, s.ino, s.mode, s.uid, s.gid, s.nlink, s.size, s.mtimeNs, s.ctimeNs].join(':');
 
 export class RunStateSnapshotChangedError extends Error {
   readonly code = 'RUN_STATE_SNAPSHOT_CHANGED';
@@ -79,26 +81,28 @@ export function runEntryExists(path: string): boolean {
 
 /** Reuse Core's size-proportional byte reader, retaining this owner's bigint
  * nanosecond and pathname/FD/link checks around it. No millisecond downgrade. */
-export function readRunBytes(path: string, maxBytes: number, runId: string, expectedLinks = 1): Buffer {
+export function readRunBytes(path: string, maxBytes: number, runId: string, expectedLinks = 1, expectedIdentity?: string): Buffer {
   if (!Number.isSafeInteger(expectedLinks) || expectedLinks < 1 || expectedLinks > 2) throw new TypeError('Invalid owned file link count.');
   const entry = lstatSync(path, { bigint: true });
+  if (expectedIdentity !== undefined && runFileIdentity(entry) !== expectedIdentity) throw new RunStateSnapshotChangedError(runId);
   if (!entry.isFile() || entry.isSymbolicLink() || entry.nlink !== BigInt(expectedLinks)) throw new Error('Run file is not an owned regular file.');
   if (entry.size > BigInt(maxBytes)) throw new Error(`Run metadata for ${runId} exceeds the read bound.`);
   const fd = openSync(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
   try {
     const before = fstatSync(fd, { bigint: true });
     if (entry.dev !== before.dev || entry.ino !== before.ino || entry.mode !== before.mode || entry.size !== before.size ||
-      entry.nlink !== before.nlink || entry.mtimeNs !== before.mtimeNs || entry.ctimeNs !== before.ctimeNs) throw new RunStateSnapshotChangedError(runId);
-    let bytes: Buffer;
-    try { bytes = readStableDescriptor(fd, maxBytes); }
+      entry.uid !== before.uid || entry.gid !== before.gid || entry.nlink !== before.nlink ||
+      entry.mtimeNs !== before.mtimeNs || entry.ctimeNs !== before.ctimeNs) throw new RunStateSnapshotChangedError(runId);
+    let bytes: Buffer, after: BigIntStats;
+    try { ({ bytes, after } = readObservedDescriptorBytes(fd, maxBytes, before)); }
     catch (error) { if (error instanceof StableDescriptorError) throw new RunStateSnapshotChangedError(runId); throw error; }
-    const after = fstatSync(fd, { bigint: true });
     const now = lstatSync(path, { bigint: true });
-    for (const stamp of [after, now]) {
-      if (!stamp.isFile() || stamp.isSymbolicLink() || stamp.nlink !== BigInt(expectedLinks) || before.dev !== stamp.dev || before.ino !== stamp.ino ||
-        before.mode !== stamp.mode || before.size !== stamp.size || before.mtimeNs !== stamp.mtimeNs || before.ctimeNs !== stamp.ctimeNs) {
-        throw new RunStateSnapshotChangedError(runId);
-      }
+    // Core has independently checked before/after on the held FD. Compare its
+    // owned after observation to the fresh pathname without restating that proof.
+    if (!now.isFile() || now.isSymbolicLink() || now.nlink !== BigInt(expectedLinks) || after.dev !== now.dev || after.ino !== now.ino ||
+      after.mode !== now.mode || after.uid !== now.uid || after.gid !== now.gid || after.size !== now.size ||
+      after.mtimeNs !== now.mtimeNs || after.ctimeNs !== now.ctimeNs) {
+      throw new RunStateSnapshotChangedError(runId);
     }
     return bytes;
   } finally { closeSync(fd); }

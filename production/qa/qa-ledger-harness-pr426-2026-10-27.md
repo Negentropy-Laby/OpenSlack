@@ -969,7 +969,7 @@ exhaustion is refused before barrier/archive publication. No evidence is trimmed
 | Finding | Disposition and necessary boundary | Regression or retained proof |
 | --- | --- | --- |
 | 1 | Fixed: bounded acceptance is included in inspection, CAS and byte archive; never promotes completion. | `run-review38` crashes before completion and after terminal commit, then authorizes real archival. |
-| 2 | Fixed: one charged 96 MiB budget replaces the unrelated 4096-member cap; 94 MiB ordinary ceiling and recovery/terminal headroom. | `run-capacity`, `run-review38` >4096-chain actual crash/archive, `run-recovery-boundary` near-limit recovery. |
+| 2 | Fixed: one charged 96 MiB budget replaces the unrelated 4096-member cap; 94 MiB ordinary ceiling and recovery/terminal headroom. | `run-capacity`, `run-long-history` >4096-chain actual crash/archive, `run-recovery-boundary` near-limit recovery. |
 | 3 | Fixed: exact local two-link publication pairs locate the original route without synchronous spin or automatic replay. | `harness-state-repair`, `harness-task-host`, `run-review38`; foreign links still refuse. |
 | 4 | Fixed: requested missing run is FAIL; CLI prints missing and exits nonzero. | `run-review38`, CLI `agent-runtime` production-result command test. |
 | 5 | Fixed: smoke required checks and aggregate status agree; only this invocation's run is read. | `run-review38`, `openai-compatible-diagnostics`. |
@@ -1086,3 +1086,65 @@ The corrected synchronous-reservation and actual long-history cases passed
 (2 selected cases, 34 unrelated cases filtered). Final complete candidate and
 platform acceptance remains pending; these retained failures are not relabeled
 as passes.
+
+
+### Review-38 captured observations and retained acceptance failures
+
+The 412f1407 Linux affected scope passed three times (1,119 passed, 11 existing
+skips each); relocated source builds passed three times. Its complete Linux run
+reported 8,819 passed, 3 failed time bounds and 25 existing skips. The two affected
+legacy cleanup files passed independently (95 cases) with no source, worker or
+timeout change; their full-run failures remain recorded, without a flakiness or
+root-cause waiver. That complete run overlapped native Windows diagnostics.
+
+The 412f1407 native Windows build, supervisor tests/vet and production inventory
+passed. The large-history case first exceeded its unchanged 10-second setup
+bound; an independent run reached the actual archive and exceeded its unchanged
+20-second test bound (22.87 seconds). Later working-source observations measured
+20.87 and 21.55 seconds with the same limit. These are FAIL, not platform PASS.
+No test timeout, worker limit, retry or skip has been relaxed. Native complete
+acceptance is still open and must not be inferred from successful components.
+
+Additional capture regressions reject identical bytes at a replacement inode,
+and source/lock/directory changes during either real process observation. The
+pre-reorder matrix exposed two first-probe drift failures. The source is now
+fully recaptured after each read-only probe and before any publication: first
+before the barrier, then before archive; post-archive CAS, final canonical/full
+chain proof and both independent archive readbacks remain. First-probe drift
+publishes no barrier; second-probe drift retains the barrier and publishes no
+archive or canonical recovery. Both genuine OS process probes remain.
+
+Private captured-file identities cover device, inode, mode, UID, GID, links,
+size and nanosecond modification/change fields. The stable reader checks that
+identity against a fresh entry, opened FD, post-read FD and final pathname.
+The same-stage FD before/after observation is shared through the existing Core
+internal owned-file leaf; the public descriptor-reader interface and behavior remain unchanged. Every
+bounded extra-byte/EOF probe remains: timestamp precision is not a unique file
+version. The controlled coarse-timestamp growth/restore vector refuses even
+when stat identity alone matches. Consecutive directory checks with only private
+Map iteration between them share one observation; each exclusive archive write
+retains its pre/post proof, per-file fsync and both full readbacks.
+
+The first capture-folding check exposed a changed error classification, which
+was corrected to preserve RUN_REPAIR_INSPECTION_CHANGED with its internal cause.
+A later unbuilt internal export caused a stale-dist diagnostic run to fail; it
+is a build-order failure, not behavioral RED evidence. After the required
+incremental build, the five-file boundary group passed 82 cases. The additional
+coarse-EOF group passed all 8 cases. Final candidate acceptance is separate;
+current-head complete/platform/package/CI results must be recorded before this
+review can be called fully accepted. No new worker, helper command, background
+service, deployment or real history repair was introduced.
+
+
+The final five-file working boundary run passed **83 cases**. Independent review
+also found that the new controlled FD export introduces a relative declaration
+dependency. A real precommit plugin build reproduced `owned-file.d.ts` resolving
+`./stable-descriptor.js` without a shipped declaration (24 declarations checked,
+one missing dependency). The fixed producer copies the already-reviewed pure
+`stable-descriptor.d.ts`; the same real build/readback now resolves all 16 relative
+dependencies across 25 declarations. The existing relocation regression uses
+TypeScript's resolver to require every relative declaration dependency inside
+the packed dist tree. No host authorization implementation or native input was
+added. The initial Vitest attempt correctly refused a stale compatibility
+witness; that refusal is not the packaging behavioral RED. Formal fresh builds,
+actual TGZ installation and final-head CI remain separate pending evidence.

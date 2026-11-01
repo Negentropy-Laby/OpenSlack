@@ -1,6 +1,7 @@
 import { closeSync, constants, fstatSync, lstatSync, openSync, type BigIntStats } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { readStableDescriptor } from './stable-descriptor.js';
+export { readObservedDescriptorBytes, StableDescriptorError } from './stable-descriptor.js';
 
 const identity = (value: BigIntStats): string => [value.dev, value.ino, value.mode, value.uid, value.gid,
   value.nlink, value.size, value.mtimeNs, value.ctimeNs].join(':');

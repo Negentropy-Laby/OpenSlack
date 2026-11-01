@@ -9,6 +9,7 @@ import { spawnSync } from 'node:child_process';
 import { createRunStore } from '../run-store.js';
 import { inspectRunRepair, authorizeRunRepair, applyRunRepair, createRunRepairAuthorityPort } from '../run-repair.js';
 import { acquireRunTransactionLock } from '../run-ownership.js';
+import { readRunBytes } from '../run-files.js';
 import { HarnessAdmissionStore } from '../harness-admission.js';
 import { getAgentRuntimeMcpStatus } from '../agent-runtime-mcp-status.js';
 import { runOpenAICompatibleRuntimeSmoke } from '../openai-compatible-diagnostics.js';
@@ -27,6 +28,16 @@ function request(runId: string): AgentRunRequest {
       canApprovePR: false, canMerge: false, canReadSecrets: false, canBypassRulesets: false,
       acceptEdits: false, isReadOnly: true } };
 }
+
+test('38-30: a captured file identity cannot be replaced by identical bytes at another inode', () => {
+  const root = fixture(), path = join(root, 'owned.json'), bytes = Buffer.from('{"fixture":true}');
+  fs.writeFileSync(path, bytes);
+  const stamp = fs.lstatSync(path, { bigint: true });
+  const identity = [stamp.dev, stamp.ino, stamp.mode, stamp.uid, stamp.gid, stamp.nlink, stamp.size, stamp.mtimeNs, stamp.ctimeNs].join(':');
+  fs.renameSync(path, join(root, 'retired.json')); fs.writeFileSync(path, bytes);
+  assert.equal(readRunBytes(path, bytes.length, 'RUN-CAPTURED-FILE').equals(bytes), true);
+  assert.throws(() => readRunBytes(path, bytes.length, 'RUN-CAPTURED-FILE', 1, identity), /changed during read/);
+});
 
 test.each(['before-completion', 'terminal-unlock'] as const)('38-01: archives acceptance after a real %s crash without promoting its outcome', stage => {
   const root = fixture(), runId = 'RUN-ACCEPTANCE-CRASH';

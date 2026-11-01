@@ -8,6 +8,14 @@ import { fileURLToPath } from 'node:url';
 import { createRunStore } from '../run-store.js';
 import { applyRunRepair, authorizeRunRepair, createRunRepairAuthorityPort, inspectRunRepair, type RunRepairCapability } from '../run-repair.js';
 import { runSha256 } from '../run-files.js';
+import { observeRunWriter } from '../run-process-witness.js';
+import type * as ProcessWitnessModule from '../run-process-witness.js';
+
+vi.mock('../run-process-witness.js', async load => {
+  const actual = await load<typeof ProcessWitnessModule>();
+  return { ...actual, observeRunWriter: vi.fn(actual.observeRunWriter) };
+});
+const probe = vi.mocked(observeRunWriter), nativeProbe = probe.getMockImplementation()!;
 
 vi.mock('node:fs', async load => {
   const fs = await load<typeof FsModule>(); return { ...fs, openSync: vi.fn(fs.openSync), fstatSync: vi.fn(fs.fstatSync) };
@@ -17,6 +25,7 @@ const fstat = vi.mocked(fstatSync), nativeFstat = fstat.getMockImplementation()!
 const roots: string[] = [];
 afterEach(() => {
   open.mockReset().mockImplementation(nativeOpen); fstat.mockReset().mockImplementation(nativeFstat); vi.restoreAllMocks();
+  probe.mockReset().mockImplementation(nativeProbe);
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
 });
 function rootFixture() { const root = mkdtempSync(join(tmpdir(), 'run-repair-fixture-')); roots.push(root); return root; }
@@ -40,6 +49,35 @@ function syntheticAuthority(runId: string, digest: string, workspaceIdentity: st
 }
 
 describe('ADR-0004 explicit single-run fixture maintenance', () => {
+  it.each(['first-source', 'first-lock', 'first-directory', 'second-source', 'second-lock', 'second-directory', 'second-alive', 'second-unavailable'] as const)(
+    'keeps full post-probe CAS and rejects %s before any archive or retirement', async fault => {
+      const root = rootFixture(), id = 'RUN-PROBE-CAS'; await crash(root, id, 'terminal-unlock');
+      const directory = join(root, '.openslack.local/agents/runs', id), displaced = directory + '-MOVED';
+      const original = before(root, id), inspection = inspectRunRepair(root, id);
+      const permission = authorizeRunRepair(inspection, syntheticAuthority(id, inspection.inspectionSha256, inspection.workspaceIdentity));
+      let calls = 0;
+      probe.mockImplementation(witness => {
+        const observed = nativeProbe(witness); calls++;
+        if (calls !== (fault.startsWith('first') ? 1 : 2)) return observed;
+        if (fault.endsWith('alive')) return 'alive';
+        if (fault.endsWith('unavailable')) return 'unavailable';
+        if (fault.endsWith('directory')) { renameSync(directory, displaced); mkdirSync(directory); }
+        else {
+          const name = fault.endsWith('lock') ? 'run.transaction.lock' : 'metadata.json';
+          writeFileSync(join(directory, name), Buffer.concat([readFileSync(join(directory, name)), Buffer.from('\n')]));
+        }
+        return observed;
+      });
+      expect(() => applyRunRepair(inspection, permission)).toThrow();
+      expect(calls).toBe(fault.startsWith('first') ? 1 : 2);
+      const retained = existsSync(displaced) ? displaced : directory;
+      expect(existsSync(join(root, '.openslack.local/agents/runs/.recovery'))).toBe(false);
+      expect(existsSync(join(retained, 'run.transaction.lock'))).toBe(true);
+      expect(existsSync(join(retained, 'run.maintenance.json'))).toBe(fault.startsWith('second'));
+      if (fault.startsWith('first')) expect(existsSync(join(directory, 'run.maintenance.json'))).toBe(false);
+      for (const name of ['run.json', 'transcript.jsonl']) expect(readFileSync(join(retained, name))).toEqual(original.get(name));
+      expect(readdirSync(retained).some(name => name.startsWith('run.repair.'))).toBe(false);
+    }, 20_000);
   it.each(['run.transaction.lock', 'run.maintenance.json'])('closes the owned %s descriptor when its first fstat fails', async name => {
     const root = rootFixture(), id = 'RUN-GUARD-FSTAT'; await crash(root, id, 'terminal-unlock');
     const inspection = inspectRunRepair(root, id), capability = authorizeRunRepair(inspection,
