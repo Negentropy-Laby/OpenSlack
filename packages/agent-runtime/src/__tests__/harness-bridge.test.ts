@@ -1,9 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { channel } from 'node:diagnostics_channel';
-import { ChildProcess } from 'node:child_process';
+import { ChildProcess, spawn } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { performance } from 'node:perf_hooks';
 import { BridgeAdapterError, BridgeProcessAdapter, type BridgeProcessAdapterOptions } from '../bridge-adapter.js';
 import { buildBridgeEnvelope } from '../bridge-contract.js';
@@ -14,6 +15,7 @@ import { RepositoryToolExecutor } from '../tool-executor.js';
 import { buildPermissionProfile } from '../permissions.js';
 import { createDeepSeekHarnessProvider } from '../deepseek-harness-provider.js';
 import { createConfiguredHarnessTaskHost } from '../harness-deployment.js';
+import { readTranscript } from '../transcript.js';
 
 const roots: string[] = [];
 afterEach(() => { vi.restoreAllMocks(); for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
@@ -50,6 +52,65 @@ lines.on('line', text => {
   if (frame.kind === 'run_request') {
 `;
 const suffix = `\n  }\n});`;
+
+it('38-08: rejects an overlapping invocation without closing or mutating the first real peer', async () => {
+  const preliminary = mkdtempSync(join(tmpdir(), 'harness-overlap-control-')); roots.push(preliminary);
+  const ready = join(preliminary, 'ready'), release = join(preliminary, 'release');
+  const source = `import{existsSync,writeFileSync}from'node:fs';\n${prefix}
+    writeFileSync(${JSON.stringify(ready)},'ready');
+    const timer=setInterval(()=>{if(existsSync(${JSON.stringify(release)})){clearInterval(timer);reply(frame,'complete',{data:{first:true}});lines.close();process.stdin.pause();setImmediate(()=>process.exit(0));}},5);
+  ${suffix}`;
+  const { adapter, context } = setup(source);
+  const progress = vi.spyOn(context.recorder, 'progress');
+  const first = adapter.execute(context).then(value => ({ value }), error => ({ error }));
+  let primary: unknown;
+  try {
+    await vi.waitFor(() => expect(existsSync(ready)).toBe(true));
+    const writes = progress.mock.calls.length;
+    await expect(adapter.execute(context)).rejects.toMatchObject({ kind: 'session_unavailable' });
+    expect(progress.mock.calls).toHaveLength(writes);
+    writeFileSync(release, 'release');
+    expect(await first).toMatchObject({ value: { data: { first: true } } });
+    expect(adapter.processExitReceipt).toMatchObject({ code: 0 });
+  } catch (error) { primary = error; throw error; }
+  finally {
+    writeFileSync(release, 'release');
+    await first;
+    try { await adapter.closeSession(`bridge-${context.runId}`); }
+    catch (error) { if (primary === undefined) throw error; }
+  }
+});
+
+it('38-06: yields for a real worker writer while persisting a peer frame exactly once', async () => {
+  const control = mkdtempSync(join(tmpdir(), 'harness-recorder-contention-')); roots.push(control);
+  const ready = join(control, 'ready'), send = join(control, 'send'), release = join(control, 'release'), marker = join(control, 'writer');
+  const source = `import{existsSync,writeFileSync}from'node:fs';\n${prefix}
+    writeFileSync(${JSON.stringify(ready)},'ready');
+    const timer=setInterval(()=>{if(existsSync(${JSON.stringify(send)})){clearInterval(timer);reply(frame,'progress',{step:'peer-during-worker-report'});reply(frame,'complete',{data:{ok:true}});lines.close();process.stdin.pause();setImmediate(()=>process.exit(0));}},5);
+  ${suffix}`;
+  const { root, adapter, context } = setup(source);
+  const outcome = adapter.execute(context).then(value => ({ value }), error => ({ error }));
+  let child: ChildProcess | undefined, exited: Promise<unknown> | undefined, timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await vi.waitFor(() => expect(existsSync(ready)).toBe(true));
+    const script = fileURLToPath(new URL('./fixtures/run-ordered-writer.mjs', import.meta.url));
+    child = spawn(process.execPath, [script, root, context.runId, 'append', marker, release], { stdio: ['ignore', 'pipe', 'pipe'] });
+    let output = '', stderr = '';
+    child.stdout!.on('data', bytes => { output += bytes; }); child.stderr!.on('data', bytes => { stderr += bytes; });
+    exited = new Promise((resolve, reject) => { child!.once('error', reject); child!.once('close', code => code === 0 ? resolve({ output, stderr }) : reject(new Error('Fixture writer did not exit cleanly'))); });
+    await vi.waitFor(() => expect(existsSync(marker + '.acquired')).toBe(true));
+    writeFileSync(send, 'allow peer frame while writer owns lock');
+    timer = setTimeout(() => writeFileSync(release, 'release writer'), 50);
+    expect(await outcome).toMatchObject({ value: { data: { ok: true } } });
+    await expect(exited).resolves.toMatchObject({ stderr: '' });
+    const transcript = readTranscript(context.runId, root);
+    expect(transcript.filter(event => event.data?.independentAppend)).toHaveLength(1);
+    expect(transcript.filter(event => event.data?.step === 'peer-during-worker-report')).toHaveLength(1);
+  } finally {
+    clearTimeout(timer); writeFileSync(send, 'cleanup'); writeFileSync(release, 'cleanup');
+    await outcome; await exited;
+  }
+});
 
 /** Observe the exact real test child; failure teardown never fabricates exit evidence. */
 function observePeer(root: string, source: string) {

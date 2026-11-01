@@ -1,11 +1,15 @@
 import { performance } from 'node:perf_hooks';
 import type { WaitRunSnapshotOptions } from './run-store.js';
+import { systemUtcNow } from '@openslack/core/internal/runtime-contracts';
 
 export const RUN_WAIT_DEFAULT_MS = 1000;
 export const RUN_WAIT_BACKOFF_MS = Object.freeze([5, 10, 20, 40, 50]);
+export class RunWaitDeadlineError extends Error {
+  constructor() { super('Run observation deadline expired'); this.name = 'RunWaitDeadlineError'; }
+}
 export type RunWaitOptions = WaitRunSnapshotOptions;
 export interface RunClock { utcNow(): number; monotonicNow(): number }
-export const systemRunClock: Readonly<RunClock> = Object.freeze({ utcNow: () => Date.now(), monotonicNow: () => performance.now() });
+export const systemRunClock: Readonly<RunClock> = Object.freeze({ utcNow: systemUtcNow, monotonicNow: () => performance.now() });
 
 /** One local monotonic budget; UTC remains an independent denial bound. This
  * helper never decides which failures may be retried or replays an effect. */
@@ -29,7 +33,7 @@ export async function waitForRunObservation<T>(attempt: () => T, retryable: (err
   while (true) {
     options.signal?.throwIfAborted();
     const before = remaining();
-    if (before.absolute <= 0 || (!initial && before.budget <= 0)) throw lastError ?? new Error('Run observation deadline expired');
+    if (before.absolute <= 0 || (!initial && before.budget <= 0)) throw lastError ?? new RunWaitDeadlineError();
     initial = false;
     try { return attempt(); }
     catch (error) {

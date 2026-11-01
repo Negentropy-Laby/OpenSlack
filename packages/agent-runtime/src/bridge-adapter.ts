@@ -9,7 +9,8 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { TextDecoder, isDeepStrictEqual } from 'node:util';
 import { performance } from 'node:perf_hooks';
-import type { ToolEvidenceReservationReceipt } from './recorder.js';
+import { waitForRecorderWrite, type ToolEvidenceReservationReceipt } from './recorder.js';
+import { RunWaitDeadlineError } from './run-wait.js';
 import { HARNESS_CLEANUP_BUDGET } from './bridge-cleanup.js';
 import type {
   AgentExecutionAdapter,
@@ -108,6 +109,7 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
   private readonly options: BridgeProcessAdapterOptions;
   private process: ChildProcess | null = null;
   private sessionMachine: BridgeSessionStateMachine | null = null;
+  private invocationOwner: symbol | undefined;
   private responseBuffer = '';
   private pendingResponse: ((envelope: BridgeEnvelope) => void) | null = null;
   private pendingReject: ((error: Error) => void) | null = null;
@@ -167,6 +169,11 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
   }
 
   async openSession(config: BridgeSessionConfig): Promise<BridgeSessionState> {
+    if (this.invocationOwner) throw new BridgeAdapterError('session_unavailable', 'Session belongs to an active invocation');
+    return this.openOwnedSession(config);
+  }
+
+  private async openOwnedSession(config: BridgeSessionConfig): Promise<BridgeSessionState> {
     this.assertExecutionWindow();
     this.assertStartEligibility();
     // Guard against double-open — prevents orphaned child processes
@@ -217,7 +224,8 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
     return this.sessionMachine.currentState;
   }
 
-  closeSession(_sessionId: string): Promise<BridgeSessionState> {
+  closeSession(sessionId: string): Promise<BridgeSessionState> {
+    if (this.sessionMachine && this.sessionMachine.id !== sessionId) return Promise.reject(new BridgeAdapterError('session_unavailable', 'Session belongs to another invocation'));
     this.sessionClose ??= this.closeActiveSession();
     return this.sessionClose;
   }
@@ -272,6 +280,8 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
     // This decision belongs to the bytes encoded for this send, not to a
     // caller-owned envelope that could change while another send is pending.
     const isRunRequest = envelope.kind === 'run_request';
+    const isEffectAuthorization = envelope.kind === 'tool_response' && envelope.payload !== null &&
+      typeof envelope.payload === 'object' && 'allowed' in envelope.payload && envelope.payload.allowed === true;
     let capturedCancellation: unknown;
     const cancellation = () => capturedCancellation ??= (this.activeSignal === signal ? this.invocationAbortError : undefined) ?? signal?.reason;
     const assertOwner = () => {
@@ -291,8 +301,8 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
     const operation = this.awaitSendBoundary(this.outbound, signal, cancellation).then(async () => {
       for (const json of frames) {
         assertOwner();
+        if (isRunRequest || isEffectAuthorization) this.assertExecutionWindow();
         if (isRunRequest) {
-          this.assertExecutionWindow();
           this.assertStartEligibility();
         }
         if (Buffer.byteLength(json) > Math.min(this.options.maxEnvelopeSizeBytes ?? MAX_ENVELOPE_SIZE_BYTES, BRIDGE_FRAME_MAX_BYTES)) {
@@ -337,6 +347,16 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
   // ---------------------------------------------------------------------------
 
   async execute<T>(context: AdapterExecutionContext): Promise<AdapterExecutionResult<T>> {
+    if (this.invocationOwner || (this.process && !this.process.killed) || (this.sessionMachine && this.sessionMachine.currentState !== 'shutdown')) {
+      throw new BridgeAdapterError('session_unavailable', 'Session already active; preserve the owning invocation');
+    }
+    const owner = Symbol('Bridge invocation');
+    this.invocationOwner = owner;
+    try { return await this.executeOwned<T>(context); }
+    finally { if (this.invocationOwner === owner) this.invocationOwner = undefined; }
+  }
+
+  private async executeOwned<T>(context: AdapterExecutionContext): Promise<AdapterExecutionResult<T>> {
     const startTime = performance.now();
     // Keep the caller's signal separate: AbortSignal.any retains its first
     // reason and can hide a later explicit cancellation behind an inner cutoff.
@@ -345,6 +365,7 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
     let executionError: Error | undefined;
     let diagnosticFailure: unknown;
     let successfulSummary: ReturnType<typeof BridgeLifecycleMapper.buildSummary> | undefined;
+    let ownedSession: BridgeSessionStateMachine | null = null;
     const totalTimeoutMs = this.options.timeoutMs ?? ABY_BRIDGE_RUNTIME_LIMITS.timeoutMs.default;
     const completionGrace = this.options.completionGraceMs ?? (this.options.confirmProcessExit ? 0 : 1000);
     if (!Number.isSafeInteger(completionGrace) || completionGrace < 0 || completionGrace > 1000) {
@@ -389,17 +410,27 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
       };
     }
 
+    // Observation/result recording may consume the existing cleanup allowance.
+    // Business effects retain their independent live UTC/monotonic guards.
+    const persist = async <R>(write: () => R): Promise<R> => {
+      try { return await waitForRecorderWrite(recorder, write, { signal: context.signal, monotonicDeadline: completionDeadline }); }
+      catch (cause) {
+        if (cause instanceof RunWaitDeadlineError) throw new BridgeAdapterError('timeout', 'Bridge total deadline exceeded', undefined, { cause });
+        throw cause;
+      }
+    };
+    const persistFinal = <R>(write: () => R) => waitForRecorderWrite(recorder, write, { monotonicDeadline: completionDeadline });
     const lifecycle = new BridgeLifecycleMapper(recorder, runId);
     const guard = new BridgePermissionGuard(permissionProfile, recorder, runId);
     const worktreeGuard = new BridgeWorktreeGuard(recorder, runId);
 
     // Validate MCP servers if configured
     const availableMcpServers = this.options.availableMcpServers ?? [];
-    recorder.progress(runId, {
+    await persist(() => recorder.progress(runId, {
       step: 'bridge_mcp_availability',
       required: resolvedConfig.requiredMcpServers ?? [],
       available: availableMcpServers,
-    });
+    }));
     if (resolvedConfig.requiredMcpServers && resolvedConfig.requiredMcpServers.length > 0) {
       const mcpDescriptors = buildMcpServerDescriptors(resolvedConfig.requiredMcpServers);
       validateRequiredMcpServers(mcpDescriptors, availableMcpServers);
@@ -410,15 +441,15 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
     if (mcpTools.length > 0) {
       const namespaceValidation = validateMcpToolNamespace(mcpTools, availableMcpServers);
       if (namespaceValidation.invalid.length > 0) {
-        recorder.progress(runId, {
+        await persist(() => recorder.progress(runId, {
           step: 'bridge_mcp_namespace_invalid',
           invalidTools: namespaceValidation.invalid,
-        });
+        }));
       }
     }
 
     // Filter outbound tools through BridgePermissionGuard
-    const outboundFiltered = guard.filterOutboundTools(permissionProfile.allowedTools);
+    const outboundFiltered = await persist(() => guard.filterOutboundTools(permissionProfile.allowedTools));
 
     // Build worktree config if available
     const worktreeConfig = BridgeWorktreeGuard.buildConfig(worktreePath);
@@ -479,12 +510,15 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
       }
       // Open session (spawns process + handshake)
       this.assertExecutionWindow();
-      const sessionState = await this.openSession(sessionConfig);
+      const previousSession = this.sessionMachine;
+      const opening = this.openOwnedSession(sessionConfig);
+      if (this.sessionMachine !== previousSession) ownedSession = this.sessionMachine;
+      const sessionState = await opening;
       this.assertExecutionWindow();
       const sessionId = this.sessionMachine!.id;
-      lifecycle.onSessionOpen(sessionId, { sessionState });
+      await persist(() => lifecycle.onSessionOpen(sessionId, { sessionState }));
 
-      if (this.sessionMachine) {
+      if (ownedSession && this.sessionMachine === ownedSession) {
         this.sessionMachine.transition('busy');
       }
 
@@ -538,7 +572,7 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
         }
 
         // Permission guard on every inbound envelope
-        const permCheck = guard.validateInboundResponse(envelope);
+        const permCheck = await persist(() => guard.validateInboundResponse(envelope));
         if (!permCheck.valid) {
           throw new BridgeAdapterError(
             'permission_denied',
@@ -549,22 +583,22 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
         // Process by kind
         switch (envelope.kind) {
           case 'run_started': {
-            lifecycle.onBridgeProgress('run_started', envelope.payload as Record<string, unknown>);
+            await persist(() => lifecycle.onBridgeProgress('run_started', envelope.payload as Record<string, unknown>));
             reconciliationEventCount++;
             break;
           }
 
           case 'assistant_text': {
-            lifecycle.onBridgeProgress(
+            await persist(() => lifecycle.onBridgeProgress(
               'assistant_text',
               envelope.payload as Record<string, unknown>,
-            );
+            ));
             reconciliationEventCount++;
             break;
           }
 
           case 'progress': {
-            lifecycle.onBridgeProgress('event', envelope.payload as Record<string, unknown>);
+            await persist(() => lifecycle.onBridgeProgress('event', envelope.payload as Record<string, unknown>));
             reconciliationEventCount++;
             break;
           }
@@ -603,19 +637,22 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
                   const expected = { runId, requestHash: binding.requestHash, principalHash: binding.principalHash,
                     generation: binding.lifecycle.ownerGeneration, toolName, targetPath: evidence.targetPath };
                   assertHarnessToolEligibility(eligibility, expected);
-                  reservationReceipt = recorder.reserveToolEvidence(runId, { callId: evidence.callId, toolName, input: evidence.input,
-                    targetPath: evidence.targetPath, generation: evidence.generation, maxResultBytes: evidence.maxResultBytes as number }, eligibility);
+                  const reservation = { callId: evidence.callId, toolName, input: evidence.input,
+                    targetPath: evidence.targetPath, generation: evidence.generation, maxResultBytes: evidence.maxResultBytes as number };
+                  const receipt = await persist(() => recorder.reserveToolEvidence!(runId, reservation, eligibility));
+                  reservationReceipt = receipt;
                   assertHarnessToolEligibility(eligibility, expected);
                   restriction = harnessToolEligibilityRestriction(eligibility);
                   evidenceCalls.set(evidence.callId, { input: structuredClone(evidence.input), toolName, targetPath: evidence.targetPath });
                   this.assertExecutionWindow();
                   authorizationAttempted = true;
-                  recorder.markToolEvidenceAuthorizationAttempt(reservationReceipt);
+                  await persist(() => recorder.markToolEvidenceAuthorizationAttempt!(receipt));
                 }
                 allowed = true;
               } catch (error) {
                 if (reservationReceipt && !authorizationAttempted) {
-                  try { recorder.releaseUndispatchedToolEvidence!(reservationReceipt); }
+                  const receipt = reservationReceipt;
+                  try { await persist(() => recorder.releaseUndispatchedToolEvidence!(receipt)); }
                   catch { /* A disputed/legacy reservation remains reserved; the run must fail and reconcile. */ }
                 }
                 // Return no principal, path or upstream exception text to the untrusted caller.
@@ -625,11 +662,12 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
                     : new BridgeAdapterError('permission_denied', 'Live host tool authorization denied', undefined, { cause: error });
               }
               if (context.signal?.aborted) throw authorizationError ?? new BridgeAdapterError('session_unavailable', 'Bridge authorization was cancelled');
+              if (allowed) this.assertExecutionWindow();
               await this.sendEnvelope(sessionId, buildBridgeEnvelope(sessionId, runId, 'tool_response', {
                 authorizationRequestId: tp.authorizationRequestId, allowed, ...(allowed && restriction ? { restriction } : {}),
               }));
               this.assertInvocationSignal();
-              recorder.progress(runId, { step: 'harness_tool_authorization', toolName, allowed });
+              await persist(() => recorder.progress(runId, { step: 'harness_tool_authorization', toolName, allowed }));
               if (!allowed) throw authorizationError ?? new BridgeAdapterError('permission_denied', 'Live host tool authorization denied');
               break;
             }
@@ -641,7 +679,7 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
             if (worktreeConfig) {
               const checked = reserved && ['Read', 'Write', 'Edit'].includes(toolName)
                 ? { ...tp, input: { file_path: reserved.targetPath } } : tp;
-              const wtCheck = worktreeGuard.validateToolEvent(toolName, checked, worktreeConfig);
+              const wtCheck = await persist(() => worktreeGuard.validateToolEvent(toolName, checked, worktreeConfig));
               if (!wtCheck.valid) {
                 throw new BridgeAdapterError(
                   'worktree_boundary_violation',
@@ -656,10 +694,11 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
             // Write canonical tool_call transcript event
             if (this.options.requireToolEvidence) {
               if (!recorder.recordToolEvidenceCall || typeof tp.callId !== 'string') throw new BridgeAdapterError('envelope_malformed', 'Canonical call evidence is unavailable');
-              recorder.recordToolEvidenceCall(runId, tp.callId);
-            } else recorder.toolCall(runId, toolName, tp.input);
+              const callId = tp.callId;
+              await persist(() => recorder.recordToolEvidenceCall!(runId, callId));
+            } else await persist(() => recorder.toolCall(runId, toolName, tp.input));
             // Also record bridge-specific progress for observability
-            lifecycle.onBridgeProgress('tool_call', { toolName, callId: tp.callId });
+            await persist(() => lifecycle.onBridgeProgress('tool_call', { toolName, callId: tp.callId }));
             reconciliationEventCount++;
             break;
           }
@@ -671,7 +710,7 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
               throw new BridgeAdapterError('envelope_malformed', 'Unreserved or repeated tool result');
             }
             if (worktreeConfig) {
-              const wtCheck = worktreeGuard.validateToolEvent(toolName, tp, worktreeConfig);
+              const wtCheck = await persist(() => worktreeGuard.validateToolEvent(toolName, tp, worktreeConfig));
               if (!wtCheck.valid) {
                 throw new BridgeAdapterError(
                   'worktree_boundary_violation',
@@ -682,11 +721,12 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
             // Write canonical tool_result transcript event
             if (this.options.requireToolEvidence) {
               if (!recorder.recordToolEvidenceResult || typeof tp.callId !== 'string') throw new BridgeAdapterError('envelope_malformed', 'Canonical result evidence is unavailable');
-              recorder.recordToolEvidenceResult(runId, tp.callId, tp.output);
+              const callId = tp.callId;
+              await persist(() => recorder.recordToolEvidenceResult!(runId, callId, tp.output));
               evidenceCalls.delete(tp.callId);
-            } else recorder.toolResult(runId, toolName, tp.output);
+            } else await persist(() => recorder.toolResult(runId, toolName, tp.output));
             // Also record bridge-specific progress for observability
-            lifecycle.onBridgeProgress('tool_result', { toolName, callId: tp.callId });
+            await persist(() => lifecycle.onBridgeProgress('tool_result', { toolName, callId: tp.callId }));
             reconciliationEventCount++;
             break;
           }
@@ -697,12 +737,12 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
           }
 
           case 'approval_required': {
-            recorder.progress(runId, {
+            await persist(() => recorder.progress(runId, {
               step: 'bridge_approval_required',
               payload: envelope.payload,
               reason:
                 'External bridge requested approval; OpenSlack does not accept external approval decisions',
-            });
+            }));
             throw new BridgeAdapterError(
               'permission_denied',
               'Bridge runtime requested approval, which is not allowed for subagent runs',
@@ -722,9 +762,9 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
               (payload.tokenUsage !== undefined && (!Number.isSafeInteger(payload.tokenUsage) || payload.tokenUsage < 0))) {
               throw new BridgeAdapterError('envelope_malformed', 'Bridge complete requires data and valid observed usage');
             }
-            if (this.options.confirmProcessExit) recorder.progress(runId, {
+            if (this.options.confirmProcessExit) await persist(() => recorder.progress(runId, {
               step: 'harness_usage', status: payload.tokenUsage === undefined ? 'unknown' : 'observed',
-            });
+            }));
 
             // Reconcile any events reported in the complete payload
             if (payload.events && Array.isArray(payload.events)) {
@@ -745,7 +785,7 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
 
           default: {
             // Unknown envelope kind — record but continue
-            lifecycle.onBridgeProgress('unknown_envelope', { kind: envelope.kind });
+            await persist(() => lifecycle.onBridgeProgress('unknown_envelope', { kind: envelope.kind }));
             break;
           }
         }
@@ -776,7 +816,7 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
       const errorMessage = executionError.message;
 
       try {
-        lifecycle.onSessionError({ kind: errorKind, message: errorMessage, sessionId });
+        await persistFinal(() => lifecycle.onSessionError({ kind: errorKind, message: errorMessage, sessionId }));
       } catch (error) { diagnosticFailure ??= error; }
 
       throw executionError;
@@ -786,7 +826,7 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
       // responsibility — the bridge adapter must not fabricate dirty=false
       // evidence that would conflict with the launcher's real check.
       if (worktreeConfig) {
-        try { worktreeGuard.recordPostSessionValidation(worktreeConfig); }
+        try { await persistFinal(() => worktreeGuard.recordPostSessionValidation(worktreeConfig)); }
         catch (error) { diagnosticFailure ??= error; }
       }
       if (context.signal && this.abortListener) {
@@ -798,9 +838,9 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
       this.activeUtcExecutionDeadline = undefined;
       this.startEligibilityCheck = undefined;
       // Always close session
-      if (this.sessionMachine) {
+      if (ownedSession && this.sessionMachine === ownedSession) {
         // An unconfirmed exit invalidates success, even after a complete frame.
-        try { await this.closeSession(this.sessionMachine.id); }
+        try { await this.closeSession(ownedSession.id); }
         catch (shutdownError) {
           if (!executionError) executionError = shutdownError instanceof Error ? shutdownError
             : new BridgeAdapterError('unknown', 'Bridge shutdown failed');
@@ -830,7 +870,8 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
       // A completed lifecycle record must never precede strict stdout EOF and
       // the provider's exit policy. Failed persistence cannot create success.
       if (successfulSummary) {
-        try { lifecycle.onSessionClose(successfulSummary); }
+        const summary = successfulSummary;
+        try { await persistFinal(() => lifecycle.onSessionClose(summary)); }
         catch (error) {
           const failure = new BridgeAdapterError('unknown', 'Required Bridge completion evidence persistence failed', undefined, { cause: error });
           failure.diagnosticPersistenceFailed = true;

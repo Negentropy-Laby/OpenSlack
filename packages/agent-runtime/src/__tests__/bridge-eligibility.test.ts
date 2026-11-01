@@ -207,6 +207,19 @@ describe('known start cutoff at actual peer dispatch', () => {
     expect(f.authorizeTool).not.toHaveBeenCalled();
   });
 
+  it('rechecks the host business cutoff after recording an authorization attempt before sending its allowed response', async () => {
+    const base = Date.now(); let now = base;
+    vi.spyOn(Date, 'now').mockImplementation(() => now);
+    const f = fixture('Read', 'matching');
+    const mark = f.context.recorder.markToolEvidenceAuthorizationAttempt!.bind(f.context.recorder);
+    f.context.recorder.markToolEvidenceAuthorizationAttempt = receipt => {
+      mark(receipt); now = base + 1000;
+    };
+    await expect(f.adapter.execute({ ...f.context, executionDeadline: base + 1000 })).rejects.toMatchObject({ kind: 'timeout' });
+    expect(existsSync(f.requestMarker)).toBe(true);
+    expect(existsSync(f.marker)).toBe(false);
+  });
+
   it.each(['lease', 'business'] as const)('rechecks the separate %s cutoff after an earlier outbound write finishes', async cutoff => {
     const base = Date.now(); let now = base;
     vi.spyOn(Date, 'now').mockImplementation(() => now);

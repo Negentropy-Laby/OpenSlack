@@ -6,7 +6,7 @@ import { randomUUID } from 'node:crypto';
 import { TextDecoder, types as utilTypes } from 'node:util';
 import { scanValue } from '@openslack/collaboration';
 import { decodeRunState, HARNESS_TRANSCRIPT_MAX_BYTES, readRunStateSnapshot } from './run-store.js';
-import type { AgentRunState, AgentRunEvent } from './types.js';
+import type { AgentRunState } from './types.js';
 import { captureRunDirectories, captureStorageDirectories, inspectRunDirectories, readRunBytes, RUN_MAINTENANCE_BARRIER, RUN_SNAPSHOT_MAX_BYTES,
   RUN_TRANSACTION_LOCK, runBase, runDirectory, runEntryExists, runSha256, writeRunExclusive } from './run-files.js';
 import type { RunStorageIntent, RunOwnershipRecord } from './run-ownership.js';
@@ -18,6 +18,7 @@ import { parseTranscriptEvents } from './transcript.js';
 import { inspectRunCapacity, assertRunCapacity, RUN_STORAGE_MAX_BYTES, RUN_INTENT_MAX_BYTES } from './run-capacity.js';
 import { RunPersistenceError } from './run-files.js';
 import { assertHarnessAcceptanceReceipt } from './harness-task-contracts.js';
+import { failedRunRecoveryState, failedRunRecoveryEncodingBound } from './run-recovery-state.js';
 
 const UUID = /^[a-f0-9-]{36}$/, SHA = /^[a-f0-9]{64}$/;
 const INTENT = /^run\.intent\.([a-f0-9-]{36})\.json$/;
@@ -230,7 +231,18 @@ function classify(source: InspectionSource): Pick<RunRepairInspection, 'plan' | 
 export function inspectRunRepair(root: string, runId: string): RunRepairInspection {
   validateRunId(runId); root = resolve(root);
   let source: InspectionSource | undefined, plan: Pick<RunRepairInspection, 'plan' | 'reason'>;
-  try { source = collect(root, runId); plan = classify(source); }
+  try {
+    source = collect(root, runId); plan = classify(source);
+    if (plan.plan === 'fail_incomplete') {
+      const { event } = failedRunRecoveryState(source.state!, { now: '+275760-09-13T00:00:00.000Z',
+        transactionId: 'f'.repeat(36), previousTransactionId: 'f'.repeat(36), inspectionSha256: 'f'.repeat(64),
+        revision: Number.MAX_SAFE_INTEGER, transcriptBytes: source.transcript.length });
+      if (failedRunRecoveryEncodingBound(source.state!) > RUN_SNAPSHOT_MAX_BYTES ||
+        source.transcript.length + jsonBytes(event).length + 1 > HARNESS_TRANSCRIPT_MAX_BYTES) {
+        plan = { plan: 'unavailable', reason: 'recovery_capacity_exceeded' };
+      }
+    }
+  }
   catch (error) { plan = { plan: 'unavailable', reason: error instanceof RunPersistenceError && error.code === 'RUN_STORAGE_LIMIT' ? 'storage_capacity_exceeded' : 'storage_or_proof_unavailable' }; }
   const data = { schema: 'openslack.run_repair_inspection.v1' as const, runId, workspaceIdentity: source?.workspaceIdentity ?? runSha256(root),
     ...plan, files: Object.freeze((source?.manifest ?? []).map(file => Object.freeze({ ...file }))) };
@@ -261,8 +273,18 @@ export function authorizeRunRepair(inspection: RunRepairInspection, port: RunRep
 
 function assertCurrent(inspection: RunRepairInspection, source: InspectionSource, extra: readonly string[] = []): void {
   source.verifyDirectories();
-  const current = collect(source.root, source.runId, extra);
-  if (current.workspaceIdentity !== inspection.workspaceIdentity || JSON.stringify(current.manifest) !== JSON.stringify(source.manifest)) throw new RunRepairError('RUN_REPAIR_INSPECTION_CHANGED');
+  const names = inspectRunCapacity(source.directory).entries.map(file => file.name).filter(name => !extra.includes(name)).sort();
+  if (JSON.stringify(names) !== JSON.stringify([...source.files.keys()].sort())) throw new RunRepairError('RUN_REPAIR_INSPECTION_CHANGED');
+  // Recapture every source byte at each CAS boundary. Reuse only the private
+  // original digests, not parsed authority or previous validation conclusions.
+  for (const file of source.manifest) {
+    const path = join(source.directory, file.name), stat = lstatSync(path, { bigint: true });
+    if (identity(path) !== file.identity || runSha256(readRunBytes(path, file.bytes, source.runId, Number(stat.nlink))) !== file.sha256 ||
+      identity(path) !== file.identity) throw new RunRepairError('RUN_REPAIR_INSPECTION_CHANGED');
+  }
+  const root = lstatSync(source.root, { bigint: true });
+  if (runSha256(JSON.stringify([realpathSync.native(source.root), String(root.dev), String(root.ino), String(root.uid), String(root.gid)])) !== inspection.workspaceIdentity) throw new RunRepairError('RUN_REPAIR_INSPECTION_CHANGED');
+  source.verifyDirectories();
 }
 function archive(source: InspectionSource, inspection: RunRepairInspection): { path: string; manifestSha256: string; verify(): void } {
   let parent = runBase(source.root);
@@ -273,10 +295,10 @@ function archive(source: InspectionSource, inspection: RunRepairInspection): { p
   }
   const leaf = `${inspection.inspectionSha256}-${randomUUID()}`, path = join(parent, leaf); mkdirSync(path, { mode: 0o700 });
   const verifyDirectories = captureStorageDirectories(source.root, ['.openslack.local', 'agents', 'runs', '.recovery', source.runId, leaf], source.runId);
+  const sourceDigests = new Map(source.manifest.map(file => [file.name, file.sha256]));
   for (const [name, bytes] of source.files) {
     verifyDirectories();
     writeRunExclusive(join(path, name), bytes);
-    if (runSha256(readRunBytes(join(path, name), bytes.length, source.runId)) !== runSha256(bytes)) throw new RunRepairError('RUN_REPAIR_INDETERMINATE');
     verifyDirectories();
   }
   const bytes = jsonBytes({ schema: 'openslack.run_repair_archive.v1', runId: source.runId, inspectionSha256: inspection.inspectionSha256,
@@ -286,9 +308,12 @@ function archive(source: InspectionSource, inspection: RunRepairInspection): { p
     verifyDirectories();
     const names = readdirSync(path).sort(), expected = [...source.files.keys(), 'before-manifest.json'].sort();
     if (JSON.stringify(names) !== JSON.stringify(expected) || runSha256(readRunBytes(join(path, 'before-manifest.json'), bytes.length, source.runId)) !== runSha256(bytes)) throw new RunRepairError('RUN_REPAIR_INDETERMINATE');
-    for (const [name, original] of source.files) if (runSha256(readRunBytes(join(path, name), original.length, source.runId)) !== runSha256(original)) throw new RunRepairError('RUN_REPAIR_INDETERMINATE');
+    for (const [name, original] of source.files) if (runSha256(readRunBytes(join(path, name), original.length, source.runId)) !== sourceDigests.get(name)) throw new RunRepairError('RUN_REPAIR_INDETERMINATE');
     verifyDirectories();
   };
+  // Full readback after every file has been fsynced, repeated independently
+  // before lock retirement. Per-file immediate rehash was a third same-stage
+  // pass; the captured source hashes are private owned-byte observations.
   verify();
   return { path, manifestSha256: runSha256(bytes), verify };
 }
@@ -387,16 +412,12 @@ export function applyRunRepair(inspection: RunRepairInspection, capability: RunR
 function publishFailedRecovery(source: InspectionSource, inspection: RunRepairInspection,
   maintenance: { transactionId: string; ownerGeneration: string }, barrierBytes: Buffer, verifyOwner: () => void): RunStorageIntent {
   const original = source.state!, previous = source.baseState;
-  const now = new Date().toISOString(), summary = 'Storage publication was incomplete; preserve evidence and reconcile without replay.';
-  const failure: AgentRunEvent = { timestamp: now, type: 'fail', data: { failureCode: 'EXECUTION_FAILED', errorSummary: summary, storageRecovery: inspection.inspectionSha256 } };
+  const { state, event: failure } = failedRunRecoveryState(original, { now: new Date().toISOString(),
+    transactionId: maintenance.transactionId, previousTransactionId: source.lock!.transactionId,
+    inspectionSha256: inspection.inspectionSha256, revision: (previous?.persistence?.revision ?? -1) + 1, transcriptBytes: 0 });
   const appended = Buffer.from(JSON.stringify(failure) + '\n');
   if (source.transcript.length + appended.length > HARNESS_TRANSCRIPT_MAX_BYTES) throw new RunRepairError('RUN_REPAIR_UNAVAILABLE');
-  const state: AgentRunState = { ...original, status: 'failed', completedAt: now, failureCode: 'EXECUTION_FAILED', errorSummary: summary, error: summary,
-    ...(original.harnessExecution ? { harnessExecution: { ...original.harnessExecution, acceptance: 'indeterminate', summary,
-      stopRequestedAt: now, lifecycle: original.harnessExecution.lifecycle ? { ...original.harnessExecution.lifecycle, phase: 'indeterminate' } : undefined } } : {}),
-    persistence: { ...original.persistence!, transactionId: maintenance.transactionId, revision: (previous?.persistence?.revision ?? -1) + 1,
-      transcriptBytes: source.transcript.length + appended.length, recovery: { inspectionSha256: inspection.inspectionSha256,
-        previousTransactionId: source.lock!.transactionId, outcome: 'indeterminate' } } };
+  state.persistence!.transcriptBytes = source.transcript.length + appended.length;
   safe(state); safe(failure);
   const bytes = jsonBytes(state), stateFile = `run.json.${maintenance.transactionId}.tmp`;
   if (bytes.length > RUN_SNAPSHOT_MAX_BYTES) throw new RunRepairError('RUN_REPAIR_UNAVAILABLE');

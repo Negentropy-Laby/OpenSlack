@@ -28,13 +28,26 @@ describe('nominal startup lease restrictions (explicit synthetic authority obser
   });
 
   it('preserves a required lease cutoff instead of converting it to unlimited eligibility', () => {
-    const clock = vi.spyOn(Date, 'now').mockReturnValue(1000);
-    const task = createHarnessTaskEligibility(taskBinding, { mode: 'required', expiresAt: 1100 });
+    let clock = 1000;
+    const task = createHarnessTaskEligibility(taskBinding, { mode: 'required', expiresAt: 1100 }, () => clock);
     const fact = bindHarnessRunStartEligibility(task, runBinding);
     expect(harnessRunStartEligibilityRestriction(fact)).toEqual({ mode: 'required', expiresAt: 1100 });
-    clock.mockReturnValue(1100);
+    clock = 1100;
     expect(() => assertHarnessRunStartEligibility(fact, expected)).toThrow('eligibility');
     expect(() => harnessRunStartEligibilityRestriction(fact)).toThrow('eligibility');
+  });
+
+  it('samples its trusted local clock once per observation and rejects invalid clocks', () => {
+    const now = vi.fn(() => 1000);
+    const task = createHarnessTaskEligibility(taskBinding, { mode: 'required', expiresAt: 1100 }, now);
+    expect(now).toHaveBeenCalledOnce();
+    const fact = bindHarnessRunStartEligibility(task, runBinding);
+    now.mockClear();
+    expect(() => assertHarnessRunStartEligibility(fact, expected)).not.toThrow();
+    expect(now).toHaveBeenCalledOnce();
+    now.mockReturnValue(NaN);
+    expect(() => assertHarnessRunStartEligibility(fact, expected)).toThrow('eligibility');
+    expect(() => createHarnessTaskEligibility(taskBinding, { mode: 'not_applicable' }, () => Infinity)).toThrow('eligibility');
   });
 
   it('does not reuse task/report or native tool observations as startup authority', () => {

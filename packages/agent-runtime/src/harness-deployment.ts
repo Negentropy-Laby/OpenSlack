@@ -8,6 +8,9 @@ import { hashHarnessInput } from './harness-admission.js';
 import { createRunStore, readRunStateSnapshot } from './run-store.js';
 import { canonicalHarnessRoot, readHarnessFile } from './harness-read.js';
 import { HARNESS_CLEANUP_BUDGET, assertHarnessCleanupBudget } from './bridge-cleanup.js';
+import { decodeStrictJSON } from '@openslack/core';
+import { nativePathSpellingEqual } from '@openslack/core/internal/runtime-contracts';
+import { isCode } from './io-errors.js';
 
 /** Administrator-authored nonsecret deployment. No runtime identity or task is created by this configuration. */
 export interface HarnessDeploymentFile {
@@ -52,7 +55,7 @@ function object(value: unknown): value is Record<string, unknown> {
 
 function readJson(path: string): unknown {
   if (!isAbsolute(path)) throw new Error('Harness configuration paths must be absolute');
-  return JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(readHarnessFile(path, 512 * 1024)));
+  return decodeStrictJSON(readHarnessFile(path, 512 * 1024), 512 * 1024);
 }
 
 /** Load only an explicitly provisioned file; absence leaves the shipped CLI unchanged and performs no writes. */
@@ -63,7 +66,7 @@ export function createConfiguredHarnessTaskHost(workspaceRoot: string, principal
   let input: unknown;
   try { input = readJson(path); }
   catch (error) {
-    if (error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT' && callbackBinding === undefined) return undefined;
+    if (isCode(error, 'ENOENT') && callbackBinding === undefined) return undefined;
     throw error;
   }
   if (!object(input) || input.schema !== 'openslack.harness_deployment.v1' ||
@@ -78,9 +81,7 @@ export function createConfiguredHarnessTaskHost(workspaceRoot: string, principal
   // This CLI runs in the approved primary workspace. Only the worker's isolated execution tree differs.
   // Cross-workspace identity hosting needs an explicit read-model/authority composition, not an inferred path.
   const identityRoot = canonicalHarnessRoot(config.identityRoot);
-  const sameRoot = process.platform === 'win32'
-    ? identityRoot.toLowerCase() === workspaceRoot.toLowerCase()
-    : identityRoot === resolve(workspaceRoot);
+  const sameRoot = nativePathSpellingEqual(identityRoot, resolve(workspaceRoot));
   if (!sameRoot) throw new Error('The configured Harness CLI must run from its approved identity workspace');
   const initialHash = hashHarnessInput(config);
   config.identityRoot = identityRoot;

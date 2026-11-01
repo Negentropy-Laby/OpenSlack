@@ -15,7 +15,7 @@ import {
   registerActiveAgentRunControl,
 } from './control.js';
 import { buildPermissionProfile, validatePermissionProfile } from './permissions.js';
-import { createRunRecorder } from './recorder.js';
+import { createRunRecorder, waitForRecorderWrite } from './recorder.js';
 import type { AgentRunStore } from './run-store.js';
 import { generateRunId, RUN_ID_RE } from './run-store.js';
 import type { AgentExecutionAdapter, AdapterExecutionContext } from './adapter.js';
@@ -192,6 +192,7 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
     permissionProfile: ReturnType<typeof buildPermissionProfile>;
     request: AgentRunRequest;
     providerResolution: ProviderResolution;
+    executionPolicy: ReturnType<typeof providerExecutionPolicy>;
   } {
     const resolvedConfig = agentOptions.resolvedAgentConfig ?? {
       agentId: agentOptions.agentType ?? agentOptions.label,
@@ -212,9 +213,11 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
     };
 
     let providerResolution: ProviderResolution;
+    let executionPolicy: ReturnType<typeof providerExecutionPolicy>;
     try {
       providerResolution = resolveProvider(resolvedConfig);
-      if (providerExecutionPolicy(providerResolution).requiresHostAcceptance && !options.harnessResultAcceptance) {
+      executionPolicy = providerExecutionPolicy(providerResolution);
+      if (executionPolicy.requiresHostAcceptance && !options.harnessResultAcceptance) {
         throw new RuntimeMisconfiguredError('DeepSeek Harness requires host-owned acceptance before execution.');
       }
     } catch (error) {
@@ -241,7 +244,7 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
       throw error;
     }
 
-    return { resolvedConfig, runId, permissionProfile, request, providerResolution };
+    return { resolvedConfig, runId, permissionProfile, request, providerResolution, executionPolicy };
   }
 
   const launchAgent = async function launchAgent<T>(
@@ -254,9 +257,8 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
     runId: string;
     runtimeDiagnostics?: readonly string[];
   }> {
-    const { resolvedConfig, runId, permissionProfile, request, providerResolution } =
+    const { resolvedConfig, runId, permissionProfile, request, providerResolution, executionPolicy } =
       prepareAndValidate(prompt, agentOptions);
-    const executionPolicy = providerExecutionPolicy(providerResolution);
 
     // Enforce worktree isolation for implementer agents and write-capable
     // Aby bridge agents.
@@ -373,12 +375,12 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
       }
 
       // Complete run with adapter-provided token usage
-      recorder.complete(
+      await waitForRecorderWrite(recorder, () => recorder.complete(
         runId,
         adapterResult.data,
         adapterResult.tokenUsage,
         adapterResult.tokenUsageRecorded,
-      );
+      ), { signal: abortController.signal });
 
       // Record bridge lifecycle marker only when the adapter is actually a bridge
       if (runAdapter.bridgeContract) {

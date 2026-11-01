@@ -10,6 +10,7 @@ import { RUN_ID_RE } from './run-id.js';
 import { isCode } from './io-errors.js';
 import { readRunBytes, captureStorageDirectories } from './run-files.js';
 import { decodeStrictJSON } from '@openslack/core';
+import { nativePathSpellingEqual } from '@openslack/core/internal/runtime-contracts';
 
 export interface HarnessAdmissionRecord {
   schema: 'openslack.harness_admission.v1'; key: string; requestHash: string; runId: string;
@@ -83,8 +84,7 @@ export class HarnessAdmissionStore {
       parent = join(parent, part);
       mkdirSync(parent, { recursive: true, mode: 0o700 });
       const actual = realpathSync(parent);
-      const sameNativePath = process.platform === 'win32' ? actual.toLowerCase() === parent.toLowerCase() : actual === parent;
-      if (!lstatSync(parent).isDirectory() || lstatSync(parent).isSymbolicLink() || !sameNativePath) {
+      if (!lstatSync(parent).isDirectory() || lstatSync(parent).isSymbolicLink() || !nativePathSpellingEqual(actual, parent)) {
         throw new HarnessAdmissionError('INDETERMINATE', 'Admission storage traverses an alias or link');
       }
     }

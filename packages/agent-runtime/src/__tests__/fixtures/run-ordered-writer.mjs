@@ -5,6 +5,8 @@ import { syncBuiltinESMExports } from 'node:module';
 import { performance } from 'node:perf_hooks';
 import { createRunStore } from '../../../dist/run-store.js';
 import { appendTranscriptEvent } from '../../../dist/transcript.js';
+import { waitForRunObservation } from '../../../dist/run-wait.js';
+import { isRunPreAcquisitionContention } from '../../../dist/run-ownership.js';
 const [root, runId, operation, marker, release] = process.argv.slice(2);
 const nativeOpen = fs.openSync;
 fs.openSync = (path, flags, ...args) => {
@@ -23,10 +25,14 @@ fs.openSync = (path, flags, ...args) => {
 };
 syncBuiltinESMExports();
 try {
-  if (operation === 'create') createRunStore(root, { sweepOrphans: false }).createRun({ runId, agentId: 'ordered-create-fixture',
-    prompt: 'never sent', resolvedConfig: { agentId: 'ordered-create-fixture', source: 'test' },
-    permissionProfile: { allowedTools: [], deniedTools: [], permissionMode: 'default' } });
-  else appendTranscriptEvent(runId, { type: 'progress', timestamp: new Date().toISOString(), data: { independentAppend: true } }, root);
+  // Match the async host's pre-acquisition wait. Only an unopened lock can
+  // retry; no touched transaction, callback or uncertain result is replayed.
+  await waitForRunObservation(() => {
+    if (operation === 'create') createRunStore(root, { sweepOrphans: false }).createRun({ runId, agentId: 'ordered-create-fixture',
+      prompt: 'never sent', resolvedConfig: { agentId: 'ordered-create-fixture', source: 'test' },
+      permissionProfile: { allowedTools: [], deniedTools: [], permissionMode: 'default' } });
+    else appendTranscriptEvent(runId, { type: 'progress', timestamp: new Date().toISOString(), data: { independentAppend: true } }, root);
+  }, isRunPreAcquisitionContention);
   process.stdout.write(JSON.stringify({ operation, outcome: 'committed' }));
 } catch (error) {
   process.stdout.write(JSON.stringify({ operation, outcome: 'rejected', code: error.code ?? null,

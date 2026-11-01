@@ -4,12 +4,12 @@ import {
 } from 'node:fs';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { TextDecoder, types as utilTypes } from 'node:util';
+import { types as utilTypes } from 'node:util';
 import { scanValue } from '@openslack/collaboration';
 import type { AgentRunFailureCode, AgentRunRequest, AgentRunState, AgentRunStatus, AgentRunEvent } from './types.js';
 import { RUN_ID_RE, validateRunId } from './run-id.js';
 import { readRunBytes, runSha256, inspectRunDirectories, captureRunDirectories, runEntryExists, RUN_TRANSACTION_LOCK, RUN_MAINTENANCE_BARRIER,
-  RunStateSnapshotChangedError, RunStateInvalidError, RunPersistenceError, writeRunExclusive } from './run-files.js';
+  RunStateSnapshotChangedError, RunStateInvalidError, RunPersistenceError, writeRunExclusive, runBase, runDirectory } from './run-files.js';
 import { withRunOwnership, isRunPreAcquisitionContention, type RunOwnership } from './run-ownership.js';
 import { isCode } from './io-errors.js';
 import { digestStableDescriptor, decodeStrictJSON } from '@openslack/core';
@@ -18,21 +18,22 @@ import { waitForRunObservation } from './run-wait.js';
 import { parseDurableTranscriptLine, RUN_TRANSCRIPT_EVENT_MAX_BYTES } from './transcript-contract.js';
 import { assertHarnessAcceptanceReceipt } from './harness-task-contracts.js';
 import type { RuntimeRunUnavailableReason } from '@openslack/core/internal/runtime-contracts';
+import { failedRunRecoveryEncodingBound } from './run-recovery-state.js';
 
 export { RunStateSnapshotChangedError, RunStateInvalidError, RunPersistenceError } from './run-files.js';
 
 export { RUN_ID_RE, validateRunId } from './run-id.js';
 export const HARNESS_TRANSCRIPT_MAX_BYTES = 64 * 1024 * 1024;
 export const HARNESS_TERMINAL_RESERVE_BYTES = 64 * 1024;
-const RUNS_DIR_NAME = 'agents/runs';
+// Separate maintenance tail: even an interrupted terminal append must remain
+// recoverable within the unchanged 64 MiB transcript reader bound.
+const RUN_TRANSCRIPT_WRITE_MAX_BYTES = HARNESS_TRANSCRIPT_MAX_BYTES - 64 * 1024;
 const ORPHAN_TEMP_MAX_AGE_MS = 60 * 60 * 1000;
 const RUN_TEMP_FILE_RE = /^(?:run|metadata)\.json\..+\.tmp$/;
 const DEFAULT_RUN_SNAPSHOT_MAX_BYTES = 512 * 1024;
 const TRANSACTION_LOCK = RUN_TRANSACTION_LOCK;
 
-function getRunsBaseDir(root?: string): string { return join(root ?? process.cwd(), '.openslack.local', RUNS_DIR_NAME); }
-function getRunDir(id: string, root?: string): string { return join(getRunsBaseDir(root), id); }
-function getRunMetaPath(id: string, root?: string): string { return join(getRunDir(id, root), 'run.json'); }
+function getRunMetaPath(id: string, root?: string): string { return join(runDirectory(id, root), 'run.json'); }
 
 export function generateRunId(): string {
   return `RUN-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Math.random().toString(36).slice(2, 10).toUpperCase()}`;
@@ -87,7 +88,7 @@ export async function publishRunAcceptanceEvidence(store: AgentRunStore, runId: 
 }
 
 function transcriptLength(runId: string, root?: string): number {
-  const path = join(getRunDir(runId, root), 'transcript.jsonl');
+  const path = join(runDirectory(runId, root), 'transcript.jsonl');
   try {
     const entry = lstatSync(path);
     if (!entry.isFile() || entry.isSymbolicLink() || entry.nlink !== 1) throw new Error('Run transcript is not an owned regular file.');
@@ -96,16 +97,22 @@ function transcriptLength(runId: string, root?: string): number {
 }
 
 /** Only the owning transaction may read past its own acquired lock. */
-function readSnapshot(runId: string, root: string | undefined, maxBytes: number, owned = false): AgentRunState | null {
+interface CapturedRunSnapshot { state: AgentRunState; stateSha256: string; metadataSha256?: string }
+const snapshotReasons = new WeakMap<Error, RunUnavailableReason>();
+function unavailableSnapshot(runId: string, reason: RunUnavailableReason): never {
+  const error = new RunStateSnapshotChangedError(runId); snapshotReasons.set(error, reason); throw error;
+}
+function readSnapshot(runId: string, root: string | undefined, maxBytes: number, owned = false): CapturedRunSnapshot | null {
   if (!inspectRunDirectories(root, runId)) return null;
   const verifyDirectories = captureRunDirectories(root, runId);
-  const lock = join(getRunDir(runId, root), TRANSACTION_LOCK);
-  const barrier = join(getRunDir(runId, root), RUN_MAINTENANCE_BARRIER);
-  if (runEntryExists(barrier) || (!owned && runEntryExists(lock))) throw new RunStateSnapshotChangedError(runId);
+  const lock = join(runDirectory(runId, root), TRANSACTION_LOCK);
+  const barrier = join(runDirectory(runId, root), RUN_MAINTENANCE_BARRIER);
+  if (runEntryExists(barrier)) unavailableSnapshot(runId, 'persistence-unconfirmed');
+  if (!owned && runEntryExists(lock)) unavailableSnapshot(runId, 'locked');
   const path = getRunMetaPath(runId, root);
   if (!runEntryExists(path)) {
-    const incomplete = runEntryExists(join(getRunDir(runId, root), 'metadata.json')) ||
-      (!owned && readdirSync(getRunDir(runId, root)).length > 0);
+    const incomplete = runEntryExists(join(runDirectory(runId, root), 'metadata.json')) ||
+      (!owned && readdirSync(runDirectory(runId, root)).length > 0);
     verifyDirectories();
     // The first absence probe can precede a healthy creator's lock and durable
     // publication. Re-observe that phase before classifying preserved leftovers
@@ -116,20 +123,22 @@ function readSnapshot(runId: string, root: string | undefined, maxBytes: number,
     if (incomplete) throw new RunPersistenceError('RUN_INITIALIZATION_INCOMPLETE', 'Run creation is incomplete; inspect without replay.');
     return null;
   }
-  const state = decodeRunState(readRunBytes(path, maxBytes, runId), runId);
+  const stateBytes = readRunBytes(path, maxBytes, runId), state = decodeRunState(stateBytes, runId);
   if (state.persistence && transcriptLength(runId, root) !== state.persistence.transcriptBytes) throw new RunStateSnapshotChangedError(runId);
+  let metadataSha256: string | undefined;
   if (state.persistence?.metadataSha256) {
-    if (runSha256(readRunBytes(join(getRunDir(runId, root), 'metadata.json'), maxBytes, runId)) !== state.persistence.metadataSha256) throw new RunStateSnapshotChangedError(runId);
+    metadataSha256 = runSha256(readRunBytes(join(runDirectory(runId, root), 'metadata.json'), maxBytes, runId));
+    if (metadataSha256 !== state.persistence.metadataSha256) throw new RunStateSnapshotChangedError(runId);
   }
   verifyDirectories();
   if (runEntryExists(barrier) || (!owned && runEntryExists(lock))) throw new RunStateSnapshotChangedError(runId);
-  return state;
+  return { state, stateSha256: runSha256(stateBytes), metadataSha256 };
 }
 
 /** Structural current-state validation is shared with pure maintenance inspection. */
 export function decodeRunState(bytes: Uint8Array, runId: string): AgentRunState {
   let value: unknown;
-  try { value = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes)); }
+  try { value = decodeStrictJSON(bytes, 2 * 1024 * 1024); }
   catch { throw new RunStateInvalidError(runId, 'failed to parse run.json'); }
   if (!value || typeof value !== 'object' || !('runId' in value) || value.runId !== runId) throw new RunStateInvalidError(runId, 'run ID does not match the file path');
   const state = value as AgentRunState;
@@ -155,7 +164,7 @@ export function readRunStateSnapshot(runId: string, root?: string, options: Read
   validateRunId(runId);
   const max = options.maxBytes ?? DEFAULT_RUN_SNAPSHOT_MAX_BYTES;
   if (!Number.isSafeInteger(max) || max < 1 || max > 2 * 1024 * 1024) throw new TypeError('maxBytes must be an integer between 1 and 2097152.');
-  return readSnapshot(runId, root, max);
+  return readSnapshot(runId, root, max)?.state ?? null;
 }
 
 /** Yield for a bounded legitimate writer, without repairing an orphan lock or accepting damaged bytes. */
@@ -176,7 +185,7 @@ export async function withRunTransactionWhenAvailable(store: AgentRunStore, runI
 
 /** Never sweep temporary evidence belonging to an unresolved transaction. */
 export function sweepOrphanRunTempFiles(root?: string, options: SweepOrphanRunTempOptions = {}): number {
-  const base = getRunsBaseDir(root);
+  const base = runBase(root);
   if (!existsSync(base)) return 0;
   const cutoff = (options.nowMs ?? Date.now()) - (options.olderThanMs ?? ORPHAN_TEMP_MAX_AGE_MS);
   let removed = 0;
@@ -203,7 +212,7 @@ function scanned(value: unknown, label: string): void {
 function stableJson(value: unknown): string { return JSON.stringify(value, null, 2); }
 
 function legacyTranscriptDigest(runId: string, root?: string): string {
-  const path = join(getRunDir(runId, root), 'transcript.jsonl');
+  const path = join(runDirectory(runId, root), 'transcript.jsonl');
   if (!runEntryExists(path)) return runSha256('');
   const entry = lstatSync(path, { bigint: true });
   if (!entry.isFile() || entry.isSymbolicLink() || entry.nlink !== 1n) throw new Error('Run transcript is not an owned regular file.');
@@ -244,7 +253,7 @@ export function createRunStore(root?: string, options: { sweepOrphans?: boolean 
     const now = new Date().toISOString();
     const state: AgentRunState = { runId, status: failure ? 'failed' : 'pending', agentId: request.agentId, model: request.resolvedConfig.model,
       startedAt: now, tokensUsed: 0, tokensRemaining: request.budget?.tokens ?? null, toolCalls: 0, worktreePath: request.worktreePath,
-      transcriptPath: join(getRunDir(runId, root), 'transcript.jsonl'),
+      transcriptPath: join(runDirectory(runId, root), 'transcript.jsonl'),
       ...(failure ? { ...failure, error: failure.errorSummary, completedAt: now } : {}),
     };
     const config = { ...request.resolvedConfig };
@@ -259,7 +268,9 @@ export function createRunStore(root?: string, options: { sweepOrphans?: boolean 
       state.persistence = { schemaVersion: 2, creationId: randomUUID(), transactionId: owner.transactionId,
         metadataSha256, revision: 0, transcriptBytes: 0 };
       const stateBytes = Buffer.from(stableJson(state));
-      if (stateBytes.length > DEFAULT_RUN_SNAPSHOT_MAX_BYTES) throw new Error('Run metadata exceeds the read bound.');
+      if (stateBytes.length > DEFAULT_RUN_SNAPSHOT_MAX_BYTES || failedRunRecoveryEncodingBound(state) > DEFAULT_RUN_SNAPSHOT_MAX_BYTES) {
+        throw new RunPersistenceError('RUN_STORAGE_LIMIT', 'Reserve snapshot recovery capacity before publication.');
+      }
       decodeRunState(stateBytes, runId);
       const metadataFile = `metadata.json.${owner.transactionId}.tmp`, stateFile = `run.json.${owner.transactionId}.tmp`;
       owner.reserveCapacity({ [metadataFile]: metadataBytes.length, [stateFile]: stateBytes.length,
@@ -281,8 +292,9 @@ export function createRunStore(root?: string, options: { sweepOrphans?: boolean 
   const updateOwned = (runId: string, update: Parameters<AgentRunStore['withRunTransaction']>[1], owner: RunOwnership,
     acceptance?: AcceptancePublication): AgentRunState => {
       const directory = owner.directory;
-      const current = readSnapshot(runId, root, DEFAULT_RUN_SNAPSHOT_MAX_BYTES, true);
-      if (!current) throw new Error(`Run not found: ${runId}`);
+      const captured = readSnapshot(runId, root, DEFAULT_RUN_SNAPSHOT_MAX_BYTES, true);
+      if (!captured) throw new Error(`Run not found: ${runId}`);
+      const current = captured.state;
       const change = update(structuredClone(current));
       if (!change || typeof change !== 'object' || 'then' in change) throw new TypeError('Run transactions cannot return a Promise.');
       if (change.beforePublish && (typeof change.beforePublish !== 'function' || utilTypes.isAsyncFunction(change.beforePublish))) throw new TypeError('Run publication guards must be synchronous.');
@@ -300,7 +312,7 @@ export function createRunStore(root?: string, options: { sweepOrphans?: boolean 
       }
       const bytes = Buffer.from(events.map(event => JSON.stringify(event) + '\n').join(''), 'utf8');
       const length = transcriptLength(runId, root) + bytes.length;
-      if (length > HARNESS_TRANSCRIPT_MAX_BYTES) throw new RunPersistenceError('RUN_TRANSCRIPT_LIMIT', 'Run transcript exceeds its repair bound.');
+      if (length > RUN_TRANSCRIPT_WRITE_MAX_BYTES) throw new RunPersistenceError('RUN_TRANSCRIPT_LIMIT', 'Reserve transcript recovery capacity before publication.');
       const updated: AgentRunState = { ...current, ...change.patch, persistence: {
         ...current.persistence,
         ...(current.persistence?.schemaVersion === 2 ? { transactionId: owner.transactionId } : {}),
@@ -312,21 +324,25 @@ export function createRunStore(root?: string, options: { sweepOrphans?: boolean 
         const evidence = updated.harnessExecution.evidence ?? { reservedBytes: 0, calls: {} };
         const terminalBytes = (current.harnessExecution?.evidence?.terminalBytes ?? 0) + (terminal ? bytes.length : 0);
         if (!Number.isSafeInteger(terminalBytes) || terminalBytes > HARNESS_TERMINAL_RESERVE_BYTES ||
-          !Number.isSafeInteger(evidence.reservedBytes) || evidence.reservedBytes < 0 || length > HARNESS_TRANSCRIPT_MAX_BYTES ||
-          length + evidence.reservedBytes > HARNESS_TRANSCRIPT_MAX_BYTES - HARNESS_TERMINAL_RESERVE_BYTES + terminalBytes) {
+          !Number.isSafeInteger(evidence.reservedBytes) || evidence.reservedBytes < 0 ||
+          length + evidence.reservedBytes > RUN_TRANSCRIPT_WRITE_MAX_BYTES - HARNESS_TERMINAL_RESERVE_BYTES + terminalBytes) {
           throw new RunPersistenceError('RUN_TRANSCRIPT_LIMIT', 'Harness evidence capacity must be reserved before effects.');
         }
         updated.harnessExecution = { ...updated.harnessExecution, evidence: { ...evidence, terminalBytes } };
       }
       scanned(updated, 'Run state update');
       const stateBytes = Buffer.from(stableJson(updated));
-      if (stateBytes.length > DEFAULT_RUN_SNAPSHOT_MAX_BYTES) throw new Error('Run metadata exceeds the read bound.');
+      if (stateBytes.length > DEFAULT_RUN_SNAPSHOT_MAX_BYTES || failedRunRecoveryEncodingBound(updated) > DEFAULT_RUN_SNAPSHOT_MAX_BYTES) {
+        throw new RunPersistenceError('RUN_STORAGE_LIMIT', 'Reserve snapshot recovery capacity before publication.');
+      }
       decodeRunState(stateBytes, runId);
       const baseBytes = readRunBytes(getRunMetaPath(runId, root), DEFAULT_RUN_SNAPSHOT_MAX_BYTES, runId);
-      if (stableJson(decodeRunState(baseBytes, runId)) !== stableJson(current)) throw new RunStateSnapshotChangedError(runId);
+      const baseSha256 = runSha256(baseBytes);
+      if (baseSha256 !== captured.stateSha256) throw new RunStateSnapshotChangedError(runId);
       const stateFile = `run.json.${owner.transactionId}.tmp`;
       const metadataPath = join(directory, 'metadata.json');
       const metadataSha256 = runEntryExists(metadataPath) ? runSha256(readRunBytes(metadataPath, DEFAULT_RUN_SNAPSHOT_MAX_BYTES, runId)) : null;
+      if (captured.metadataSha256 !== undefined && metadataSha256 !== captured.metadataSha256) throw new RunStateSnapshotChangedError(runId);
       const evidence = updated.harnessExecution?.evidence;
       const pending = Object.values(evidence?.calls ?? {}).filter(call => !call.resultDigest && call.phase !== 'not_dispatched').length;
       const finalization = !['completed', 'failed', 'cancelled'].includes(current.status) && ['completed', 'failed', 'cancelled'].includes(updated.status) &&
@@ -338,7 +354,7 @@ export function createRunStore(root?: string, options: { sweepOrphans?: boolean 
         { finalization, reservedBytes: (evidence?.reservedBytes ?? 0) + pending * 3 * RUN_INTENT_MAX_BYTES +
           (acceptancePending ? RUN_TRANSCRIPT_EVENT_MAX_BYTES + 2 * DEFAULT_RUN_SNAPSHOT_MAX_BYTES + RUN_INTENT_MAX_BYTES : 0) });
       checkPublication();
-      owner.publishIntent({ creationId: current.persistence?.creationId, base: { stateSha256: runSha256(baseBytes), transactionId: current.persistence?.transactionId ?? null,
+      owner.publishIntent({ creationId: current.persistence?.creationId, base: { stateSha256: baseSha256, transactionId: current.persistence?.transactionId ?? null,
         revision: current.persistence?.revision ?? null, transcriptBytes: length - bytes.length,
         ...(!current.persistence?.transactionId ? { legacyPrefixSha256: legacyTranscriptDigest(runId, root) } : {}) },
         target: { stateSha256: runSha256(stateBytes), revision: updated.persistence!.revision, transcriptBytes: length, stateFile },
@@ -374,7 +390,7 @@ export function createRunStore(root?: string, options: { sweepOrphans?: boolean 
         return;
       }
       const bytes = Buffer.from(line + '\n'), previous = transcriptLength(runId, root);
-      if (previous + bytes.length > HARNESS_TRANSCRIPT_MAX_BYTES) throw new RunPersistenceError('RUN_TRANSCRIPT_LIMIT', 'Run transcript exceeds its repair bound.');
+      if (previous + bytes.length > RUN_TRANSCRIPT_WRITE_MAX_BYTES) throw new RunPersistenceError('RUN_TRANSCRIPT_LIMIT', 'Reserve transcript recovery capacity before publication.');
       owner.reserveCapacity({ 'transcript.jsonl': previous + bytes.length });
       owner.publishIntent({ base: { stateSha256: null, transactionId: null, revision: null, transcriptBytes: previous,
         legacyPrefixSha256: legacyTranscriptDigest(runId, root) },
@@ -403,16 +419,10 @@ export function createRunStore(root?: string, options: { sweepOrphans?: boolean 
 export function observeRun(runId: string, root?: string): RunObservation {
   validateRunId(runId);
   try {
-    if (!inspectRunDirectories(root, runId)) return { kind: 'missing', runId };
-    const directory = getRunDir(runId, root);
-    if (runEntryExists(join(directory, RUN_MAINTENANCE_BARRIER))) return { kind: 'unavailable', runId, reason: 'persistence-unconfirmed' };
-    if (runEntryExists(join(directory, TRANSACTION_LOCK))) return { kind: 'unavailable', runId, reason: 'locked' };
-    const state = readRunStateSnapshot(runId, root);
-    if (state) return { kind: 'ready', runId, state };
-    const anchored = readdirSync(directory).length > 0;
-    return anchored ? { kind: 'unavailable', runId, reason: 'creation-incomplete' } : { kind: 'missing', runId };
+    const captured = readSnapshot(runId, root, DEFAULT_RUN_SNAPSHOT_MAX_BYTES);
+    return captured ? { kind: 'ready', runId, state: captured.state } : { kind: 'missing', runId };
   } catch (error) {
-    const reason: RunUnavailableReason = error instanceof RunStateSnapshotChangedError ? 'persistence-unconfirmed' :
+    const reason: RunUnavailableReason = error instanceof RunStateSnapshotChangedError ? snapshotReasons.get(error) ?? 'persistence-unconfirmed' :
       error instanceof RunPersistenceError && error.code === 'RUN_INITIALIZATION_INCOMPLETE' ? 'creation-incomplete' :
         error instanceof Error && /owned (?:regular file|directory)/.test(error.message) ? 'unsafe' : 'corrupt';
     return { kind: 'unavailable', runId, reason };
@@ -424,7 +434,7 @@ export function listRunObservations(root?: string, filter?: { agentId?: string; 
   const result: RunListing = { runs: [], unavailable: [] };
   try {
     if (!inspectRunDirectories(root)) return result;
-    for (const entry of readdirSync(getRunsBaseDir(root), { withFileTypes: true })) {
+    for (const entry of readdirSync(runBase(root), { withFileTypes: true })) {
       if (!RUN_ID_RE.test(entry.name)) continue;
       const value = observeRun(entry.name, root);
       if (value.kind === 'unavailable') result.unavailable.push(value);

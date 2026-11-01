@@ -1,6 +1,8 @@
 import type { AgentRunFailureCode, AgentRunState, AgentRunRequest, AgentRunEvent } from './types.js';
 import { getAgentRunFailureCode, getAgentRunFailureSummary } from './types.js';
-import type { AgentRunStore } from './run-store.js';
+import type { AgentRunStore, WaitRunSnapshotOptions } from './run-store.js';
+import { waitForRunObservation } from './run-wait.js';
+import { isRunPreAcquisitionContention } from './run-ownership.js';
 import { assertHarnessNotStopped } from './harness-stop.js';
 import { hashHarnessInput } from './harness-admission.js';
 import { assertHarnessToolEligibility, type HarnessToolEligibility } from './harness-eligibility.js';
@@ -38,8 +40,24 @@ export interface RunRecorder {
 
 const event = (type: AgentRunEvent['type'], data: Record<string, unknown>): AgentRunEvent => ({ timestamp: new Date().toISOString(), type, data });
 
+const writeObservers = new WeakMap<RunRecorder, <T>(write: () => T, began: () => void) => T>();
+/** Internal async boundary for one recorder operation. A callback/publication
+ * that has begun is never repeated, even if a nested refusal is transient. */
+export async function waitForRecorderWrite<T>(recorder: RunRecorder, write: () => T,
+  options: WaitRunSnapshotOptions = {}): Promise<T> {
+  const observe = writeObservers.get(recorder);
+  if (!observe) return write();
+  let callbackStarted = false;
+  return waitForRunObservation(() => observe(write, () => { callbackStarted = true; }),
+    error => !callbackStarted && isRunPreAcquisitionContention(error), options);
+}
+
 /** Every state-derived update and transcript append is serialized by the store owner. */
 export function createRunRecorder(store: AgentRunStore, root?: string): RunRecorder {
+  let observeCallback: (() => void) | undefined;
+  const transact: AgentRunStore['withRunTransaction'] = (runId, update) => store.withRunTransaction(runId, state => {
+    observeCallback?.(); return update(state);
+  });
   const receipts = new WeakMap<object, { runId: string; callId: string; reservationId: string; generation: string; created: boolean; attempted: boolean; checkEligibility(): void }>();
   const ownedReservations = new Set<string>();
   const receiptBinding = (receipt: ToolEvidenceReservationReceipt, requireNew = true) => {
@@ -50,7 +68,7 @@ export function createRunRecorder(store: AgentRunStore, root?: string): RunRecor
   const releaseUndispatched = (receipt: ToolEvidenceReservationReceipt): void => {
     const value = receiptBinding(receipt);
     if (value.attempted) throw new Error('An attempted authorization must retain evidence capacity until reconciliation');
-    store.withRunTransaction(value.runId, state => {
+    transact(value.runId, state => {
       const binding = state.harnessExecution, evidence = binding?.evidence, reserved = evidence?.calls[value.callId];
       if (!binding || !evidence || !reserved || reserved.generation !== value.generation || reserved.reservationId !== value.reservationId) {
         throw new Error('Evidence reservation ownership changed');
@@ -72,10 +90,10 @@ export function createRunRecorder(store: AgentRunStore, root?: string): RunRecor
       throw new Error('Harness tool evidence is not bound to a live execution');
     }
   };
-  return {
+  const recorder: RunRecorder = {
     start(request) {
       const created = store.createRun(request);
-      return store.withRunTransaction(created.runId, () => ({ patch: { status: 'running' }, events: [event('start', {
+      return transact(created.runId, () => ({ patch: { status: 'running' }, events: [event('start', {
         agentId: request.agentId, model: request.resolvedConfig.model, runtime: request.resolvedConfig.runtime,
         runtimeProvider: request.resolvedConfig.runtimeProvider, provider: request.resolvedConfig.provider,
         bridgeMode: request.resolvedConfig.bridgeMode, permissionMode: request.permissionProfile.permissionMode,
@@ -87,32 +105,32 @@ export function createRunRecorder(store: AgentRunStore, root?: string): RunRecor
       const failureCode = code ?? getAgentRunFailureCode(error);
       const errorSummary = getAgentRunFailureSummary(error, failureCode);
       const created = store.createFailedRun(request, { failureCode, errorSummary });
-      return store.withRunTransaction(created.runId, () => ({ events: [event('fail', { failureCode, errorSummary })] }));
+      return transact(created.runId, () => ({ events: [event('fail', { failureCode, errorSummary })] }));
     },
     progress(runId, data) {
       // Trusted diagnostic recording is not a task callback or permission to perform another effect.
-      store.withRunTransaction(runId, () => ({ events: [event('progress', data)] }));
+      transact(runId, () => ({ events: [event('progress', data)] }));
     },
     toolCall(runId, toolName, input) {
-      store.withRunTransaction(runId, state => {
+      transact(runId, state => {
         if (state.harnessExecution) throw new Error('Harness tools require a public call-ID evidence reservation before effects');
         return { patch: { toolCalls: state.toolCalls + 1, lastTool: toolName }, events: [event('tool_call', { toolName, input })] };
       });
     },
     toolResult(runId, toolName, output) {
-      store.withRunTransaction(runId, state => {
+      transact(runId, state => {
         if (state.harnessExecution) throw new Error('Harness tool results require the reserved public call ID');
         return { events: [event('tool_result', { toolName, output })] };
       });
     },
     chargeUsage(runId, tokens) {
       if (!Number.isInteger(tokens) || tokens < 0) throw new Error('Provider token usage must be a non-negative integer.');
-      return store.withRunTransaction(runId, state => ({ patch: {
+      return transact(runId, state => ({ patch: {
         tokensUsed: state.tokensUsed + tokens, tokensRemaining: state.tokensRemaining === null ? null : state.tokensRemaining - tokens,
       } }));
     },
     complete(runId, result, tokens, charged = false) {
-      return store.withRunTransaction(runId, state => {
+      return transact(runId, state => {
         assertHarnessNotStopped(root, state);
         const patch: Partial<AgentRunState> = { status: 'completed', completedAt: new Date().toISOString() };
         if (tokens !== undefined && !charged) {
@@ -128,11 +146,11 @@ export function createRunRecorder(store: AgentRunStore, root?: string): RunRecor
     fail(runId, error, code) {
       const failureCode = code ?? getAgentRunFailureCode(error);
       const errorSummary = getAgentRunFailureSummary(error, failureCode);
-      return store.withRunTransaction(runId, () => ({ patch: { status: 'failed', completedAt: new Date().toISOString(),
+      return transact(runId, () => ({ patch: { status: 'failed', completedAt: new Date().toISOString(),
         failureCode, errorSummary, error: errorSummary }, events: [event('fail', { failureCode, errorSummary })] }));
     },
     cancel(runId) {
-      return store.withRunTransaction(runId, () => ({ patch: { status: 'cancelled', completedAt: new Date().toISOString() }, events: [event('cancel', {})] }));
+      return transact(runId, () => ({ patch: { status: 'cancelled', completedAt: new Date().toISOString() }, events: [event('cancel', {})] }));
     },
     reserveToolEvidence(runId, value, eligibility) {
       const input = structuredClone(value);
@@ -148,7 +166,7 @@ export function createRunRecorder(store: AgentRunStore, root?: string): RunRecor
       let checkEligibility: () => void = () => { throw new Error('Harness eligibility reservation was not observed'); };
       let created = false;
       let reservationId: string = randomUUID();
-      store.withRunTransaction(runId, state => {
+      transact(runId, state => {
         checkEligibility = () => {
           live(state);
           assertHarnessToolEligibility(eligibility, { runId, requestHash: state.harnessExecution!.requestHash, principalHash: state.harnessExecution!.principalHash,
@@ -191,9 +209,10 @@ export function createRunRecorder(store: AgentRunStore, root?: string): RunRecor
     markToolEvidenceAuthorizationAttempt(receipt) {
       const value = receiptBinding(receipt, false);
       if (value.attempted) throw new Error('Authorization has already been attempted for this reservation');
-      // Mark memory before publication: any publication/send uncertainty must retain capacity.
-      value.attempted = true;
-      store.withRunTransaction(value.runId, state => {
+      transact(value.runId, state => {
+        // Own the lock before changing memory. Once this callback begins, any
+        // publication/send uncertainty still retains the attempted receipt.
+        value.attempted = true;
         live(state);
         const binding = state.harnessExecution!, evidence = binding.evidence, reserved = evidence?.calls[value.callId];
         if (!evidence || !reserved || reserved.reservationId !== value.reservationId || reserved.generation !== value.generation ||
@@ -213,7 +232,7 @@ export function createRunRecorder(store: AgentRunStore, root?: string): RunRecor
       value.checkEligibility();
     },
     recordToolEvidenceCall(runId, callId) {
-      store.withRunTransaction(runId, state => {
+      transact(runId, state => {
         if (state.harnessExecution?.evidence?.calls[callId]?.phase !== 'authorization_attempted') throw new Error('Tool call was not authorized before effects');
         return {};
       });
@@ -221,7 +240,7 @@ export function createRunRecorder(store: AgentRunStore, root?: string): RunRecor
     recordToolEvidenceResult(runId, callId, output) {
       const result = structuredClone(output);
       const resultDigest = hashHarnessInput(result);
-      store.withRunTransaction(runId, state => {
+      transact(runId, state => {
         const binding = state.harnessExecution;
         const evidence = binding?.evidence;
         const reserved = evidence && Object.hasOwn(evidence.calls, callId) ? evidence.calls[callId] : undefined;
@@ -238,4 +257,10 @@ export function createRunRecorder(store: AgentRunStore, root?: string): RunRecor
       });
     },
   };
+  writeObservers.set(recorder, (write, began) => {
+    if (observeCallback) throw new Error('Recorder write observation reentry');
+    observeCallback = began;
+    try { return write(); } finally { observeCallback = undefined; }
+  });
+  return recorder;
 }

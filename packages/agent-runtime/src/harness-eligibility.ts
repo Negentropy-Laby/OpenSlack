@@ -1,9 +1,11 @@
 import { isAbsolute } from 'node:path';
 import { HARNESS_CALLBACK_TOOLS } from './bridge-wire.js';
 import { RUN_ID_RE } from './run-id.js';
+import { readExecutionEligibilityRestriction, assertExecutionEligibilityCurrent, systemUtcNow,
+  type ExecutionEligibilityRestriction } from '@openslack/core/internal/runtime-contracts';
 
 export type HarnessEligibilityPhase = 'dispatch' | 'execute' | 'report' | 'accept';
-export type HarnessEligibilityRestriction = Readonly<{ mode: 'required'; expiresAt: number } | { mode: 'not_applicable' }>;
+export type HarnessEligibilityRestriction = ExecutionEligibilityRestriction;
 export interface HarnessTaskEligibilityBinding {
   taskId: string; taskHash: string; principalId: string; principalHash: string; phase: HarnessEligibilityPhase;
 }
@@ -21,7 +23,7 @@ export interface HarnessTaskEligibility { readonly [taskEligibilityBrand]: never
 export interface HarnessToolEligibility { readonly [toolEligibilityBrand]: never }
 /** A narrower known lease cutoff for this already-confirmed start, never a grant to start or replay a run. */
 export interface HarnessRunStartEligibility { readonly [runStartEligibilityBrand]: never }
-interface TaskObservation { kind: 'task'; binding: Readonly<HarnessTaskEligibilityBinding>; restriction: HarnessEligibilityRestriction }
+interface TaskObservation { kind: 'task'; binding: Readonly<HarnessTaskEligibilityBinding>; restriction: HarnessEligibilityRestriction; now(): number }
 interface ToolObservation { kind: 'tool'; task: TaskObservation; binding: Readonly<HarnessToolEligibilityBinding>; domain: 'native' | 'callback' }
 interface RunStartObservation { kind: 'run_start'; task: TaskObservation; binding: Readonly<HarnessRunStartEligibilityBinding> }
 type EligibilityObservation = TaskObservation | ToolObservation | RunStartObservation;
@@ -32,25 +34,25 @@ const toolKeys = ['runId', 'requestHash', 'principalHash', 'generation', 'toolNa
 const runStartKeys = ['runId', 'requestHash', 'principalHash', 'generation'] as const;
 
 function reject(): never { throw new Error('Harness eligibility observation is missing, mismatched or its lease expired'); }
-function expiry(restriction: HarnessEligibilityRestriction): void {
-  if (restriction.mode === 'required') {
-    if (!Number.isSafeInteger(restriction.expiresAt) || !Number.isFinite(Date.now()) || Date.now() >= restriction.expiresAt) reject();
-  } else if (restriction.mode !== 'not_applicable') reject();
+function expiry(task: TaskObservation): void {
+  try { assertExecutionEligibilityCurrent(task.restriction, task.now()); } catch { reject(); }
 }
 function observation(value: unknown): EligibilityObservation {
   const row = value && typeof value === 'object' ? observations.get(value) : undefined;
   if (!row) return reject();
-  expiry(row.kind === 'task' ? row.restriction : row.task.restriction);
+  expiry(row.kind === 'task' ? row : row.task);
   return row;
 }
 
 /** Internal authority mint: omitted from package barrels and never accepts MCP/model data. */
-export function createHarnessTaskEligibility(binding: HarnessTaskEligibilityBinding, restriction: HarnessEligibilityRestriction): HarnessTaskEligibility {
+export function createHarnessTaskEligibility(binding: HarnessTaskEligibilityBinding, restriction: HarnessEligibilityRestriction,
+  now: () => number = systemUtcNow): HarnessTaskEligibility {
   if (!binding.taskId || !binding.principalId || !/^[a-f0-9]{64}$/.test(binding.taskHash) || !/^[a-f0-9]{64}$/.test(binding.principalHash) ||
     !['dispatch', 'execute', 'report', 'accept'].includes(binding.phase)) reject();
-  expiry(restriction);
+  let checked: HarnessEligibilityRestriction;
+  try { checked = readExecutionEligibilityRestriction(restriction, now()); } catch { return reject(); }
   const value = Object.freeze({}) as HarnessTaskEligibility;
-  observations.set(value, { kind: 'task', binding: Object.freeze({ ...binding }), restriction: Object.freeze({ ...restriction }) });
+  observations.set(value, { kind: 'task', binding: Object.freeze({ ...binding }), restriction: checked, now });
   return value;
 }
 

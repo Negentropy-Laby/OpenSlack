@@ -255,6 +255,17 @@ describe('governed admission and shared canonical state repair', () => {
     expect(host.read(runId)?.harnessExecution?.reports).toEqual({});
   });
 
+  it('retains exactly the two actual accepted-byte publication boundary checks', async () => {
+    const { host, options } = fixture(), revalidateAccepted = vi.fn();
+    vi.mocked(options.prepare).mockResolvedValue({
+      execute: async () => ({ data: {}, exitConfirmed: true }),
+      accept: async () => ({ outcome: 'verified', summary: 'fixture', evidenceRefs: [] }), revalidateAccepted,
+    });
+    const { runId } = await host.dispatch('TASK-FIXTURE', 'two-publication-checks');
+    await vi.waitFor(() => expect(host.read(runId)?.status).toBe('completed'));
+    expect(revalidateAccepted).toHaveBeenCalledTimes(2);
+  });
+
   it('revalidates accepted file bytes after the final completion CAS obtains its genuine process lock', async () => {
     const { host, root, options, store } = fixture();
     const path = join(root, 'fixture.txt'), control = join(root, 'acceptance-control');

@@ -4,6 +4,8 @@ import { join } from 'node:path';
 import { readHarnessFile } from './harness-read.js';
 import { validateRunId } from './run-id.js';
 import type { AgentRunState } from './types.js';
+import { isCode } from './io-errors.js';
+import { decodeStrictJSON } from '@openslack/core';
 
 export interface HarnessStopIntent {
   schema: 'openslack.harness_stop_intent.v1';
@@ -22,8 +24,8 @@ function path(root: string, runId: string): string {
 export function readHarnessStopIntent(root: string, runId: string): HarnessStopIntent | null {
   let bytes: Buffer;
   try { bytes = readHarnessFile(path(root, runId), 4096); }
-  catch (error) { if (error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT') return null; throw error; }
-  const value: unknown = JSON.parse(bytes.toString('utf8'));
+  catch (error) { if (isCode(error, 'ENOENT')) return null; throw error; }
+  const value = decodeStrictJSON(bytes, 4096);
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Harness stop fact is unreadable');
   const row = value as Record<string, unknown>;
   if (row.schema !== 'openslack.harness_stop_intent.v1' || row.runId !== runId ||
@@ -43,7 +45,7 @@ export function publishHarnessStopIntent(root: string, intent: HarnessStopIntent
   const fd = openSync(temporary, 'wx', 0o600);
   try { writeFileSync(fd, JSON.stringify(intent)); fsyncSync(fd); } finally { closeSync(fd); }
   try { linkSync(temporary, target); }
-  catch (error) { if (!error || typeof error !== 'object' || !('code' in error) || error.code !== 'EEXIST') throw error; }
+  catch (error) { if (!isCode(error, 'EEXIST')) throw error; }
   unlinkSync(temporary);
   const observed = readHarnessStopIntent(root, intent.runId);
   if (!observed || observed.requestHash !== intent.requestHash || observed.ownerGeneration !== intent.ownerGeneration) {

@@ -5,6 +5,7 @@ import { lstatSync, readdirSync, realpathSync } from 'node:fs';
 import { basename, isAbsolute, join, relative, resolve } from 'node:path';
 import { digestStableDescriptor } from '@openslack/core';
 import { canonicalHarnessRoot, readHarnessFile, withHarnessDescriptor } from './harness-read.js';
+import { isCode } from './io-errors.js';
 
 // The approved installation contains a 127,844,128-byte WASM asset. Bound it
 // without buffering it, while retaining an independent finite total budget.
@@ -16,9 +17,6 @@ export interface RuntimeWorkspacePackage {
 function stamp(path: string): string {
   const value = lstatSync(path, { bigint: true });
   return [value.dev, value.ino, value.mode, value.nlink, value.size, value.mtimeNs, value.ctimeNs].join(':');
-}
-function absent(error: unknown): boolean {
-  return !!error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT';
 }
 function dependencyName(name: string): void {
   if (!/^(?:@[A-Za-z0-9._-]+\/)?[A-Za-z0-9_-][A-Za-z0-9._-]*$/.test(name)) throw new Error('Unsupported runtime dependency name');
@@ -209,14 +207,14 @@ export class HarnessRuntimePackageClosure {
       for (const suffix of ['.js', '.json', '.node']) {
         const file = candidate + suffix;
         try { lstatSync(file); }
-        catch (error) { if (absent(error)) { this.missing.add(file); continue; } throw error; }
+        catch (error) { if (isCode(error, 'ENOENT')) { this.missing.add(file); continue; } throw error; }
         throw new Error('Unsupported file-shaped runtime dependency resolution');
       }
       let inside = true;
       try { this.local(candidate); } catch { inside = false; }
       let witness: string;
       try { witness = stamp(candidate); }
-      catch (error) { if (absent(error)) { this.missing.add(candidate); continue; } throw error; }
+      catch (error) { if (isCode(error, 'ENOENT')) { this.missing.add(candidate); continue; } throw error; }
       // Inspect only metadata at a real outside candidate. Its mere availability
       // matters to Node resolution; never read its package body or adopt a root.
       if (!inside) throw new Error('Installed runtime dependency would resolve outside its approved root');
@@ -273,7 +271,7 @@ export class HarnessRuntimePackageClosure {
     if (pkg) {
       const directory = join(path, pkg.output === 'application' ? applicationOutput(manifest) : pkg.output);
       try { this.addDirectory(directory, true); }
-      catch (error) { if (!absent(error) || pkg.requireOutput) throw error; }
+      catch (error) { if (!isCode(error, 'ENOENT') || pkg.requireOutput) throw error; }
       const dsh = manifest.dsh;
       if (dsh && typeof dsh === 'object' && 'bundle' in dsh && dsh.bundle && typeof dsh.bundle === 'object' && 'patch' in dsh.bundle) {
         const patch = dsh.bundle.patch;
@@ -302,7 +300,7 @@ export class HarnessRuntimePackageClosure {
     for (const [path, witness] of [...this.files, ...this.directories]) if (stamp(path) !== witness) throw new Error('Runtime closure changed before observation completed');
     for (const [path, row] of this.resolutions) if (stamp(path) !== row.witness || realpathSync(path) !== row.path) throw new Error('Runtime dependency resolution changed during observation');
     for (const path of this.missing) {
-      try { lstatSync(path); } catch (error) { if (absent(error)) continue; throw error; }
+      try { lstatSync(path); } catch (error) { if (isCode(error, 'ENOENT')) continue; throw error; }
       throw new Error('Runtime dependency appeared during observation');
     }
     return Object.freeze({ hash: this.digest.digest('hex'), workspaceNames: [...this.visited.keys()].map(path => this.workspaceByPath.get(path)?.manifest.name)

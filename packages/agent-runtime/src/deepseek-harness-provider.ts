@@ -9,6 +9,7 @@ import { readHarnessFile } from './harness-read.js';
 import { BRIDGE_CHUNK_EXTENSION } from './bridge-wire.js';
 import { RUN_ID_RE } from './run-id.js';
 import { HARNESS_CLEANUP_BUDGET, assertHarnessCleanupBudget } from './bridge-cleanup.js';
+import { decodeStrictJSON } from '@openslack/core';
 
 /** Trusted deployment settings. Never populate these fields from a model or MCP arguments. */
 export interface DeepSeekHarnessDeployment {
@@ -102,7 +103,9 @@ export function createDeepSeekHarnessProvider(
       try {
         if (!statSync(peer).isFile() || !statSync(deployment.workerPatch).isFile() || !statSync(deployment.workerBinding).isFile() ||
             !statSync(deployment.dshHome).isDirectory()) throw Object.assign(new Error('invalid deployment input'), { code: 'EFTYPE' });
-        binding = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(readHarnessFile(deployment.workerBinding, 128 * 1024)));
+        const value = decodeStrictJSON(readHarnessFile(deployment.workerBinding, 128 * 1024), 128 * 1024);
+        if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Invalid worker binding');
+        binding = value;
       } catch (cause) {
         throw classifyHarnessDeploymentFailure(cause);
       }
