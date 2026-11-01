@@ -1,0 +1,25 @@
+{
+  "schema": "openslack.run_record.v1",
+  "id": "RUN-2026-426038",
+  "task_id": "TASK-2026-426038",
+  "lease_id": "not-applicable-human-delegated",
+  "agent_id": "anthropic_architect_aby",
+  "status": "running",
+  "started_at": "2026-11-01T11:14:33Z",
+  "worktree_path": "/var/tmp/openslack-pr426-repair-20261031",
+  "branch": "feat/openslack-harness-bridge-20261024",
+  "output_type": "product_pr",
+  "pr_number": 426,
+  "pr_url": "https://github.com/Negentropy-Laby/OpenSlack/pull/426",
+  "risk_zone": "yellow",
+  "validation_passed": false,
+  "runtime_run_id": "RUN-20261101111433-qoqnew",
+  "authorization_source": "Explicit current-session human delegation and unchanged active registry; no GitHub claim or lease asserted",
+  "validation_summary": {
+    "baseline": "b526be6d",
+    "red": "6 behavioral regressions failed",
+    "working_targeted": "8 files, 161 passed",
+    "final_acceptance": "NOT_COMPLETE"
+  },
+  "errors": []
+}

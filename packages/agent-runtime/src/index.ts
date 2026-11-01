@@ -31,6 +31,7 @@ export {
   createRunStore,
   generateRunId,
   readRunStateSnapshot,
+  readRunStateSnapshotWhenAvailable,
   RunStateInvalidError,
   RunStateSnapshotChangedError,
   observeRun,
@@ -39,6 +40,7 @@ export {
 } from './run-store.js';
 export type { ReadRunStateSnapshotOptions, SweepOrphanRunTempOptions } from './run-store.js';
 export type { RunObservation, RunListing, RunUnavailableReason, WaitRunSnapshotOptions } from './run-store.js';
+export { RUN_UNAVAILABLE_REASONS } from '@openslack/core/internal/runtime-contracts';
 export { inspectRunRepair, authorizeRunRepair, applyRunRepair, createRunRepairAuthorityPort, RunRepairError } from './run-repair.js';
 export type { RunRepairAuthorityPort, RunRepairCapability, RunRepairInspection, RunRepairReceipt, RunRepairScope } from './run-repair.js';
 

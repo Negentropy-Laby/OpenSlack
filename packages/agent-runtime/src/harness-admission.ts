@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import {
-  closeSync, fsyncSync, linkSync, lstatSync, mkdirSync,
+  closeSync, fsyncSync, linkSync, lstatSync, mkdirSync, readdirSync,
   openSync, realpathSync, unlinkSync, writeFileSync,
 } from 'node:fs';
 import { join } from 'node:path';
@@ -8,7 +8,8 @@ import { types as utilTypes } from 'node:util';
 import { canonicalHarnessRoot, readHarnessFile } from './harness-read.js';
 import { RUN_ID_RE } from './run-id.js';
 import { isCode } from './io-errors.js';
-import { performance } from 'node:perf_hooks';
+import { readRunBytes, captureStorageDirectories } from './run-files.js';
+import { decodeStrictJSON } from '@openslack/core';
 
 export interface HarnessAdmissionRecord {
   schema: 'openslack.harness_admission.v1'; key: string; requestHash: string; runId: string;
@@ -72,8 +73,10 @@ export class HarnessInputError extends TypeError {
 /** Minimal exclusive routing records. State and results remain in the canonical agent run. */
 export class HarnessAdmissionStore {
   private readonly directory: string;
+  private readonly root: string;
   constructor(root: string) {
     const canonical = canonicalHarnessRoot(root);
+    this.root = canonical;
     this.directory = join(canonical, '.openslack.local', 'agents', 'harness-admissions');
     let parent = canonical;
     for (const part of ['.openslack.local', 'agents', 'harness-admissions']) {
@@ -132,12 +135,41 @@ export class HarnessAdmissionStore {
 
   private read(path: string): HarnessAdmissionRecord {
     try {
-      const until = performance.now() + 1000;
-      while (lstatSync(path).nlink !== 1) {
-        if (performance.now() >= until) throw new HarnessAdmissionError('IN_PROGRESS', 'Admission publication has not released its temporary link; query without replay');
-        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 5);
+      const verifyDirectories = captureStorageDirectories(this.root, ['.openslack.local', 'agents', 'harness-admissions'], 'RUN-ADMISSION');
+      const before = lstatSync(path, { bigint: true });
+      let bytes: Buffer;
+      if (before.nlink === 1n) bytes = readHarnessFile(path, 4096);
+      else if (before.nlink === 2n) {
+        const name = path.slice(this.directory.length + 1), key = name.slice(0, -5);
+        const retiredPair = () => {
+          const current = lstatSync(path, { bigint: true });
+          if (current.dev !== before.dev || current.ino !== before.ino || current.mode !== before.mode || current.nlink !== 1n) throw new Error('Admission pair is not retired');
+          return readHarnessFile(path, 4096);
+        };
+        const matches = readdirSync(this.directory).filter(name => new RegExp(`^${key}\\.[a-f0-9-]{36}\\.tmp$`).test(name))
+          .map(name => join(this.directory, name)).filter(alias => {
+            try {
+              const entry = lstatSync(alias, { bigint: true });
+              return entry.isFile() && !entry.isSymbolicLink() && entry.dev === before.dev && entry.ino === before.ino && entry.nlink === 2n;
+            } catch (error) { if (isCode(error, 'ENOENT')) return false; throw error; }
+          });
+        if (matches.length === 0) bytes = retiredPair();
+        else {
+          if (matches.length !== 1) throw new Error('Unbound admission publication alias');
+          try {
+            bytes = readRunBytes(path, 4096, 'RUN-ADMISSION', 2);
+            const aliasBytes = readRunBytes(matches[0]!, 4096, 'RUN-ADMISSION', 2);
+            const final = lstatSync(path, { bigint: true }), alias = lstatSync(matches[0]!, { bigint: true });
+            if (!bytes.equals(aliasBytes) || final.dev !== before.dev || final.ino !== before.ino || final.nlink !== 2n ||
+              alias.dev !== final.dev || alias.ino !== final.ino || alias.nlink !== 2n) throw new Error('Admission publication changed');
+          } catch { bytes = retiredPair(); }
+        }
+      } else throw new Error('Admission publication has an external link');
+      verifyDirectories();
+      const value = decodeStrictJSON(bytes, 4096);
+      if (!before.isFile() || before.isSymbolicLink()) {
+        throw new Error('Admission publication is not an owned regular file');
       }
-      const value: unknown = JSON.parse(readHarnessFile(path, 4096).toString('utf8'));
       if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('unstable admission');
       const row = value as Record<string, unknown>;
       if (row.schema !== 'openslack.harness_admission.v1' || typeof row.key !== 'string' ||

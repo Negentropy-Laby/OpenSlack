@@ -73,6 +73,31 @@ function runningFixture() {
 }
 
 describe('governed admission and shared canonical state repair', () => {
+  it.each(['verified', 'rejected'] as const)('38-07: does not publish %s acceptance into a replacement owner generation', async outcome => {
+    const { host, options, store, root, execute } = fixture();
+    let accepted = false, completion = false, replaced = false;
+    vi.mocked(options.prepare).mockImplementation(async () => ({ execute, accept: async () => {
+      accepted = true; return { outcome, summary: 'fixture acceptance', evidenceRefs: [] };
+    } }));
+    vi.mocked(options.authorize).mockImplementation(async (_task, phase) => { if (phase === 'accept' && accepted) completion = true; });
+    const transaction = store.withRunTransaction;
+    vi.spyOn(store, 'withRunTransaction').mockImplementation((runId, update) => {
+      if (completion && !replaced) {
+        replaced = true;
+        transaction(runId, state => ({ patch: { harnessExecution: { ...state.harnessExecution!,
+          lifecycle: { ...state.harnessExecution!.lifecycle!, ownerGeneration: 'replacement-owner' } } } }));
+      }
+      return transaction(runId, update);
+    });
+    const { runId } = await host.dispatch('TASK-FIXTURE', 'owner-replaced-' + outcome);
+    await vi.waitFor(() => expect(replaced).toBe(true));
+    await vi.waitFor(async () => expect(await host.close(100)).toEqual({ stopped: false, unknownRunIds: [runId] }));
+    expect(store.readRun(runId)).toMatchObject({ status: 'running', harnessExecution: {
+      acceptance: 'pending', lifecycle: { ownerGeneration: 'replacement-owner' },
+    } });
+    expect(readHarnessStopIntent(root, runId)).toBeNull();
+    expect(execute).toHaveBeenCalledOnce();
+  });
   it('retains ownership and publishes a non-executable failure when admission unlink fails after exclusive publication', async () => {
     const { root, store, host, options, execute } = fixture();
     unlink.mockImplementation(path => {
@@ -151,18 +176,19 @@ describe('governed admission and shared canonical state repair', () => {
     expect(execute).not.toHaveBeenCalled();
   });
 
-  it('waits for the publisher to retire its temporary hard link without weakening the owned-file guard', async () => {
+  it('reads an exact publisher pair without blocking or weakening the external-hardlink guard', async () => {
     const { root } = fixture();
     const admissions = new HarnessAdmissionStore(root);
     const key = 'd'.repeat(64), requestHash = 'e'.repeat(64), runId = 'RUN-CROSS-PROCESS-PUBLICATION';
     const directory = join(root, '.openslack.local/agents/harness-admissions');
     const target = join(directory, `${key}.json`);
-    const source = `import {writeFileSync,writeSync,linkSync,unlinkSync} from 'node:fs';
-      const target=process.argv[1], temporary=target+'.publisher.tmp';
+    const source = `import {writeFileSync,writeSync,linkSync,unlinkSync} from 'node:fs';import{randomUUID}from'node:crypto';
+      const target=process.argv[1], temporary=target.replace(/\\.json$/,'.'+randomUUID()+'.tmp');
       writeFileSync(temporary,JSON.stringify({schema:'openslack.harness_admission.v1',key:process.argv[2],requestHash:process.argv[3],runId:process.argv[4]}));
       linkSync(temporary,target);writeSync(1,'linked\\n');setTimeout(()=>unlinkSync(temporary),150);`;
     const child = spawn(process.execPath, ['--input-type=module', '-e', source, target, key, requestHash, runId], { stdio: ['ignore', 'pipe', 'pipe'] });
     const closed = new Promise<void>((resolve, reject) => { child.once('error', reject); child.once('close', code => code === 0 ? resolve() : reject(new Error(`Publisher exit ${code}`))); });
+    void closed.catch(() => {});
     await new Promise<void>((resolve, reject) => { child.stdout.once('data', () => resolve()); child.once('error', reject); });
     expect(statSync(target).nlink).toBe(2);
     expect(admissions.admit(key, requestHash)).toMatchObject({ created: false, record: { runId } });
@@ -577,13 +603,13 @@ describe('owned RunStore transactions and full evidence quota', () => {
   it('never loses acknowledged report fields to an independent recorder process', async () => {
     const { store, root, runId } = runningFixture();
     const module = new URL('../../dist/run-store.js', import.meta.url).href;
-    const source = `import { createRunStore } from ${JSON.stringify(module)};
+    const source = `import { createRunStore, withRunTransactionWhenAvailable } from ${JSON.stringify(module)};
       const store=createRunStore(process.argv[1],{sweepOrphans:false}), id=process.argv[2], role=process.argv[3];
       let next=0;
-      process.on('message', request => {
+      process.on('message', async request => {
         if(request?.round!==next) throw new Error('Unexpected fixture round');
         const i=next++;
-        store.withRunTransaction(id,s=>({patch:role==='host'?{toolCalls:s.toolCalls+1}:{harnessExecution:{...s.harnessExecution,reports:{...s.harnessExecution.reports,['report-'+i]:'ack'}}},events:[{timestamp:new Date().toISOString(),type:'progress',data:{role,i}}]}));
+        await withRunTransactionWhenAvailable(store,id,s=>({patch:role==='host'?{toolCalls:s.toolCalls+1}:{harnessExecution:{...s.harnessExecution,reports:{...s.harnessExecution.reports,['report-'+i]:'ack'}}},events:[{timestamp:new Date().toISOString(),type:'progress',data:{role,i}}]}));
         const final=next===20;
         process.send({role,round:i}, error=>{if(error)throw error;if(final)process.disconnect();});
       });

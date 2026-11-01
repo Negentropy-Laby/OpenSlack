@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { spawn } from 'node:child_process';
-import { existsSync, linkSync, lstatSync, mkdirSync, mkdtempSync, openSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { closeSync, fstatSync, existsSync, linkSync, lstatSync, mkdirSync, mkdtempSync, openSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import type * as FsModule from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -10,12 +10,13 @@ import { applyRunRepair, authorizeRunRepair, createRunRepairAuthorityPort, inspe
 import { runSha256 } from '../run-files.js';
 
 vi.mock('node:fs', async load => {
-  const fs = await load<typeof FsModule>(); return { ...fs, openSync: vi.fn(fs.openSync) };
+  const fs = await load<typeof FsModule>(); return { ...fs, openSync: vi.fn(fs.openSync), fstatSync: vi.fn(fs.fstatSync) };
 });
 const open = vi.mocked(openSync), nativeOpen = open.getMockImplementation()!;
+const fstat = vi.mocked(fstatSync), nativeFstat = fstat.getMockImplementation()!;
 const roots: string[] = [];
 afterEach(() => {
-  open.mockReset().mockImplementation(nativeOpen); vi.restoreAllMocks();
+  open.mockReset().mockImplementation(nativeOpen); fstat.mockReset().mockImplementation(nativeFstat); vi.restoreAllMocks();
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
 });
 function rootFixture() { const root = mkdtempSync(join(tmpdir(), 'run-repair-fixture-')); roots.push(root); return root; }
@@ -39,6 +40,27 @@ function syntheticAuthority(runId: string, digest: string, workspaceIdentity: st
 }
 
 describe('ADR-0004 explicit single-run fixture maintenance', () => {
+  it.each(['run.transaction.lock', 'run.maintenance.json'])('closes the owned %s descriptor when its first fstat fails', async name => {
+    const root = rootFixture(), id = 'RUN-GUARD-FSTAT'; await crash(root, id, 'terminal-unlock');
+    const inspection = inspectRunRepair(root, id), capability = authorizeRunRepair(inspection,
+      syntheticAuthority(id, inspection.inspectionSha256, inspection.workspaceIdentity));
+    let captured: number | undefined, injected = false;
+    open.mockImplementation((path, flags, mode) => {
+      const fd = nativeOpen(path, flags, mode);
+      // Fault injection targets descriptor acquisition, not a production switch.
+      if (String(path).endsWith(name) && new Error().stack?.includes('guardOwnedFile')) captured = fd;
+      return fd;
+    });
+    fstat.mockImplementation((fd, ...args) => {
+      if (fd === captured && !injected) { injected = true; throw Object.assign(new Error('fixture fstat EIO'), { code: 'EIO' }); }
+      return Reflect.apply(nativeFstat, undefined, [fd, ...args]);
+    });
+    try {
+      expect(() => applyRunRepair(inspection, capability)).toThrow('RUN_REPAIR_INDETERMINATE');
+      expect(injected).toBe(true);
+      expect(() => nativeFstat(captured!)).toThrow(expect.objectContaining({ code: 'EBADF' }));
+    } finally { if (captured !== undefined) { try { closeSync(captured); } catch { /* Already closed is the expected result. */ } } }
+  }, 20_000);
   it.each(['create-second-link', 'create-intent-fsync', 'create-metadata-link', 'create-metadata-unlink', 'create-run-unlink', 'create-lock-unlink',
     'update-intent-fsync', 'update-before-append', 'update-after-append', 'update-temp-fsync', 'update-before-rename', 'terminal-unlock'] as const)('archives the exact %s crash bytes before safe retirement, without any task replay', async stage => {
     const root = rootFixture(), id = 'RUN-REAL-CRASH'; await crash(root, id, stage);

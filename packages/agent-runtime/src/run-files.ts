@@ -24,8 +24,8 @@ export class RunStateInvalidError extends Error {
 }
 export class RunPersistenceError extends Error {
   constructor(readonly code: 'RUN_STATE_BUSY' | 'RUN_TRANSACTION_REENTRY' | 'RUN_PERSISTENCE_INDETERMINATE' |
-    'RUN_INITIALIZATION_INCOMPLETE' | 'RUN_MAINTENANCE_REQUIRED' | 'RUN_TRANSCRIPT_LIMIT', message: string) {
-    super(message); this.name = 'RunPersistenceError';
+    'RUN_INITIALIZATION_INCOMPLETE' | 'RUN_MAINTENANCE_REQUIRED' | 'RUN_TRANSCRIPT_LIMIT' | 'RUN_STORAGE_LIMIT', message: string, options?: ErrorOptions) {
+    super(message, options); this.name = 'RunPersistenceError';
   }
 }
 

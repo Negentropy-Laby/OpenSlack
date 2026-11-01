@@ -440,6 +440,7 @@ export function renderAgentRuntimeMcpStatusReport(report: AgentRuntimeMcpStatusR
   if (report.agentId) lines.push(`Agent: ${report.agentId}`);
   if (report.runId) lines.push(`Run: ${report.runId}`);
   lines.push(report.scopeNote);
+  if (report.runRead) lines.push(`Run evidence: ${report.runRead.kind}${report.runRead.kind === 'unavailable' ? ` (${report.runRead.reason})` : ''}`);
   lines.push('');
   lines.push(`Required servers: ${report.requiredServers.join(', ') || '(none)'}`);
   lines.push(`Available servers: ${report.availableServers.join(', ') || '(none)'}`);

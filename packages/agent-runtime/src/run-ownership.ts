@@ -1,12 +1,12 @@
 import { closeSync, fstatSync, fsyncSync, lstatSync, openSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { performance } from 'node:perf_hooks';
 import { types as utilTypes } from 'node:util';
 import { isCode } from './io-errors.js';
 import { inspectRunDirectories, captureRunDirectories, RUN_MAINTENANCE_BARRIER, RUN_TRANSACTION_LOCK, runDirectory, runEntryExists,
   RunPersistenceError, writeRunExclusive, runSha256 } from './run-files.js';
 import { ownRunWriterWitness, type RunWriterWitness } from './run-process-witness.js';
+import { assertRunCapacity, RUN_INTENT_MAX_BYTES } from './run-capacity.js';
 
 export interface RunStorageIntent {
   schema: 'openslack.run_intent.v2'; runId: string; transactionId: string; ownerGeneration: string; ownershipSha256: string;
@@ -22,6 +22,7 @@ export interface RunOwnership {
   transactionId: string; ownerGeneration: string; directory: string;
   beforeWrite(): void;
   touch(): void;
+  reserveCapacity(files: Readonly<Record<string, number>>, options?: { finalization?: boolean; reservedBytes?: number }): void;
   publishIntent(intent: Omit<RunStorageIntent, 'schema' | 'runId' | 'transactionId' | 'ownerGeneration' | 'operation' | 'ownershipSha256'>): void;
 }
 export interface RunOwnershipRecord {
@@ -29,27 +30,21 @@ export interface RunOwnershipRecord {
   operation: RunStorageIntent['operation']; writer?: RunWriterWitness;
 }
 const active = new Set<string>();
+const unacquiredContention = new WeakSet<object>();
+export const isRunPreAcquisitionContention = (error: unknown): boolean => !!error && typeof error === 'object' && unacquiredContention.has(error);
 
 /** Private pre-acquisition boundary. No transaction or publication has started. */
 export function acquireRunTransactionLock(lockPath: string, verifyDirectories: () => void,
   platform: NodeJS.Platform = process.platform): number {
-  const until = performance.now() + 1000;
-  while (true) {
-    verifyDirectories();
-    try { return openSync(lockPath, 'wx', 0o600); }
-    catch (error) {
-      const existing = isCode(error, 'EEXIST');
-      // Windows can deny a fresh exclusive open while a retiring lock handle
-      // is still present. This wait precedes all ownership/effects; it never
-      // retries callbacks, publication, cleanup or an acquired descriptor.
-      const windowsContention = platform === 'win32' && (isCode(error, 'EPERM') || isCode(error, 'EBUSY'));
-      if (!existing && !windowsContention) throw error;
-      if (performance.now() >= until) {
-        if (!existing) throw error;
-        throw new RunPersistenceError('RUN_STATE_BUSY', 'Run transaction is busy; preserve and query without replay.');
-      }
-      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 5);
+  verifyDirectories();
+  try { return openSync(lockPath, 'wx', 0o600); }
+  catch (error) {
+    if (isCode(error, 'EEXIST')) {
+      const busy = new RunPersistenceError('RUN_STATE_BUSY', 'Run transaction is busy; preserve and query without replay.', { cause: error });
+      unacquiredContention.add(busy); throw busy;
     }
+    if (platform === 'win32' && (isCode(error, 'EPERM') || isCode(error, 'EBUSY'))) unacquiredContention.add(error as object);
+    throw error;
   }
 }
 
@@ -76,6 +71,8 @@ export function withRunOwnership<T>(root: string | undefined, runId: string, ope
   const record: RunOwnershipRecord = { schema: 'openslack.run_transaction.v2', runId, transactionId: randomUUID(),
     ownerGeneration: randomUUID(), operation, ...(writer ? { writer } : {}) };
   const lockBytes = JSON.stringify(record);
+  let capacityFiles: Record<string, number> = {};
+  let capacityOptions: { finalization?: boolean; reservedBytes?: number } = {};
   let primaryFailed = false;
   let primaryError: unknown;
   const secondaryFailure = () => {
@@ -98,11 +95,21 @@ export function withRunOwnership<T>(root: string | undefined, runId: string, ope
     const owner: RunOwnership = { directory, transactionId: record.transactionId, ownerGeneration: record.ownerGeneration,
       beforeWrite() { verify(); assertNoRunMaintenance(directory); },
       touch() { touched = true; },
+      reserveCapacity(files, options = {}) {
+        this.beforeWrite();
+        capacityFiles = { ...capacityFiles, ...files, [`run.intent.${record.transactionId}.json`]: RUN_INTENT_MAX_BYTES };
+        capacityOptions = options;
+        assertRunCapacity(directory, capacityFiles, options);
+      },
       publishIntent(intent) {
-        this.beforeWrite(); touched = true;
-        writeRunExclusive(join(directory, `run.intent.${record.transactionId}.json`), JSON.stringify({ ...intent,
+        this.beforeWrite();
+        const bytes = JSON.stringify({ ...intent,
           schema: 'openslack.run_intent.v2', runId, transactionId: record.transactionId, ownerGeneration: record.ownerGeneration,
-          ownershipSha256: runSha256(lockBytes), operation }));
+          ownershipSha256: runSha256(lockBytes), operation });
+        if (Buffer.byteLength(bytes) > RUN_INTENT_MAX_BYTES) throw new RunPersistenceError('RUN_STORAGE_LIMIT', 'Run intent exceeds its repair bound.');
+        assertRunCapacity(directory, { ...capacityFiles, [`run.intent.${record.transactionId}.json`]: Buffer.byteLength(bytes) }, capacityOptions);
+        touched = true;
+        writeRunExclusive(join(directory, `run.intent.${record.transactionId}.json`), bytes);
       },
     };
     const value = action(owner);
@@ -112,7 +119,7 @@ export function withRunOwnership<T>(root: string | undefined, runId: string, ope
   } catch (error) {
     primaryFailed = true;
     primaryError = touched ? new RunPersistenceError(operation === 'create' ? 'RUN_INITIALIZATION_INCOMPLETE' : 'RUN_PERSISTENCE_INDETERMINATE',
-      'Run publication is unconfirmed; preserve lock, intent, transcript and temporary evidence.') : error;
+      'Run publication is unconfirmed; preserve lock, intent, transcript and temporary evidence.', { cause: error }) : error;
     throw primaryError;
   } finally {
     try {

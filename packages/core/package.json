@@ -6,6 +6,14 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
+    "./internal/runtime-contracts": {
+      "types": "./dist/runtime-contracts.d.ts",
+      "import": "./dist/runtime-contracts.js"
+    },
+    "./internal/owned-file": {
+      "types": "./dist/owned-file.d.ts",
+      "import": "./dist/owned-file.js"
+    },
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"

@@ -6,6 +6,7 @@ import type { AgentRunEvent } from './types.js';
 import { createRunStore } from './run-store.js';
 import { validateRunId } from './run-id.js';
 import { withHarnessDescriptor } from './harness-read.js';
+import { parseTranscriptLine, RUN_TRANSCRIPT_EVENT_MAX_BYTES } from './transcript-contract.js';
 
 const RUNS_DIR_NAME = 'agents/runs';
 
@@ -42,19 +43,9 @@ export function parseTranscriptEvents(raw: string | Uint8Array, strict = false):
   const text = typeof raw === 'string' ? raw : new TextDecoder('utf-8', { fatal: strict }).decode(raw);
   const events: AgentRunEvent[] = [];
   for (const line of text.split('\n').filter(value => value.trim() !== '')) {
-    try { events.push(parseLine(line, strict)); } catch (error) { if (strict) throw error; }
+    try { events.push(parseTranscriptLine(line, strict)); } catch (error) { if (strict) throw error; }
   }
   return events;
-}
-
-function parseLine(line: string, strict: boolean): AgentRunEvent {
-  const row: unknown = JSON.parse(line);
-  if (strict && (!row || typeof row !== 'object' || Array.isArray(row) || !('type' in row) ||
-    !['start', 'progress', 'tool_call', 'tool_result', 'complete', 'fail', 'cancel'].includes(String(row.type)) ||
-    !('data' in row) || !row.data || typeof row.data !== 'object' || Array.isArray(row.data))) {
-    throw new Error('Transcript evidence event is malformed');
-  }
-  return row as AgentRunEvent;
 }
 
 /** Process a stable bounded JSONL descriptor incrementally, retaining at most one logical event. */
@@ -67,7 +58,7 @@ export function visitStrictTranscript(path: string, visit: (event: AgentRunEvent
     const append = (part: string) => {
       if (!part) return;
       eventBytes += Buffer.byteLength(part);
-      if (eventBytes > 16 * 1024 * 1024) throw new Error('Transcript event exceeds its bound');
+      if (eventBytes > RUN_TRANSCRIPT_EVENT_MAX_BYTES) throw new Error('Transcript event exceeds its bound');
       parts.push(part);
     };
     let read = 0;
@@ -83,7 +74,7 @@ export function visitStrictTranscript(path: string, visit: (event: AgentRunEvent
       while ((end = text.indexOf('\n', start)) >= 0) {
         append(text.slice(start, end));
         const line = parts.join(''); parts = []; eventBytes = 0;
-        if (line.trim()) visit(parseLine(line, true));
+        if (line.trim()) visit(parseTranscriptLine(line, true));
         start = end + 1;
       }
       append(text.slice(start));

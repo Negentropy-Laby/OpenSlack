@@ -76,7 +76,7 @@ export function getAgentRuntimeMcpStatus(
   const invalidTools = namespaceValidation.invalid;
 
   const status: AgentRuntimeMcpStatus =
-    observation?.kind === 'unavailable' || missingRequiredServers.length > 0 || invalidTools.length > 0
+    (observation && observation.kind !== 'ready') || missingRequiredServers.length > 0 || invalidTools.length > 0
       ? 'FAIL'
       : requiredServers.length === 0 && availableServers.length === 0 && toolEvidence.length === 0
         ? 'WARN'
@@ -105,7 +105,8 @@ export function getAgentRuntimeMcpStatus(
     })),
     invalidTools,
     toolEvidence,
-    remediations: [...(observation?.kind === 'unavailable' ? ['Run evidence is unavailable; inspect the single run without replay or automatic repair.'] : []), ...remediationForMcp(
+    remediations: [...(observation?.kind === 'missing' ? ['The requested run does not exist; verify its run ID.'] :
+      observation?.kind === 'unavailable' ? ['Run evidence is unavailable; inspect the single run without replay or automatic repair.'] : []), ...remediationForMcp(
       status,
       options.agentId,
       options.runId,

@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
-  existsSync, lstatSync, mkdirSync, openSync, closeSync, fsyncSync,
+  existsSync, lstatSync, mkdirSync,
   readdirSync, realpathSync, writeFileSync,
 } from 'node:fs';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
@@ -13,7 +13,7 @@ import type { BridgeProcessAdapterOptions } from './bridge-adapter.js';
 import { createDeepSeekHarnessProvider, type DeepSeekHarnessDeployment } from './deepseek-harness-provider.js';
 import { hashHarnessTask, type ApprovedHarnessTask, type HarnessTaskHostOptions } from './harness-task-host.js';
 import { createRunRecorder } from './recorder.js';
-import type { AgentRunStore } from './run-store.js';
+import { publishRunAcceptanceEvidence, type AgentRunStore } from './run-store.js';
 import { RepositoryToolExecutor } from './tool-executor.js';
 import { isSensitiveRepositoryPath } from './sensitive-data.js';
 import { canonicalHarnessInput, hashHarnessInput } from './harness-admission.js';
@@ -445,13 +445,16 @@ export function createHarnessTaskExecution(options: HarnessTaskExecutionOptions)
           const directory = join(options.identityRoot, '.openslack.local/agents/runs', runId);
           directories(options.identityRoot, directory);
           checkEligibility();
-          const evidence = openSync(join(directory, 'acceptance.json'), 'wx', 0o600);
-          try {
-            writeFileSync(evidence, JSON.stringify({ schema: 'openslack.harness_acceptance.v1', taskId: task.taskId, runId,
+          const evidence = Buffer.from(JSON.stringify({ schema: 'openslack.harness_acceptance.v1', taskId: task.taskId, runId,
               requestHash: current!.harnessExecution!.requestHash, baseline: task.baseline, head: task.baseline, indexHash: index,
               files, toolEvidenceHash: transcript, observedAt: new Date().toISOString() }));
-            fsyncSync(evidence);
-          } finally { closeSync(evidence); }
+          await publishRunAcceptanceEvidence(options.store, runId, evidence, state => {
+            checkEligibility();
+            if (state.status !== 'running' || state.harnessExecution?.requestHash !== current!.harnessExecution!.requestHash ||
+              state.harnessExecution?.principalHash !== task.principalHash ||
+              state.harnessExecution?.lifecycle?.ownerGeneration !== current!.harnessExecution!.lifecycle?.ownerGeneration) throw new Error('Acceptance owner changed');
+            assertHarnessNotStopped(options.identityRoot, state);
+          }, { signal: acceptanceSignal, utcDeadline: deadline, monotonicDeadline: localDeadline });
           evidenceRefs.push(`artifact:harness-acceptance/${runId}`, ...files.map(file => `sha256:${file.sha256}`));
           acceptedFiles = files;
           acceptedChangeNames = [...changes].sort();
