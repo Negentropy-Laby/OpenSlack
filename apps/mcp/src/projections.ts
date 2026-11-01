@@ -1,5 +1,5 @@
 import type { OpenSlackReadToolName } from '@openslack/qoder-adapter';
-import { RUN_UNAVAILABLE_REASONS } from '@openslack/agent-runtime';
+import { RUN_UNAVAILABLE_REASONS } from '@openslack/core/internal/runtime-contracts';
 import { workflowReadMetadata } from './workflow-read-metadata.js';
 
 type Row = Record<string, unknown>;

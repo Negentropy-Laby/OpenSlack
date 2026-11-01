@@ -1032,3 +1032,14 @@ reporting timeout. The repaired host rechecks immediately before an allowed
 response and again when those captured bytes leave the outbound queue; the
 full 22-case eligibility file then passed with zero marker effect in that case.
 No new wire field, permission, TTL, retry or completion-grace extension is used.
+
+
+The first frozen expanded run on 40f0376f reported 1082 passed, one timeout and 11
+existing skips. The timeout was the new long-history test's combined synthetic
+construction, inspection, crash-input preparation and actual archival, not a
+failed recovery assertion. The existing 20-second archival bound is unchanged.
+Its synthetic history and abandoned-writer input now use the normal bounded
+fixture hook; any preparation assertion/hook timeout fails the suite. The test
+still performs one complete authorized repair, checks the resulting canonical
+state and all 4098 archived intents, with every fsync/readback/CAS intact. No
+retry, skip, worker, production deadline or memory limit was changed.

@@ -1,6 +1,6 @@
 schema: openslack.modules.v2
 vitest_tests: 8846
-vitest_files: 598
+vitest_files: 599
 # Collected Vitest cases; module counts cover their declared packages and may overlap.
 modules:
   - id: self_evolution
@@ -587,7 +587,7 @@ modules:
       - github.com/Negentropy-Laby/OpenSlack/services/organization-graph
       - github.com/Negentropy-Laby/OpenSlack/services/workflow-control
     tests: 5314
-    test_files: 345
+    test_files: 346
     components:
       - id: agent_runtime
         name: Agent Runtime
