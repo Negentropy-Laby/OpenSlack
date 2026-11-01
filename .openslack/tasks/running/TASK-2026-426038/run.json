@@ -23,7 +23,9 @@
     "followup_source_base": "412f14071035e9d2d2e89b14db1aedc9f0966483",
     "working_boundary": "5 files, 83 passed; extra-byte and source-probe controls retained",
     "declaration_closure": "real producer RED missing dependency, GREEN 25 declarations and 16 relative dependencies",
-    "native_history_gate": "FAIL: unchanged 20000ms bound, latest working-source observation 21549ms"
+    "native_history_gate": "FAIL: unchanged 20000ms bound, latest working-source observation 21549ms",
+    "windows_timestamp_fixture": "Test-only deterministic fixture premise: native Windows, Linux Node24 and Linux Node22 each 3x8 passed on recorded working source",
+    "c207_quality": "12 independent quality gates passed, ESLint 0/0; complete-suite failures retained separately"
   },
   "errors": [
     "REVIEW38_NATIVE_HISTORY_TIME_BOUND_UNRESOLVED",

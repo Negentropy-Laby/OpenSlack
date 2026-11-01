@@ -1148,3 +1148,24 @@ the packed dist tree. No host authorization implementation or native input was
 added. The initial Vitest attempt correctly refused a stale compatibility
 witness; that refusal is not the packaging behavioral RED. Formal fresh builds,
 actual TGZ installation and final-head CI remain separate pending evidence.
+
+
+### Windows timestamp fixture premise correction
+
+The c207945f hosted Windows release job passed the actual Harness closed-loop
+scope (228 passed, 1 existing skip) and then failed the broader cleanup scope
+(3,133 passed, 1 failed, 12 existing skips). The failure was this review's new
+same-length overwrite fixture: two immediate writes need not produce distinct
+filesystem timestamps. The reader had no captured previous bytes, so that test
+premise did not follow from its sampled-stat contract. No production check is
+relaxed to make the test pass.
+
+The isolated same-length case now explicitly sets a different file modification
+time and asserts that the actual FD observes it before expecting refusal. This
+changes only the fixture file's timestamp, never the host clock or production
+history. The coarse-timestamp growth/restore EOF negative case remains intact.
+Working-source validation passed three times each on native Windows Node24,
+Linux Node24 and Linux Node22 (8 cases per run); original receipts retain that
+precommit execution identity. Test declarations remain 8,861/599. Full new-head
+CI/platform acceptance is separate and the native large-history 20-second gate
+remains open.

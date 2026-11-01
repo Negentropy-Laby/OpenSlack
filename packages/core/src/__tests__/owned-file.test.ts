@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { appendFileSync, closeSync, fstatSync, mkdtempSync, openSync, writeFileSync, rmSync, linkSync, renameSync, readSync, truncateSync } from 'node:fs';
+import { appendFileSync, closeSync, fstatSync, mkdtempSync, openSync, writeFileSync, rmSync, linkSync, renameSync, readSync, truncateSync, utimesSync } from 'node:fs';
 import type * as FsModule from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -57,6 +57,13 @@ describe('shared owned descriptor mechanics', () => {
     try {
       const before = fstatSync(fd, { bigint: true });
       writeFileSync(path, kind === 'short' ? 'b' : kind === 'grown' ? 'bounded' : 'other');
+      if (kind === 'same-length') {
+        // Timestamp precision is platform dependent. Establish this negative
+        // fixture's changed-identity premise explicitly, without sleeping or
+        // treating two immediate writes as a unique file-version clock.
+        utimesSync(path, new Date(Number(before.atimeMs)), new Date(Number(before.mtimeMs) + 5000));
+        expect(fstatSync(fd, { bigint: true }).mtimeNs).not.toBe(before.mtimeNs);
+      }
       expect(() => readObservedDescriptorBytes(fd, 5, before)).toThrow('IDENTITY_CHANGED');
     } finally { closeSync(fd); }
   });
