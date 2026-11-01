@@ -40,7 +40,28 @@ const { renameFault, faultDefaults } = vi.hoisted(() => {
     rmRemaining: 0,
     rmTarget: '.tmp',
     abortOnRename: undefined as AbortController | undefined,
-    lockReadFault: '' as '' | 'changed' | 'ENOENT' | 'EPERM' | 'EPERM-present',
+    lockReadFault: '' as
+      | ''
+      | 'changed'
+      | 'ENOENT'
+      | 'EPERM'
+      | 'EPERM-present'
+      | 'EBADF'
+      | 'EBADF-present'
+      | 'EBADF-changed'
+      | 'EPERM-changed'
+      | 'resolved-retired'
+      | 'resolved-present'
+      | 'resolved-changed'
+      | 'resolved-unverified'
+      | 'EBADF-unverified',
+    verificationFailurePath: '',
+    verificationFailure: undefined as NodeJS.ErrnoException | undefined,
+    beforeRecordRename: undefined as (() => Promise<void>) | undefined,
+    beforeLockRealpath: undefined as (() => Promise<string>) | undefined,
+    lockPublications: [] as string[],
+    lockPublicationAttempts: 0,
+    trackLockPublications: false,
   });
   return { faultDefaults, renameFault: faultDefaults() };
 });
@@ -71,6 +92,14 @@ vi.mock('node:fs/promises', async (importOriginal) => {
       return handle;
     },
     lstat: async (...args: Parameters<typeof actual.lstat>) => {
+      if (
+        String(args[0]) === renameFault.verificationFailurePath &&
+        renameFault.verificationFailure
+      ) {
+        const failure = renameFault.verificationFailure;
+        renameFault.verificationFailure = undefined;
+        throw failure;
+      }
       const stat = await actual.lstat(...args);
       if (renameFault.abortOnGuard && String(args[0]).endsWith('.tmp')) {
         renameFault.abortOnGuard.abort();
@@ -79,15 +108,31 @@ vi.mock('node:fs/promises', async (importOriginal) => {
       return stat;
     },
     realpath: async (...args: Parameters<typeof actual.realpath>) => {
+      if (renameFault.beforeLockRealpath && String(args[0]).endsWith('.lock')) {
+        const observe = renameFault.beforeLockRealpath;
+        renameFault.beforeLockRealpath = undefined;
+        return observe();
+      }
       if (renameFault.lockReadFault && String(args[0]).endsWith('.lock')) {
         const fault = renameFault.lockReadFault;
         renameFault.lockReadFault = '';
         if (fault === 'changed') {
           await actual.utimes(args[0], new Date(0), new Date(0));
+        } else if (fault.startsWith('resolved-')) {
+          if (fault === 'resolved-retired') await actual.rm(args[0]);
+          if (fault === 'resolved-changed') await actual.utimes(args[0], new Date(0), new Date(0));
+          if (fault === 'resolved-unverified')
+            renameFault.verificationFailurePath = String(args[0]);
+          return join(dirname(dirname(String(args[0]))), 'unverified-incumbent-name');
         } else {
-          if (fault !== 'EPERM-present') await actual.rm(args[0]);
+          if (fault.endsWith('-changed')) {
+            const replacement = String(args[0]) + '.replacement';
+            await actual.writeFile(replacement, await actual.readFile(args[0]));
+            await actual.rename(replacement, args[0]);
+          } else if (!fault.endsWith('-present')) await actual.rm(args[0]);
+          if (fault === 'EBADF-unverified') renameFault.verificationFailurePath = String(args[0]);
           throw Object.assign(new Error('Synthetic lock read failure'), {
-            code: fault === 'EPERM-present' ? 'EPERM' : fault,
+            code: fault === 'EBADF-unverified' ? 'EBADF' : fault.replace(/-(present|changed)$/, ''),
           });
         }
       }
@@ -120,6 +165,9 @@ vi.mock('node:fs/promises', async (importOriginal) => {
       return actual.rm(...args);
     },
     link: async (...args: Parameters<typeof actual.link>) => {
+      if (renameFault.trackLockPublications && String(args[1]).endsWith('.lock')) {
+        renameFault.lockPublicationAttempts += 1;
+      }
       if (renameFault.linkRemaining > 0 && String(args[1]).endsWith(renameFault.linkTarget)) {
         renameFault.linkRemaining -= 1;
         throw Object.assign(new Error('Synthetic publish sharing violation'), { code: 'EACCES' });
@@ -130,10 +178,14 @@ vi.mock('node:fs/promises', async (importOriginal) => {
         await actual.rm(args[1]);
         throw Object.assign(new Error('Synthetic released contender'), { code: 'EEXIST' });
       }
-      return actual.link(...args);
+      await actual.link(...args);
+      if (renameFault.trackLockPublications && String(args[1]).endsWith('.lock')) {
+        renameFault.lockPublications.push(String(args[0]));
+      }
     },
     rename: async (...args: Parameters<typeof actual.rename>) => {
       renameFault.calls += 1;
+      if (String(args[1]).endsWith('.json')) await renameFault.beforeRecordRename?.();
       if (renameFault.remaining > 0) {
         renameFault.remaining -= 1;
         renameFault.abortOnRename?.abort();
@@ -335,7 +387,16 @@ describe('local governed plan store', () => {
     expect(renameFault.releaseAfterCollision).toBe(false);
   });
 
-  it.each(['changed', 'ENOENT', 'EPERM', 'EPERM-present'] as const)(
+  it.each([
+    'changed',
+    'ENOENT',
+    'EPERM',
+    'EPERM-present',
+    'EBADF',
+    'EBADF-present',
+    'resolved-retired',
+    'resolved-present',
+  ] as const)(
     'handles %s during incumbent lock verification without deleting a live lock',
     async (fault) => {
       const root = makeRoot();
@@ -350,19 +411,212 @@ describe('local governed plan store', () => {
         expectedRevision: 1,
         updatedAt: '2026-07-27T00:01:00.000Z',
       });
-      if (fault === 'changed' || fault === 'EPERM-present') {
+      if (fault === 'changed' || fault.endsWith('-present')) {
         await expect(operation).rejects.toMatchObject({
-          code: fault === 'changed' ? 'GOVERNED_PLAN_STORE_BUSY' : 'EPERM',
+          code:
+            fault === 'changed'
+              ? 'GOVERNED_PLAN_STORE_BUSY'
+              : fault === 'resolved-present'
+                ? 'GOVERNED_PLAN_STORE_PATH_UNSAFE'
+                : fault.replace('-present', ''),
         });
         expect(readFileSync(lockPath, 'utf8')).toBe(owner);
         expect((await store.load(created.planId))?.state).toBe('pending');
-      } else if (fault === 'EPERM' && process.platform !== 'win32') {
-        await expect(operation).rejects.toMatchObject({ code: 'EPERM' });
+      } else if ((fault === 'EPERM' || fault === 'EBADF') && process.platform !== 'win32') {
+        await expect(operation).rejects.toMatchObject({ code: fault });
       } else {
         await expect(operation).resolves.toMatchObject({ state: 'cancelled' });
       }
     },
   );
+
+  it.each(['EBADF', 'resolved-retired'] as const)(
+    'rechecks actual retired incumbent %s before acquiring a fresh exclusive lock',
+    async (fault) => {
+      const root = makeRoot();
+      const store = new LocalGovernedPlanStore(root);
+      const created = await store.create(makeRecord());
+      const recordPath = paths(root, created.planId).record;
+      let entered!: () => void;
+      let release!: () => void;
+      let atRename = false;
+      const held = new Promise<void>((resolveHeld) => {
+        entered = resolveHeld;
+      });
+      const gate = new Promise<void>((resolveGate) => {
+        release = resolveGate;
+      });
+      renameFault.trackLockPublications = true;
+      renameFault.beforeRecordRename = async () => {
+        atRename = true;
+        entered();
+        await gate;
+      };
+      const winner = store.cancel({
+        planId: created.planId,
+        expectedRevision: 1,
+        updatedAt: '2026-07-27T00:01:00.000Z',
+      });
+      let contender: ReturnType<typeof store.claimExecution> | undefined;
+      const refusal = Object.assign(new Error('Controlled retired-incumbent resolution.'), {
+        code: 'EBADF',
+        syscall: 'realpath',
+      });
+      try {
+        await Promise.race([held, winner]);
+        expect(atRename).toBe(true);
+        renameFault.beforeLockRealpath = async () => {
+          release();
+          await winner;
+          if (fault === 'EBADF') throw refusal;
+          return join(root, 'retired-incumbent-name');
+        };
+        contender = store.claimExecution({
+          planId: created.planId,
+          expectedRevision: 1,
+          executionId: 'GEXEC-123e4567-e89b-42d3-a456-426614174099',
+          ownerPid: process.pid,
+          startedAt: '2026-07-27T00:01:00.000Z',
+        });
+        const [outcome] = await Promise.allSettled([contender]);
+        const reacquires = fault === 'resolved-retired' || process.platform === 'win32';
+        if (reacquires) {
+          expect(outcome).toMatchObject({
+            status: 'rejected',
+            reason: { code: 'GOVERNED_PLAN_STORE_CAS_MISMATCH' },
+          });
+          expect(renameFault.lockPublications).toHaveLength(2);
+          expect(new Set(renameFault.lockPublications).size).toBe(2);
+        } else {
+          expect(outcome?.status).toBe('rejected');
+          if (outcome?.status === 'rejected') expect(outcome.reason).toBe(refusal);
+          expect(renameFault.lockPublications).toHaveLength(1);
+        }
+        const committed = await winner;
+        expect(await store.load(created.planId)).toEqual(committed);
+        expect(readFileSync(recordPath, 'utf8')).toBe(canonicalGovernedJson(committed) + '\n');
+        expect(committed.state).toBe('cancelled');
+        expect(renameFault.calls).toBe(1);
+      } finally {
+        release();
+        await Promise.allSettled([winner, ...(contender ? [contender] : [])]);
+      }
+    },
+  );
+
+  it('does not treat failed retired-incumbent verification as absence', async () => {
+    const root = makeRoot();
+    const store = new LocalGovernedPlanStore(root);
+    const created = await store.create(makeRecord());
+    const lockPath = paths(root, created.planId).lock;
+    writeFileSync(lockPath, canonicalGovernedJson(lockOwner(process.pid)) + '\n');
+    const verificationFailure = Object.assign(new Error('Controlled verification refusal.'), {
+      code: 'EACCES',
+    });
+    renameFault.verificationFailure = verificationFailure;
+    renameFault.lockReadFault = 'EBADF-unverified';
+    renameFault.trackLockPublications = true;
+    const result = await Promise.allSettled([
+      store.cancel({
+        planId: created.planId,
+        expectedRevision: 1,
+        updatedAt: '2026-07-27T00:01:00.000Z',
+      }),
+    ]);
+    expect(result[0]?.status).toBe('rejected');
+    if (process.platform === 'win32') {
+      if (result[0]?.status === 'rejected') expect(result[0].reason).toBe(verificationFailure);
+      expect(renameFault.verificationFailure).toBeUndefined();
+    } else {
+      expect(result[0]).toMatchObject({ reason: { code: 'EBADF' } });
+      expect(renameFault.verificationFailure).toBe(verificationFailure);
+    }
+    expect(renameFault.lockPublications).toEqual([]);
+    expect(await store.load(created.planId)).toEqual(created);
+    expect(renameFault.calls).toBe(0);
+  });
+
+  it('rechecks a changed incumbent after mismatched resolution without touching the live lock', async () => {
+    const root = makeRoot();
+    const store = new LocalGovernedPlanStore(root);
+    const created = await store.create(makeRecord());
+    const lockPath = paths(root, created.planId).lock;
+    const owner = canonicalGovernedJson(lockOwner(process.pid)) + '\n';
+    writeFileSync(lockPath, owner);
+    renameFault.lockReadFault = 'resolved-changed';
+    renameFault.trackLockPublications = true;
+    await expect(
+      store.cancel({
+        planId: created.planId,
+        expectedRevision: 1,
+        updatedAt: '2026-07-27T00:01:00.000Z',
+      }),
+    ).rejects.toMatchObject({ code: 'GOVERNED_PLAN_STORE_BUSY' });
+    expect(renameFault.lockPublicationAttempts).toBe(2);
+    expect(renameFault.lockPublications).toEqual([]);
+    expect(readFileSync(lockPath, 'utf8')).toBe(owner);
+    expect(await store.load(created.planId)).toEqual(created);
+    expect(renameFault.calls).toBe(0);
+  });
+
+  it.each(['EBADF-changed', 'EPERM-changed'] as const)(
+    'independently verifies %s resolution before retrying without removing the replacement',
+    async (fault) => {
+      const root = makeRoot();
+      const store = new LocalGovernedPlanStore(root);
+      const created = await store.create(makeRecord());
+      const lockPath = paths(root, created.planId).lock;
+      const owner = canonicalGovernedJson(lockOwner(process.pid)) + '\n';
+      writeFileSync(lockPath, owner);
+      renameFault.lockReadFault = fault;
+      renameFault.trackLockPublications = true;
+      await expect(
+        store.cancel({
+          planId: created.planId,
+          expectedRevision: 1,
+          updatedAt: '2026-07-27T00:01:00.000Z',
+        }),
+      ).rejects.toMatchObject({
+        code:
+          process.platform === 'win32' ? 'GOVERNED_PLAN_STORE_BUSY' : fault.replace('-changed', ''),
+      });
+      expect(renameFault.lockPublicationAttempts).toBe(process.platform === 'win32' ? 2 : 1);
+      expect(renameFault.lockPublications).toEqual([]);
+      expect(readFileSync(lockPath, 'utf8')).toBe(owner);
+      expect(await store.load(created.planId)).toEqual(created);
+      expect(renameFault.calls).toBe(0);
+    },
+  );
+
+  it('preserves verification refusal after mismatched lock resolution on every platform', async () => {
+    const root = makeRoot();
+    const store = new LocalGovernedPlanStore(root);
+    const created = await store.create(makeRecord());
+    const lockPath = paths(root, created.planId).lock;
+    const owner = canonicalGovernedJson(lockOwner(process.pid)) + '\n';
+    writeFileSync(lockPath, owner);
+    const refusal = Object.assign(new Error('Controlled resolution verification refusal.'), {
+      code: 'EACCES',
+    });
+    renameFault.verificationFailure = refusal;
+    renameFault.lockReadFault = 'resolved-unverified';
+    renameFault.trackLockPublications = true;
+    const [outcome] = await Promise.allSettled([
+      store.cancel({
+        planId: created.planId,
+        expectedRevision: 1,
+        updatedAt: '2026-07-27T00:01:00.000Z',
+      }),
+    ]);
+    expect(outcome?.status).toBe('rejected');
+    if (outcome?.status === 'rejected') expect(outcome.reason).toBe(refusal);
+    expect(renameFault.verificationFailure).toBeUndefined();
+    expect(renameFault.lockPublicationAttempts).toBe(1);
+    expect(renameFault.lockPublications).toEqual([]);
+    expect(readFileSync(lockPath, 'utf8')).toBe(owner);
+    expect(await store.load(created.planId)).toEqual(created);
+    expect(renameFault.calls).toBe(0);
+  });
 
   it.each(['record-temp', 'lock-temp', 'lock', 'record', 'unknown', 'symlink'] as const)(
     'handles a disappeared %s directory entry without weakening validation',

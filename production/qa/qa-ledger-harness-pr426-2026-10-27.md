@@ -718,3 +718,91 @@ actually execute. Publication loads the candidate authentication implementation
 with the original approved configuration root; it does not copy credentials
 into a new checkout. The PR remains Draft, with no approval, merge, deployment,
 real-model task or identity bootstrap authorized by this follow-up.
+
+
+### Native final-run follow-up: incumbent lock retirement
+
+The frozen `12ad0a80` Linux run passed 8,755 cases with 25 existing skips, but
+its native Windows full run failed: 8,384 PASS, 2 FAIL, 88 SKIP. The failures were
+an approval-store concurrent decision that surfaced an OS error instead of CAS,
+and an MCP concurrent confirmation that surfaced READ_PROJECTION_FAILED.
+A subsequent unmodified two-file pass did not close those full-run failures.
+All original full-run and diagnostic outputs remain in the external batch.
+
+Fresh isolated diagnostic races retained exactly one executor/decision winner,
+one completed result and the winning canonical final record before checking
+loser classifications. They captured approval incumbent `open` EPERM. A complete
+Node filesystem trace captured plan-lock `realpath` EBADF overlapping the
+incumbent's successful unlink; a separate bounded observer located PATH_UNSAFE
+at incumbent path resolution. The original full run did not capture those raw
+causes, so its individual failures are not retroactively assigned a syscall.
+A rebuilt native consumer also captured EPERM specifically from realpath. A
+further old-guard regression failed both changed-incumbent EBADF/EPERM cases
+(51 PASS / 2 FAIL); neither error grants ownership of a replacement.
+These observations do not justify classifying arbitrary storage errors as a
+successful or active mutation, nor ignoring EBADF from fsync or close.
+
+The approval acquisition loop now permits its existing exclusive acquisition
+retry for Windows EPERM only after independently verifying that the incumbent
+is absent. A present incumbent, EACCES and a failed verification remain errors. Its
+resolved-path mismatch also retries only after separately proving disappearance;
+a present mismatched path remains unsafe. Three additional real-writer cases
+failed twice on the old guard (24 PASS / 2 FAIL) and pass all 26 cases after the
+change, including the stable-incumbent and verification-refusal negatives.
+The plan-store read localizes Windows EBADF/EPERM handling to realpath of an
+incumbent; verified absence or changed exact identity/stamps becomes FILE_CHANGED. A mismatched resolved path becomes
+FILE_CHANGED only after verifying disappearance or a changed exact identity or
+stamp. A stable mismatch remains PATH_UNSAFE. The next attempt still needs a
+fresh non-overwriting exclusive link and record CAS; observation never grants
+ownership of another writer's lock. No new retry count, worker limit, timeout,
+MCP error-classification exception or native directory-sync exception is added.
+
+Regressions hold a real writer at its record replacement, retire its incumbent,
+then exercise the contender at the exact open/realpath boundary. They require
+one canonical winning publication, a new exclusive acquisition before CAS
+refusal, and unchanged live locks/records on negative paths. The old native
+approval implementation failed one of 23 cases; the guard passed all 23. The
+old native plan implementation failed five of 49 cases; the guard passed all
+49. Two additional all-platform tests cover changed-stamp/mismatched resolution
+and failure of the follow-up metadata read. The ordinary approval race now
+compares actual bytes with the fulfilled winner and counts record replacements,
+replacing its former self-comparison. A separate Linux run exposed a fixture
+clock mismatch: real binding issuance could occur after the store's fixed
+`now + 1s` decision time while awaiting disk I/O. The synchronous test binding
+helper now fixes Date only during issuance and restores it before returning;
+filesystem timers, production checks and all timeouts remain unchanged.
+
+Diagnostic setup mistakes are retained separately: an attempted spy on a frozen
+prototype was refused, and a diagnostic assertion initially compared a string
+with a Buffer. Native MCP diagnostic runs made before rebuilding its consumed
+package dist still exercised old operator output, despite copied source files;
+they cannot validate or refute the new implementation. Build source/output
+hashes must accompany the rebuilt-consumer check. Controlled repetitions and
+fault injection are diagnostic experiments, not test retries or qualification.
+A subsequent native ordinary eight-file pass retained two unchanged owner-only
+operation timeouts (5s/10s) and another approval PATH_UNSAFE result. Timeout
+limits and workers were not relaxed. Unexplained no-executor errors from two
+earlier diagnostic repetitions are also retained; they did not justify broader
+authorization or error-handling exceptions. The rebuilt operator consumer then
+passed all 60 independent hundred-confirmation diagnostic races (79 total cases),
+with the original exactly-once and canonical terminal-result checks.
+Final current-source full Linux/native Windows, generated counts, artifact
+binding, independent review and synchronized head CI remain separate gates.
+
+The final working source passed all eight affected suites three consecutive
+runs on both Linux and native Windows: 180 PASS / 0 FAIL / 0 SKIP per run.
+Those are precommit runs, not executions retroactively assigned a later SHA.
+Native current bytes were compared after the runs; no older input manifest is
+used as their pre-run attestation. The clean frozen candidate must rerun them.
+The collector measured 8,797 declarations in 590 files; final status/docs
+regeneration ran twice with identical second-pass output. All 32 existing
+source-lock manifests remain byte-identical with no changed-path intersection.
+Independent read-only review found no concrete blocker in the seven-path delta;
+it did not run tests, authenticate or originate approval.
+
+An overlapping Linux focused run also retained one existing 5,000ms bot-auth
+fixture timeout. Final verification is scheduled after collection/build jobs,
+using unchanged default workers, timeouts and assertions. These later passes
+do not erase the failed logs or establish an unsampled historical root cause.
+No hosted PASS, frozen package qualification, live model result, approval or
+merge is inferred from this working-source evidence.
