@@ -373,7 +373,8 @@ and reservations include temporary/canonical overlap and outstanding results.
 The remaining 2 MiB covers bounded terminal publication and authorized recovery.
 There is no independent 4096-member cutoff or automatic intent deletion.
 The 512 KiB snapshot and 64 MiB transcript read bounds remain fixed: before
-publication, the actual failed-recovery encoder must fit the snapshot bound,
+publication, normal and failed-recovery encodings, including the fixed digest
+fields of all unsettled results, must fit the snapshot bound,
 and ordinary appends leave a separate 64 KiB maintenance tail. Exhausted legacy
 evidence is reported as unavailable before a maintenance barrier is published.
 

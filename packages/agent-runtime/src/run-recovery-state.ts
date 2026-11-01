@@ -31,3 +31,19 @@ export function failedRunRecoveryEncodingBound(state: AgentRunState): number {
     revision: Number.MAX_SAFE_INTEGER, transcriptBytes: 64 * 1024 * 1024 });
   return Buffer.byteLength(JSON.stringify(projected.state, null, 2));
 }
+
+/** Every writer preserves the fixed metadata expansion of already-authorized
+ * results. This is capacity prediction only: no digest or settled result is
+ * written, no pending call is granted, and the input remains untouched. */
+export function runPublicationEncodingBound(state: AgentRunState): number {
+  let projected = state;
+  const binding = state.harnessExecution, evidence = binding?.evidence;
+  if (binding && evidence) {
+    const calls = Object.fromEntries(Object.entries(evidence.calls).map(([id, call]) => [id,
+      !call.resultDigest && call.phase !== 'not_dispatched' ? { ...call, resultDigest: 'f'.repeat(64) } : call] as const));
+    // Keep the longer pre-result phase and reservedBytes representation. Actual
+    // settlement changes phase to settled and only reduces outstanding bytes.
+    projected = { ...state, harnessExecution: { ...binding, evidence: { ...evidence, calls } } };
+  }
+  return Math.max(Buffer.byteLength(JSON.stringify(projected, null, 2)), failedRunRecoveryEncodingBound(projected));
+}

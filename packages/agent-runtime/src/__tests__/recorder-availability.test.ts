@@ -8,6 +8,7 @@ import { acquireRunTransactionLock } from '../run-ownership.js';
 import { readTranscript } from '../transcript.js';
 import { createHarnessTaskEligibility, bindHarnessToolEligibility } from '../harness-eligibility.js';
 import { buildPermissionProfile } from '../permissions.js';
+import { failedRunRecoveryEncodingBound } from '../run-recovery-state.js';
 
 const roots: string[] = [];
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
@@ -17,6 +18,23 @@ function fixture() {
   store.createRun({ runId, agentId: 'fixture', prompt: 'offline', resolvedConfig: { agentId: 'fixture', source: 'test' },
     permissionProfile: buildPermissionProfile({ agentId: 'fixture', source: 'test' }) });
   return { root, runId, store, lock: join(root, '.openslack.local/agents/runs', runId, 'run.transaction.lock') };
+}
+
+function reservedFixture(summary = 'pending') {
+  const setup = fixture(), { root, runId, store } = setup, generation = 'fixture-generation', targetPath = join(root, 'fixture.txt');
+  const requestHash = 'a'.repeat(64), principalHash = 'b'.repeat(64);
+  store.updateRun(runId, { status: 'running', harnessExecution: {
+    schema: 'openslack.harness_execution.v1', taskId: 'TASK-FIXTURE', requestHash, principalHash, baseline: 'c'.repeat(40),
+    summary, acceptance: 'pending', reports: {}, evidenceRefs: [], evidence: { reservedBytes: 0, calls: {} },
+    lifecycle: { phase: 'started', ownerGeneration: generation, deadlineAt: new Date(Date.now() + 60000).toISOString() },
+  } });
+  const recorder = createRunRecorder(store, root);
+  const task = createHarnessTaskEligibility({ taskId: 'TASK-FIXTURE', taskHash: requestHash,
+    principalId: 'fixture', principalHash, phase: 'execute' }, { mode: 'not_applicable' });
+  const eligibility = bindHarnessToolEligibility(task, { runId, generation, toolName: 'Read', targetPath });
+  const receipt = recorder.reserveToolEvidence!(runId, { callId: 'read-once', toolName: 'Read', input: {}, targetPath,
+    generation, maxResultBytes: 1024 }, eligibility);
+  return { ...setup, recorder, receipt };
 }
 
 describe('single-operation recorder availability', () => {
@@ -45,19 +63,7 @@ describe('single-operation recorder availability', () => {
   });
 
   it('does not mark a reservation attempted until its transaction actually owns the lock', async () => {
-    const { root, runId, store, lock } = fixture(), generation = 'fixture-generation', targetPath = join(root, 'fixture.txt');
-    const requestHash = 'a'.repeat(64), principalHash = 'b'.repeat(64);
-    store.updateRun(runId, { status: 'running', harnessExecution: {
-      schema: 'openslack.harness_execution.v1', taskId: 'TASK-FIXTURE', requestHash, principalHash, baseline: 'c'.repeat(40),
-      summary: 'pending', acceptance: 'pending', reports: {}, evidenceRefs: [], evidence: { reservedBytes: 0, calls: {} },
-      lifecycle: { phase: 'started', ownerGeneration: generation, deadlineAt: new Date(Date.now() + 60000).toISOString() },
-    } });
-    const recorder = createRunRecorder(store, root);
-    const task = createHarnessTaskEligibility({ taskId: 'TASK-FIXTURE', taskHash: requestHash,
-      principalId: 'fixture', principalHash, phase: 'execute' }, { mode: 'not_applicable' });
-    const eligibility = bindHarnessToolEligibility(task, { runId, generation, toolName: 'Read', targetPath });
-    const receipt = recorder.reserveToolEvidence!(runId, { callId: 'read-once', toolName: 'Read', input: {}, targetPath,
-      generation, maxResultBytes: 1024 }, eligibility);
+    const { runId, store, lock, recorder, receipt } = reservedFixture();
     writeFileSync(lock, 'isolated report owner');
     const timer = setTimeout(() => unlinkSync(lock), 10);
     try { await waitForRecorderWrite(recorder, () => recorder.markToolEvidenceAuthorizationAttempt!(receipt)); }
@@ -65,4 +71,23 @@ describe('single-operation recorder availability', () => {
     expect(store.readRun(runId)!.harnessExecution!.evidence!.calls['read-once']!.phase).toBe('authorization_attempted');
     expect(() => recorder.markToolEvidenceAuthorizationAttempt!(receipt)).toThrow('already been attempted');
   });
+  it('reserves pending-result fields in both normal and recovery snapshots against other writers', () => {
+    const { runId, store, recorder, receipt } = reservedFixture('s'.repeat(4096));
+    recorder.markToolEvidenceAuthorizationAttempt!(receipt);
+    const current = store.readRun(runId)!;
+    const empty = { ...current, model: '' };
+    const bound = Math.max(Buffer.byteLength(JSON.stringify(empty, null, 2)), failedRunRecoveryEncodingBound(empty));
+    const unsafeLength = 512 * 1024 - bound - 10;
+    expect(() => store.updateRun(runId, { model: 'x'.repeat(unsafeLength) })).toThrow(expect.objectContaining({ code: 'RUN_STORAGE_LIMIT' }));
+    expect(store.readRun(runId)!.model).toBeUndefined();
+    expect(store.readRun(runId)!.harnessExecution!.evidence!.calls['read-once']!.resultDigest).toBeUndefined();
+    store.updateRun(runId, { model: 'x'.repeat(unsafeLength - 256) });
+    recorder.recordToolEvidenceCall!(runId, 'read-once');
+    recorder.recordToolEvidenceResult!(runId, 'read-once', { ok: true });
+    const settled = store.readRun(runId)!;
+    expect(settled.harnessExecution!.evidence!.calls['read-once']!.resultDigest).toMatch(/^[a-f0-9]{64}$/);
+    expect(Buffer.byteLength(JSON.stringify(settled, null, 2))).toBeLessThanOrEqual(512 * 1024);
+    expect(failedRunRecoveryEncodingBound(settled)).toBeLessThanOrEqual(512 * 1024);
+  });
+
 });

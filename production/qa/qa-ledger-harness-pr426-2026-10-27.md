@@ -1043,3 +1043,15 @@ fixture hook; any preparation assertion/hook timeout fails the suite. The test
 still performs one complete authorized repair, checks the resulting canonical
 state and all 4098 archived intents, with every fsync/readback/CAS intact. No
 retry, skip, worker, production deadline or memory limit was changed.
+
+
+A final independent capacity review found that a reserved result also needs its
+fixed 64-hex metadata digest, not just transcript bytes. A real reservation plus
+a legal 4096-byte summary reproduced an ordinary writer consuming that space;
+the pre-fix bound allowed it. The private bound now takes the maximum of both
+normal and failed-recovery encodings with hypothetical pending digest fields,
+retaining longer phase/reserved-byte text and never mutating or persisting the
+hypothesis. All writers preserve this headroom, including canonical/temporary
+peak growth. The result still persists only its actually observed digest.
+The recorder/capacity regression group passed 13 cases after the change; final
+candidate checks remain separate. This is part of finding 2's correctness scope.

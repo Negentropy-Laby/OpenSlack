@@ -18,7 +18,7 @@ import { waitForRunObservation } from './run-wait.js';
 import { parseDurableTranscriptLine, RUN_TRANSCRIPT_EVENT_MAX_BYTES } from './transcript-contract.js';
 import { assertHarnessAcceptanceReceipt } from './harness-task-contracts.js';
 import type { RuntimeRunUnavailableReason } from '@openslack/core/internal/runtime-contracts';
-import { failedRunRecoveryEncodingBound } from './run-recovery-state.js';
+import { runPublicationEncodingBound } from './run-recovery-state.js';
 
 export { RunStateSnapshotChangedError, RunStateInvalidError, RunPersistenceError } from './run-files.js';
 
@@ -268,7 +268,7 @@ export function createRunStore(root?: string, options: { sweepOrphans?: boolean 
       state.persistence = { schemaVersion: 2, creationId: randomUUID(), transactionId: owner.transactionId,
         metadataSha256, revision: 0, transcriptBytes: 0 };
       const stateBytes = Buffer.from(stableJson(state));
-      if (stateBytes.length > DEFAULT_RUN_SNAPSHOT_MAX_BYTES || failedRunRecoveryEncodingBound(state) > DEFAULT_RUN_SNAPSHOT_MAX_BYTES) {
+      if (stateBytes.length > DEFAULT_RUN_SNAPSHOT_MAX_BYTES || runPublicationEncodingBound(state) > DEFAULT_RUN_SNAPSHOT_MAX_BYTES) {
         throw new RunPersistenceError('RUN_STORAGE_LIMIT', 'Reserve snapshot recovery capacity before publication.');
       }
       decodeRunState(stateBytes, runId);
@@ -332,7 +332,8 @@ export function createRunStore(root?: string, options: { sweepOrphans?: boolean 
       }
       scanned(updated, 'Run state update');
       const stateBytes = Buffer.from(stableJson(updated));
-      if (stateBytes.length > DEFAULT_RUN_SNAPSHOT_MAX_BYTES || failedRunRecoveryEncodingBound(updated) > DEFAULT_RUN_SNAPSHOT_MAX_BYTES) {
+      const snapshotBound = runPublicationEncodingBound(updated);
+      if (stateBytes.length > DEFAULT_RUN_SNAPSHOT_MAX_BYTES || snapshotBound > DEFAULT_RUN_SNAPSHOT_MAX_BYTES) {
         throw new RunPersistenceError('RUN_STORAGE_LIMIT', 'Reserve snapshot recovery capacity before publication.');
       }
       decodeRunState(stateBytes, runId);
@@ -352,6 +353,7 @@ export function createRunStore(root?: string, options: { sweepOrphans?: boolean 
       owner.reserveCapacity({ [stateFile]: stateBytes.length, 'run.json': stateBytes.length, 'transcript.jsonl': length,
         ...(acceptance ? { 'acceptance.json': acceptance.bytes.length } : {}) },
         { finalization, reservedBytes: (evidence?.reservedBytes ?? 0) + pending * 3 * RUN_INTENT_MAX_BYTES +
+          (pending ? 2 * Math.max(0, snapshotBound - stateBytes.length) : 0) +
           (acceptancePending ? RUN_TRANSCRIPT_EVENT_MAX_BYTES + 2 * DEFAULT_RUN_SNAPSHOT_MAX_BYTES + RUN_INTENT_MAX_BYTES : 0) });
       checkPublication();
       owner.publishIntent({ creationId: current.persistence?.creationId, base: { stateSha256: baseSha256, transactionId: current.persistence?.transactionId ?? null,
