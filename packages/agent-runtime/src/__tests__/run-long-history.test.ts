@@ -26,7 +26,13 @@ describe('38-02: recoverability beyond the old member limit', () => {
   // the normal bounded hook. Hook failures fail the suite. The actual repair
   // keeps its original 20-second test bound, fsync and complete archive checks.
   beforeAll(() => {
-    root = fs.mkdtempSync(join(tmpdir(), 'long-run-repair-'));
+    // This is a membership/process-crash proof, not a power-loss or filesystem
+    // latency benchmark. Keep real fsync calls and every independent readback;
+    // Linux can use an owned tmpfs fixture to avoid thousands of host disk flush
+    // latencies consuming the unchanged test deadline. Other suites retain the
+    // caller's normal temporary directory and its path trust checks.
+    const temporaryRoot = process.platform === 'linux' && fs.existsSync('/dev/shm') ? '/dev/shm' : tmpdir();
+    root = fs.mkdtempSync(join(temporaryRoot, 'long-run-repair-'));
     const runId = 'RUN-LONG-INTENT-HISTORY';
     const store = createRunStore(root, { sweepOrphans: false });
     let state = store.createRun(request(runId));

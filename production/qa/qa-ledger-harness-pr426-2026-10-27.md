@@ -1055,3 +1055,34 @@ hypothesis. All writers preserve this headroom, including canonical/temporary
 peak growth. The result still persists only its actually observed digest.
 The recorder/capacity regression group passed 13 cases after the change; final
 candidate checks remain separate. This is part of finding 2's correctness scope.
+
+
+### Review-38 final fixture contract correction (2026-11-01)
+
+Frozen `44765d91` is retained with its failed validation receipts: the first
+ext4 affected run passed 1,083 cases and timed out one real 4,098-intent archive
+at its existing 20-second bound. The same archive passed alone. Direct profiling
+measured 4,105 fsync calls consuming approximately 10.8 of 13.5 seconds. A bounded
+archive batching experiment preserved all fsyncs and readbacks but did not improve
+this host cost; it was discarded, and is not in the candidate.
+
+A complete run using a global tmpfs temporary directory passed 8,820 cases but
+failed two assertions. One legacy synchronous reservation fixture incorrectly
+expected the former lock wait instead of immediate `RUN_STATE_BUSY`. It now
+asserts busy while the independent writer still owns the lock, then waits for its
+actual exit and independently proves that the expired lease cannot reserve tool
+evidence. The unchanged native-effect and empty-evidence assertions remain.
+The other failure was the administrator backup tool correctly rejecting the
+non-whitelisted `/dev/shm` ancestor before the fixture's intended history check.
+No administrator tool or its security assertion is changed.
+
+Only the large membership/process-crash fixture uses a private Linux tmpfs
+location when available; the rest of the complete suite again uses its normal
+temporary directory. Every real fsync, source CAS, independent archive readback,
+intent count and original test deadline remains. This test proves process-crash
+recoverability and bounded membership, not power-loss durability or a disk
+latency guarantee. Native Windows continues to use its normal temporary volume.
+The corrected synchronous-reservation and actual long-history cases passed
+(2 selected cases, 34 unrelated cases filtered). Final complete candidate and
+platform acceptance remains pending; these retained failures are not relabeled
+as passes.

@@ -413,6 +413,7 @@ async function claimedLeaseBoundaryFixture() {
     expect(existsSync(join(root, '.openslack.local/agents/runs', targetRunId, 'run.transaction.lock'))).toBe(true);
   };
   return { root, runId, task, authority, store, recorder, context, leaseReads, hold, holdSynchronously, release,
+    waitForWriter: () => bounded(closed, 10_000),
     setLeaseHook(hook: () => Promise<void>) { onLease = hook; leaseReads.mockClear(); },
     revokeSourceWriteScope() { definition.scope.writePaths = []; },
     ownHost(host: HarnessTaskHost) { ownedHosts.push(host); return host; },
@@ -1585,12 +1586,15 @@ describe('production agent-bound governed mutation composition', () => {
     });
   }, 30_000); // Bounded OS preparation + assertions + confirmed test teardown.
 
-  it('rejects an expired required lease inside the native evidence reservation transaction after waiting for its writer', async () => {
+  it('refuses synchronous native reservation contention and rechecks the expired lease after its writer closes', async () => {
     await withClaimedLeaseBoundaryFixture(async value => {
       const eligibility = await value.authority.authorizeTool(value.context, 'Write', { file_path: join(value.context.worktreePath!, 'fixture.txt') });
-      await value.hold(); value.release();
+      await value.hold();
       const reservation = { callId: 'lease-native', toolName: 'Write', input: { file_path: 'fixture.txt', content: 'after' },
         targetPath: join(value.context.worktreePath!, 'fixture.txt'), generation: 'fixture-owner', maxResultBytes: 2048 };
+      expect(() => value.recorder.reserveToolEvidence!(value.runId, reservation, eligibility)).toThrow(expect.objectContaining({ code: 'RUN_STATE_BUSY' }));
+      expect(readFileSync(join(value.context.worktreePath!, 'fixture.txt'), 'utf8')).toBe('before');
+      value.release(); await value.waitForWriter();
       expect(() => value.recorder.reserveToolEvidence!(value.runId, reservation, eligibility)).toThrow(/lease|eligibility/i);
       expect(value.store.getRun(value.runId)?.harnessExecution?.evidence?.calls).toEqual({});
       expect(readFileSync(join(value.context.worktreePath!, 'fixture.txt'), 'utf8')).toBe('before');
