@@ -208,10 +208,34 @@ describe('Harness bridge ownership', () => {
     expect(outcome.error).toMatchObject({ kind: kind === 'cancel' ? 'unknown' : 'timeout' });
   });
 
-  it('rejects frames from a different run', async () => {
-    const { adapter, context } = setup(prefix + `reply({ ...frame, correlationId: 'other' }, 'complete', { data: {} });` + suffix);
-    await expect(adapter.execute(context)).rejects.toThrow('another run');
-    expect(adapter.processExitReceipt).toEqual({ code: 0, signal: null });
+  it.each([false, true])('rejects frames from a different run with held-open peer=%s', async holdOpen => {
+    const source = prefix + `reply({ ...frame, correlationId: 'other' }, 'complete', { data: {} });${holdOpen ? 'setInterval(() => {}, 1_000);' : ''}` + suffix;
+    const { root, adapter, context } = setup(source);
+    const observation = observePeer(root, source);
+    const progress = vi.spyOn(context.recorder, 'progress');
+    const startedAt = performance.now();
+    const task = adapter.execute(context).then(value => ({ value, error: undefined }), (error: unknown) => ({ value: undefined, error }));
+    await observation.verify(task, async () => {
+      const outcome = await task;
+      expect(outcome.value).toBeUndefined();
+      expect(outcome.error).toBeInstanceOf(BridgeAdapterError);
+      if (!(outcome.error instanceof BridgeAdapterError)) throw new Error('Expected a typed protocol refusal.');
+      expect(outcome.error.kind).toBe('envelope_malformed');
+      expect(outcome.error.message).toContain('another run');
+      expect(observation.constructions).toBe(1);
+      expect(observation.matches).toBe(1);
+      const receiptAtReturn = adapter.processExitReceipt;
+      await assertRefusedChild(observation, adapter, outcome.error, 0, startedAt);
+      const state = createRunStore(root).readRun(context.runId);
+      expect(state).not.toBeNull();
+      expect(state!.toolCalls).toBe(0);
+      expect(state!.status).not.toBe('completed');
+      expect(progress.mock.calls.some(([, data]) => data.step === 'bridge_session_failed' && data.errorKind === 'envelope_malformed')).toBe(true);
+      expect(progress.mock.calls.some(([, data]) => data.step === 'bridge_session_completed')).toBe(false);
+      if (receiptAtReturn && (receiptAtReturn.code !== 0 || receiptAtReturn.signal !== null)) {
+        expect(outcome.error.shutdownEvidence).toEqual({ exit: receiptAtReturn, clean: false });
+      }
+    });
   });
 
   it('retains an explicit null data value and refuses a missing data field', async () => {

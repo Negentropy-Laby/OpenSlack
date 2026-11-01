@@ -806,3 +806,50 @@ using unchanged default workers, timeouts and assertions. These later passes
 do not erase the failed logs or establish an unsampled historical root cause.
 No hosted PASS, frozen package qualification, live model result, approval or
 merge is inferred from this working-source evidence.
+
+
+### Frozen fc7d1b39 full-run counterexamples and protocol-refusal oracle
+
+The clean frozen `fc7d1b39` run retained 8,767 PASS / 5 FAIL / 25 SKIP across
+590 files, exit 1. Four cases exceeded their unchanged 30s/5s/5s/90s bounds:
+notification order-decision history, cleanup fixture setting confirmation,
+Workflow shadow-hook inventory and the runtime-delivery verifier profile.
+Native formal compilation overlapped the early portion of this run. The logs
+do not establish a shared root cause. All four unmodified suites subsequently
+passed 104/104 in an isolated control without parallel compilation, retaining
+all history, durability, post-confirmation revalidation, verifier branches and
+absolute deadlines. This control does not turn the original full run green.
+
+The fifth case exposed a confirmed test-oracle error: after rejecting a foreign
+run frame, it required process exit code 0. Production bounded cleanup may
+legitimately terminate that same peer. A controlled peer kept alive after the
+foreign frame deterministically failed the old assertion (one FAIL, one PASS).
+The corrected natural/held-open pair observes the exact real child, preserves
+`envelope_malformed` and the original another-run reason, and checks zero tool
+calls, no successful result or completion progress, and no completed state.
+It compares a known returned receipt with the owned child's actual close.
+An unknown returned receipt stays null/unconfirmed after separately observing
+late close; teardown cannot supply the observation used to pass the assertions.
+No production logic, exit grace, timeout, worker count or protocol rule changes.
+The full affected Bridge suite passed three consecutive Linux runs, 45/45 each.
+
+An intervening nine-file working run retained one legacy UTF-8 case that reached
+its original 2s execution cutoff before the expected malformed-envelope result
+(224 PASS / 1 FAIL). It was not accepted as protocol coverage, and its deadline
+was not relaxed. A new frozen full run is required; earlier full failures and
+unexplained timing observations remain separate evidence.
+
+The same 45-case suite subsequently passed three consecutive native Windows
+runs with an exact source/baseline input record written before execution.
+The full production collector measured 8,798 declarations in 590 files after
+the additional held-open case; generated module/status projections accompany
+this test-only change. Source-lock membership and all 32 manifest bytes remain
+unchanged. Read-only review found no blocker in the owned-child oracle, actual
+failure/completion progress assertions, or unknown-at-return handling. This is
+not an approval decision or final whole-suite qualification.
+
+The copied native driver incorrectly labeled `productionChanged: true` in its
+working receipts. A separate metadata correction binds the retained originals
+by SHA256 and identifies comparison to `fc7d1b39` as test-only (plus count/docs
+projections); no production logic changed in this oracle follow-up. The original
+receipts and raw three-run outcomes are preserved, not silently rewritten.
