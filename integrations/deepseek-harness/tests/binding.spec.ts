@@ -24,7 +24,7 @@ describe('portable stable worker binding bytes', () => {
     const { root, path } = fixture();
     const alias = join(root, 'linked-directory');
     symlinkSync(root, alias, process.platform === 'win32' ? 'junction' : 'dir');
-    expect(() => readBinding(join(alias, 'binding.json'))).toThrow('directory link');
+    expect(() => readBinding(join(alias, 'binding.json'))).toThrow('Invalid task binding');
     expect(readBinding(path)).toMatchObject({ runId: 'RUN-TEST' });
   });
   it('rejects a multiply-linked descriptor even when JSON bytes are valid', () => {

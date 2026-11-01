@@ -1,7 +1,7 @@
 /** Observe actual SDK-owned processes through Node's public, version-pinned channel; never patch spawn or SDK internals. */
 import { ChildProcess } from 'node:child_process'
 import { channel } from 'node:diagnostics_channel'
-import { resolve } from 'node:path'
+import { resolvedPathsEqual as samePath } from '@openslack/core/internal/runtime-contracts'
 
 export const REQUIRED_NODE_VERSION = '24.18.1'
 export interface ProcessExitReceipt {
@@ -17,10 +17,6 @@ export interface SdkShutdownReceipt extends ProcessExitReceipt {
 
 export function requireSupportedNode(): void {
   if (process.versions.node !== REQUIRED_NODE_VERSION) throw new Error('OpenSlack requires the qualified Node 24.18.1 runtime')
-}
-
-function samePath(a: string, b: string): boolean {
-  return process.platform === 'win32' ? resolve(a).toLowerCase() === resolve(b).toLowerCase() : resolve(a) === resolve(b)
 }
 
 /** One exact command/argv capture. The callback records facts without throwing or logging the ChildProcess/environment. */

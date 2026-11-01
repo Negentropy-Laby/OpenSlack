@@ -29,38 +29,50 @@ export function testTemporaryDirectory(prefix, parent = tmpdir()) {
 }
 
 /** Reserve an OS namespace atomically; never delete a pre-existing drive alias. */
-export function testWindowsDriveAlias(root) {
-  if (process.platform !== 'win32' || !process.env.SystemRoot) throw new Error('TEST_DRIVE_ALIAS_WINDOWS_REQUIRED');
-  root = realpathSync.native(root);
-  const expected = statSync(root, { bigint: true });
+export function testWindowsDriveAlias(root, ports = {}) {
+  const platform = ports.platform ?? process.platform, systemRoot = ports.systemRoot ?? process.env.SystemRoot;
+  const stat = ports.stat ?? statSync, canonical = ports.canonical ?? realpathSync.native, spawn = ports.spawn ?? spawnSync;
+  if (platform !== 'win32' || !systemRoot) throw new Error('TEST_DRIVE_ALIAS_WINDOWS_REQUIRED');
+  root = canonical(root);
+  const expected = stat(root, { bigint: true });
   const same = value => value.isDirectory() && value.dev === expected.dev && value.ino === expected.ino;
-  const verifyRoot = () => { if (!same(statSync(root, { bigint: true }))) throw new Error('TEST_DRIVE_ALIAS_ROOT_CHANGED'); };
-  const subst = join(process.env.SystemRoot, 'System32', 'subst.exe');
+  const verifyRoot = () => { if (!same(stat(root, { bigint: true }))) throw new Error('TEST_DRIVE_ALIAS_ROOT_CHANGED'); };
+  const subst = join(systemRoot, 'System32', 'subst.exe');
   const invoke = args => {
-    const result = spawnSync(subst, args, { encoding: 'utf8', timeout: 10_000, windowsHide: true });
+    const result = spawn(subst, args, { encoding: 'utf8', timeout: 10_000, windowsHide: true });
     if (result.error || result.signal || result.status === null) throw new Error('TEST_DRIVE_ALIAS_OPERATION_UNCONFIRMED');
-    return result.status;
+    return result;
   };
-  const mapsToRoot = drive => {
-    try { return same(statSync(`${drive}\\`, { bigint: true })); }
-    catch (error) { if (error.code === 'ENOENT' || error.code === 'ENOTDIR') return false; throw error; }
+  // Query local DOS mappings only. Never stat a pre-existing drive or follow a
+  // network target to decide ownership. A refused allocation is never cleaned.
+  const ownsMapping = drive => {
+    const result = invoke([]);
+    if (result.status !== 0) throw new Error('TEST_DRIVE_ALIAS_MAPPING_UNCONFIRMED');
+    const mappings = String(result.stdout ?? '').split(/\r?\n/).map(line => line.match(/^([A-Z]:)\\:\s*=>\s*(.+)$/i))
+      .filter(match => match && match[1].toUpperCase() === drive);
+    if (mappings.length !== 1) return false;
+    return mappings[0][2].toLowerCase() === root.toLowerCase();
   };
   for (const letter of 'ZYXWVUTSRQPONMLKJIHGFE') {
     verifyRoot();
-    const drive = `${letter}:`, status = invoke([drive, root]);
-    // Do not inspect a pre-existing drive (which could be a network share).
-    // A definitive refusal selects a different resource, not a test retry.
-    if (status !== 0) continue;
-    verifyRoot();
-    if (!mapsToRoot(drive)) throw new Error('TEST_DRIVE_ALIAS_IDENTITY_CHANGED');
+    const drive = `${letter}:`, result = invoke([drive, root]);
+    if (result.status !== 0) continue;
     let disposed = false;
-    return Object.freeze({ drive, dispose() {
+    const dispose = () => {
       if (disposed) return;
-      verifyRoot();
-      if (!mapsToRoot(drive)) throw new Error('TEST_DRIVE_ALIAS_IDENTITY_CHANGED');
-      if (invoke([drive, '/D']) !== 0 || mapsToRoot(drive)) throw new Error('TEST_DRIVE_ALIAS_OPERATION_UNCONFIRMED');
+      if (!ownsMapping(drive)) throw new Error(`TEST_DRIVE_ALIAS_IDENTITY_CHANGED:${drive}`);
+      if (invoke([drive, '/D']).status !== 0 || ownsMapping(drive)) throw new Error(`TEST_DRIVE_ALIAS_OPERATION_UNCONFIRMED:${drive}`);
       disposed = true;
-    } });
+    };
+    try {
+      verifyRoot();
+      if (!same(stat(`${drive}\\`, { bigint: true }))) throw new Error('TEST_DRIVE_ALIAS_IDENTITY_CHANGED');
+      return Object.freeze({ drive, dispose });
+    } catch (primary) {
+      try { dispose(); }
+      catch (cleanup) { throw new AggregateError([primary, cleanup], `TEST_DRIVE_ALIAS_CLEANUP_UNCONFIRMED:${drive}`, { cause: primary }); }
+      throw primary;
+    }
   }
   throw new Error('TEST_DRIVE_ALIAS_ALLOCATION_FAILED');
 }

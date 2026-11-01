@@ -367,6 +367,30 @@ CAS/archival uncertainty stays isolated; resources/descendants remain unknown.
 Recovery never creates execution eligibility or claims an unknown success.
 This repair batch exercises only synthetic fixture data, not real old runs.
 
+The storage owner and maintenance reader share a **96 MiB charged budget**.
+Ordinary publication uses at most 94 MiB; each member costs at least 1 KiB,
+and reservations include temporary/canonical overlap and outstanding results.
+The remaining 2 MiB covers bounded terminal publication and authorized recovery.
+There is no independent 4096-member cutoff or automatic intent deletion.
+The 512 KiB snapshot and 64 MiB transcript read bounds remain fixed: before
+publication, the actual failed-recovery encoder must fit the snapshot bound,
+and ordinary appends leave a separate 64 KiB maintenance tail. Exhausted legacy
+evidence is reported as unavailable before a maintenance barrier is published.
+
+`acceptance.json` is bounded, task/run/request-bound archival evidence. Its
+publication shares the canonical transaction and reserves completion capacity;
+the file alone never proves completion. An exact local admission publication
+pair can locate its original run, including an uncreated run requiring
+reconciliation. It cannot grant a second admission or replay an uncertain task.
+
+Synchronous storage calls refuse contention immediately. Async host/recorder
+boundaries wait only before transaction acquisition and before any callback has
+begun, using a default one-second monotonic budget, cancellation and independent
+UTC restrictions. They never repeat touched publication or confirmation.
+Shared path/descriptor and eligibility-clock leaves provide mechanics and
+syntax; authorization remains with the existing host checks. A clock port does
+not correct real clock skew, extend a lease or add a wire TTL.
+
 ## Permission Profile Construction
 
 `buildPermissionProfile(resolvedConfig)`:

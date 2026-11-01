@@ -5,9 +5,7 @@ import type { SdkShutdownReceipt } from './process-observer.ts'
 import { isDeepStrictEqual } from 'node:util'
 import { assertEligibilityRestriction, readEligibilityRestriction, type HarnessEligibilityRestriction } from './scope-evidence.ts'
 import { BridgeWireEncoder, BridgeWireDecoder, validateBridgeWireEnvelope, BRIDGE_CHUNK_EXTENSION,
-  BRIDGE_MESSAGE_MAX_BYTES, SDK_TOOL_CALL_ID_RE, HARNESS_CALLBACK_TOOLS } from '@openslack/agent-runtime/internal/bridge-wire'
-
-const version = '2025-06-03'
+  BRIDGE_MESSAGE_MAX_BYTES, SDK_TOOL_CALL_ID_RE, HARNESS_CALLBACK_TOOLS, BRIDGE_WIRE_VERSION as version } from '@openslack/agent-runtime/internal/bridge-wire'
 
 /** Failure codes do not include upstream text that could contain bearer credentials. */
 export class PeerFailure extends Error {

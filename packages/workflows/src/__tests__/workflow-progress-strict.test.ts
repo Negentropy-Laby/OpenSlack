@@ -213,6 +213,23 @@ describe('strict workflow progress evidence', () => {
     expect(readFileSync(lockPath, 'utf8')).toBe('retained unknown writer');
   });
 
+  it('waits asynchronously for a short writer transaction before projecting its current snapshot', async () => {
+    const { root, runDir } = fixtureRoot();
+    writeValidAgentResult(runDir);
+    const agentDir = writeValidAgentRun(root), lock = join(agentDir, 'run.transaction.lock');
+    writeFileSync(lock, 'isolated short-lived writer');
+    let released = false;
+    const timer = setTimeout(() => { rmSync(lock); released = true; }, 15);
+    try {
+      const progress = await getWorkflowRunProgress(WORKFLOW_RUN_ID, {
+        rootDir: root, loadWorkflowManifest: false, loadCostConfig: false, strictRead: true,
+      });
+      expect(released).toBe(true);
+      expect(progress?.agentCount).toBe(1);
+      expect(JSON.stringify(progress)).not.toContain('WORKFLOW_RUN_EVIDENCE_RECONCILIATION_REQUIRED');
+    } finally { clearTimeout(timer); }
+  });
+
   it('accepts persisted negative over-budget tokensRemaining values', async () => {
     const overBudget = fixtureRoot();
     writeValidAgentResult(overBudget.runDir);

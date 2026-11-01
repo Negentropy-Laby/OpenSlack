@@ -3,7 +3,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { FsTarget, FsVersion } from '@deepseek-ai/dsh-fs'
 import type { ToolDefinition, ToolRunContext } from '@deepseek-ai/dsh-tools'
 import { assertPreviewIntent, assertEligibilityRestriction, readEligibilityRestriction,
-  previewLiteralEdit, previewNativeEvidence, TEXT_LIMIT_BYTES } from '../src/scope-evidence.ts'
+  createEligibilityRestrictionReader, previewLiteralEdit, previewNativeEvidence, TEXT_LIMIT_BYTES } from '../src/scope-evidence.ts'
 
 const target = {} as FsTarget
 const exec = { signal: new AbortController().signal } as ToolRunContext
@@ -32,6 +32,19 @@ describe('native pre-effect evidence capacity', () => {
     const clock = vi.spyOn(Date, 'now').mockReturnValue(expiry)
     try { expect(() => assertEligibilityRestriction(live)).toThrow(/lease expired/) }
     finally { clock.mockRestore() }
+  })
+
+  it('uses one private clock sample per check without renewing or copying host authority', () => {
+    const now = vi.fn(() => 999), reader = createEligibilityRestrictionReader(now)
+    const restriction = reader.read({ mode: 'required', expiresAt: 1000 })
+    expect(now).toHaveBeenCalledOnce()
+    now.mockClear(); reader.assert(restriction)
+    expect(now).toHaveBeenCalledOnce()
+    now.mockReturnValue(1000)
+    expect(() => reader.assert(restriction)).toThrow('lease expired')
+    now.mockReturnValue(NaN)
+    expect(() => reader.read({ mode: 'not_applicable' })).toThrow('eligibility restriction')
+    expect(restriction).toEqual({ mode: 'required', expiresAt: 1000 })
   })
 
   it('counts replace-all expansion before allocating a prospective terabyte string', () => {

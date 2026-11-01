@@ -47,7 +47,7 @@ describe('external plugin build inputs', () => {
       mkdirSync(dirname(join(root, path)), { recursive: true });
       cpSync(join(packageRoot, path), join(root, path), { recursive: true });
     }
-    // Build the exact candidate's one pure leaf afresh, independently of ignored
+    // Build the exact candidate's reviewed pure leaves afresh, independently of ignored
     // repository dist or a copied node_modules tree.
     const ts: typeof TypeScript = createRequire(join(harnessRoot, 'package.json'))('typescript');
     const wireSource = join(root, '.build/wire-source/bridge-wire.ts');
@@ -56,15 +56,18 @@ describe('external plugin build inputs', () => {
     cpSync(join(packageRoot, '../../packages/agent-runtime/src/run-id.ts'), join(dirname(wireSource), 'run-id.ts'));
     const catalogSource = join(dirname(wireSource), 'harness-tool-catalog.ts');
     for (const name of ['harness-tool-catalog.ts', 'tool-catalog.ts']) cpSync(join(packageRoot, '../../packages/qoder-adapter/src', name), join(dirname(wireSource), name));
+    const coreLeaves = ['runtime-contracts', 'owned-file', 'stable-descriptor', 'strict-json'];
+    for (const name of coreLeaves) cpSync(join(packageRoot, '../../packages/core/src', `${name}.ts`), join(dirname(wireSource), `${name}.ts`));
     const wireOutput = join(root, '.build/wire-output');
-    const wireProgram = ts.createProgram([wireSource, catalogSource], { target: ts.ScriptTarget.ES2024,
+    const wireProgram = ts.createProgram([wireSource, catalogSource, ...coreLeaves.map(name => join(dirname(wireSource), `${name}.ts`))], { target: ts.ScriptTarget.ES2024,
       module: ts.ModuleKind.ESNext, moduleResolution: ts.ModuleResolutionKind.Bundler, strict: true,
       declaration: true, skipLibCheck: true, rootDir: dirname(wireSource), outDir: wireOutput,
       types: ['node'], typeRoots: [join(harnessRoot, 'node_modules/@types')] });
     expect(ts.getPreEmitDiagnostics(wireProgram).map(d => ts.flattenDiagnosticMessageText(d.messageText, '\n'))).toEqual([]);
     expect(wireProgram.emit().emitSkipped).toBe(false);
     const env = { ...testProcessEnvironment(), DEEPSEEK_HARNESS_CHECKOUT: harnessRoot,
-      OPENSLACK_BRIDGE_WIRE_MODULE: join(wireOutput, 'bridge-wire.js'), OPENSLACK_TOOL_CATALOG_MODULE: join(wireOutput, 'harness-tool-catalog.js') };
+      OPENSLACK_BRIDGE_WIRE_MODULE: join(wireOutput, 'bridge-wire.js'), OPENSLACK_TOOL_CATALOG_MODULE: join(wireOutput, 'harness-tool-catalog.js'),
+      OPENSLACK_CORE_LEAF_DIRECTORY: wireOutput };
     const built = spawnSync(testExecutable('bun', env), [join(root, 'build.mjs')], {
       cwd: root,
       env,
@@ -86,6 +89,7 @@ describe('external plugin build inputs', () => {
     expect(existsSync(join(root, 'dist/openslack-harness-supervisor.exe'))).toBe(true);
     for (const name of readdirSync(join(root, 'dist/types/src')).filter(name => name.endsWith('.d.ts'))) {
       expect(readFileSync(join(root, 'dist/types/src', name), 'utf8')).not.toContain('@openslack/agent-runtime');
+      expect(readFileSync(join(root, 'dist/types/src', name), 'utf8')).not.toContain('@openslack/core');
     }
     const normalize = (path: string) => resolve(path).replaceAll('\\', '/');
     const inputs = (directory: string): string[] =>

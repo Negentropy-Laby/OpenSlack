@@ -11,6 +11,7 @@ import type {} from '@deepseek-ai/dsh-mcp-client'
 import type {} from '@deepseek-ai/dsh-sdk-jsonrpc-server'
 import type { ToolDefinition, ToolRunContext } from '@deepseek-ai/dsh-tools'
 import { ConfirmationVault } from './confirmation-vault.ts'
+import { nativePathSpellingEqual } from '@openslack/core/internal/runtime-contracts'
 import { HARNESS_CALLBACK_TOOLS, BRIDGE_MESSAGE_MAX_BYTES, SDK_TOOL_CALL_ID_RE } from '@openslack/agent-runtime/internal/bridge-wire'
 import { previewNativeEvidence, assertPreviewIntent, readEligibilityRestriction, assertEligibilityRestriction } from './scope-evidence.ts'
 import type { NativeEvidencePreview, HarnessEligibilityRestriction } from './scope-evidence.ts'
@@ -65,9 +66,8 @@ function object(value: unknown): value is Record<string, unknown> {
 /** Install per-agent restrictions before queued work; unload removes both agent and plugin effects. */
 export function apply(ctx: Context, config: Config): void {
   const scope = structuredClone(config)
-  const sameNativePath = (a: string, b: string) => process.platform === 'win32' ? a.toLowerCase() === b.toLowerCase() : a === b
   if (!scope.taskId || !scope.runId || !scope.principalId || !scope.generation ||
-    !isAbsolute(scope.root) || lstatSync(scope.root).isSymbolicLink() || !sameNativePath(realpathSync(scope.root), resolve(scope.root)) ||
+    !isAbsolute(scope.root) || lstatSync(scope.root).isSymbolicLink() || !nativePathSpellingEqual(realpathSync(scope.root), resolve(scope.root)) ||
     !Number.isFinite(Date.parse(scope.expiresAt))) throw new Error('OpenSlack task scope is invalid')
   const expiresAt = Date.parse(scope.expiresAt)
   let closing = false

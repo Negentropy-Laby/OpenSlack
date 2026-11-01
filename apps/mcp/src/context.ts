@@ -405,6 +405,10 @@ function eventEvidence(event: CollaborationEvent): string {
   return `event:${event.id}`;
 }
 
+function eventWindowCutoff(sinceHours: number): number {
+  return sinceHours <= 0 ? Number.NEGATIVE_INFINITY : Date.now() - sinceHours * 60 * 60 * 1_000;
+}
+
 function eventsForWindow(rootDir: string, sinceHours: number): CollaborationEvent[] {
   const eventsPath = join(rootDir, '.openslack.local', 'collaboration', 'events.jsonl');
   const events = existsSync(eventsPath)
@@ -415,8 +419,7 @@ function eventsForWindow(rootDir: string, sinceHours: number): CollaborationEven
         accept: (event) => validateEvent(event).valid,
       })
     : [];
-  const cutoff =
-    sinceHours <= 0 ? Number.NEGATIVE_INFINITY : Date.now() - sinceHours * 60 * 60 * 1_000;
+  const cutoff = eventWindowCutoff(sinceHours);
   return events
     .filter((event) => new Date(event.timestamp).getTime() >= cutoff)
     .sort((left, right) => right.timestamp.localeCompare(left.timestamp));
@@ -1362,7 +1365,7 @@ export function createDefaultOpenSlackReadModelPorts(
       if (objectKind) filter.objectKind = objectKind as EventFilter['objectKind'];
       if (objectId) filter.objectId = objectId;
       const anchors = filterEvents(eventsForWindow(rootDir, 0), filter);
-      const cutoff = sinceHours <= 0 ? Number.NEGATIVE_INFINITY : Date.now() - sinceHours * 60 * 60 * 1000;
+      const cutoff = eventWindowCutoff(sinceHours);
       const events = anchors.filter(event => Date.parse(event.timestamp) >= cutoff).slice(0, limit);
       const execution = objectKind === 'workflow' && objectId
         ? readHarnessExecutionProjection(rootDir, objectId, anchors) : undefined;

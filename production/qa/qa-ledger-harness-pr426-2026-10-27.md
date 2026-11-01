@@ -941,3 +941,94 @@ production expiry and recovery semantics. It did not run tests or decide
 approval. Append the repair to the same Draft #426; current-head CI/whole-run
 acceptance must be evaluated again. Do not widen bounds, lower workers, add
 retries or suppressions, or use the old head's green checks as the new result.
+
+
+### 2026-11-01: 38-finding repair, source acceptance pending
+
+This is an additive repair of Draft #426 on its existing branch, beginning at
+`b526be6d`. The first storage/authorization fixes are in `49abdd82`; follow-up
+commits retain the same PR and public formats. Prior 51/R36/45 dispositions and
+all failed runs above remain history. No approval, merge, deployment, production
+repair or real-model qualification is established by this section.
+
+The maintainer explicitly delegated setup of this repair context. The existing
+active `anthropic_architect_aby` registry is unchanged; a new CLI runtime record
+uses no key and copies no previous identity. Task `TASK-2026-426038` records this
+human delegation and the actual path intersection, not a GitHub claim or lease.
+Neither the #425 identity nor the candidate business principal is substituted.
+New package references and the workspace lock change only declare the selected
+pure Core leaf dependency; no external dependency version is expanded.
+
+The retained baseline behavior failed all six correctness regressions. Further
+independent review identified two per-file recovery-headroom gaps and the real
+peer/worker recorder contention path; their behavioral RED results are retained.
+The shared recovery encoder now reserves actual snapshot expansion and a
+separate transcript maintenance tail before ordinary publication. Known legacy
+exhaustion is refused before barrier/archive publication. No evidence is trimmed.
+
+| Finding | Disposition and necessary boundary | Regression or retained proof |
+| --- | --- | --- |
+| 1 | Fixed: bounded acceptance is included in inspection, CAS and byte archive; never promotes completion. | `run-review38` crashes before completion and after terminal commit, then authorizes real archival. |
+| 2 | Fixed: one charged 96 MiB budget replaces the unrelated 4096-member cap; 94 MiB ordinary ceiling and recovery/terminal headroom. | `run-capacity`, `run-review38` >4096-chain actual crash/archive, `run-recovery-boundary` near-limit recovery. |
+| 3 | Fixed: exact local two-link publication pairs locate the original route without synchronous spin or automatic replay. | `harness-state-repair`, `harness-task-host`, `run-review38`; foreign links still refuse. |
+| 4 | Fixed: requested missing run is FAIL; CLI prints missing and exits nonzero. | `run-review38`, CLI `agent-runtime` production-result command test. |
+| 5 | Fixed: smoke required checks and aggregate status agree; only this invocation's run is read. | `run-review38`, `openai-compatible-diagnostics`. |
+| 6 | Fixed: synchronous busy is immediate; async boundaries wait only on unopened-lock refusal, never after callback/effect. | `run-ownership-lock`, `run-wait`, `recorder-availability`, actual peer + independent writer in `harness-bridge`. |
+| 7 | Guarded: rejected and verified acceptance both validate task/request/principal/owner inside the transaction. No prior reachable exploit is claimed. | Both replacement-generation negative cases in `harness-state-repair`. |
+| 8 | Fixed: invocation ownership precedes shared mutation; finally closes only its own session. | Real overlapping peer regression in `harness-bridge`, plus session-close/exit cases. |
+| 9 | Fixed: progress uses exported bounded async snapshot observation. Persistent locks remain strict reconciliation failures. | Short writer and retained-lock cases in `workflow-progress-strict`. |
+| 10 | Fixed: OpenAI smoke failure attribution uses host-owned identity, never a caller's raw runId. | Immutable foreign runId case in `openai-compatible-diagnostics`. |
+| 11 | Compatibility retained: the real wire decoder was already strict; no demonstrated peer break warrants changing the protocol version. | Existing Bridge envelope/wire acceptance and actual external-peer tests remain mandatory. |
+| 12 | Fixed: internal persistence cause survives; public error text remains bounded and excludes the cause. | `run-capacity` cause sentinel and existing retirement-error precedence tests. |
+| 13 | Simplified: remove only the extra initial accepted-byte check; retain both actual publication boundaries. | Two-call positive counter plus genuine final-CAS drift negative in `harness-state-repair`. |
+| 14 | Fixed with #5: smoke no longer enumerates unrelated history. | Unrelated retained-lock smoke regression. |
+| 15 | Simplified: 5/10/20/40/50 ms bounded async backoff, single monotonic budget and cancellation. | `run-wait` counts, delayed wake, absolute cutoff and cancellation. |
+| 16 | Shared: plugin uses the existing Bridge version authority. | Bridge contract and real peer tests; no wire version change. |
+| 17 | Shared: `isCode` handles missing/error classification at the affected owned paths. | Deployment/runtime-closure/stop negative cases. |
+| 18 | Shared: strict repair consumes the same transcript parser, with additional durable timestamp/newline/secret rules. | Transcript, repair and >8 MiB full-evidence tests. |
+| 19 | Shared: canonical run directory helpers own layout. | Store, ownership and repair round trips and missing observations. |
+| 20 | Shared: owned JSON uses strict UTF-8/duplicate-key/depth decoding; third-party package.json compatibility is retained deliberately. | Duplicate-key snapshot plus existing deployment/closure parsing negatives. |
+| 21 | Simplified: remove private stop/report/source delegates without deleting public APIs. | Host, report and source-drift suites. |
+| 22 | Simplified: calculate policy once in the prerequisite boundary and reuse it; reject diagnostics remain. | Launcher and provider-registry suites. |
+| 23 | Shared: activity and display window use one cutoff function; visibility anchors remain independent. | MCP context/activity visibility and old-active-run cases. |
+| 24 | Shared: capture one execution row and consume the frozen unavailable-reason authority. | MCP projection/result-schema and runtime observation suites. |
+| 25 | Shared: lexical anti-alias and resolved-path equality remain distinct functions. | Explicit Windows/POSIX path matrix; native alias/observer cases. |
+| 26 | Shared: MCP, Qoder and plugin consume the same confirmation grammar through a pure leaf. | Core grammar bounds, Qoder result schema and plugin confirmation cases. |
+| 27 | Internal clock port added; default remains real UTC. No claim to fix clock skew or renew authority. | Independent host/peer clocks at expiry and invalid-clock boundaries. |
+| 28 | Finite-clock denial retained in shared logic; no unreachable-production or clock-safety claim. | Single-sample clock counters and malformed-clock negatives. |
+| 29 | Named pending confirmation limit remains exactly 128 and independent of evidence limits. | Core fixed-value assertion and Vault capacity/expiry cases. |
+| 30 | Simplified: observation uses the strict capture once and preserves explicit missing/locked/unsafe outcomes. | Store and R36 observation tests. |
+| 31 | Safety boundary retained: fresh deployment bytes are rehashed independently across prepare/execute/accept. Only owned same-stage data is reused. | Phase-local observation counters and execute/accept drift negatives. |
+| 32 | Simplified: callback-time freshness compares captured byte digests; fresh state and metadata reads remain. | Both callback-time drift cases in `run-capacity`; R36 independent-writer tests. |
+| 33 | Corrected attribution: one PowerShell already queries PID and OS. Keep independent probes across barrier/CAS; no ineffective merge. | Process-witness and real maintenance crash cases; native proof still required. |
+| 34 | Shared: wait defaults/cutoffs are derived once; caller cancellation and independent UTC bounds remain. | `run-wait`, task authority and host contention/cutoff cases. |
+| 35 | Shared: startup and host use reviewed bounded descriptor mechanics with nanosecond identity; purpose policy stays local. | Core owned-file failure/close cases, plugin binding negatives and packed relocation. |
+| 36 | Shared: host/peer eligibility restriction type, shape and expiry; trusted clocks are in-process only. | Host startup eligibility and peer scope-evidence matrices. |
+| 37 | Fixed: register SUBST ownership immediately; post-allocation failures release only a still-matching local mapping. | Four portable failure/ownership cases and required actual Windows alias fixtures. |
+| 38 | Governance gate, not code defect: keep Draft and require independent review, current CI/PRMS and later human/CODEOWNER approval. | Live #426 metadata; bot never approves or converts Ready in this task. |
+
+Working evidence is retained outside the repository in
+`/var/tmp/openslack-pr426-review38-20261101-88tleiux`. It is local source-bound
+evidence, not an uploaded CI artifact. The first expanded runs exposed missing
+plugin test aliases and legacy fixtures expecting synchronous contention waits;
+both were corrected to the production async pre-acquisition boundary. All
+original at-most-once, durable acknowledgement and rejection assertions remain.
+A new 64 MiB archive assertion initially used deep object equality, exhausting a
+Vitest worker heap; exact Buffer byte comparison replaces that assertion without
+changing limits or reducing byte coverage. The failed run remains recorded.
+The >4096-file archive initially hit its 20-second bound under load. File fsync,
+full readback and source CAS stay mandatory; same-stage duplicate copies and
+hashes were removed. No timeout, worker, retry, skip or memory setting was raised.
+
+Final three-run, whole-platform, Node22, package, generated-count/lock, hosted CI
+and independent-review acceptance must be recorded for the resulting source.
+This section does not use the b526 green results to prove new bytes.
+
+
+The new asynchronous recorder boundary also has a controlled RED for the host
+cutoff immediately after durable authorization-attempt recording. The scripted
+peer initially performed its marker effect despite the host subsequently
+reporting timeout. The repaired host rechecks immediately before an allowed
+response and again when those captured bytes leave the outbound queue; the
+full 22-case eligibility file then passed with zero marker effect in that case.
+No new wire field, permission, TTL, retry or completion-grace extension is used.

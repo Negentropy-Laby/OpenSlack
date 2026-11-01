@@ -8,17 +8,22 @@ const harnessRoot = process.env.DEEPSEEK_HARNESS_CHECKOUT;
 if (!harnessRoot) throw new Error('Set DEEPSEEK_HARNESS_CHECKOUT to the built, unmodified dependency');
 const manifest = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
 const aliases = publicAliases(resolve(harnessRoot), true);
-// Bundle only the pure shared wire leaf. No Agent Runtime state/identity module
-// or second Harness runtime is imported into the external plugin.
+// Bundle only the explicitly reviewed wire, syntax and descriptor leaves. No
+// host authorization/state module or second Harness runtime enters the plugin.
 const wireModule = process.env.OPENSLACK_BRIDGE_WIRE_MODULE ?? join(root, '../../packages/agent-runtime/dist/bridge-wire.js');
 if (!isAbsolute(wireModule) || !wireModule.endsWith('bridge-wire.js')) throw new Error('The pure shared Bridge leaf must use its exact built public subpath');
 const wireTypes = wireModule.replace(/\.js$/, '.d.ts');
 const catalogModule = process.env.OPENSLACK_TOOL_CATALOG_MODULE ?? join(root, '../../packages/qoder-adapter/dist/harness-tool-catalog.js');
 if (!isAbsolute(catalogModule) || !catalogModule.endsWith('harness-tool-catalog.js')) throw new Error('The reviewed catalog must use its exact built pure subpath');
 const catalogTypes = catalogModule.replace(/\.js$/, '.d.ts');
+const coreLeafDirectory = process.env.OPENSLACK_CORE_LEAF_DIRECTORY ?? join(root, '../../packages/core/dist');
+if (!isAbsolute(coreLeafDirectory)) throw new Error('Reviewed Core leaves require an absolute built directory');
 const pureModules = {
   '@openslack/agent-runtime/internal/bridge-wire': wireModule,
   '@openslack/qoder-adapter/internal/harness-tool-catalog': catalogModule,
+  '@openslack/core/internal/runtime-contracts': join(coreLeafDirectory, 'runtime-contracts.js'),
+  '@openslack/core/internal/owned-file': join(coreLeafDirectory, 'owned-file.js'),
+  '@openslack/core/internal/strict-json': join(coreLeafDirectory, 'strict-json.js'),
 };
 for (const [name, path] of Object.entries(pureModules)) aliases[name] = path.replace(/\.js$/, '.d.ts');
 mkdirSync(join(root, '.build'), { recursive: true });
@@ -39,15 +44,22 @@ copyFileSync(wireTypes, join(typesDirectory, 'bridge-wire.d.ts'));
 copyFileSync(join(wireModule, '../run-id.d.ts'), join(typesDirectory, 'run-id.d.ts'));
 copyFileSync(catalogTypes, join(typesDirectory, 'harness-tool-catalog.d.ts'));
 copyFileSync(join(catalogModule, '../tool-catalog.d.ts'), join(typesDirectory, 'tool-catalog.d.ts'));
+for (const name of ['runtime-contracts', 'owned-file', 'strict-json']) {
+  copyFileSync(join(coreLeafDirectory, `${name}.d.ts`), join(typesDirectory, `${name}.d.ts`));
+}
 for (const name of readdirSync(typesDirectory).filter(name => name.endsWith('.d.ts'))) {
   const path = join(typesDirectory, name);
   writeFileSync(path, readFileSync(path, 'utf8').replaceAll('@openslack/agent-runtime/internal/bridge-wire', './bridge-wire.js')
-    .replaceAll('@openslack/qoder-adapter/internal/harness-tool-catalog', './harness-tool-catalog.js'));
+    .replaceAll('@openslack/qoder-adapter/internal/harness-tool-catalog', './harness-tool-catalog.js')
+    .replaceAll('@openslack/core/internal/runtime-contracts', './runtime-contracts.js')
+    .replaceAll('@openslack/core/internal/owned-file', './owned-file.js')
+    .replaceAll('@openslack/core/internal/strict-json', './strict-json.js'));
 }
 const external = Object.keys(manifest.peerDependencies);
 const wirePlugin = { name: 'openslack-pure-bridge-wire', setup(builder) {
   builder.onResolve({ filter: /^@openslack\/agent-runtime\/internal\/bridge-wire$/ }, () => ({ path: wireModule }));
   builder.onResolve({ filter: /^@openslack\/qoder-adapter\/internal\/harness-tool-catalog$/ }, () => ({ path: catalogModule }));
+  builder.onResolve({ filter: /^@openslack\/core\/internal\/(runtime-contracts|owned-file|strict-json)$/ }, args => ({ path: pureModules[args.path] }));
 } };
 const built = await Bun.build({
   entrypoints: ['index', 'initiator', 'readonly', 'sdk-host', 'startup', 'runtime', 'owned-sdk'].map(name => join(root, `src/${name}.ts`)),

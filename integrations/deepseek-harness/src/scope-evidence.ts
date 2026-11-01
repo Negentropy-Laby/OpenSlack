@@ -3,33 +3,39 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { FsTarget, FsVersion } from '@deepseek-ai/dsh-fs'
 import type { ToolDefinition, ToolRunContext } from '@deepseek-ai/dsh-tools'
 import { BRIDGE_MESSAGE_MAX_BYTES } from '@openslack/agent-runtime/internal/bridge-wire'
+import { readExecutionEligibilityRestriction, assertExecutionEligibilityCurrent, systemUtcNow,
+  type ExecutionEligibilityRestriction } from '@openslack/core/internal/runtime-contracts'
 
 export const TEXT_LIMIT_BYTES = 1024 * 1024
 const RESULT_MARGIN_BYTES = 64 * 1024
 export interface NativeEvidencePreview { version?: FsVersion; targetPath: string; maxResultBytes: number }
 /** Host-supplied denial constraint, not a task grant or a model-selectable claim mode. */
-export type HarnessEligibilityRestriction = Readonly<{ mode: 'required'; expiresAt: number } | { mode: 'not_applicable' }>
+export type HarnessEligibilityRestriction = ExecutionEligibilityRestriction
 
-const parsedRestrictions = new WeakSet<object>()
-function ownRestriction<T extends HarnessEligibilityRestriction>(value: T): T {
-  Object.freeze(value); parsedRestrictions.add(value); return value
+/** The clock is a trusted in-process port, never model input or wire TTL. */
+export function createEligibilityRestrictionReader(now: () => number = systemUtcNow) {
+  const parsedRestrictions = new WeakSet<object>()
+  return Object.freeze({
+    read(value: unknown): HarnessEligibilityRestriction {
+      const restriction = readExecutionEligibilityRestriction(value, now())
+      parsedRestrictions.add(restriction)
+      return restriction
+    },
+    assert(value: HarnessEligibilityRestriction): void {
+      if (!parsedRestrictions.has(value)) { this.read(value); return }
+      try { assertExecutionEligibilityCurrent(value, now()) }
+      catch { throw new Error('Harness task lease expired or its live clock is unavailable') }
+    },
+  })
 }
 
-/** Validate private host ACK data independently of any execution-authorization handle. */
+const defaultRestrictionReader = createEligibilityRestrictionReader()
+/** Compatibility exports keep private ACK parsing separate from execution authority. */
 export function readEligibilityRestriction(value: unknown): HarnessEligibilityRestriction {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Missing live OpenSlack eligibility restriction')
-  const keys = Object.keys(value).sort().join(',')
-  if ('mode' in value && value.mode === 'not_applicable' && keys === 'mode') return ownRestriction({ mode: 'not_applicable' })
-  if ('mode' in value && value.mode === 'required' && keys === 'expiresAt,mode' && 'expiresAt' in value &&
-    typeof value.expiresAt === 'number' && Number.isSafeInteger(value.expiresAt) && Date.now() < value.expiresAt) {
-    return ownRestriction({ mode: 'required', expiresAt: value.expiresAt })
-  }
-  throw new Error('Live OpenSlack eligibility restriction is missing or its lease expired')
+  return defaultRestrictionReader.read(value)
 }
-
 export function assertEligibilityRestriction(value: HarnessEligibilityRestriction): void {
-  if (!parsedRestrictions.has(value)) { readEligibilityRestriction(value); return }
-  if (value.mode === 'required' && Date.now() >= value.expiresAt) throw new Error('Live OpenSlack eligibility restriction is missing or its lease expired')
+  defaultRestrictionReader.assert(value)
 }
 
 function text(value: unknown): value is string { return typeof value === 'string' && Buffer.byteLength(value) <= TEXT_LIMIT_BYTES }

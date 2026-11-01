@@ -1,7 +1,9 @@
+import { readOwnedFile } from '@openslack/core/internal/owned-file'
+import { decodeStrictJSON } from '@openslack/core/internal/strict-json'
 /** Private STDIO Bridge peer; Harness applications still start through dsh --profile sdk. @module */
-import { constants, fstatSync, lstatSync, openSync, closeSync, readSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, isAbsolute, join, resolve } from 'node:path'
+import { isAbsolute, join, resolve } from 'node:path'
 import { loadPublicHarness } from './runtime.ts'
 import { createOwnedSdk } from './owned-sdk.ts'
 import { OpenSlackPeer } from './bridge.ts'
@@ -41,43 +43,12 @@ function required(values: Map<string, string>, key: string): string {
 
 export function readBinding(path: string): WorkerBinding {
   if (!isAbsolute(path)) throw new Error('Task binding path must be absolute')
-  const ancestors = []
-  for (let parent = dirname(path);; parent = dirname(parent)) {
-    const stamp = lstatSync(parent, { bigint: true })
-    if (!stamp.isDirectory() || stamp.isSymbolicLink()) throw new Error('Task binding cannot traverse a directory link')
-    ancestors.push({ path: parent, stamp })
-    if (parent === dirname(parent)) break
-  }
-  const entry = lstatSync(path, { bigint: true })
-  if (!entry.isFile() || entry.isSymbolicLink() || entry.nlink !== 1n || entry.size > 128n * 1024n) throw new Error('Invalid task binding file')
-  const file = openSync(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0))
-  try {
-    const before = fstatSync(file, { bigint: true })
-    const identity = (a: typeof before, b: typeof before) => a.dev === b.dev && a.ino === b.ino && a.mode === b.mode &&
-      a.nlink === b.nlink && a.size === b.size && a.mtimeNs === b.mtimeNs && a.ctimeNs === b.ctimeNs
-    if (!identity(entry, before)) throw new Error('Task binding changed before read')
-    const bytes = Buffer.alloc(128 * 1024 + 1)
-    let count = 0
-    while (count < bytes.length) {
-      const n = readSync(file, bytes, count, bytes.length - count, count)
-      if (!n) break
-      count += n
-    }
-    const after = fstatSync(file, { bigint: true })
-    const final = lstatSync(path, { bigint: true })
-    if (BigInt(count) !== before.size || count > 128 * 1024 || !identity(before, after) ||
-      !final.isFile() || final.isSymbolicLink() || !identity(after, final)) throw new Error('Task binding changed during read')
-    for (const ancestor of ancestors) {
-      const current = lstatSync(ancestor.path, { bigint: true })
-      if (!current.isDirectory() || current.isSymbolicLink() || current.dev !== ancestor.stamp.dev ||
-        current.ino !== ancestor.stamp.ino || current.mode !== ancestor.stamp.mode) throw new Error('Task binding ancestry changed')
-    }
-    const value: unknown = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes.subarray(0, count)))
-    if (!value || typeof value !== 'object' || Array.isArray(value) || !('resultMode' in value) ||
-      (value.resultMode !== 'text' && value.resultMode !== 'json')) throw new Error('Invalid task output binding')
-    // The same Loader Config schema validates this durable deployment input before Agent creation.
-    return value as WorkerBinding
-  } finally { closeSync(file) }
+  let value: unknown
+  try { value = decodeStrictJSON(readOwnedFile(path, 128 * 1024), 128 * 1024) }
+  catch (cause) { throw new Error('Invalid task binding; stable owned evidence is unavailable', { cause }) }
+  if (!value || typeof value !== 'object' || Array.isArray(value) || !('resultMode' in value) ||
+    (value.resultMode !== 'text' && value.resultMode !== 'json')) throw new Error('Invalid task output binding')
+  return value as WorkerBinding
 }
 
 /** Own stdin, one task SDK, the per-launch patch, and shutdown through confirmed SDK exit. */

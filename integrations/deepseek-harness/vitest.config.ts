@@ -15,6 +15,9 @@ export default defineConfig({
     '@openslack/agent-runtime/internal/harness': fileURLToPath(new URL('../../packages/agent-runtime/dist/harness.js', import.meta.url)),
     '@openslack/agent-runtime/internal/bridge-wire': fileURLToPath(new URL('../../packages/agent-runtime/dist/bridge-wire.js', import.meta.url)),
     '@openslack/qoder-adapter/internal/harness-tool-catalog': fileURLToPath(new URL('../../packages/qoder-adapter/dist/harness-tool-catalog.js', import.meta.url)),
+    '@openslack/core/internal/runtime-contracts': fileURLToPath(new URL('../../packages/core/dist/runtime-contracts.js', import.meta.url)),
+    '@openslack/core/internal/owned-file': fileURLToPath(new URL('../../packages/core/dist/owned-file.js', import.meta.url)),
+    '@openslack/core/internal/strict-json': fileURLToPath(new URL('../../packages/core/dist/strict-json.js', import.meta.url)),
   }).sort(([a], [b]) => b.length - a.length)
     .map(([name, replacement]) => ({ find: new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`), replacement })) },
   test: { name: '@openslack/deepseek-harness-plugin', include: ['tests/**/*.spec.ts'],

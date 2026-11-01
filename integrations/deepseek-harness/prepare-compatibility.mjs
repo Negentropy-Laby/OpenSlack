@@ -7,6 +7,7 @@ import { HARNESS_COMPATIBILITY_SHA, captureCompatibilityInputs, captureCompatibi
 const root = resolve(import.meta.dirname, '../..');
 if (process.env.OPENSLACK_BRIDGE_WIRE_MODULE !== undefined) throw new Error('Formal compatibility preparation rejects OPENSLACK_BRIDGE_WIRE_MODULE; overrides are only for isolated build fixtures.');
 if (process.env.OPENSLACK_TOOL_CATALOG_MODULE !== undefined) throw new Error('Formal compatibility preparation rejects OPENSLACK_TOOL_CATALOG_MODULE; overrides are only for isolated build fixtures.');
+if (process.env.OPENSLACK_CORE_LEAF_DIRECTORY !== undefined) throw new Error('Formal compatibility preparation rejects OPENSLACK_CORE_LEAF_DIRECTORY; overrides are only for isolated build fixtures.');
 if (process.env.OPENSLACK_SCHEMA_STAGE_ROOT !== undefined) throw new Error('Formal compatibility preparation rejects OPENSLACK_SCHEMA_STAGE_ROOT; staging must target this exact checkout.');
 const harness = process.env.DEEPSEEK_HARNESS_CHECKOUT;
 if (!harness) throw new Error('Explicit compatibility preparation requires the built original Harness checkout.');

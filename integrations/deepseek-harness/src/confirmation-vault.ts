@@ -1,6 +1,7 @@
 /** Per-agent bearer storage. No token or upstream exception crosses this module's result API. @module */
 import type { ToolDefinition, ToolRunContext } from '@deepseek-ai/dsh-tools'
 import { RUN_ID_RE } from '@openslack/agent-runtime/internal/bridge-wire'
+import { CONFIRMATION_CAPABILITY_PATTERN, HARNESS_CONFIRMATION_PENDING_LIMIT } from '@openslack/core/internal/runtime-contracts'
 
 /** Host-owned task and transport identity, independent of model-supplied arguments. */
 interface ConfirmationScopeBase {
@@ -97,7 +98,7 @@ export class ConfirmationVault {
         !Array.isArray(input.input.evidenceRefs) || input.input.evidenceRefs.some(ref => typeof ref !== 'string')) throw new ConfirmationFailure()
     for (const [planId, entry] of this.entries) if (entry.expiresAt <= Date.now()) this.entries.delete(planId)
     // Reserve before the first await, so concurrent previews obey the same cap.
-    if (this.entries.size + this.previews >= 128) throw new ConfirmationFailure()
+    if (this.entries.size + this.previews >= HARNESS_CONFIRMATION_PENDING_LIMIT) throw new ConfirmationFailure()
     this.previews++
     try {
     try { await this.assertCurrent() }
@@ -114,7 +115,7 @@ export class ConfirmationVault {
       const planId = upstream.planId
       const data = upstream.data
       if (upstream.status !== 'needs_confirmation' || typeof token !== 'string' ||
-        !/^[A-Za-z0-9_-]{32,128}$/.test(token) || typeof planId !== 'string' ||
+        !CONFIRMATION_CAPABILITY_PATTERN.test(token) || typeof planId !== 'string' ||
         !object(data) || typeof data.expiresAt !== 'string') throw new ConfirmationFailure()
       const expiresAt = Date.parse(data.expiresAt)
       if (!Number.isFinite(expiresAt) || expiresAt <= Date.now() || this.entries.has(planId)) throw new ConfirmationFailure()

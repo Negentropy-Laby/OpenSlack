@@ -79,6 +79,7 @@
         "@modelcontextprotocol/sdk": "1.29.0",
         "@openslack/agent-runtime": "workspace:*",
         "@openslack/collaboration": "workspace:*",
+        "@openslack/core": "workspace:*",
         "@openslack/github": "workspace:*",
         "@openslack/kernel": "workspace:*",
         "@openslack/operator": "workspace:*",
@@ -226,6 +227,9 @@
     "packages/qoder-adapter": {
       "name": "@openslack/qoder-adapter",
       "version": "0.2.0",
+      "dependencies": {
+        "@openslack/core": "workspace:*",
+      },
     },
     "packages/runtime": {
       "name": "@openslack/runtime",

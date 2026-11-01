@@ -1,6 +1,6 @@
 /** Exact public ESM identities fixed by the trusted OpenSlack deployment. */
 import { fileURLToPath } from 'node:url'
-import { resolve } from 'node:path'
+import { resolvedPathsEqual } from '@openslack/core/internal/runtime-contracts'
 
 export const RUNTIME_PEERS = ['@deepseek-ai/schemastery', '@deepseek-ai/cordis', '@deepseek-ai/dsh-sdk-protocol',
   '@deepseek-ai/dsh-sdk-jsonrpc-server', '@deepseek-ai/dsh-llm',
@@ -15,7 +15,7 @@ export function assertRuntimeBindings(serialized: string, lookup: (specifier: st
     const expected: unknown = entries[name as keyof typeof entries]
     const actual = fileURLToPath(lookup(name))
     if (typeof expected !== 'string' || !expected ||
-      (process.platform === 'win32' ? resolve(actual).toLowerCase() !== resolve(expected).toLowerCase() : resolve(actual) !== resolve(expected))) {
+      !resolvedPathsEqual(actual, expected)) {
       throw new Error(`External plugin resolved an unapproved runtime peer: ${name}`)
     }
   }

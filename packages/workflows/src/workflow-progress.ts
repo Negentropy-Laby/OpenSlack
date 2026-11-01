@@ -19,7 +19,7 @@ import {
   WORKFLOW_LOCAL_EVIDENCE_MAX_BYTES,
 } from './internal/workflow-evidence-file.js';
 import {
-  readRunStateSnapshot,
+  readRunStateSnapshotWhenAvailable,
   RunStateInvalidError,
   RunStateSnapshotChangedError,
   type AgentRunEvent,
@@ -570,7 +570,7 @@ async function enrichAgent(
   if (!agent.agentRunId) return agent;
   let state: AgentRunState | null = null;
   try {
-    state = readRunStateSnapshot(agent.agentRunId, rootDir);
+    state = await readRunStateSnapshotWhenAvailable(agent.agentRunId, rootDir);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
       recordReadFailure(error, context, strictRead, readDiagnostics);

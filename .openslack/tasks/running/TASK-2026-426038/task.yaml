@@ -22,6 +22,11 @@ allowed_paths:
   - packages/workflows/src/__tests__/workflow-progress-strict.test.ts
   - apps/mcp/src/**
   - packages/qoder-adapter/src/**
+  - packages/qoder-adapter/package.json
+  - packages/qoder-adapter/tsconfig.json
+  - apps/mcp/package.json
+  - apps/mcp/tsconfig.json
+  - bun.lock
   - apps/cli/src/commands/agent-runtime.ts
   - apps/cli/src/__tests__/**
   - packages/tui/src/**
