@@ -674,3 +674,47 @@ workspace/golden/Genesis/docs/status, unchanged original dependency witnesses,
 independent read-only review and synchronized head CI/PRMS. Pending evidence is not
 substituted by old green CI, a deselected case, cross-compilation or a source-only
 review. Real integration identity/deployment/model and human approval are separate.
+
+
+### Publication follow-up: bounded GitHub App JWT clock margin
+
+The normal-clock authentication failure was traced to the JWT expiry boundary,
+not an invalid key. The Windows clock was approximately 14 seconds ahead of the
+GitHub HTTPS response time. With the previous `exp = localNow + 600`, GitHub
+rejected the JWT as too far in the future. A diagnostic-only 30-second local
+clock control, using the same configured key and verified TLS endpoint, obtained
+HTTP 200 for the existing App/repository installation. Normal-clock rejection
+was then reproduced independently. These diagnostic controls did not change the
+system clock, mint a publication token, or publish any Git mutation.
+
+The approved minimal production change uses `exp = localNow + 540`, retaining
+`iat = localNow - 60`, RS256, the configured App issuer, repository resolution
+and all existing permission and credential boundaries. It tolerates up to 60
+seconds of a fast clock; it does not claim to correct arbitrary clock skew or
+replace authentication validation. No key replacement, NTP/proxy configuration,
+credential copying, human-token fallback or new public API is part of this fix.
+
+Four new behavioral regressions failed against the old implementation: clocks
+14, 59 and 60 seconds ahead exceeded the independently defined server expiry
+limit, and both real serialized installation-discovery/token-request JWTs used
+the overlong expiry. The same tests check the actual signature and unchanged
+issuer/header. The corrected implementation passed all five affected auth and
+delivery suites three consecutive times: 81 PASS / 0 FAIL / 0 SKIP each. Synthetic
+test keys and an offline HTTP boundary are separate from the configured bot key.
+The same five suites also pass on ordinary Node 22.23.4: 81/81. Independent
+read-only review found no concrete blocker in the two-file change or candidate
+implementation/original-configuration routing. That reviewer did not execute
+tests, use the configured key, authenticate, or make an approval decision.
+The production collector measured 8,780 declared cases in 590 files. Two full
+count/status/document-generation passes produced identical second-pass bytes.
+The 32 existing source-lock manifests have no intersection with this follow-up
+and remain byte-identical; no binding set or authority scope is changed.
+
+The previous frozen `ade64e10` full Linux/native Windows and artifact results
+remain historical evidence; they do not validate these changed source bytes.
+Final source validation, normal-clock configured-bot authentication, update-only
+publication to #426 and current-head CI/PRMS are recorded separately after they
+actually execute. Publication loads the candidate authentication implementation
+with the original approved configuration root; it does not copy credentials
+into a new checkout. The PR remains Draft, with no approval, merge, deployment,
+real-model task or identity bootstrap authorized by this follow-up.
