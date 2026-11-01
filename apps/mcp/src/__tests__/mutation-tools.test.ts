@@ -464,9 +464,11 @@ describe('governed MCP mutation profile', () => {
         result.structuredContent.status,
         JSON.stringify(result.structuredContent.governance),
       ).toBe('blocked');
-      expect((result.structuredContent.governance as { blocker?: string }).blocker).toBe(
+      // Contention can be returned as an executing record or a service refusal.
+      expect([
         'GOVERNED_PLAN_EXECUTION_ACTIVE',
-      );
+        'GOVERNED_MUTATION_EXECUTION_ACTIVE',
+      ]).toContain((result.structuredContent.governance as { blocker?: string }).blocker);
     }
     expect(
       results.filter((result) => result.structuredContent.status === 'completed'),

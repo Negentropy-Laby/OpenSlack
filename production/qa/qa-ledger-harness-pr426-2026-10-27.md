@@ -853,3 +853,36 @@ working receipts. A separate metadata correction binds the retained originals
 by SHA256 and identifies comparison to `fc7d1b39` as test-only (plus count/docs
 projections); no production logic changed in this oracle follow-up. The original
 receipts and raw three-run outcomes are preserved, not silently rewritten.
+
+
+### Confirmed dual active-confirmation replies; current full evidence stays open
+
+The clean `8e937713` local Linux full run retained 8,753 PASS / 20 FAIL /
+25 SKIP and one Vitest onTaskUpdate RPC timeout. Nineteen assertions exceeded
+existing deadlines. The remaining assertion observed the legitimate returned
+executing-record blocker `GOVERNED_MUTATION_EXECUTION_ACTIVE` while accepting
+only the service-refusal blocker `GOVERNED_PLAN_EXECUTION_ACTIVE`.
+Production already supports both paths. The narrow assertion now accepts exactly
+these two values, retaining blocked status, one executor invocation, one completed
+response, durable succeeded state and every result-schema check. Generic
+READ_PROJECTION_FAILED, uncertain storage errors and other blockers still fail.
+No production behavior, public classification, timeout, worker or retry changes.
+The original failing full result is the red evidence; both Linux and native
+Windows then passed the unchanged 20-case suite three consecutive times.
+Inventory remains 8,798 declarations in 590 files; this changes no test count.
+
+All individual independent quality commands on the preceding head returned 0,
+including ordinary Node22, typecheck/build and ESLint0/0. The final clean-source
+assertion failed after this intentional working test edit; that command sequence
+is retained as modified-source evidence, not relabeled as final qualification.
+New frozen checks remain necessary. The prior full failures and unsampled causes
+are not cleared by targeted passes, and no source fix is invented for deadlines.
+
+Normal-clock configured authentication, installation-token acquisition and the
+actual bot branch push succeeded without key replacement, clock adjustment or
+human-token fallback. A stopped progress attempt was reconciled against the
+unchanged remote before retry. The published thirteen-commit head was explicitly
+WIP / acceptance=false and remained Draft; this follow-up updates that same PR.
+Progress publication does not waive full current-head CI, native/artifact checks,
+PRMS, independent review or later human/CODEOWNER approval. No deployment,
+identity bootstrap, model task, approval or merge was performed.
