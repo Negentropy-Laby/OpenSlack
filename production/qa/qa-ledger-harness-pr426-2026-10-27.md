@@ -886,3 +886,58 @@ WIP / acceptance=false and remained Draft; this follow-up updates that same PR.
 Progress publication does not waive full current-head CI, native/artifact checks,
 PRMS, independent review or later human/CODEOWNER approval. No deployment,
 identity bootstrap, model task, approval or merge was performed.
+
+
+### Recovery-fixture clock follow-up after the e638ece6 native full run
+
+The frozen e638ece6 native Windows full run returned **8,399 passed / 5 failed /
+88 skipped** in 590 files. Preserve that result. Three failures hit their existing
+300-second closed-loop, 120-second effect-shadow, and 10-second absent-store
+bounds. The other two were actual `WORKFLOW_EFFECT_APPROVAL_BINDING_INVALID`
+exceptions in prepared-decision recovery fixtures: the store used the fixture's
+fixed clock, while synchronous human-binding issuance used later wall time.
+Their fixture-relative 30-second binding windows had elapsed during real Windows
+ACL/file operations. Production correctly refused those stale inputs.
+
+The two recovery tests now explicitly select the same fixed observation window.
+A private helper freezes **Date only** around the three synchronous issuance
+calls and restores real time in `finally` before any filesystem await. Issued-at
+assertions bind each result to the injected store clock. Production code, grant
+TTL/expiry checks, distinct repair nonces, the original committed attestation
+nonce, and live/dead-owner recovery assertions are unchanged. This does not
+accept expired real authorization or freeze task deadlines.
+
+Deterministic RED evidence changes the fixture window before changing issuance:
+the old calls produce the same two real binding-invalid exceptions (two failed,
+30 filtered cases), rather than an import or missing-module failure. GREEN on
+Linux runs the full file three times: each has **31 passed / 0 failed / 1 existing
+Windows-only skip**. Native Windows executes the two changed cases three times: **2 passed / 0
+failed** each, with 30 other cases filtered each time. A separate ordinary Node
+22 run of the whole file has **31 passed / 0 failed / 1 existing platform skip**.
+Typecheck and ESLint pass. Filtered diagnostics do not count as a complete
+Windows-suite pass. The production inventory collector and status/docs generators
+ran twice without an additional diff; 8,798 declarations in 590 files remain
+unchanged. No test declaration count was added.
+
+For the retained e638ece6 candidate, all 12 applicable hosted checks passed; the
+PR-only tag-publication job was correctly skipped. Hosted complete Linux Tests
+reported **8,773 passed / 0 failed / 25 skipped** on synthetic merge dea1efe6,
+whose tree exactly matches candidate c262615d. The local Linux result remains
+**8,772 passed / 1 timeout / 25 skipped**. The hosted native closed-loop scope
+passed 227 cases plus one existing skip; its configured-host case took 140.6
+seconds. In the separate local native full, that case completed all assertions
+and left a `completed / verified` task, but its 502-second total still failed the
+original 300-second bound. Do not relabel either local full result as passed.
+
+Both actual saved Linux/Windows TGZs passed installed-SDK smoke and inspection
+of all 38 members. Their unpacked payload digest is identical; preserve each
+original archive digest rather than reconstructing an archive. Source/artifact
+integrity remains separate from complete test acceptance. All 32 source-lock
+manifests and their binding sets remain unchanged, with no hit for this test.
+
+Independent read-only review found no concrete blocker in this fixture-only
+change and verified finally restoration, the three-call scope, and retention of
+production expiry and recovery semantics. It did not run tests or decide
+approval. Append the repair to the same Draft #426; current-head CI/whole-run
+acceptance must be evaluated again. Do not widen bounds, lower workers, add
+retries or suppressions, or use the old head's green checks as the new result.
