@@ -1,5 +1,7 @@
-import { describe, expect, it } from 'vitest';
-import type { WorkflowMeta } from '../types.js';
+import { describe, expect, expectTypeOf, it } from 'vitest';
+import type { WorkflowIdentityEvidence as CoreEvidence } from '@openslack/core';
+import type { WorkflowRunIdentityEvidence } from '@openslack/github';
+import type { WorkflowIdentity, WorkflowIdentityEvidence, WorkflowMeta } from '../types.js';
 import { hashWorkflowSource, resolveWorkflowIdentityHash } from '../internal/workflow-identity.js';
 import { bindWorkflowSourceIdentity } from '../internal/workflow-identity.js';
 import { runMetaWorkflowIdentity } from '../internal/workflow-run-identity.js';
@@ -21,6 +23,14 @@ const meta: WorkflowMeta = {
 };
 
 describe('workflow executable identity', () => {
+  it('reuses Core diagnostic evidence without widening executable identity domains', () => {
+    expectTypeOf<WorkflowIdentityEvidence>().toEqualTypeOf<CoreEvidence>();
+    expectTypeOf<WorkflowRunIdentityEvidence>().toEqualTypeOf<CoreEvidence>();
+    expectTypeOf<WorkflowIdentity['domain']>().toEqualTypeOf<
+      'raw-sha256' | 'openslack.workflow-runner.workflow-source.v2'
+    >();
+    expectTypeOf<'unknown' | 'function-source-sha256'>().not.toExtend<WorkflowIdentity['domain']>();
+  });
   it.each([
     ['raw-sha256', 'recorded'],
     ['openslack.workflow-runner.workflow-source.v2', 'recorded'],

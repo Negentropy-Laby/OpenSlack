@@ -2,6 +2,11 @@
 export { ClaimBroker, FileClaimBroker } from './claim-broker.js';
 export type { Lease, ClaimRequest, ClaimResult } from './claim-broker.js';
 export { inferWorkflowPatternId } from './workflow-pattern-inference.js';
+export type {
+  WorkflowIdentityDomain,
+  WorkflowIdentityEvidence,
+  WorkflowIdentityProvenance,
+} from './workflow-identity-evidence.js';
 export type { WorkflowPatternId } from './workflow-pattern-inference.js';
 
 export {

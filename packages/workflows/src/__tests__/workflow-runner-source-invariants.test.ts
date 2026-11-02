@@ -244,7 +244,27 @@ describe('GS9-I TypeScript writer deletion invariants', () => {
         types: './dist/workflow-runner-worker-public.d.ts',
         import: './dist/workflow-runner-worker-public.js',
       },
+      './internal/workflow-source-snapshot': {
+        types: './dist/internal/workflow-source-snapshot.d.ts',
+        import: './dist/internal/workflow-source-snapshot.js',
+      },
     });
+    const snapshot = await import('@openslack/workflows/internal/workflow-source-snapshot');
+    expect(Object.keys(snapshot).sort()).toEqual([
+      'WORKFLOW_MANIFEST_DIAGNOSTIC_FIELDS',
+      'WORKFLOW_SOURCE_EVIDENCE_DOMAINS',
+      'WORKFLOW_SOURCE_EVIDENCE_REASONS',
+      'WorkflowSourceEvidenceError',
+      'createWorkflowSourceSnapshot',
+      'renderWorkflowSourceEvidence',
+      'requireWorkflowSourceSnapshot',
+      'verifyWorkflowSourceManifest',
+      'verifyWorkflowSourceSnapshot',
+      'withWorkflowManifestDiagnostic',
+      'workflowSourceEvidenceCause',
+      'workflowSourceEvidenceDiagnostic',
+      'workflowSourceSnapshotBytes',
+    ]);
     expect(workerPublic).toContain('runWorkflowRunnerV2Worker');
     expect(workerPublic).toContain('loadWorkflowRunnerV2WorkerConfig');
     expect(workerPublic).not.toContain('executeWorkflowRunnerV2AuthorityJob');

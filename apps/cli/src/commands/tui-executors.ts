@@ -529,6 +529,7 @@ export async function finalizeWorkflowPr(
       strictEvidence: true,
     });
     const gate = evaluateWorkflowGate({
+      prNumber,
       changedFiles: report.changedFiles,
       body: report.body ?? '',
       author: report.author,
@@ -539,12 +540,7 @@ export async function finalizeWorkflowPr(
       governanceIssue: report.workflowGovernanceIssue,
       codeowners,
     });
-    if (
-      gate.overall === 'PASS' &&
-      gate.criteria.some(
-        (criterion) => criterion.name === 'Governance issue' && criterion.status === 'N/A',
-      )
-    ) {
+    if (gate.overall === 'PASS' && gate.governanceRequired === false) {
       return {
         success: true,
         message: `Workflow ${workflowName} PR #${prNumber} does not require a governance issue; no lifecycle writes were performed. Use finalize-pr with explicit lifecycle targets when needed.`,
@@ -557,12 +553,8 @@ export async function finalizeWorkflowPr(
       gate.overall !== 'PASS' ||
       !gate.evidenceHash ||
       !gate.trustDecision ||
-      !gate.governanceIssue ||
-      !gate.criteria.some(
-        (criterion) => criterion.name === 'Governance issue' && criterion.status === 'PASS',
-      ) ||
-      report.workflowGovernanceIssue?.issueNumber !== gate.governanceIssue ||
-      report.workflowGovernanceIssue?.prNumber !== prNumber
+      gate.governanceRequired !== true ||
+      !gate.verifiedGovernanceIssue
     ) {
       return {
         success: false,
@@ -574,7 +566,7 @@ export async function finalizeWorkflowPr(
     }
 
     const result = await finalizeWorkflowPR(prNumber, {
-      governanceIssue: gate.governanceIssue,
+      governanceIssue: gate.verifiedGovernanceIssue,
       workflowHash: gate.evidenceHash,
       trustDecision: gate.trustDecision,
       trustReviewer: gate.trustReviewer,

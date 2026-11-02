@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { parseDocument } from 'yaml';
 import { isBotUser } from './approvals.js';
 import type {
   PRReviewEvidence,
@@ -169,6 +170,8 @@ function governanceIssueNumber(body: string): number | undefined {
 }
 
 export interface EvaluateWorkflowGateInput {
+  /** Legacy callers may omit this, but cannot receive a verified Issue projection. */
+  prNumber?: number;
   changedFiles: string[];
   body: string;
   author: string;
@@ -184,31 +187,39 @@ function governanceIssueMatches(
   issue: WorkflowGovernanceIssueEvidence | undefined,
   linkedIssueNumber: number | undefined,
   evidence: WorkflowEvidence | undefined,
+  prNumber: number | undefined,
 ): boolean {
   if (
     !issue ||
     !linkedIssueNumber ||
     issue.issueNumber !== linkedIssueNumber ||
     !isBotUser(issue.author) ||
-    !evidence
+    !evidence ||
+    !Number.isSafeInteger(issue.prNumber) ||
+    issue.prNumber <= 0 ||
+    (prNumber !== undefined && prNumber !== issue.prNumber)
   )
     return false;
   try {
-    const body = issue.body;
-    const artifactBlock = body.match(/artifact_files:\s*\n([\s\S]*?)\n```/)?.[1] ?? '';
-    const issueArtifacts = artifactBlock
-      .split(/\r?\n/)
-      .map((line) => line.match(/^\s*-\s*("(?:[^"\\]|\\.)*")\s*$/)?.[1])
-      .filter((value): value is string => Boolean(value))
-      .map((value) => JSON.parse(value) as string)
-      .sort(comparePaths);
+    const blocks = [
+      ...issue.body.matchAll(/^```openslack-workflow-governance\r?\n([\s\S]*?)^```[ \t]*\r?$/gm),
+    ];
+    if (blocks.length !== 1) return false;
+    const document = parseDocument(blocks[0][1], { uniqueKeys: true });
+    if (document.errors.length > 0) return false;
+    const data = document.toJS({ maxAliasCount: 0 }) as Record<string, unknown> | null;
+    if (!data || typeof data !== 'object' || Array.isArray(data)) return false;
+    const issueArtifacts = data.artifact_files;
     return (
-      body.includes('schema: "openslack.workflow_governance.v1"') &&
-      body.includes(`pr: ${issue.prNumber}`) &&
-      body.includes(`base_sha: ${JSON.stringify(evidence.baseSha)}`) &&
-      body.includes(`head_sha: ${JSON.stringify(evidence.headSha)}`) &&
-      body.includes(`evidence_hash: ${JSON.stringify(evidence.evidenceHash)}`) &&
-      JSON.stringify(issueArtifacts) === JSON.stringify(evidence.artifactFiles)
+      data.schema === 'openslack.workflow_governance.v1' &&
+      data.pr === issue.prNumber &&
+      data.base_sha === evidence.baseSha &&
+      data.head_sha === evidence.headSha &&
+      data.evidence_hash === evidence.evidenceHash &&
+      Array.isArray(issueArtifacts) &&
+      issueArtifacts.every((value) => typeof value === 'string') &&
+      JSON.stringify([...issueArtifacts].sort(comparePaths)) ===
+        JSON.stringify(evidence.artifactFiles)
     );
   } catch {
     return false;
@@ -224,6 +235,7 @@ export function evaluateWorkflowGate(input: EvaluateWorkflowGateInput): Workflow
   if (touchedArtifacts.length === 0) {
     return {
       touchedWorkflowFiles: false,
+      governanceRequired: false,
       overall: 'N/A',
       criteria: [
         {
@@ -293,7 +305,8 @@ export function evaluateWorkflowGate(input: EvaluateWorkflowGateInput): Workflow
   const governanceRequired =
     evidence !== undefined && (evidence.addedFiles.length > 0 || includesCoreArtifact);
   const governanceValid =
-    !governanceRequired || governanceIssueMatches(input.governanceIssue, issueNumber, evidence);
+    !governanceRequired ||
+    governanceIssueMatches(input.governanceIssue, issueNumber, evidence, input.prNumber);
 
   const criteria: WorkflowGateCriterion[] = [
     {
@@ -348,6 +361,14 @@ export function evaluateWorkflowGate(input: EvaluateWorkflowGateInput): Workflow
     : 'FAIL';
   return {
     touchedWorkflowFiles: true,
+    governanceRequired,
+    verifiedGovernanceIssue:
+      overall === 'PASS' &&
+      governanceRequired &&
+      Number.isSafeInteger(input.prNumber) &&
+      input.prNumber! > 0
+        ? issueNumber
+        : undefined,
     overall,
     criteria,
     artifactFiles,

@@ -58,6 +58,7 @@ function review(
 
 function evaluate(overrides: Partial<Parameters<typeof evaluateWorkflowGate>[0]> = {}) {
   return evaluateWorkflowGate({
+    prNumber: 176,
     changedFiles: ['templates/workflows/feature.yaml'],
     body: '',
     author: 'author',
@@ -109,6 +110,84 @@ describe('workflow artifact classification', () => {
     });
 
     expect(result.overall).toBe('N/A');
+  });
+});
+
+describe('verified governance projection', () => {
+  function addedInput() {
+    const path = 'templates/workflows/new.yaml';
+    const evidence = createWorkflowEvidence({
+      baseSha: BASE_SHA,
+      headSha: HEAD_SHA,
+      baseTree: [],
+      headTree: [entry(path, 'new')],
+    });
+    return {
+      changedFiles: [path],
+      workflowEvidence: evidence,
+      body: 'Workflow governance #123',
+      governanceIssue: governanceIssue(evidence),
+    };
+  }
+
+  it('projects only a fully verified issue for the target PR', () => {
+    expect(evaluate(addedInput())).toMatchObject({
+      overall: 'PASS',
+      governanceRequired: true,
+      verifiedGovernanceIssue: 123,
+    });
+  });
+
+  it('keeps legacy calls compatible but cannot grant a target-free projection', () => {
+    const gate = evaluate({ ...addedInput(), prNumber: undefined });
+    expect(gate.overall).toBe('PASS');
+    expect(gate.governanceRequired).toBe(true);
+    expect(gate.verifiedGovernanceIssue).toBeUndefined();
+  });
+
+  it.each([177, 0, -1, NaN, Infinity])('rejects target PR %s', (prNumber) => {
+    const gate = evaluate({ ...addedInput(), prNumber });
+    expect(gate.overall).toBe('FAIL');
+    expect(gate.verifiedGovernanceIssue).toBeUndefined();
+  });
+
+  it.each(['base', 'head', 'hash', 'artifacts', 'author', 'issue-pr', 'body-pr'])(
+    'does not project drifting %s evidence',
+    (field) => {
+      const input = addedInput();
+      const issue = input.governanceIssue;
+      if (field === 'base') issue.body = issue.body.replace(BASE_SHA, 'stale-base');
+      if (field === 'head') issue.body = issue.body.replace(HEAD_SHA, 'stale-head');
+      if (field === 'hash')
+        issue.body = issue.body.replace(input.workflowEvidence.evidenceHash, 'sha256:wrong');
+      if (field === 'artifacts') issue.body = issue.body.replace('new.yaml', 'other.yaml');
+      if (field === 'author') issue.author = 'human-author';
+      if (field === 'issue-pr') issue.prNumber = 177;
+      if (field === 'body-pr') issue.body = issue.body.replace('pr: 176', 'pr: 1760');
+      const gate = evaluate(input);
+      expect(gate.overall).toBe('FAIL');
+      expect(gate.verifiedGovernanceIssue).toBeUndefined();
+    },
+  );
+
+  it('never projects an Issue when current-head or human-trust checks fail', () => {
+    for (const overrides of [{ headSha: 'old' }, { baseSha: 'old' }, { reviews: [] }]) {
+      const gate = evaluate({ ...addedInput(), ...overrides });
+      expect(gate.overall).toBe('FAIL');
+      expect(gate.verifiedGovernanceIssue).toBeUndefined();
+    }
+  });
+
+  it('keeps body references informational when governance is not required', () => {
+    const gate = evaluate({ body: 'Workflow governance #123' });
+    expect(gate.overall).toBe('PASS');
+    expect(gate.governanceRequired).toBe(false);
+    expect(gate.governanceIssue).toBe(123);
+    expect(gate.verifiedGovernanceIssue).toBeUndefined();
+    expect(evaluate({ changedFiles: ['docs/README.md'] })).toMatchObject({
+      overall: 'N/A',
+      governanceRequired: false,
+    });
   });
 });
 

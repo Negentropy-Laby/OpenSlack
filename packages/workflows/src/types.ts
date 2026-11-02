@@ -1,4 +1,5 @@
 import type { WorkflowSourceSnapshot } from './internal/workflow-source-snapshot.js';
+export type { WorkflowIdentityEvidence } from '@openslack/core';
 import type { WorkflowArgumentsEnvelope } from './internal/workflow-arguments.js';
 import type {
   WorkflowRunReadDiagnostic,
@@ -493,13 +494,6 @@ export type WorkflowFormat =
 export interface WorkflowIdentity {
   readonly domain: 'raw-sha256' | 'openslack.workflow-runner.workflow-source.v2';
   readonly digest: string;
-}
-
-/** A diagnostic identity is evidence, not an execution capability. */
-export interface WorkflowIdentityEvidence {
-  readonly digest: string;
-  readonly domain: WorkflowIdentity['domain'] | 'function-source-sha256' | 'unknown';
-  readonly provenance: 'recorded' | 'inferred' | 'unknown';
 }
 
 export interface WorkflowModule {

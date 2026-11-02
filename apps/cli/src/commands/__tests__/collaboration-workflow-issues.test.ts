@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 import { Command } from 'commander';
+import type { PRReviewReport, WorkflowGateResult } from '@openslack/pr';
 import { collaborationCommands, resolveWorkflowInspectionAuthority } from '../collaboration.js';
 
 const hoisted = vi.hoisted(() => {
@@ -26,6 +27,7 @@ const hoisted = vi.hoisted(() => {
     evaluateWorkflowGate: vi.fn(),
     fetchPRDetails: vi.fn(),
     finalizeWorkflowPR: vi.fn(),
+    previewWorkflowFinalization: vi.fn(),
     loadPRCodeownerEvidence: vi.fn(),
     loadRunnerConfig: vi.fn(),
     loadRoutingConfig: vi.fn(),
@@ -48,6 +50,7 @@ vi.mock('@openslack/github', () => ({
   publishWorkflowSplit: vi.fn(),
   bootstrapWorkflowLabels: vi.fn(),
   finalizeWorkflowPR: (...args: unknown[]) => hoisted.finalizeWorkflowPR(...args),
+  previewWorkflowFinalization: (...args: unknown[]) => hoisted.previewWorkflowFinalization(...args),
 }));
 
 vi.mock('@openslack/pr', () => ({
@@ -104,6 +107,94 @@ vi.mock('@openslack/workflows', () => ({
 }));
 
 describe('collaboration workflow issue commands', () => {
+  function installFinalizationFixture() {
+    const artifact = 'packages/workflows/src/builtins/profile-sync.ts';
+    const report: PRReviewReport = {
+      prNumber: 185,
+      title: 'Workflow update',
+      author: 'openslack-agent-operator[bot]',
+      body: 'Workflow governance #186',
+      state: 'closed',
+      merged: true,
+      draft: false,
+      baseRef: 'main',
+      baseSha: 'base-sha',
+      headSha: 'head-sha',
+      riskZone: 'yellow',
+      changedFiles: [artifact],
+      checks: [],
+      humanApprovals: [{ user: 'wsman' }],
+      reviews: [
+        { user: 'wsman', state: 'APPROVED', commitOid: 'head-sha', body: 'Workflow-Trust: core' },
+      ],
+      mergeable: true,
+      decision: 'MERGED',
+      reason: 'Merged',
+      recommendation: 'Finalize lifecycle',
+      workflowEvidence: {
+        schema: 'openslack.workflow-evidence.v1',
+        baseSha: 'base-sha',
+        headSha: 'head-sha',
+        evidenceHash: 'sha256:evidence',
+        artifactFiles: [artifact],
+        addedFiles: [],
+        modifiedFiles: [artifact],
+        deletedFiles: [],
+        changeKind: 'modified',
+      },
+      workflowGovernanceIssue: {
+        issueNumber: 186,
+        prNumber: 185,
+        author: 'openslack-agent-operator[bot]',
+        body: [
+          '```openslack-workflow-governance',
+          'schema: "openslack.workflow_governance.v1"',
+          'pr: 185',
+          'base_sha: "base-sha"',
+          'head_sha: "head-sha"',
+          'evidence_hash: "sha256:evidence"',
+          'artifact_files:',
+          `  - "${artifact}"`,
+          '```',
+        ].join('\n'),
+      },
+    };
+    const gate: WorkflowGateResult = {
+      touchedWorkflowFiles: true,
+      overall: 'PASS',
+      governanceRequired: true,
+      verifiedGovernanceIssue: 186,
+      governanceIssue: 186,
+      criteria: [
+        { name: 'Current-head evidence', status: 'PASS' },
+        { name: 'Human trust review', status: 'PASS' },
+        { name: 'Trust scope', status: 'PASS' },
+        { name: 'Governance issue', status: 'PASS' },
+      ],
+      artifactFiles: [artifact],
+      changeKind: 'modified',
+      evidenceHash: 'sha256:evidence',
+      trustDecision: 'core',
+      trustReviewer: 'wsman',
+      trustReviewCommitOid: 'head-sha',
+      trustSource: 'human-review',
+    };
+    hoisted.fetchPRDetails.mockResolvedValue(report);
+    hoisted.loadPRCodeownerEvidence.mockResolvedValue({
+      ref: 'base-sha',
+      owners: ['@wsman'],
+      entries: [],
+    });
+    hoisted.evaluateWorkflowGate.mockReturnValue(gate);
+    hoisted.finalizeWorkflowPR.mockResolvedValue({
+      closedIssues: [186],
+      commentedIssues: [186],
+      updatedLabels: [],
+      errors: [],
+      failures: [],
+    });
+    return { report, gate };
+  }
   function createTestProgram(): Command {
     const program = new Command();
     program.addCommand(collaborationCommands());
@@ -112,6 +203,7 @@ describe('collaboration workflow issue commands', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    hoisted.previewWorkflowFinalization.mockResolvedValue(undefined);
     process.exitCode = undefined;
     hoisted.loadRunnerConfig.mockReturnValue({
       origin: 'http://127.0.0.1:18183',
@@ -380,40 +472,7 @@ describe('collaboration workflow issue commands', () => {
   });
 
   it('exits nonzero and does not report completion when a GitHub finalizer write fails', async () => {
-    const workflowEvidence = {
-      schema: 'openslack.workflow-evidence.v1',
-      baseSha: 'base-sha',
-      headSha: 'head-sha',
-      evidenceHash: 'sha256:evidence',
-      artifactFiles: ['packages/workflows/src/builtins/profile-sync.ts'],
-      addedFiles: [],
-      modifiedFiles: ['packages/workflows/src/builtins/profile-sync.ts'],
-      deletedFiles: [],
-      changeKind: 'modified',
-    };
-    hoisted.fetchPRDetails.mockResolvedValue({
-      prNumber: 185,
-      author: 'openslack-agent-operator[bot]',
-      body: 'Workflow governance #186',
-      baseSha: 'base-sha',
-      headSha: 'head-sha',
-      changedFiles: ['packages/workflows/src/builtins/profile-sync.ts'],
-      reviews: [],
-      workflowEvidence,
-    });
-    hoisted.loadPRCodeownerEvidence.mockResolvedValue({
-      ref: 'base-sha',
-      owners: ['@wsman'],
-      entries: [],
-    });
-    hoisted.evaluateWorkflowGate.mockReturnValue({
-      overall: 'PASS',
-      evidenceHash: 'sha256:evidence',
-      trustDecision: 'core',
-      trustReviewer: 'wsman',
-      trustReviewCommitOid: 'head-sha',
-      governanceIssue: 186,
-    });
+    installFinalizationFixture();
     hoisted.finalizeWorkflowPR.mockResolvedValue({
       closedIssues: [],
       commentedIssues: [186],
@@ -450,6 +509,8 @@ describe('collaboration workflow issue commands', () => {
         trustDecision: 'core',
         trustReviewer: 'wsman',
         trustReviewCommitOid: 'head-sha',
+        expectedHeadSha: 'head-sha',
+        expectedBaseSha: 'base-sha',
       });
       expect(log.mock.calls.flat().join('\n')).toContain('Failed to finalize workflow PR #185');
       expect(log.mock.calls.flat().join('\n')).not.toContain('finalize complete');
@@ -464,39 +525,7 @@ describe('collaboration workflow issue commands', () => {
     ['trust', ['--governance-issue', '186', '--hash', 'sha256:evidence', '--trust', 'trusted']],
     ['issue', ['--governance-issue', '187', '--hash', 'sha256:evidence', '--trust', 'core']],
   ])('rejects a CLI %s override before any finalizer write', async (_name, overrides) => {
-    hoisted.fetchPRDetails.mockResolvedValue({
-      prNumber: 185,
-      author: 'openslack-agent-operator[bot]',
-      body: 'Workflow governance #186',
-      baseSha: 'base-sha',
-      headSha: 'head-sha',
-      changedFiles: ['packages/workflows/src/builtins/profile-sync.ts'],
-      reviews: [],
-      workflowEvidence: {
-        schema: 'openslack.workflow-evidence.v1',
-        baseSha: 'base-sha',
-        headSha: 'head-sha',
-        evidenceHash: 'sha256:evidence',
-        artifactFiles: ['packages/workflows/src/builtins/profile-sync.ts'],
-        addedFiles: [],
-        modifiedFiles: ['packages/workflows/src/builtins/profile-sync.ts'],
-        deletedFiles: [],
-        changeKind: 'modified',
-      },
-    });
-    hoisted.loadPRCodeownerEvidence.mockResolvedValue({
-      ref: 'base-sha',
-      owners: ['@wsman'],
-      entries: [],
-    });
-    hoisted.evaluateWorkflowGate.mockReturnValue({
-      overall: 'PASS',
-      evidenceHash: 'sha256:evidence',
-      trustDecision: 'core',
-      trustReviewer: 'wsman',
-      trustReviewCommitOid: 'head-sha',
-      governanceIssue: 186,
-    });
+    installFinalizationFixture();
     const log = vi.spyOn(console, 'log').mockImplementation(() => {});
 
     try {
@@ -533,6 +562,105 @@ describe('collaboration workflow issue commands', () => {
         'save',
         'export-skill',
       ]),
+    );
+  });
+
+  it('previews without querying or writing GitHub lifecycle objects', async () => {
+    hoisted.previewWorkflowFinalization.mockResolvedValueOnce({ dryRun: true });
+    vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    await createTestProgram().parseAsync([
+      'node',
+      'test',
+      'collaboration',
+      'workflow',
+      'finalize-pr',
+      '185',
+    ]);
+    expect(hoisted.fetchPRDetails).not.toHaveBeenCalled();
+    expect(hoisted.loadPRCodeownerEvidence).not.toHaveBeenCalled();
+    expect(hoisted.evaluateWorkflowGate).not.toHaveBeenCalled();
+    expect(hoisted.finalizeWorkflowPR).not.toHaveBeenCalled();
+  });
+
+  it('consumes the verified projection without interpreting criterion labels', async () => {
+    const { gate } = installFinalizationFixture();
+    hoisted.evaluateWorkflowGate.mockReturnValue({ ...gate, criteria: [] });
+    vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    await createTestProgram().parseAsync([
+      'node',
+      'test',
+      'collaboration',
+      'workflow',
+      'finalize-pr',
+      '185',
+    ]);
+    expect(hoisted.evaluateWorkflowGate).toHaveBeenCalledWith(
+      expect.objectContaining({ prNumber: 185 }),
+    );
+    expect(hoisted.finalizeWorkflowPR).toHaveBeenCalledWith(
+      185,
+      expect.objectContaining({
+        governanceIssue: 186,
+        expectedHeadSha: 'head-sha',
+        expectedBaseSha: 'base-sha',
+      }),
+    );
+    expect(process.exitCode).toBeUndefined();
+  });
+
+  it('cannot turn an informational Issue reference into a verified target', async () => {
+    const { gate } = installFinalizationFixture();
+    hoisted.evaluateWorkflowGate.mockReturnValue({ ...gate, verifiedGovernanceIssue: undefined });
+    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    await createTestProgram().parseAsync([
+      'node',
+      'test',
+      'collaboration',
+      'workflow',
+      'finalize-pr',
+      '185',
+      '--governance-issue',
+      '186',
+    ]);
+    expect(process.exitCode).toBe(1);
+    expect(hoisted.finalizeWorkflowPR).not.toHaveBeenCalled();
+    expect(log.mock.calls.flat().join('\n')).toContain('Cannot override');
+  });
+
+  it('preserves explicitly selected non-governance lifecycle targets', async () => {
+    const { report } = installFinalizationFixture();
+    hoisted.fetchPRDetails.mockResolvedValue({
+      ...report,
+      workflowEvidence: undefined,
+      workflowGovernanceIssue: undefined,
+      changedFiles: ['docs/README.md'],
+    });
+    vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    await createTestProgram().parseAsync([
+      'node',
+      'test',
+      'collaboration',
+      'workflow',
+      'finalize-pr',
+      '185',
+      '--proposal-issue',
+      '187',
+      '--review-issue',
+      '188',
+      '--phase-issues',
+      '189,190',
+    ]);
+    expect(hoisted.evaluateWorkflowGate).not.toHaveBeenCalled();
+    expect(hoisted.finalizeWorkflowPR).toHaveBeenCalledWith(
+      185,
+      expect.objectContaining({
+        proposalIssue: 187,
+        reviewIssue: 188,
+        phaseIssues: [189, 190],
+        governanceIssue: undefined,
+        expectedHeadSha: 'head-sha',
+        expectedBaseSha: 'base-sha',
+      }),
     );
   });
 });

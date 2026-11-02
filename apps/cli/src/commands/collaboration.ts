@@ -2956,6 +2956,7 @@ export function collaborationCommands(): Command {
               strictEvidence: true,
             });
             const gate = evaluateWorkflowGate({
+              prNumber: pr,
               changedFiles: report.changedFiles,
               body: report.body ?? '',
               author: report.author,
@@ -2983,16 +2984,7 @@ export function collaborationCommands(): Command {
               process.exitCode = 1;
               return;
             }
-            // A body reference survives even when the governance criterion is
-            // N/A. It is not permission to select that Issue for automatic writes.
-            const boundGovernanceIssue =
-              gate.criteria.some(
-                (criterion) => criterion.name === 'Governance issue' && criterion.status === 'PASS',
-              ) &&
-              report.workflowGovernanceIssue?.issueNumber === gate.governanceIssue &&
-              report.workflowGovernanceIssue?.prNumber === pr
-                ? gate.governanceIssue
-                : undefined;
+            const boundGovernanceIssue = gate.verifiedGovernanceIssue;
             if (governanceIssue !== undefined && governanceIssue !== boundGovernanceIssue) {
               console.log(
                 'Cannot override the governance issue bound to this workflow artifact change.',

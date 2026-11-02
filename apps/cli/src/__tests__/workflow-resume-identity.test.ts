@@ -14,7 +14,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { routeReceiptFixture } from '../../../../packages/workflows/src/__tests__/workflow-runner-v2-test-fixture.js';
 // CLI consumes the built package: its internal fixture must share that ownership registry.
-import { createWorkflowSourceSnapshot } from '../../../../packages/workflows/dist/internal/workflow-source-snapshot.js';
+import { createWorkflowSourceSnapshot } from '@openslack/workflows/internal/workflow-source-snapshot';
 
 const state = vi.hoisted(() => ({
   bytes: new Uint8Array(),

@@ -69,6 +69,9 @@ export interface WorkflowGovernanceIssueEvidence {
 
 export interface WorkflowGateResult {
   touchedWorkflowFiles: boolean;
+  governanceRequired: boolean;
+  /** Only populated after all gate checks pass for an explicitly supplied target PR. */
+  verifiedGovernanceIssue?: number;
   overall: 'PASS' | 'FAIL' | 'N/A';
   criteria: WorkflowGateCriterion[];
   artifactFiles?: string[];
@@ -78,6 +81,7 @@ export interface WorkflowGateResult {
   trustReviewer?: string;
   trustReviewCommitOid?: string;
   trustSource?: 'human-review';
+  /** Informational body reference; not a verified lifecycle target. */
   governanceIssue?: number;
 }
 

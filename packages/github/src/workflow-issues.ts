@@ -1,3 +1,5 @@
+import type { WorkflowIdentityEvidence } from '@openslack/core';
+
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 export interface WorkflowMetaShape {
@@ -202,15 +204,8 @@ export function workflowReviewLabels(trustLevel: string): string[] {
 
 // ── Workflow Run Issue ────────────────────────────────────────────────────────
 
-export interface WorkflowRunIdentityEvidence {
-  digest: string;
-  domain:
-    | 'raw-sha256'
-    | 'openslack.workflow-runner.workflow-source.v2'
-    | 'function-source-sha256'
-    | 'unknown';
-  provenance: 'recorded' | 'inferred' | 'unknown';
-}
+/** Compatibility name for the Core-owned diagnostic identity contract. */
+export type WorkflowRunIdentityEvidence = WorkflowIdentityEvidence;
 
 interface WorkflowRunIssueBase {
   runId: string;
