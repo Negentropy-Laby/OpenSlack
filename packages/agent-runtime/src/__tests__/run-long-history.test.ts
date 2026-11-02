@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createHash, randomUUID } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
+import { platformTestTimeout } from '../../../../scripts/testing/process-fixture.mjs';
 import { createRunStore } from '../run-store.js';
 import { inspectRunRepair, authorizeRunRepair, applyRunRepair, createRunRepairAuthorityPort,
   type RunRepairInspection, type RunRepairAuthorityPort } from '../run-repair.js';
@@ -22,9 +23,9 @@ function request(runId: string): AgentRunRequest {
 
 describe('38-02: recoverability beyond the old member limit', () => {
   let root: string, inspection: RunRepairInspection, authority: RunRepairAuthorityPort;
-  // Synthetic history and the abandoned-writer input are prepared once under
-  // the normal bounded hook. Hook failures fail the suite. The actual repair
-  // keeps its original 20-second test bound, fsync and complete archive checks.
+  // Keep setup under its existing hook bound. Recovery correctness uses the
+  // shared platform test watchdog; elapsed repair time is reported separately.
+  // Neither watchdog changes production deadlines or durability requirements.
   beforeAll(() => {
     // This is a membership/process-crash proof, not a power-loss or filesystem
     // latency benchmark. Keep real fsync calls and every independent readback;
@@ -74,8 +75,50 @@ describe('38-02: recoverability beyond the old member limit', () => {
   afterAll(() => { if (root) fs.rmSync(root, { recursive: true, force: true }); });
   test('archives a real abandoned chain without replay, with every immutable intent retained', () => {
     const runId = 'RUN-LONG-INTENT-HISTORY';
+    const directory = join(root, '.openslack.local/agents/runs', runId);
+    const hash = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex');
+    // Independently capture fixture bytes in the test body, not the setup hook
+    // or the production inspection's own manifest.
+    const originals = fs.readdirSync(directory).sort().map(name => {
+      const bytes = fs.readFileSync(join(directory, name));
+      return { name, bytes: bytes.length, sha256: hash(bytes) };
+    });
+    const runNames = fs.readdirSync(join(root, '.openslack.local/agents/runs'))
+      .filter(name => name.startsWith('RUN-')).sort();
+    const started = performance.now();
     const receipt = applyRunRepair(inspection, authorizeRunRepair(inspection, authority));
+    const repairElapsedMs = performance.now() - started;
+    assert.equal(receipt.outcome, 'preserved_commit');
+    assert.equal(receipt.requiresReconciliation, true);
+    assert.equal(receipt.resources, 'unknown');
+    assert.deepEqual(fs.readdirSync(receipt.archivePath).sort(),
+      [...originals.map(file => file.name), 'before-manifest.json'].sort());
+    for (const file of originals) {
+      const archived = fs.readFileSync(join(receipt.archivePath, file.name));
+      assert.equal(archived.length, file.bytes, file.name);
+      assert.equal(hash(archived), file.sha256, file.name);
+      if (file.name !== 'run.transaction.lock') {
+        assert.equal(hash(fs.readFileSync(join(directory, file.name))), file.sha256, file.name);
+      }
+    }
+    const manifestBytes = fs.readFileSync(join(receipt.archivePath, 'before-manifest.json'));
+    assert.equal(hash(manifestBytes), receipt.archiveManifestSha256);
+    const manifest = JSON.parse(manifestBytes.toString('utf8')) as {
+      schema: string; runId: string; inspectionSha256: string;
+      files: Array<{ name: string; bytes: number; sha256: string }>;
+    };
+    assert.equal(manifest.schema, 'openslack.run_repair_archive.v1');
+    assert.equal(manifest.runId, runId);
+    assert.equal(manifest.inspectionSha256, inspection.inspectionSha256);
+    assert.deepEqual(manifest.files.map(({ name, bytes, sha256 }) => ({ name, bytes, sha256 })), originals);
+    assert.throws(() => fs.lstatSync(join(directory, 'run.transaction.lock')), { code: 'ENOENT' });
+    assert.throws(() => fs.lstatSync(join(directory, 'run.maintenance.json')), { code: 'ENOENT' });
+    assert.deepEqual(fs.readdirSync(join(root, '.openslack.local/agents/runs'))
+      .filter(name => name.startsWith('RUN-')).sort(), runNames);
     assert.equal(createRunStore(root, { sweepOrphans: false }).readRun(runId)!.status, 'completed');
     assert.equal(fs.readdirSync(receipt.archivePath).filter(name => name.startsWith('run.intent.')).length, 4098);
-  }, 20_000);
+    console.info(JSON.stringify({ code: 'RUN_REPAIR_HISTORY_TIMING', platform: process.platform,
+      intentCount: 4098, memberCount: originals.length, repairElapsedMs,
+      testTimeoutMs: platformTestTimeout(20_000) }));
+  }, platformTestTimeout(20_000));
 });

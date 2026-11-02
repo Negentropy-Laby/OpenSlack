@@ -7,7 +7,7 @@ audience:
   - contributors
   - reviewers
 owner: qa
-updated: 2026-11-01
+updated: 2026-11-02
 sources:
   - docs/architecture/adr/adr-0003-harness-closed-loop-repair.md
   - design/cdd/workstreams/agent-runtime-and-aby/README.md
@@ -1169,3 +1169,69 @@ Linux Node24 and Linux Node22 (8 cases per run); original receipts retain that
 precommit execution identity. Test declarations remain 8,861/599. Full new-head
 CI/platform acceptance is separate and the native large-history 20-second gate
 remains open.
+
+### Recovery qualification simplification (2026-11-02)
+
+The requesting maintainer explicitly selected both a separation of correctness
+from timing and impact-based evidence reuse, then requested implementation on
+the existing Draft PR #426. This supersedes the earlier no-timeout-increase
+agreement only for the large-history regression's Windows test watchdog:
+Linux stays at 20 seconds and Windows uses the existing platform helper's
+120 seconds. This changes neither a production deadline nor a recovery latency
+promise. Accepted ADR-0004 already makes no latency claim. The original 20-second
+failures remain FAIL under their recorded candidate and criterion; they are not
+rewritten as passes or described as performance fixes.
+
+Delivery is limited to the existing history test, component guide, this ledger
+and the necessary local task record. Production recovery, ownership, capacity,
+file/FD checks, fsync, source CAS, both archive readbacks, final chain proof and
+no-replay controls are unchanged. No new helper, command, service, credential,
+registry change, real history repair, deployment, approval or merge is included.
+
+The regression now captures original fixture membership and byte digests
+independently at the beginning of its test body, outside the unchanged setup
+hook. After real authorized recovery it checks exact archive membership, each
+original byte count/digest, the bound archive manifest, retained source bytes,
+the original completed state, retired lock/barrier and unchanged run namespace.
+All 4,098 immutable intents remain. It logs only platform, member/intent counts,
+monotonic repair elapsed time and the platform test watchdog. Existing refusal,
+corruption, drift, single-use authorization and no-replay tests remain required.
+
+| Path | Required work | Limit |
+| --- | --- | --- |
+| Ordinary task | Existing governed execution, recording and result inspection | No preliminary archive or whole-store scan; existing approvals still apply. |
+| One unavailable run | Read-only inspection, exact workspace/run/inspection authorization, then existing archive/recovery/readback | Unknown outcomes stay isolated and are never replayed. |
+| Repair delivery | Same PR, affected regressions, current-head required CI, independent review and PRMS | Reuse only unchanged, digest-bound baseline results under their original producer identity. |
+
+Baseline `8a1e2085261502eb7a098dedb0f2a086e793e118` has hosted Linux full
+8,836 passed/25 existing skips and native Windows full 8,466 passed/1 failed/
+88 existing skips. The native sole full-suite failure took 23,378 ms against
+the former 20,000 ms watchdog. The earlier affected native run's two time-bound
+failures also remain preserved. Linux/native actual tested plugin payloads had
+42 identical regular members; their archive SHA-256 values were respectively
+`25255f30f08b6c13a96ee7fc50b94f7ba1655ba89e504e7bee6856c5ca390591` and
+`f5a46a611c8dfbea4ea88d86394e7090dc9b658406a451ec98f2af54011025a2`.
+These remain baseline-source and artifact receipts, not newly executed full
+results or newly rebuilt artifacts for this test/document-only commit.
+
+Production inputs, dependencies, toolchain and artifacts must match before reuse.
+The new frozen head must pass three consecutive affected recovery runs on Linux
+and native Windows and all current-head required CI. A production/dependency/
+build-input change cancels reuse and requires corresponding full platform and
+package qualification. No retry, additional skip, reduced worker count or other
+watchdog increase is permitted. Performance tuning and navigation-only work are
+outside this delivery and add no gate.
+
+The first Linux working-source focused check passed its single strengthened
+case, observing 4,102 original members and all 4,098 intents; repair time was
+2,241.57 ms under the 20,000 ms watchdog. Its execution identity remains
+precommit working source. The same recorded test bytes also passed the native
+Windows focused working-source check: repair took 21,702.07 ms and the complete
+test body took 23,111 ms under the explicitly selected 120,000 ms watchdog.
+This is a correctness pass under the revised criterion, not a repair-speed
+improvement or a newly executed complete native suite. Final frozen-head
+platform/CI receipts and the
+independent review are recorded separately in the external simplification
+batch and PR body after publication, keeping this prepublication ledger entry
+and the candidate's own history immutable. This entry is not a new full native
+run, a human approval, a release decision or a real-model qualification.

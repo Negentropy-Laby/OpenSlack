@@ -6,7 +6,7 @@ authority: canonical
 audience:
   - contributors
 owner: architecture
-updated: 2026-10-28
+updated: 2026-11-02
 sources:
   - docs/reference/document-path-migration-v1.yaml
   - docs/architecture/adr/adr-0003-harness-closed-loop-repair.md
@@ -366,6 +366,32 @@ proof before retiring a proven lock. Unknown/legacy witness, live writer or any
 CAS/archival uncertainty stays isolated; resources/descendants remain unknown.
 Recovery never creates execution eligibility or claims an unknown success.
 This repair batch exercises only synthetic fixture data, not real old runs.
+
+Use separate paths for ordinary work, maintenance and development qualification:
+
+| Path | Required sequence | Boundary |
+| --- | --- | --- |
+| Ordinary task | Existing governed execution, durable recording, then result inspection | No preliminary history archive or whole-store scan. Existing task approvals still apply. |
+| One unavailable run | Read-only inspection, exact workspace/run/inspection authorization, then existing archive/recovery/readback | The recovery function owns its checks; `--write` alone grants no authority. Unknown results are not replayed. |
+| Repair delivery | Append to the existing PR, run affected regressions, then current-head CI and independent review | Reuse only unchanged, digest-bound baseline evidence and keep its actual producing candidate. |
+
+The greater-than-4096-member regression checks recovery correctness separately
+from elapsed-time observations. It independently captures original fixture file
+membership/digests in the test body, verifies the complete archive and retained
+originals, and preserves the committed result. Its existing platform test helper
+supplies a 20-second Linux watchdog and a 120-second Windows watchdog. These are
+test execution bounds, not production recovery latency promises or changes to
+task deadlines, leases or cleanup budgets. The former Windows 20-second timeout
+remains historical FAIL evidence; a result under the revised criterion never
+rewrites it.
+
+For test/document-only changes, qualify affected recovery behavior on both
+platforms and run every current-head required CI check. Reuse prior full-suite
+and package evidence only after production inputs, dependencies, toolchain and
+artifact digests match. If those inputs change, repeat the corresponding full
+platform/package qualification. A reused baseline full run must not be reported
+as a newly executed full run. Performance tuning and navigation-only cleanup do
+not add prerequisites to ordinary tasks or this evidence reuse.
 
 The storage owner and maintenance reader share a **96 MiB charged budget**.
 Ordinary publication uses at most 94 MiB; each member costs at least 1 KiB,
