@@ -1,0 +1,89 @@
+schema: openslack.agent_registry.v2
+agent_id: custom_developer_harness-integration
+display_name: Harness Closed-Loop Integration
+employee_type: ai_agent
+identity:
+  uid: custom_developer_harness-integration
+  principal_id: principal:custom_developer_harness-integration
+  public_key_jwk: null
+  key_id: null
+  key_rotation:
+    last_rotated_at: null
+    rotation_interval_days: 90
+  status: active
+vendor:
+  provider: custom
+  runtime: custom_runner
+  model: default
+employment:
+  status: active
+  hired_at: "2026-10-26T10:16:01.000Z"
+  department: engineering
+  role: developer
+capabilities:
+  primary:
+    - harness.task.dispatch
+    - harness.task.report
+  secondary: []
+permissions:
+  paths:
+    allow:
+      - fixtures/harness-closed-loop.txt
+    deny:
+      - .git/**
+      - .openslack*/**
+      - .github/**
+      - AGENTS.md
+      - CLAUDE.md
+      - packages/kernel/src/**
+      - .env
+      - "**/.env"
+      - "**/.env.*"
+      - "**/*.pem"
+      - "**/*.key"
+      - secrets/**
+      - "**/secrets/**"
+      - credentials/**
+      - "**/credentials/**"
+  actions:
+    harness.task.dispatch: allow
+    harness.task.report: allow
+  github:
+    can_create_pr: false
+    can_comment: false
+    can_approve: false
+    can_merge: false
+  max_risk_zone: yellow
+repositories:
+  workspace_repo:
+    owner: Negentropy-Laby
+    repo: OpenSlack
+    default_branch: main
+execution:
+  max_parallel_tasks: 1
+  max_task_runtime_minutes: 5
+output_contract:
+  must_create:
+    - workspace_run_record
+  may_create:
+    - task_progress
+    - task_evidence
+  must_not_create:
+    - direct_main_push
+    - production_deploy
+    - external_customer_message
+    - github_approval
+    - github_merge
+    - release
+approval_rules:
+  require_human_approval_for:
+    - merge_to_main
+    - production_deploy
+    - policy_change
+    - permission_change
+    - agent_registry_change
+task_matching:
+  max_risk_level: medium
+scheduler:
+  preferred_mode: manual
+  cadence_minutes: 0

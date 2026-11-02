@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const hoisted = vi.hoisted(() => ({
   mockGetClient: vi.fn(),
@@ -34,9 +34,473 @@ function makeClient(octokit: Record<string, unknown>) {
   });
 }
 
+function trackAssertion<T>(assertion: Promise<T>): Promise<T> {
+  // RED assertions can reject while fake time advances; still await them below.
+  void assertion.catch(() => {});
+  return assertion;
+}
+
 describe('strict PR live evidence', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  it.each(['2040-01-01T00:00:00Z', '2000-01-01T00:00:00Z'])(
+    'collects slow pages and rename sources despite a wall-clock jump to %s',
+    async (wallClock) => {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
+      const listFiles = vi.fn().mockImplementation(
+        ({ page }: { page: number }) =>
+          new Promise((resolve) =>
+            setTimeout(
+              () =>
+                resolve({
+                  data:
+                    page === 1
+                      ? Array.from({ length: 100 }, (_, index) => ({
+                          filename: `first-${index}.ts`,
+                        }))
+                      : [{ filename: 'new.ts', previous_filename: 'old.ts' }],
+                }),
+              13_000,
+            ),
+          ),
+      );
+      const graphql = vi.fn();
+      makeClient({ pulls: { listFiles }, graphql });
+      const pending = listPRFiles(426, { strictEvidence: true });
+      const assertion = trackAssertion(expect(pending).resolves.toHaveLength(102));
+      await vi.advanceTimersByTimeAsync(13_000);
+      vi.setSystemTime(new Date(wallClock));
+      await vi.advanceTimersByTimeAsync(13_000);
+      await assertion;
+      expect(await pending).toEqual(expect.arrayContaining(['new.ts', 'old.ts']));
+      expect(listFiles).toHaveBeenCalledTimes(2);
+      expect(graphql).not.toHaveBeenCalled();
+      expect(vi.getTimerCount()).toBe(0);
+    },
+  );
+
+  it('aborts the second REST page at the shared deadline without returning partial evidence', async () => {
+    vi.useFakeTimers();
+    const signals: AbortSignal[] = [];
+    const listFiles = vi
+      .fn()
+      .mockImplementation(({ request }: { request: { signal: AbortSignal } }) => {
+        signals.push(request.signal);
+        return new Promise((resolve) =>
+          setTimeout(
+            () =>
+              resolve({
+                data: Array.from({ length: 100 }, (_, index) => ({ filename: `file-${index}.ts` })),
+              }),
+            20_000,
+          ),
+        );
+      });
+    const graphql = vi.fn();
+    makeClient({ pulls: { listFiles }, graphql });
+    const assertion = trackAssertion(
+      expect(listPRFiles(426, { strictEvidence: true })).rejects.toMatchObject({
+        name: 'AbortError',
+      }),
+    );
+    await vi.advanceTimersByTimeAsync(30_000);
+    await assertion;
+    expect(listFiles).toHaveBeenCalledTimes(2);
+    expect(signals.at(-1)?.aborted).toBe(true);
+    expect(graphql).not.toHaveBeenCalled();
+  });
+
+  it.each([429, 500])(
+    'allows the existing retry for HTTP %i without an 8-second per-attempt cutoff',
+    async (status) => {
+      vi.useFakeTimers();
+      const listFiles = vi
+        .fn()
+        .mockImplementationOnce(
+          () =>
+            new Promise((_resolve, reject) =>
+              setTimeout(() => {
+                reject(Object.assign(new Error('temporary server failure'), { status }));
+              }, 5_000),
+            ),
+        )
+        .mockImplementationOnce(
+          () =>
+            new Promise((resolve) =>
+              setTimeout(() => {
+                resolve({ data: [{ filename: 'complete.ts' }] });
+              }, 20_000),
+            ),
+        );
+      makeClient({ pulls: { listFiles }, graphql: vi.fn() });
+      const assertion = trackAssertion(
+        expect(listPRFiles(426, { strictEvidence: true })).resolves.toEqual(['complete.ts']),
+      );
+      await vi.advanceTimersByTimeAsync(25_075);
+      await assertion;
+      expect(listFiles).toHaveBeenCalledTimes(2);
+      expect(vi.getTimerCount()).toBe(0);
+    },
+  );
+
+  it('does not renew the file budget after retry backoff', async () => {
+    vi.useFakeTimers();
+    const listFiles = vi
+      .fn()
+      .mockImplementationOnce(
+        () =>
+          new Promise((_resolve, reject) =>
+            setTimeout(() => {
+              reject(serverError());
+            }, 12_000),
+          ),
+      )
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) =>
+            setTimeout(() => {
+              resolve({ data: [{ filename: 'too-late.ts' }] });
+            }, 18_000),
+          ),
+      );
+    const graphql = vi.fn();
+    makeClient({ pulls: { listFiles }, graphql });
+    const assertion = trackAssertion(
+      expect(listPRFiles(426, { strictEvidence: true })).rejects.toMatchObject({
+        name: 'AbortError',
+      }),
+    );
+    await vi.advanceTimersByTimeAsync(30_000);
+    await assertion;
+    expect(listFiles).toHaveBeenCalledTimes(2);
+    expect(graphql).not.toHaveBeenCalled();
+  });
+
+  it('keeps REST failure and permitted GraphQL fallback inside the same file budget', async () => {
+    vi.useFakeTimers();
+    const listFiles = vi.fn().mockImplementation(
+      () =>
+        new Promise((_resolve, reject) => {
+          setTimeout(
+            () => reject(Object.assign(new Error('REST unavailable'), { status: 400 })),
+            12_000,
+          );
+        }),
+    );
+    let fallbackSignal: AbortSignal | undefined;
+    const graphql = vi
+      .fn()
+      .mockImplementation((_query: string, variables: { request: { signal: AbortSignal } }) => {
+        fallbackSignal = variables.request.signal;
+        return new Promise((resolve) =>
+          setTimeout(
+            () =>
+              resolve({
+                repository: {
+                  pullRequest: {
+                    files: {
+                      nodes: [{ path: 'too-late.ts', changeType: 'MODIFIED' }],
+                      pageInfo: { hasNextPage: false, endCursor: null },
+                    },
+                  },
+                },
+              }),
+            19_000,
+          ),
+        );
+      });
+    makeClient({ pulls: { listFiles }, graphql });
+    const assertion = trackAssertion(
+      expect(listPRFiles(426, { strictEvidence: true })).rejects.toMatchObject({
+        name: 'AbortError',
+      }),
+    );
+    await vi.advanceTimersByTimeAsync(30_000);
+    await assertion;
+    expect(listFiles).toHaveBeenCalledOnce();
+    expect(graphql).toHaveBeenCalledOnce();
+    expect(fallbackSignal?.aborted).toBe(true);
+  });
+
+  it('collects permitted slow GraphQL pages without renewing the shared file deadline', async () => {
+    vi.useFakeTimers();
+    const graphql = vi.fn().mockImplementation(
+      (_query: string, variables: { after: string | null }) =>
+        new Promise((resolve) =>
+          setTimeout(
+            () =>
+              resolve({
+                repository: {
+                  pullRequest: {
+                    files: {
+                      nodes:
+                        variables.after === null
+                          ? Array.from({ length: 100 }, (_, index) => ({
+                              path: `file-${index}.ts`,
+                              changeType: 'MODIFIED',
+                            }))
+                          : [{ path: 'last.ts', changeType: 'ADDED' }],
+                      pageInfo:
+                        variables.after === null
+                          ? { hasNextPage: true, endCursor: 'next' }
+                          : { hasNextPage: false, endCursor: null },
+                    },
+                  },
+                },
+              }),
+            9_000,
+          ),
+        ),
+    );
+    makeClient({
+      pulls: {
+        listFiles: vi
+          .fn()
+          .mockRejectedValue(Object.assign(new Error('REST unavailable'), { status: 400 })),
+      },
+      graphql,
+    });
+    const assertion = trackAssertion(
+      expect(listPRFiles(426, { strictEvidence: true })).resolves.toHaveLength(101),
+    );
+    await vi.advanceTimersByTimeAsync(18_000);
+    await assertion;
+    expect(graphql).toHaveBeenCalledTimes(2);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('aborts a late second GraphQL page instead of returning its first-page paths', async () => {
+    vi.useFakeTimers();
+    const listFiles = vi.fn().mockImplementation(
+      () =>
+        new Promise((_resolve, reject) => {
+          setTimeout(
+            () => reject(Object.assign(new Error('REST unavailable'), { status: 400 })),
+            12_000,
+          );
+        }),
+    );
+    const signals: AbortSignal[] = [];
+    const graphql = vi
+      .fn()
+      .mockImplementation(
+        (_query: string, variables: { after: string | null; request: { signal: AbortSignal } }) => {
+          signals.push(variables.request.signal);
+          return new Promise((resolve) =>
+            setTimeout(
+              () =>
+                resolve({
+                  repository: {
+                    pullRequest: {
+                      files: {
+                        nodes: [
+                          {
+                            path: variables.after ? 'second.ts' : 'first.ts',
+                            changeType: 'MODIFIED',
+                          },
+                        ],
+                        pageInfo: variables.after
+                          ? { hasNextPage: false, endCursor: null }
+                          : { hasNextPage: true, endCursor: 'next' },
+                      },
+                    },
+                  },
+                }),
+              10_000,
+            ),
+          );
+        },
+      );
+    makeClient({ pulls: { listFiles }, graphql });
+    const assertion = trackAssertion(
+      expect(listPRFiles(426, { strictEvidence: true })).rejects.toMatchObject({
+        name: 'AbortError',
+      }),
+    );
+    await vi.advanceTimersByTimeAsync(30_000);
+    await assertion;
+    expect(graphql).toHaveBeenCalledTimes(2);
+    expect(signals[1]?.aborted).toBe(true);
+  });
+
+  it('cancels retry backoff without another REST attempt or a fallback', async () => {
+    vi.useFakeTimers();
+    const controller = new AbortController();
+    const listFiles = vi.fn().mockRejectedValue(serverError());
+    const graphql = vi.fn();
+    makeClient({ pulls: { listFiles }, graphql });
+    const assertion = trackAssertion(
+      expect(
+        listPRFiles(426, { strictEvidence: true, signal: controller.signal }),
+      ).rejects.toMatchObject({ name: 'AbortError' }),
+    );
+    await vi.advanceTimersByTimeAsync(50);
+    controller.abort();
+    await assertion;
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(listFiles).toHaveBeenCalledOnce();
+    expect(graphql).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('rejects a response after the monotonic deadline even if its timer has not run', async () => {
+    let now = 0;
+    vi.spyOn(performance, 'now').mockImplementation(() => now);
+    const listFiles = vi.fn().mockImplementation(async () => {
+      now = 30_001;
+      return { data: [{ filename: 'too-late.ts' }] };
+    });
+    const graphql = vi.fn();
+    makeClient({ pulls: { listFiles }, graphql });
+    await expect(listPRFiles(426, { strictEvidence: true })).rejects.toMatchObject({
+      name: 'AbortError',
+    });
+    expect(listFiles).toHaveBeenCalledOnce();
+    expect(graphql).not.toHaveBeenCalled();
+  });
+
+  it.each([400, 500])(
+    'does not start fallback or retry after a late HTTP %i failure',
+    async (status) => {
+      let now = 0;
+      vi.spyOn(performance, 'now').mockImplementation(() => now);
+      const listFiles = vi.fn().mockImplementation(async () => {
+        now = 30_001;
+        throw Object.assign(new Error('late REST failure'), { status });
+      });
+      const graphql = vi.fn().mockResolvedValue({
+        repository: {
+          pullRequest: {
+            files: {
+              nodes: [{ path: 'late-fallback.ts', changeType: 'MODIFIED' }],
+              pageInfo: { hasNextPage: false, endCursor: null },
+            },
+          },
+        },
+      });
+      makeClient({ pulls: { listFiles }, graphql });
+      await expect(listPRFiles(426, { strictEvidence: true })).rejects.toMatchObject({
+        name: 'AbortError',
+      });
+      expect(listFiles).toHaveBeenCalledOnce();
+      expect(graphql).not.toHaveBeenCalled();
+    },
+  );
+
+  it('does not start another page after a late full first page', async () => {
+    let now = 0;
+    vi.spyOn(performance, 'now').mockImplementation(() => now);
+    const listFiles = vi.fn().mockImplementation(async () => {
+      now = 30_001;
+      return {
+        data: Array.from({ length: 100 }, (_, index) => ({ filename: `late-${index}.ts` })),
+      };
+    });
+    const graphql = vi.fn();
+    makeClient({ pulls: { listFiles }, graphql });
+    await expect(listPRFiles(426, { strictEvidence: true })).rejects.toMatchObject({
+      name: 'AbortError',
+    });
+    expect(listFiles).toHaveBeenCalledOnce();
+    expect(graphql).not.toHaveBeenCalled();
+  });
+
+  it('does not start the retry if monotonic time expired while backoff was pending', async () => {
+    vi.useFakeTimers();
+    let now = 0;
+    vi.spyOn(performance, 'now').mockImplementation(() => now);
+    const listFiles = vi
+      .fn()
+      .mockRejectedValueOnce(serverError())
+      .mockResolvedValue({ data: [{ filename: 'too-late.ts' }] });
+    const graphql = vi.fn();
+    makeClient({ pulls: { listFiles }, graphql });
+    const assertion = trackAssertion(
+      expect(listPRFiles(426, { strictEvidence: true })).rejects.toMatchObject({
+        name: 'AbortError',
+      }),
+    );
+    await vi.advanceTimersByTimeAsync(50);
+    now = 30_001;
+    await vi.advanceTimersByTimeAsync(25);
+    await assertion;
+    expect(listFiles).toHaveBeenCalledOnce();
+    expect(graphql).not.toHaveBeenCalled();
+  });
+
+  it('keeps the existing 8-second budget for review evidence', async () => {
+    vi.useFakeTimers();
+    let signal: AbortSignal | undefined;
+    const listReviews = vi
+      .fn()
+      .mockImplementation(({ request }: { request: { signal: AbortSignal } }) => {
+        signal = request.signal;
+        return new Promise(() => {});
+      });
+    const graphql = vi.fn();
+    makeClient({ pulls: { listReviews }, graphql });
+    const assertion = trackAssertion(
+      expect(getPRReviews(426, { strictEvidence: true })).rejects.toMatchObject({
+        name: 'AbortError',
+      }),
+    );
+    await vi.advanceTimersByTimeAsync(8_000);
+    await assertion;
+    expect(signal?.aborted).toBe(true);
+    expect(listReviews).toHaveBeenCalledOnce();
+    expect(graphql).not.toHaveBeenCalled();
+  });
+
+  it.each(['RENAMED', 'COPIED', 'UNCHANGED', 'UNKNOWN', undefined])(
+    'rejects strict GraphQL file evidence that cannot prove original paths: %s',
+    async (changeType) => {
+      const graphql = vi.fn().mockResolvedValue({
+        repository: {
+          pullRequest: {
+            files: {
+              nodes: [{ path: 'new.ts', changeType }],
+              pageInfo: { hasNextPage: false, endCursor: null },
+            },
+          },
+        },
+      });
+      makeClient({
+        pulls: {
+          listFiles: vi
+            .fn()
+            .mockRejectedValue(Object.assign(new Error('REST unavailable'), { status: 400 })),
+        },
+        graphql,
+      });
+      await expect(listPRFiles(426, { strictEvidence: true })).rejects.toThrow(
+        'GITHUB_EVIDENCE_FILES_INCOMPLETE',
+      );
+    },
+  );
+
+  it.each([
+    undefined,
+    { nodes: [], pageInfo: { hasNextPage: true, endCursor: null } },
+    { nodes: [null], pageInfo: { hasNextPage: false, endCursor: null } },
+  ])('rejects missing or incomplete strict GraphQL file connections: %j', async (files) => {
+    makeClient({
+      pulls: {
+        listFiles: vi
+          .fn()
+          .mockRejectedValue(Object.assign(new Error('REST unavailable'), { status: 400 })),
+      },
+      graphql: vi.fn().mockResolvedValue({ repository: { pullRequest: { files } } }),
+    });
+    await expect(listPRFiles(426, { strictEvidence: true })).rejects.toThrow(
+      'GITHUB_EVIDENCE_FILES_INCOMPLETE',
+    );
   });
 
   it('omits a merge head constraint by default and sends one only when explicitly supplied', async () => {
@@ -75,7 +539,9 @@ describe('strict PR live evidence', () => {
           repository: {
             pullRequest: {
               files: {
-                nodes: [{ path: '.github/workflows/openslack-tui-gate.yml' }],
+                nodes: [
+                  { path: '.github/workflows/openslack-tui-gate.yml', changeType: 'MODIFIED' },
+                ],
                 pageInfo: { hasNextPage: false, endCursor: null },
               },
             },
@@ -452,6 +918,7 @@ describe('strict PR live evidence', () => {
           files: {
             nodes: Array.from({ length: 100 }, (_, index) => ({
               path: `packages/a/file-${index}.ts`,
+              changeType: 'MODIFIED',
             })),
             pageInfo: { hasNextPage: true, endCursor: 'next' },
           },

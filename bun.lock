@@ -77,7 +77,9 @@
       "version": "0.2.0",
       "dependencies": {
         "@modelcontextprotocol/sdk": "1.29.0",
+        "@openslack/agent-runtime": "workspace:*",
         "@openslack/collaboration": "workspace:*",
+        "@openslack/core": "workspace:*",
         "@openslack/github": "workspace:*",
         "@openslack/kernel": "workspace:*",
         "@openslack/operator": "workspace:*",
@@ -97,6 +99,7 @@
       "version": "0.2.0",
       "dependencies": {
         "@openslack/collaboration": "workspace:*",
+        "@openslack/core": "workspace:*",
         "@openslack/credentials": "workspace:*",
         "@openslack/kernel": "workspace:*",
         "@openslack/runtime": "workspace:*",
@@ -224,6 +227,9 @@
     "packages/qoder-adapter": {
       "name": "@openslack/qoder-adapter",
       "version": "0.2.0",
+      "dependencies": {
+        "@openslack/core": "workspace:*",
+      },
     },
     "packages/runtime": {
       "name": "@openslack/runtime",
@@ -289,6 +295,9 @@
     "packages/workflows": {
       "name": "@openslack/workflows",
       "version": "0.2.0",
+      "bin": {
+        "openslack-workflow-runner": "./dist/workflow-runner-worker-bin.js",
+      },
       "dependencies": {
         "@openslack/agent-runtime": "workspace:*",
         "@openslack/collaboration": "workspace:*",

@@ -19,7 +19,9 @@ import {
   WORKFLOW_LOCAL_EVIDENCE_MAX_BYTES,
 } from './internal/workflow-evidence-file.js';
 import {
-  readRunStateSnapshot,
+  readRunStateSnapshotWhenAvailable,
+  RunStateInvalidError,
+  RunStateSnapshotChangedError,
   type AgentRunEvent,
   type AgentRunState,
 } from '@openslack/agent-runtime';
@@ -164,7 +166,10 @@ function recordReadFailure(
   strictRead: boolean,
   diagnostics: WorkflowRunReadDiagnostic[],
 ): void {
-  const failure = asWorkflowRunReadError(error, context);
+  const failure = error instanceof RunStateInvalidError || error instanceof RunStateSnapshotChangedError
+    ? new WorkflowRunReadError([{ ...context, code: error instanceof RunStateInvalidError
+      ? 'WORKFLOW_PROGRESS_LOCAL_EVIDENCE_INVALID' : 'WORKFLOW_RUN_EVIDENCE_RECONCILIATION_REQUIRED' }], { cause: error })
+    : asWorkflowRunReadError(error, context);
   if (strictRead) throw failure;
   diagnostics.push(...failure.diagnostics);
 }
@@ -565,7 +570,7 @@ async function enrichAgent(
   if (!agent.agentRunId) return agent;
   let state: AgentRunState | null = null;
   try {
-    state = readRunStateSnapshot(agent.agentRunId, rootDir);
+    state = await readRunStateSnapshotWhenAvailable(agent.agentRunId, rootDir);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
       recordReadFailure(error, context, strictRead, readDiagnostics);

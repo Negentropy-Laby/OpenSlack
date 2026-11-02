@@ -16,8 +16,9 @@ export function createGitHubAppJwt(
   }
   const seconds = Math.floor(now() / 1000);
   const header = base64urlEncode(Buffer.from(JSON.stringify({ alg: 'RS256', typ: 'JWT' })));
+  // Leave 60 seconds below GitHub's ten-minute future-expiry limit for clock skew.
   const payload = base64urlEncode(
-    Buffer.from(JSON.stringify({ iat: seconds - 60, exp: seconds + 600, iss: appId })),
+    Buffer.from(JSON.stringify({ iat: seconds - 60, exp: seconds + 540, iss: appId })),
   );
   const signer = createSign('RSA-SHA256');
   signer.update(`${header}.${payload}`);

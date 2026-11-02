@@ -185,6 +185,21 @@ async function createPending(port: WorkflowEffectAuthorizationPort) {
   return { prepared, pending: pending! };
 }
 
+function issueFixtureDecisionBinding(
+  value: Awaited<ReturnType<typeof fixture>>,
+  input: Parameters<typeof value.decisionAuthority.issueHumanDecisionBinding>[0],
+) {
+  // The store already uses this fixture clock. Keep synchronous issuance in
+  // the same window, then restore real time before any filesystem await.
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(value.getNow());
+  try {
+    return value.decisionAuthority.issueHumanDecisionBinding(input);
+  } finally {
+    vi.useRealTimers();
+  }
+}
+
 async function approve(value: Awaited<ReturnType<typeof fixture>>, approvalId: string) {
   const pending = await value.approvals.read('run-1', approvalId);
   expect(pending?.status).toBe('pending');
@@ -1121,10 +1136,10 @@ describe('workflow effect D2 authorization', () => {
   });
 
   it('recovers a committed v2 decision from the prepared decision journal after restart', async () => {
-    const value = await fixture();
+    const value = await fixture('2026-10-01T00:00:00.000Z');
     const { pending } = await createPending(value.makePort());
     const current = await value.approvals.read('run-1', pending.approvalId);
-    const binding = value.decisionAuthority.issueHumanDecisionBinding({
+    const binding = issueFixtureDecisionBinding(value, {
       principalId: 'wsman',
       capability: 'workflow.effect.decide',
       runId: 'run-1',
@@ -1135,6 +1150,7 @@ describe('workflow effect D2 authorization', () => {
       reasonHash: REASON_HASH,
       expiresAt: new Date(Date.parse(value.getNow()) + 30_000).toISOString(),
     });
+    expect(binding.issuedAt).toBe(value.getNow());
     value.setNow(binding.issuedAt);
     const next = applyWorkflowEffectApprovalDecision(
       current!,
@@ -1152,7 +1168,7 @@ describe('workflow effect D2 authorization', () => {
       workflowEffectApprovalBytes(next),
     );
 
-    const repairBinding = value.decisionAuthority.issueHumanDecisionBinding({
+    const repairBinding = issueFixtureDecisionBinding(value, {
       principalId: 'wsman',
       capability: 'workflow.effect.decide',
       runId: 'run-1',
@@ -1163,6 +1179,7 @@ describe('workflow effect D2 authorization', () => {
       reasonHash: REASON_HASH,
       expiresAt: new Date(Date.parse(value.getNow()) + 30_000).toISOString(),
     });
+    expect(repairBinding.issuedAt).toBe(value.getNow());
     expect(repairBinding.nonce).not.toBe(binding.nonce);
     const repaired = await value.approvals.decide({
       runId: 'run-1',
@@ -1188,10 +1205,10 @@ describe('workflow effect D2 authorization', () => {
   });
 
   it('preserves a live same-process journal and rolls back only a provably dead owner', async () => {
-    const value = await fixture();
+    const value = await fixture('2026-10-01T00:00:00.000Z');
     const { pending } = await createPending(value.makePort());
     const current = await value.approvals.read('run-1', pending.approvalId);
-    const binding = value.decisionAuthority.issueHumanDecisionBinding({
+    const binding = issueFixtureDecisionBinding(value, {
       principalId: 'wsman',
       capability: 'workflow.effect.decide',
       runId: 'run-1',
@@ -1202,6 +1219,7 @@ describe('workflow effect D2 authorization', () => {
       reasonHash: REASON_HASH,
       expiresAt: new Date(Date.parse(value.getNow()) + 30_000).toISOString(),
     });
+    expect(binding.issuedAt).toBe(value.getNow());
     value.setNow(binding.issuedAt);
     const next = applyWorkflowEffectApprovalDecision(
       current!,

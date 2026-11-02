@@ -6,6 +6,8 @@ import { normalizeErrorMessage } from './error-message.js';
 const RETRY_ATTEMPTS = 2;
 const RETRY_DELAY_MS = 75;
 const EVIDENCE_TIMEOUT_MS = 8_000;
+// One budget for the complete file list, including pages, retries and fallback.
+const FILE_EVIDENCE_TIMEOUT_MS = 30_000;
 const DEFAULT_MAX_EVIDENCE_PAGES = 10;
 const DEFAULT_MAX_EVIDENCE_ITEMS = 1_000;
 const DEFAULT_MAX_TREE_ENTRIES = 100_000;
@@ -39,6 +41,11 @@ function abortError(): Error {
 
 function assertNotAborted(signal?: AbortSignal): void {
   if (signal?.aborted) throw abortError();
+}
+
+function assertEvidenceBudget(signal?: AbortSignal, deadline?: number): void {
+  assertNotAborted(signal);
+  if (deadline !== undefined && performance.now() >= deadline) throw abortError();
 }
 
 export class GitHubEvidenceUnavailableError extends Error {
@@ -98,7 +105,7 @@ function isRetryableEvidenceError(error: unknown): boolean {
 function isEvidenceBoundaryError(error: unknown): boolean {
   return (
     (error instanceof Error && error.name === 'AbortError') ||
-    /GITHUB_EVIDENCE_(?:ABORTED|LIMIT_INVALID|CODEOWNERS_INVALID|(?:PAGES|FILES|REVIEWS|CHECKS|PATCHES|TREE|CODEOWNERS_BYTES)_LIMIT_EXCEEDED)/.test(
+    /GITHUB_EVIDENCE_(?:ABORTED|LIMIT_INVALID|CODEOWNERS_INVALID|FILES_INCOMPLETE|(?:PAGES|FILES|REVIEWS|CHECKS|PATCHES|TREE|CODEOWNERS_BYTES)_LIMIT_EXCEEDED)/.test(
       normalizeErrorMessage(error),
     )
   );
@@ -124,8 +131,11 @@ async function withTimeout<T>(
   operationName: string,
   operation: (signal: AbortSignal) => Promise<T>,
   parentSignal?: AbortSignal,
+  timeoutMs = EVIDENCE_TIMEOUT_MS,
+  absoluteDeadline?: number,
 ): Promise<T> {
-  assertNotAborted(parentSignal);
+  const deadline = absoluteDeadline ?? performance.now() + timeoutMs;
+  assertEvidenceBudget(parentSignal, deadline);
   const controller = new AbortController();
   const abortFromParent = () => controller.abort(parentSignal?.reason ?? abortError());
   parentSignal?.addEventListener('abort', abortFromParent, { once: true });
@@ -134,15 +144,31 @@ async function withTimeout<T>(
   });
   let timeoutId: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<never>((_, reject) => {
-    timeoutId = setTimeout(() => {
-      controller.abort(new Error(`${operationName} timed out after ${EVIDENCE_TIMEOUT_MS}ms`));
-      reject(new Error(`${operationName} timed out after ${EVIDENCE_TIMEOUT_MS}ms`));
-    }, EVIDENCE_TIMEOUT_MS);
+    timeoutId = setTimeout(
+      () => {
+        controller.abort(new Error(`${operationName} timed out after ${timeoutMs}ms`));
+        reject(new Error(`${operationName} timed out after ${timeoutMs}ms`));
+      },
+      Math.max(0, deadline - performance.now()),
+    );
     timeoutId.unref?.();
   });
 
   try {
-    return await Promise.race([operation(controller.signal), timeout, aborted]);
+    const result = await Promise.race([operation(controller.signal), timeout, aborted]);
+    assertNotAborted(controller.signal);
+    // A blocked event loop must not let a late response win before the timer runs.
+    if (performance.now() >= deadline) {
+      controller.abort();
+      throw abortError();
+    }
+    return result;
+  } catch (error) {
+    // Rejections can also resume before a delayed timer: do not retry/fallback
+    // after the original deadline merely because the timer has not fired yet.
+    if (performance.now() >= deadline) controller.abort();
+    assertNotAborted(controller.signal);
+    throw error;
   } finally {
     if (timeoutId) clearTimeout(timeoutId);
     parentSignal?.removeEventListener('abort', abortFromParent);
@@ -153,12 +179,14 @@ async function withRetry<T>(
   operationName: string,
   operation: (signal: AbortSignal) => Promise<T>,
   signal?: AbortSignal,
+  timeoutMs = EVIDENCE_TIMEOUT_MS,
+  deadline?: number,
 ): Promise<T> {
   let lastError: unknown;
   for (let attempt = 0; attempt < RETRY_ATTEMPTS; attempt++) {
-    assertNotAborted(signal);
+    assertEvidenceBudget(signal, deadline);
     try {
-      return await withTimeout(operationName, operation, signal);
+      return await withTimeout(operationName, operation, signal, timeoutMs, deadline);
     } catch (error) {
       lastError = error;
       if (attempt === RETRY_ATTEMPTS - 1 || !isRetryableEvidenceError(error)) break;
@@ -189,6 +217,8 @@ async function graphqlRequest<T>(
   query: string,
   variables: Record<string, unknown>,
   options?: GitHubClientOptions,
+  timeoutMs = EVIDENCE_TIMEOUT_MS,
+  deadline?: number,
 ): Promise<T> {
   const graphql = client.octokit.graphql as unknown as (
     query: string,
@@ -198,6 +228,8 @@ async function graphqlRequest<T>(
     'GitHub GraphQL request',
     (signal) => graphql(query, { ...variables, request: { signal } }),
     options?.signal,
+    timeoutMs,
+    deadline,
   );
 }
 
@@ -209,12 +241,13 @@ async function listPRFilesRest(
   client: Awaited<ReturnType<typeof getClient>>,
   prNumber: number,
   options?: GitHubClientOptions,
+  deadline?: number,
 ): Promise<Array<{ filename: string; previous_filename?: string; patch?: string }>> {
   const files: Array<{ filename: string; previous_filename?: string; patch?: string }> = [];
   const maxPages = evidenceLimit(options, 'maxPages', DEFAULT_MAX_EVIDENCE_PAGES);
   const maxFiles = evidenceLimit(options, 'maxFiles', DEFAULT_MAX_EVIDENCE_ITEMS);
   for (let page = 1; page <= maxPages; page += 1) {
-    assertNotAborted(options?.signal);
+    assertEvidenceBudget(options?.signal, deadline);
     const { data } = await client.octokit.pulls.listFiles({
       owner: client.owner,
       repo: client.repo,
@@ -450,7 +483,7 @@ interface GraphQLFilesResponse {
   repository?: {
     pullRequest?: {
       files?: {
-        nodes?: Array<{ path: string } | null> | null;
+        nodes?: Array<{ path: string; changeType?: string } | null> | null;
         pageInfo: { hasNextPage: boolean; endCursor?: string | null };
       } | null;
     } | null;
@@ -585,6 +618,8 @@ async function listPRFilesGraphQL(
   client: Awaited<ReturnType<typeof getClient>>,
   prNumber: number,
   options?: GitHubClientOptions,
+  timeoutMs = EVIDENCE_TIMEOUT_MS,
+  deadline?: number,
 ): Promise<string[]> {
   const files: string[] = [];
   let after: string | null = null;
@@ -592,7 +627,7 @@ async function listPRFilesGraphQL(
   const maxPages = evidenceLimit(options, 'maxPages', DEFAULT_MAX_EVIDENCE_PAGES);
   const maxFiles = evidenceLimit(options, 'maxFiles', DEFAULT_MAX_EVIDENCE_ITEMS);
   do {
-    assertNotAborted(options?.signal);
+    assertEvidenceBudget(options?.signal, deadline);
     pages += 1;
     if (pages > maxPages) throw new Error('GITHUB_EVIDENCE_PAGES_LIMIT_EXCEEDED');
     const response: GraphQLFilesResponse = await graphqlRequest<GraphQLFilesResponse>(
@@ -602,7 +637,7 @@ async function listPRFilesGraphQL(
           repository(owner: $owner, name: $repo) {
             pullRequest(number: $number) {
               files(first: 100, after: $after) {
-                nodes { path }
+                nodes { path changeType }
                 pageInfo { hasNextPage endCursor }
               }
             }
@@ -611,6 +646,8 @@ async function listPRFilesGraphQL(
       `,
       { owner: client.owner, repo: client.repo, number: prNumber, after },
       options,
+      timeoutMs,
+      deadline,
     );
     const connection:
       | NonNullable<
@@ -618,7 +655,27 @@ async function listPRFilesGraphQL(
         >
       | null
       | undefined = response.repository?.pullRequest?.files;
+    if (
+      options?.strictEvidence &&
+      (!connection ||
+        !Array.isArray(connection.nodes) ||
+        typeof connection.pageInfo?.hasNextPage !== 'boolean' ||
+        (connection.pageInfo.hasNextPage && !connection.pageInfo.endCursor))
+    ) {
+      throw new Error('GITHUB_EVIDENCE_FILES_INCOMPLETE: missing file connection or cursor.');
+    }
     for (const node of connection?.nodes ?? []) {
+      // GraphQL exposes changeType but no previous_filename. Never certify a
+      // renamed/copied or unclassified path as the complete strict file set.
+      if (
+        options?.strictEvidence &&
+        (!node ||
+          typeof node.path !== 'string' ||
+          !node.path ||
+          !['ADDED', 'DELETED', 'MODIFIED', 'CHANGED'].includes(node.changeType ?? ''))
+      ) {
+        throw new Error('GITHUB_EVIDENCE_FILES_INCOMPLETE: original paths cannot be proven.');
+      }
       if (node?.path) files.push(node.path);
       if (files.length > maxFiles) throw new Error('GITHUB_EVIDENCE_FILES_LIMIT_EXCEEDED');
     }
@@ -883,11 +940,29 @@ export async function listPRFiles(
     console.log(`[DRY RUN] Would list files for PR #${prNumber}`);
     return [];
   }
+  const deadline = performance.now() + FILE_EVIDENCE_TIMEOUT_MS;
+  return withTimeout(
+    'list pull request file evidence',
+    (signal) => collectPRFileEvidence(client, prNumber, { ...options, signal }, deadline),
+    options?.signal,
+    FILE_EVIDENCE_TIMEOUT_MS,
+    deadline,
+  );
+}
+
+async function collectPRFileEvidence(
+  client: Awaited<ReturnType<typeof getClient>>,
+  prNumber: number,
+  options: GitHubClientOptions,
+  deadline: number,
+): Promise<string[]> {
   try {
     const data = await withRetry(
       'list pull request files',
-      (signal) => listPRFilesRest(client, prNumber, { ...options, signal }),
+      (signal) => listPRFilesRest(client, prNumber, { ...options, signal }, deadline),
       options?.signal,
+      FILE_EVIDENCE_TIMEOUT_MS,
+      deadline,
     );
     const files = [
       ...new Set(
@@ -904,8 +979,15 @@ export async function listPRFiles(
     return files;
   } catch (error) {
     if (isEvidenceBoundaryError(error)) throw error;
+    assertEvidenceBudget(options.signal, deadline);
     try {
-      return await listPRFilesGraphQL(client, prNumber, options);
+      return await listPRFilesGraphQL(
+        client,
+        prNumber,
+        options,
+        FILE_EVIDENCE_TIMEOUT_MS,
+        deadline,
+      );
     } catch (fallbackError) {
       if (isEvidenceBoundaryError(fallbackError)) throw fallbackError;
       if (options?.strictEvidence) {

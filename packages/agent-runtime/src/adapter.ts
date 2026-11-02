@@ -6,6 +6,7 @@ import type { BridgeContract } from './bridge-contract.js';
 import { normalizeToolName } from './tool-name.js';
 import type { ToolExecutor } from './tool-executor.js';
 import type { ProviderUsageReceipt } from './provider-usage-evidence.js';
+import type { HarnessRunStartEligibility } from './harness-eligibility.js';
 
 /**
  * Tool guard provided to execution adapters. Adapters MUST call
@@ -100,6 +101,12 @@ export interface AdapterExecutionContext {
   runState: AgentRunState;
   /** Cancellation signal owned by the launcher for live run controls. */
   signal?: AbortSignal;
+  /** Absolute host-owned business cutoff (UTC milliseconds), never supplied by a model or the wire. */
+  executionDeadline?: number;
+  /** Same-process absolute monotonic cutoff. Never persist or transmit this clock reading. */
+  executionMonotonicDeadline?: number;
+  /** Host-only known lease restriction for this already-confirmed Harness start; never a wire/model capability. */
+  startEligibility?: HarnessRunStartEligibility;
   /**
    * Tool guard for permission enforcement. Adapters MUST call
    * `toolGuard.check(toolName)` before every tool invocation.

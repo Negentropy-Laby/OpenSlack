@@ -1,0 +1,39 @@
+{
+  "schema": "openslack.run_record.v1",
+  "id": "RUN-2026-426038",
+  "task_id": "TASK-2026-426038",
+  "lease_id": "not-applicable-human-delegated",
+  "agent_id": "anthropic_architect_aby",
+  "status": "running",
+  "started_at": "2026-11-01T11:14:33Z",
+  "worktree_path": "/var/tmp/openslack-pr426-repair-20261031",
+  "branch": "feat/openslack-harness-bridge-20261024",
+  "output_type": "product_pr",
+  "pr_number": 426,
+  "pr_url": "https://github.com/Negentropy-Laby/OpenSlack/pull/426",
+  "risk_zone": "yellow",
+  "validation_passed": false,
+  "runtime_run_id": "RUN-20261101111433-qoqnew",
+  "authorization_source": "Explicit current-session human delegation and unchanged active registry; no GitHub claim or lease asserted",
+  "validation_summary": {
+    "baseline": "b526be6d",
+    "red": "6 behavioral regressions failed",
+    "working_targeted": "8 files, 161 passed",
+    "final_acceptance": "SIMPLIFICATION_FROZEN_HEAD_VALIDATION_PENDING",
+    "followup_source_base": "412f14071035e9d2d2e89b14db1aedc9f0966483",
+    "working_boundary": "5 files, 83 passed; extra-byte and source-probe controls retained",
+    "declaration_closure": "real producer RED missing dependency, GREEN 25 declarations and 16 relative dependencies",
+    "native_history_gate": "FAIL: unchanged 20000ms bound, latest working-source observation 21549ms",
+    "windows_timestamp_fixture": "Test-only deterministic fixture premise: native Windows, Linux Node24 and Linux Node22 each 3x8 passed on recorded working source",
+    "c207_quality": "12 independent quality gates passed, ESLint 0/0; complete-suite failures retained separately",
+    "prior_active_errors": "REVIEW38_NATIVE_HISTORY_TIME_BOUND_UNRESOLVED; FINAL_CANDIDATE_PLATFORM_AND_CI_VALIDATION_PENDING",
+    "simplification_baseline": "8a1e2085261502eb7a098dedb0f2a086e793e118",
+    "simplification_watchdog": "Explicitly selected recovery correctness/timing split: this history test only uses Linux20000ms and existing Windows120000ms helper; production deadlines and other hooks unchanged",
+    "simplification_reuse": "Impact-based reuse only after production, dependency, toolchain and artifact digest equivalence; baseline full results and artifacts keep their producing SHA",
+    "simplification_working_source": "Linux and native Windows focused strengthened case1 passed each on identical recorded working-test bytes; repair observations2241.57ms/Linux20000ms and21702.07ms/Windows120000ms; frozen-head3x and current CI pending",
+    "simplification_receipts": "/var/tmp/openslack-pr426-simplification-20261102-9m5uqmni and D:/Temp/openslack-pr426-simplification-20261102-9m5uqmni; final post-commit results are external, not inferred from this prepublication record"
+  },
+  "errors": [
+    "SIMPLIFICATION_FROZEN_HEAD_VALIDATION_PENDING"
+  ]
+}

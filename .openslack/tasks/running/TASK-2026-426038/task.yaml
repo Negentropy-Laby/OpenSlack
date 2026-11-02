@@ -1,0 +1,51 @@
+schema: openslack.task.v1
+id: TASK-2026-426038
+status: running
+created_at: 2026-11-01T11:14:56.033Z
+created_by: human-request:current-session
+source:
+  type: human-delegated-existing-pr-repair
+  url: https://github.com/Negentropy-Laby/OpenSlack/pull/426
+title: Repair the 38 retained findings on PR426
+description: Explicit current-session human delegation authorizes this repair
+  context. Existing active registry reused unchanged. No GitHub issue claim or
+  lease is asserted; candidate deployment identity is not used.
+priority: p0
+risk_level: medium
+required_agent_type: developer
+allowed_paths:
+  - packages/agent-runtime/src/**
+  - packages/agent-runtime/package.json
+  - packages/core/src/**
+  - packages/core/package.json
+  - packages/workflows/src/workflow-progress.ts
+  - packages/workflows/src/__tests__/workflow-progress-strict.test.ts
+  - apps/mcp/src/**
+  - packages/qoder-adapter/src/**
+  - packages/qoder-adapter/package.json
+  - packages/qoder-adapter/tsconfig.json
+  - apps/mcp/package.json
+  - apps/mcp/tsconfig.json
+  - bun.lock
+  - apps/cli/src/commands/agent-runtime.ts
+  - apps/cli/src/__tests__/**
+  - packages/tui/src/**
+  - integrations/deepseek-harness/**
+  - scripts/testing/**
+  - .openslack/tasks/**
+  - .openslack/modules.yaml
+  - docs/status/current.md
+  - docs/architecture/components/agent-runtime.md
+  - production/qa/qa-ledger-harness-pr426-2026-10-27.md
+human_approval_required: true
+claimed_by: anthropic_architect_aby
+execution:
+  agent_id: anthropic_architect_aby
+  provider: cli
+  runtime_run_id: RUN-20261101111433-qoqnew
+  worktree_path: /var/tmp/openslack-pr426-repair-20261031
+  branch: feat/openslack-harness-bridge-20261024
+  pr_number: 426
+  github_claim: not_applicable_human_delegated
+  approval_authority: false
+  merge_authority: false

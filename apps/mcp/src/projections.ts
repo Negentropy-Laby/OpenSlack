@@ -1,4 +1,5 @@
 import type { OpenSlackReadToolName } from '@openslack/qoder-adapter';
+import { RUN_UNAVAILABLE_REASONS } from '@openslack/core/internal/runtime-contracts';
 import { workflowReadMetadata } from './workflow-read-metadata.js';
 
 type Row = Record<string, unknown>;
@@ -356,12 +357,27 @@ export function projectToolData(name: OpenSlackReadToolName, value: unknown): Ro
         linkedHandoffs: rows(item.linkedHandoffs, 100).map(handoff),
         evidenceRefs: texts(item.evidenceRefs, 50),
       };
-    case 'openslack_get_activity':
+    case 'openslack_get_activity': {
+      const execution = item.execution && typeof item.execution === 'object' ? row(item.execution) : undefined;
       return {
         generatedAt: text(item.generatedAt),
         events: rows(item.events, 100).map(event),
         evidenceRefs: texts(item.evidenceRefs, 50),
+        ...(execution ? {
+          execution: execution.readStatus === 'unavailable' ? {
+            runId: text(execution.runId), readStatus: 'unavailable',
+            reason: RUN_UNAVAILABLE_REASONS.some(reason => reason === execution.reason) ? execution.reason : 'corrupt',
+          } : {
+            taskId: text(execution.taskId),
+            runId: text(execution.runId),
+            status: text(execution.status),
+            acceptance: text(execution.acceptance),
+            summary: text(execution.summary),
+            evidenceRefs: texts(execution.evidenceRefs, 128),
+          },
+        } : {}),
       };
+    }
     case 'openslack_get_workflow_progress':
       return workflow(item);
     case 'openslack_get_pr_readiness': {

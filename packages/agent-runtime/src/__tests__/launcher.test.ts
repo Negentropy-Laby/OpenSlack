@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -16,8 +16,10 @@ import {
   AgentExecutionFailedError,
   AgentResultSchemaError,
   RuntimeNotConfiguredError,
+  RuntimeMisconfiguredError,
 } from '../index.js';
 import type { AdapterExecutionContext, AgentExecutionAdapter } from '../index.js';
+import { readOwnedRunIdentity } from '../launcher.js';
 
 function makeTempRoot(): string {
   return mkdtempSync(join(tmpdir(), 'agent-launcher-test-'));
@@ -39,7 +41,50 @@ describe('createOpenSlackAgentLauncher', () => {
   });
 
   afterEach(() => {
+    vi.restoreAllMocks();
     cleanup(root);
+  });
+
+  it('preserves provider rejection and run ID when a reused namespace rejects secondary recording', async () => {
+    const store = createRunStore(root);
+    const launcher = createOpenSlackAgentLauncher({ runStore: store, rootDir: root });
+    const args = { label: 'reviewer', phase: 'review', agentRunId: 'RUN-REUSED-REJECTION' };
+    await expect(launcher('first', args)).rejects.toMatchObject({ code: 'RUNTIME_NOT_CONFIGURED', runId: args.agentRunId });
+    await expect(launcher('second', args)).rejects.toMatchObject({ code: 'RUNTIME_NOT_CONFIGURED', runId: args.agentRunId,
+      runtimeDiagnostics: ['RUN_REJECTION_RECORD_UNCONFIRMED'] });
+    expect(store.listRuns()).toHaveLength(1);
+  });
+
+  it('retains the provider cause and run ID when usage read and failure recording are unavailable', async () => {
+    const store = createRunStore(root);
+    const original = new Error('original provider failure');
+    const launcher = createOpenSlackAgentLauncher({ runStore: store, rootDir: root,
+      adapter: { adapterId: 'secondary-failure-fixture', async execute() {
+        vi.spyOn(store, 'readRun').mockImplementation(() => { throw new Error('private usage canary'); });
+        vi.spyOn(store, 'withRunTransaction').mockImplementation(() => { throw new Error('private persistence canary'); });
+        throw original;
+      } },
+    });
+    const failure = await launcher('fixture', { label: 'reviewer', phase: 'review', agentRunId: 'RUN-PRIMARY-FAILURE' })
+      .then(() => undefined, error => error);
+    expect(failure).toBeInstanceOf(AgentExecutionFailedError);
+    expect(failure).toMatchObject({ runId: 'RUN-PRIMARY-FAILURE', code: 'EXECUTION_FAILED', cause: original,
+      runtimeDiagnostics: ['RUN_USAGE_READ_UNCONFIRMED', 'RUN_FAILURE_RECORD_UNCONFIRMED'] });
+    expect(JSON.stringify(failure.runtimeDiagnostics)).not.toContain('canary');
+  });
+  it('binds an initialization publication failure to its own run without borrowing prior evidence', async () => {
+    const store = createRunStore(root), primary = Object.assign(new Error('fixture partial publication'), { code: 'RUN_INITIALIZATION_INCOMPLETE' });
+    vi.spyOn(store, 'createRun').mockImplementation(() => { throw primary; });
+    const execute = vi.fn();
+    const launcher = createOpenSlackAgentLauncher({ runStore: store, rootDir: root,
+      adapter: { adapterId: 'initialization-failure-fixture', execute } });
+    const failure = await launcher('fixture', { label: 'fixture', phase: 'test', agentRunId: 'RUN-OWN-INITIALIZATION' }).catch(error => error);
+    expect(failure).toBe(primary);
+    expect(failure).toMatchObject({ runId: 'RUN-OWN-INITIALIZATION', code: 'RUN_INITIALIZATION_INCOMPLETE',
+      runtimeDiagnostics: ['RUN_INITIALIZATION_RECORD_UNCONFIRMED'] });
+    expect(readOwnedRunIdentity(failure)).toBe('RUN-OWN-INITIALIZATION');
+    expect(readOwnedRunIdentity({ runId: 'RUN-OWN-INITIALIZATION' })).toBeUndefined();
+    expect(execute).not.toHaveBeenCalled();
   });
 
   it('fails closed with an auditable terminal run when no provider is configured', async () => {
@@ -111,6 +156,21 @@ describe('createOpenSlackAgentLauncher', () => {
       status: 'failed',
       failureCode: 'RUNTIME_MISCONFIGURED',
     });
+    expect(existsSync(join(root, '.worktrees'))).toBe(false);
+  });
+
+  it.each(['launch', 'preflight'] as const)('preserves the frozen resolver error and its trusted run origin in %s', async phase => {
+    const store = createRunStore(root);
+    const original = Object.freeze(new RuntimeMisconfiguredError('Frozen fixture resolver failure'));
+    const launcher = createOpenSlackAgentLauncher({ runStore: store, rootDir: root,
+      bridgeRuntimeResolver: { resolve() { throw original; } } });
+    const options = { label: 'aby-fixture', phase: 'execute', agentRunId: 'RUN-FROZEN-RESOLVER', isolation: 'worktree' as const,
+      resolvedAgentConfig: { agentId: 'aby-fixture', source: 'test', runtime: 'aby_assistant', runtimeProvider: 'aby', bridgeMode: 'process' as const } };
+    const operation = phase === 'launch' ? launcher('fixture', options) : launcher.preflight('fixture', options);
+    const failure = await operation.catch(error => error);
+    expect(failure).toBe(original);
+    expect(readOwnedRunIdentity(failure)).toBe(options.agentRunId);
+    expect(store.getRun(options.agentRunId)).toMatchObject({ status: 'failed', failureCode: 'RUNTIME_MISCONFIGURED' });
     expect(existsSync(join(root, '.worktrees'))).toBe(false);
   });
 
@@ -939,6 +999,7 @@ describe('createOpenSlackAgentLauncher', () => {
 
       expect(failure).toMatchObject({ code: 'EXECUTION_FAILED', tokenUsage: 3 });
       const runId = (failure as { runId: string }).runId;
+      expect(readOwnedRunIdentity(failure)).toBe(runId);
       expect(store.getRun(runId)).toMatchObject({ status: 'failed', tokensUsed: 3 });
       expect(readTranscript(runId, root)).toContainEqual(
         expect.objectContaining({

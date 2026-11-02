@@ -267,4 +267,18 @@ describe('OpenAI-compatible runtime diagnostics', () => {
     });
     expect(report.checks.find((check) => check.name === 'terminal-event')?.status).toBe('PASS');
   });
+
+  it('associates a provider failure only with its host-owned run, ignoring an immutable foreign runId', async () => {
+    providerConfig(root);
+    const error = new Error('isolated provider failure');
+    Object.defineProperty(error, 'runId', { value: 'RUN-FOREIGN', writable: false });
+    const report = await runOpenAICompatibleRuntimeSmoke({ rootDir: root,
+      env: { TEST_RUNTIME_KEY: 'transport-only-test-value' }, fetchImpl: async () => { throw error; } });
+    expect(report.status).toBe('FAIL');
+    expect(report.runId).toMatch(/^RUN-/);
+    expect(report.runId).not.toBe('RUN-FOREIGN');
+    expect(report.evidence.runJson).toContain(report.runId!);
+    expect(JSON.stringify(report)).not.toContain('RUN-FOREIGN');
+    expect(report.checks.find(check => check.name === 'terminal-event')?.status).toBe('PASS');
+  });
 });

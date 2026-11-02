@@ -1,4 +1,5 @@
 import { types as utilTypes } from 'node:util';
+import { CONFIRMATION_CAPABILITY_PATTERN } from '@openslack/core/internal/runtime-contracts';
 
 export const OPENSLACK_MCP_RESULT_SCHEMA = 'openslack.mcp_result.v1' as const;
 export const OPENSLACK_MCP_RESULT_V2_SCHEMA = 'openslack.mcp_result.v2' as const;
@@ -120,7 +121,6 @@ const MAX_INERT_JSON_CONTAINER_ITEMS = 1_000;
 const MAX_VERSIONED_REPO_PATH_LENGTH = 374;
 const CORRELATION_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]*$/;
 const PLAN_HASH_PATTERN = /^[0-9a-f]{64}$/;
-const CONFIRMATION_TOKEN_PATTERN = /^[A-Za-z0-9_-]{32,128}$/;
 const SOURCE_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:/?#@+-]*$/;
 const CANONICAL_TIMESTAMP_PATTERN =
   /^\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d\.\d{3}Z$/;
@@ -196,7 +196,7 @@ function normalizePlanHash(value: string | undefined): string | undefined {
 
 function normalizeConfirmationToken(value: string | undefined): string | undefined {
   if (value === undefined) return undefined;
-  if (!CONFIRMATION_TOKEN_PATTERN.test(value)) {
+  if (!CONFIRMATION_CAPABILITY_PATTERN.test(value)) {
     throw new TypeError('confirmationToken must be a bounded base64url capability.');
   }
   return value;
@@ -390,7 +390,7 @@ export function validateOpenSlackMcpResultV2(value: unknown): value is OpenSlack
     (top.planId !== undefined && !boundedString(top.planId, MAX_ID_LENGTH)) ||
     (top.planHash !== undefined && !boundedPattern(top.planHash, 64, PLAN_HASH_PATTERN)) ||
     (top.confirmationToken !== undefined &&
-      !boundedPattern(top.confirmationToken, 128, CONFIRMATION_TOKEN_PATTERN)) ||
+      !boundedPattern(top.confirmationToken, 128, CONFIRMATION_CAPABILITY_PATTERN)) ||
     (top.executionId !== undefined && !boundedString(top.executionId, MAX_ID_LENGTH)) ||
     (top.data !== undefined && !inertJson(top.data))
   ) {

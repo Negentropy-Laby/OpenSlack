@@ -628,6 +628,13 @@ async function readLock(prepared: PreparedStore, path: string) {
   }
   const resolved = await realpath(path);
   if (!samePath(path, resolved) || !contained(prepared.locksReal, resolved)) {
+    if (!(await lstatIfPresent(path))) {
+      return fail(
+        'WORKFLOW_EFFECT_APPROVAL_STORE_FILE_CHANGED',
+        'Approval-store lock disappeared during path resolution.',
+        path,
+      );
+    }
     return fail(
       'WORKFLOW_EFFECT_APPROVAL_STORE_PATH_UNSAFE',
       'Approval-store lock escapes its directory.',
@@ -845,7 +852,9 @@ async function acquireLock(prepared: PreparedStore): Promise<AcquiredLock> {
               readError.code === 'WORKFLOW_EFFECT_APPROVAL_STORE_FILE_CHANGED') ||
             (((readError instanceof WorkflowEffectApprovalStoreError &&
               readError.code === 'WORKFLOW_EFFECT_APPROVAL_STORE_NOT_FOUND') ||
-              (readError as NodeJS.ErrnoException).code === 'ENOENT') &&
+              (readError as NodeJS.ErrnoException).code === 'ENOENT' ||
+              (process.platform === 'win32' &&
+                (readError as NodeJS.ErrnoException).code === 'EPERM')) &&
               !(await lstatIfPresent(path)))
           ) {
             await delay(5);

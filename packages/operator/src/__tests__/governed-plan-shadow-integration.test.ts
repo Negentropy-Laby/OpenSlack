@@ -133,6 +133,9 @@ describe('governance shadow authority integration', () => {
       { actorId: 'agent.test', workspaceId: 'workspace.test' },
     );
 
+    // Confirmation is authoritative; shadow publication is deliberately asynchronous.
+    // Wait for the public qualification seam, not a wall-clock guess about disk I/O.
+    await observer.flush();
     await waitFor(() => expect(calls).toHaveLength(8));
     expect(calls.map((call) => call.source.sourceSequence)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
     expect(calls.map((call) => call.observation.kind)).toEqual([

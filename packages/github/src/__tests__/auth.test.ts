@@ -1,4 +1,4 @@
-import { generateKeyPairSync } from 'node:crypto';
+import { generateKeyPairSync, verify } from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -13,9 +13,10 @@ vi.mock('node:https', () => ({ request: requestMock }));
 import { clearTokenCache, getAppInstallationToken, requireAppInstallationToken } from '../auth.js';
 import { listGitHubAppInstallations } from '../app-installation-resolution.js';
 import { boundedJsonPost } from '../bounded-json-post.js';
+import { createGitHubAppJwt } from '../app-jwt.js';
 import { getClient } from '../client.js';
 
-const { privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
+const { privateKey, publicKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
 const PRIVATE_KEY = privateKey.export({ type: 'pkcs8', format: 'pem' }).toString();
 const TOKEN_ENV_KEYS = [
   'OPENSLACK_GITHUB_APP_ID',
@@ -24,6 +25,25 @@ const TOKEN_ENV_KEYS = [
 ] as const;
 const originalEnv = new Map<string, string | undefined>();
 const roots: string[] = [];
+
+function jwtEvidence(jwt: string) {
+  const [header, payload, signature] = jwt.split('.');
+  if (!header || !payload || !signature) throw new Error('Expected a signed App JWT fixture');
+  return {
+    header: JSON.parse(Buffer.from(header, 'base64url').toString('utf8')),
+    claims: JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')) as {
+      iat: number;
+      exp: number;
+      iss: string;
+    },
+    signatureValid: verify(
+      'RSA-SHA256',
+      Buffer.from(`${header}.${payload}`),
+      publicKey,
+      Buffer.from(signature, 'base64url'),
+    ),
+  };
+}
 
 interface MockResponseOptions {
   statusCode?: number;
@@ -100,6 +120,42 @@ afterEach(() => {
   }
   originalEnv.clear();
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
+});
+
+describe('GitHub App JWT clock tolerance', () => {
+  const serverSeconds = 1_800_000_000;
+
+  it.each([14, 59, 60])('stays inside the server window with a local clock %i seconds ahead', ahead => {
+    const localSeconds = serverSeconds + ahead;
+    const evidence = jwtEvidence(createGitHubAppJwt('123', PRIVATE_KEY, () => localSeconds * 1000));
+    expect(evidence.claims.exp).toBeLessThanOrEqual(serverSeconds + 600);
+    expect(evidence.claims.exp).toBeGreaterThan(serverSeconds);
+    expect(evidence.claims).toEqual({ iat: localSeconds - 60, exp: localSeconds + 540, iss: '123' });
+    expect(evidence.header).toEqual({ alg: 'RS256', typ: 'JWT' });
+    expect(evidence.signatureValid).toBe(true);
+  });
+
+  it('uses clock-safe signed JWTs for installation discovery and token issuance', async () => {
+    const clock = vi.spyOn(Date, 'now').mockReturnValue((serverSeconds + 14) * 1000);
+    try {
+      installResponse({ statusCode: 200, chunks: [JSON.stringify(installationResponse('456', 'acme'))] });
+      installResponse({ chunks: [JSON.stringify(tokenResponse('synthetic-clock-token'))] });
+      await expect(requireAppInstallationToken({ repository: { owner: 'acme', repo: 'project' } }))
+        .resolves.toMatchObject({ appId: '123', installationId: '456', tokenType: 'installation' });
+      expect(requestMock).toHaveBeenCalledTimes(2);
+      for (const [options] of requestMock.mock.calls) {
+        const authorization = (options as { headers: Record<string, string> }).headers.Authorization;
+        expect(authorization.startsWith('Bearer ')).toBe(true);
+        const evidence = jwtEvidence(authorization.slice('Bearer '.length));
+        expect(evidence.claims.exp).toBeLessThanOrEqual(serverSeconds + 600);
+        expect(evidence.claims.iat).toBeLessThanOrEqual(serverSeconds);
+        expect(evidence.claims.iss).toBe('123');
+        expect(evidence.signatureValid).toBe(true);
+      }
+    } finally {
+      clock.mockRestore();
+    }
+  });
 });
 
 describe('GitHub App installation token response handling', () => {

@@ -173,6 +173,9 @@ async function retryPublication(
   }
 }
 
+/** Internal publication policy; deliberately absent from the public package barrel. */
+export { retryPublication as retryGovernedPlanPublication };
+
 /** Only this invocation's inode may be cleaned; replacement evidence is retained. */
 async function removeOwned(path: string, trusted: Stats): Promise<void> {
   await retryPublication(async (assertBudget) => {
@@ -687,8 +690,36 @@ async function readLock(
   ) {
     return fail('GOVERNED_PLAN_STORE_FILE_UNSAFE', 'Governed plan lock file is unsafe.', path);
   }
-  const actual = await realpath(path);
+  let actual: string;
+  try {
+    actual = await realpath(path);
+  } catch (error) {
+    // Windows may retire the incumbent while realpath is resolving its handle.
+    // Absence permits another exclusive acquisition, never ownership of that lock.
+    if (
+      process.platform === 'win32' &&
+      ['EBADF', 'EPERM'].includes((error as NodeJS.ErrnoException).code ?? '')
+    ) {
+      const current = await lstatIfPresent(path);
+      if (!current || !stableIdentity(initial, current)) {
+        return fail(
+          'GOVERNED_PLAN_STORE_FILE_CHANGED',
+          'Governed plan lock changed during path resolution.',
+          path,
+        );
+      }
+    }
+    throw error;
+  }
   if (!samePath(path, actual) || !contained(prepared.locksReal, actual)) {
+    const current = await lstatIfPresent(path);
+    if (!current || !stableIdentity(initial, current)) {
+      return fail(
+        'GOVERNED_PLAN_STORE_FILE_CHANGED',
+        'Governed plan lock changed during path resolution.',
+        path,
+      );
+    }
     return fail(
       'GOVERNED_PLAN_STORE_PATH_UNSAFE',
       'Governed plan lock escapes its directory.',

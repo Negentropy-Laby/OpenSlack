@@ -361,7 +361,19 @@ describe('MCP CLI production profiles over the official SDK', () => {
             confirmationToken: metadata.confirmationToken,
           },
         });
-        expect(confirmed.structuredContent).toMatchObject({
+        const confirmationDiagnostic = confirmed.structuredContent as {
+          status?: unknown;
+          governance?: { blocker?: unknown };
+        };
+        const boundedCode = (value: unknown) =>
+          typeof value === 'string' && /^[A-Za-z_]{1,128}$/.test(value) ? value : 'UNCLASSIFIED';
+        expect(
+          confirmed.structuredContent,
+          JSON.stringify({
+            status: boundedCode(confirmationDiagnostic.status),
+            blocker: boundedCode(confirmationDiagnostic.governance?.blocker),
+          }),
+        ).toMatchObject({
           status: 'completed',
           correlationId,
           data: {

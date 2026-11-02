@@ -21,7 +21,7 @@ import { mapSubagentToViewModel } from '../view-models/agent-detail.js';
 import { mapAgentRunToViewModel } from '../view-models/agent-run.js';
 import { mapWorkflowRunsToViewModel } from '../view-models/workflow-runs.js';
 import type { SubagentDefinition } from '@openslack/kernel';
-import { createRunStore } from '@openslack/agent-runtime';
+import { observeRun } from '@openslack/agent-runtime';
 import type { ShellViewData } from './render-shell.js';
 
 import HomeView from './HomeView.js';
@@ -50,7 +50,7 @@ import type { AgentRunState } from '@openslack/agent-runtime';
  * A view that hasn't been wired to live data yet.
  * Shows the view name and a "press q to go back" prompt.
  */
-function PlaceholderView({ route }: { route: Route }): React.JSX.Element {
+function PlaceholderView({ route, message }: { route: Route; message?: string }): React.JSX.Element {
   const { pop } = useNavigation();
 
   useInput((input, key) => {
@@ -71,7 +71,7 @@ function PlaceholderView({ route }: { route: Route }): React.JSX.Element {
     React.createElement(
       ThemedText,
       { colorTheme: 'muted' },
-      `View "${route.view}" is not yet connected to live data.`,
+      message ?? `View "${route.view}" is not yet connected to live data.`,
     ),
     React.createElement(ThemedText, { colorTheme: 'muted', dim: true }, 'Press [q] to go back'),
   );
@@ -371,10 +371,13 @@ function ViewRouter({ data }: { data?: ShellViewData }): React.JSX.Element {
         | AgentRunState
         | undefined;
       const runId = current.params?.runId as string | undefined;
+      const observation = runId ? observeRun(runId, data?.rootDir ?? process.cwd()) : undefined;
+      if (observation?.kind === 'unavailable') return React.createElement(PlaceholderView, { route: current,
+        message: `${runId}: evidence unavailable (${observation.reason}). Preserve evidence and inspect without replay.` });
       const resolvedRunState =
         runState ??
         (runId
-          ? (createRunStore(data?.rootDir ?? process.cwd()).getRun(runId) ?? undefined)
+          ? (observation?.kind === 'ready' ? observation.state : undefined)
           : undefined);
       if (resolvedRunState) {
         const runModel = mapAgentRunToViewModel(resolvedRunState, {

@@ -546,6 +546,17 @@ describe('agent-runtime command', () => {
     logSpy.mockRestore();
   });
 
+  it('prints missing run evidence and exits nonzero for the actual MCP status result', async () => {
+    const { getAgentRuntimeMcpStatus } = await import('@openslack/agent-runtime');
+    mockGetAgentRuntimeMcpStatus.mockImplementation(options => getAgentRuntimeMcpStatus(options));
+    const output = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const exit = vi.spyOn(process, 'exit').mockImplementation(() => { throw new Error('fixture nonzero exit'); });
+    const cmd = agentRuntimeCommands({ getAgentRuntimeMcpStatus: options => mockGetAgentRuntimeMcpStatus(options) });
+    await expect(cmd.parseAsync(['node', 'openslack', 'mcp', 'status', '--run', 'RUN-REVIEW38-MISSING', '--available', 'github'], { from: 'node' })).rejects.toThrow('fixture nonzero exit');
+    expect(output.mock.calls.flat().join('\n')).toContain('Run evidence: missing');
+    expect(exit).toHaveBeenCalledWith(1);
+  });
+
   it('rejects agent-runtime mcp status without an agent or run context', async () => {
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {

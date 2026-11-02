@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeEach, afterEach } from 'vitest';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { appendTranscriptEvent, createRunStore, getAgentRuntimeMcpStatus } from '../index.js';
@@ -50,6 +50,17 @@ describe('getAgentRuntimeMcpStatus', () => {
     expect(report.status).toBe('FAIL');
     expect(report.missingRequiredServers).toEqual(['github']);
     expect(report.remediations.join('\n')).toContain('github');
+  });
+  it('surfaces an unavailable run without reading its transcript or sweeping preserved temporary files', () => {
+    const id = 'RUN-LOCKED-MCP-STATUS', directory = join(root, '.openslack.local/agents/runs', id);
+    mkdirSync(directory, { recursive: true });
+    writeFileSync(join(directory, 'run.transaction.lock'), 'preserved writer');
+    writeFileSync(join(directory, 'run.json.original.tmp'), 'preserved temporary');
+    const before = readdirSync(directory).map(name => [name, readFileSync(join(directory, name))]);
+    const result = getAgentRuntimeMcpStatus({ rootDir: root, runId: id });
+    expect(result).toMatchObject({ status: 'FAIL', runRead: { kind: 'unavailable', runId: id, reason: 'locked' }, toolEvidence: [] });
+    expect(result.remediations.join(' ')).toContain('without replay');
+    expect(readdirSync(directory).map(name => [name, readFileSync(join(directory, name))])).toEqual(before);
   });
 
   it('normalizes MCP bridge separators from transcript tool evidence', () => {

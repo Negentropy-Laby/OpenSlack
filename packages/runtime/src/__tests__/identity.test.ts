@@ -1,7 +1,11 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { existsSync, readFileSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import type * as NodeFs from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { spawn } from 'node:child_process';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { parse as parseYaml } from 'yaml';
 import {
   generateRuntimeIdentity,
   loadRuntimeIdentity,
@@ -9,9 +13,15 @@ import {
   resolveAgentStatusBinding,
 } from '../identity.js';
 
+vi.mock('node:fs', async (importOriginal) => {
+  const actual = await importOriginal<typeof NodeFs>();
+  return { ...actual, readFileSync: vi.fn(actual.readFileSync) };
+});
+
 const AGENT_ID = 'test_agent';
 
 let fixtureRoot: string;
+let cleanupConfirmed = true;
 
 function writeRegistry(agentId = AGENT_ID): void {
   const registryDir = join(fixtureRoot, '.openslack', 'agents', 'registry');
@@ -58,6 +68,8 @@ approval_rules:
 }
 
 beforeEach(() => {
+  vi.clearAllMocks();
+  cleanupConfirmed = true;
   fixtureRoot = join(
     tmpdir(),
     `openslack-identity-${Date.now()}-${Math.random().toString(36).slice(2)}`,
@@ -67,7 +79,11 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  rmSync(fixtureRoot, { recursive: true, force: true });
+  if (cleanupConfirmed) rmSync(fixtureRoot, { recursive: true, force: true });
+  else
+    console.error(
+      `Identity concurrency fixture retained after unconfirmed child exit: ${fixtureRoot}`,
+    );
 });
 
 describe('generateRuntimeIdentity', () => {
@@ -87,6 +103,193 @@ describe('generateRuntimeIdentity', () => {
     const identityPath = join(fixtureRoot, '.openslack.local', 'agents', AGENT_ID, 'identity.yaml');
     expect(existsSync(identityPath)).toBe(true);
   });
+
+  it('creates an explicitly create-only identity that the production resolver reads back', () => {
+    const issued = generateRuntimeIdentity({
+      root: fixtureRoot,
+      agentId: AGENT_ID,
+      provider: 'cli',
+      createOnly: true,
+    });
+    expect(loadRuntimeIdentity(fixtureRoot, AGENT_ID)).toEqual(issued);
+    expect(
+      resolveAgentPrincipal({ root: fixtureRoot, agentId: AGENT_ID, provider: 'cli' }),
+    ).toMatchObject({
+      principal: { registry_id: AGENT_ID, run_id: issued.run_id, provider: 'cli' },
+    });
+  });
+
+  it.each([
+    Buffer.from(
+      'schema: openslack.agent_runtime_identity.v1\r\nrun_id: RUN-EXISTING\r\ncredentials: { canary: keep-existing-ref }\r\n# preserve exact bytes\r\n',
+    ),
+    Buffer.from([0xff, 0x00, 0xfe, 0x0a]),
+  ])(
+    'refuses create-only issuance without reading, merging or rewriting existing bytes %#',
+    (bytes) => {
+      const directory = join(fixtureRoot, '.openslack.local', 'agents', AGENT_ID);
+      mkdirSync(directory, { recursive: true });
+      const path = join(directory, 'identity.yaml');
+      writeFileSync(path, bytes);
+      expect(() =>
+        generateRuntimeIdentity({
+          root: fixtureRoot,
+          agentId: AGENT_ID,
+          provider: 'cli',
+          createOnly: true,
+        }),
+      ).toThrowError(expect.objectContaining({ code: 'EEXIST' }));
+      expect(vi.mocked(readFileSync).mock.calls.filter(([file]) => file === path)).toHaveLength(0);
+      expect(readFileSync(path)).toEqual(bytes);
+    },
+  );
+
+  it('rejects an occupied identity namespace instead of treating it as a missing file', () => {
+    const path = join(fixtureRoot, '.openslack.local', 'agents', AGENT_ID, 'identity.yaml');
+    mkdirSync(path, { recursive: true });
+    expect(() =>
+      generateRuntimeIdentity({
+        root: fixtureRoot,
+        agentId: AGENT_ID,
+        provider: 'cli',
+        createOnly: true,
+      }),
+    ).toThrowError(expect.objectContaining({ code: 'EEXIST' }));
+    expect(existsSync(path)).toBe(true);
+  });
+
+  it('keeps the default existing-identity merge contract unchanged', () => {
+    const directory = join(fixtureRoot, '.openslack.local', 'agents', AGENT_ID);
+    mkdirSync(directory, { recursive: true });
+    const path = join(directory, 'identity.yaml');
+    writeFileSync(
+      path,
+      'credentials: { canary: keep-existing-ref }\npaths: { root: keep-existing-path }\npreferences: { theme: keep-existing-theme }\n',
+    );
+    const issued = generateRuntimeIdentity({
+      root: fixtureRoot,
+      agentId: AGENT_ID,
+      provider: 'cli',
+    });
+    expect(parseYaml(readFileSync(path, 'utf8'))).toMatchObject({
+      ...issued,
+      credentials: { canary: 'keep-existing-ref' },
+      paths: { root: 'keep-existing-path' },
+      preferences: { theme: 'keep-existing-theme' },
+    });
+  });
+
+  it('publishes exactly one identity when two independent processes race after a readiness barrier', async () => {
+    const source = fileURLToPath(new URL('../identity.ts', import.meta.url));
+    const script = `
+      const { generateRuntimeIdentity } = await import(process.argv[2]);
+      process.send({ phase: 'ready' });
+      await new Promise(resolve => process.once('message', resolve));
+      try {
+        const value = generateRuntimeIdentity({ root: process.argv[1], agentId: 'test_agent', provider: 'cli', createOnly: true });
+        process.send({ phase: 'created', runId: value.run_id });
+      } catch (error) { process.send({ phase: 'rejected', code: error.code }); }
+      process.disconnect();
+    `;
+    const workers = Array.from({ length: 2 }, () => {
+      const child = spawn(
+        process.execPath,
+        [
+          '--import',
+          'tsx',
+          '--input-type=module',
+          '-e',
+          script,
+          fixtureRoot,
+          pathToFileURL(source).href,
+        ],
+        {
+          cwd: fileURLToPath(new URL('../../../../', import.meta.url)),
+          stdio: ['ignore', 'ignore', 'pipe', 'ipc'],
+          windowsHide: true,
+        },
+      );
+      const errors: Buffer[] = [];
+      let errorBytes = 0;
+      child.stderr?.on('data', (chunk: Buffer) => {
+        if (errorBytes < 16 * 1024) {
+          errors.push(chunk.subarray(0, 16 * 1024 - errorBytes));
+          errorBytes += chunk.length;
+        }
+      });
+      let ready!: () => void;
+      let failed!: (error: Error) => void;
+      const readiness = new Promise<void>((resolve, reject) => {
+        ready = resolve;
+        failed = reject;
+      });
+      let outcome: Record<string, unknown> | undefined;
+      let failDone!: (error: Error) => void;
+      const closed = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>(
+        (resolve) => child.once('close', (code, signal) => resolve({ code, signal })),
+      );
+      const done = new Promise<Record<string, unknown>>((resolve, reject) => {
+        failDone = reject;
+        child.on('message', (message: unknown) => {
+          if (!message || typeof message !== 'object' || !('phase' in message)) return;
+          if (message.phase === 'ready') ready();
+          else outcome = message as Record<string, unknown>;
+        });
+        void closed.then((receipt) => {
+          clearTimeout(timer);
+          if (receipt.code === 0 && receipt.signal === null && outcome) resolve(outcome);
+          else {
+            const error = new Error(
+              `Identity fixture child exited without a successful IPC receipt: ${Buffer.concat(errors).toString('utf8')}`,
+            );
+            failed(error);
+            reject(error);
+          }
+        });
+        child.once('error', (error) => {
+          failed(error);
+          reject(error);
+        });
+      });
+      const timer = setTimeout(() => {
+        const error = new Error('Identity fixture child deadline exceeded');
+        failed(error);
+        failDone(error);
+        child.kill();
+      }, 20_000);
+      void readiness.catch(() => undefined);
+      void done.catch(() => undefined);
+      return { child, readiness, done, closed, timer };
+    });
+    try {
+      await Promise.all(workers.map((worker) => worker.readiness));
+      for (const worker of workers) worker.child.send('issue');
+      const outcomes = await Promise.all(workers.map((worker) => worker.done));
+      expect(outcomes.filter((value) => value.phase === 'created')).toHaveLength(1);
+      expect(outcomes.filter((value) => value.phase === 'rejected')).toEqual([
+        { phase: 'rejected', code: 'EEXIST' },
+      ]);
+      const winner = outcomes.find((value) => value.phase === 'created')!;
+      expect(loadRuntimeIdentity(fixtureRoot, AGENT_ID)?.run_id).toBe(winner.runId);
+    } finally {
+      for (const worker of workers) {
+        clearTimeout(worker.timer);
+        if (worker.child.exitCode === null && worker.child.signalCode === null) worker.child.kill();
+      }
+      const exited = await Promise.all(
+        workers.map((worker) =>
+          Promise.race([
+            worker.closed.then(() => true),
+            new Promise<false>((resolve) => {
+              const timer = setTimeout(() => resolve(false), 1_000);
+              timer.unref();
+            }),
+          ]),
+        ),
+      );
+      cleanupConfirmed = exited.every(Boolean);
+    }
+  }, 30_000);
 });
 
 describe('loadRuntimeIdentity', () => {

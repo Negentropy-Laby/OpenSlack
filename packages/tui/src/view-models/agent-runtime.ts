@@ -1,6 +1,7 @@
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { AbyRuntimeDoctorReport, AgentRunState } from '@openslack/agent-runtime';
+import { listRunObservations } from '@openslack/agent-runtime';
 
 export interface AgentRuntimeDiagnosticsCheckViewModel {
   name: string;
@@ -39,6 +40,7 @@ export function mapAbyRuntimeDoctorToViewModel(
   report: AbyRuntimeDoctorReport,
   options: { rootDir?: string; smokeAgentId?: string } = {},
 ): AgentRuntimeDiagnosticsViewModel {
+  const listing = options.rootDir ? listRunObservations(options.rootDir) : undefined;
   return {
     provider: report.provider,
     status: report.status,
@@ -53,13 +55,14 @@ export function mapAbyRuntimeDoctorToViewModel(
       report.handshakeTimeoutMs !== undefined ? `${report.handshakeTimeoutMs}ms` : 'not recorded',
     safeEnvAllowed: report.env.allowedKeys,
     safeEnvRejected: report.env.rejectedKeys,
-    checks: report.checks,
+    checks: [...report.checks, ...(listing && (listing.storageIssue || listing.unavailable.length) ? [{ name: 'run-storage-availability', status: 'WARN' as const,
+      detail: `Unavailable run evidence: ${listing.unavailable.map(value => `${value.runId}:${value.reason}`).join(', ') || listing.storageIssue}. Inspect without replay.` }] : [])],
     remediations:
       report.remediations.length > 0
         ? report.remediations
         : report.remediation.split('\n').filter((line) => line.trim()),
     lastSmokeRun: options.rootDir
-      ? findLastSmokeRun(options.rootDir, options.smokeAgentId ?? 'anthropic_architect_aby')
+      ? findLastSmokeRun(options.rootDir, options.smokeAgentId ?? 'anthropic_architect_aby', listing?.runs ?? [])
       : undefined,
   };
 }
@@ -67,8 +70,9 @@ export function mapAbyRuntimeDoctorToViewModel(
 function findLastSmokeRun(
   rootDir: string,
   agentId: string,
+  runs: AgentRunState[],
 ): AgentRuntimeSmokeSummaryViewModel | undefined {
-  for (const run of listRuns(rootDir).filter((item) => item.agentId === agentId)) {
+  for (const run of runs.filter((item) => item.agentId === agentId)) {
     if (!isSmokeRun(rootDir, run)) continue;
     const runDir = join(rootDir, '.openslack.local', 'agents', 'runs', run.runId);
     return {
@@ -81,24 +85,6 @@ function findLastSmokeRun(
     };
   }
   return undefined;
-}
-
-function listRuns(rootDir: string): AgentRunState[] {
-  const runsDir = join(rootDir, '.openslack.local', 'agents', 'runs');
-  if (!existsSync(runsDir)) return [];
-  const runs: AgentRunState[] = [];
-  for (const entry of readdirSync(runsDir, { withFileTypes: true })) {
-    if (!entry.isDirectory() || !entry.name.startsWith('RUN-')) continue;
-    const runPath = join(runsDir, entry.name, 'run.json');
-    if (!existsSync(runPath)) continue;
-    try {
-      const parsed = JSON.parse(readFileSync(runPath, 'utf-8')) as AgentRunState;
-      if (parsed.runId === entry.name) runs.push(parsed);
-    } catch {
-      // Ignore corrupted local run evidence in the diagnostics view.
-    }
-  }
-  return runs.sort((a, b) => b.startedAt.localeCompare(a.startedAt));
 }
 
 function isSmokeRun(rootDir: string, run: AgentRunState): boolean {

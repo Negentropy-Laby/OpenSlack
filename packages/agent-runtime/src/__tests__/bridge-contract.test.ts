@@ -274,7 +274,7 @@ describe('validateBridgeEnvelope', () => {
       protocolVersion: BRIDGE_PROTOCOL_VERSION,
       sessionId: 's',
       correlationId: 'r',
-      timestamp: 't',
+      timestamp: new Date().toISOString(),
       payload: {},
     });
     expect(result.valid).toBe(false);
@@ -286,7 +286,7 @@ describe('validateBridgeEnvelope', () => {
       protocolVersion: BRIDGE_PROTOCOL_VERSION,
       sessionId: 's',
       correlationId: 'r',
-      timestamp: 't',
+      timestamp: new Date().toISOString(),
       kind: 'progress',
     });
     expect(result.valid).toBe(false);

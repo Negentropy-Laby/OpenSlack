@@ -92,7 +92,12 @@ describe('runAbyRuntimeSmoke', () => {
     expect(report.runId).toBeUndefined();
   });
 
-  it('runs a fake Aby bridge and returns evidence paths', async () => {
+  it.each([false, true])('runs a fake Aby bridge with consistent evidence despite unrelated unavailable history: %s', async historicalLock => {
+    if (historicalLock) {
+      const unrelated = join(root, '.openslack.local/agents/runs/RUN-UNRELATED');
+      mkdirSync(unrelated, { recursive: true });
+      writeFileSync(join(unrelated, 'run.transaction.lock'), 'preserve unrelated writer');
+    }
     const abyRoot = createFakeAbyRoot(root);
     mkdirSync(join(root, '.openslack.local'), { recursive: true });
     writeFileSync(
@@ -108,6 +113,7 @@ describe('runAbyRuntimeSmoke', () => {
     });
 
     expect(report.status, JSON.stringify(report, null, 2)).toBe('PASS');
+    expect(report.checks.every(check => check.status === 'PASS'), JSON.stringify(report.checks)).toBe(true);
     expect(report.runId).toMatch(/^RUN-/);
     expect(report.checks.find((check) => check.name === 'bridge_session_started')?.status).toBe(
       'PASS',

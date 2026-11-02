@@ -1,17 +1,26 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { createHash } from 'node:crypto';
 import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  openSync,
+  closeSync,
   readFileSync,
+  readdirSync,
+  renameSync,
   rmSync,
   utimesSync,
   writeFileSync,
 } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { createRunStore, readRunStateSnapshot } from '../run-store.js';
+import { createRunStore, observeRun, readRunStateSnapshot } from '../run-store.js';
 import type { AgentRunRequest } from '../types.js';
+import type * as Fs from 'node:fs';
+
+vi.mock('node:fs', async original => { const fs = await original<typeof Fs>(); return { ...fs, renameSync: vi.fn(fs.renameSync) }; });
+const rename = vi.mocked(renameSync), nativeRename = rename.getMockImplementation()!;
 
 function makeTempRoot(): string {
   return mkdtempSync(join(tmpdir(), 'agent-runtime-test-'));
@@ -54,6 +63,7 @@ describe('createRunStore', () => {
   });
 
   afterEach(() => {
+    rename.mockReset().mockImplementation(nativeRename);
     cleanup(root);
   });
 
@@ -102,6 +112,50 @@ describe('createRunStore', () => {
     expect(found!.agentId).toBe('test-agent');
   });
 
+  it('preserves the old opened snapshot across atomic publication or a verified Windows replacement refusal', () => {
+    const store = createRunStore(root, { sweepOrphans: false });
+    const request = makeRequest();
+    store.createRun(request);
+    store.updateRun(request.runId, { harnessExecution: {
+      schema: 'openslack.harness_execution.v1', taskId: 'TASK-1', requestHash: 'a'.repeat(64),
+      principalHash: 'b'.repeat(64), baseline: 'c'.repeat(40), acceptance: 'pending', summary: 'pending', evidenceRefs: [], reports: {}, visible: true,
+    } });
+    const path = join(root, '.openslack.local/agents/runs', request.runId, 'run.json');
+    const before = readFileSync(path);
+    let nativeRefusal: NodeJS.ErrnoException | undefined;
+    rename.mockImplementation((...args) => {
+      try { return nativeRename(...args); }
+      catch (error) { nativeRefusal = error as NodeJS.ErrnoException; throw error; }
+    });
+    const descriptor = openSync(path, 'r');
+    let refused = false;
+    try {
+      let failure: unknown;
+      try { store.updateRun(request.runId, { status: 'running' }); }
+      catch (error) { failure = error; }
+      expect(readFileSync(descriptor)).toEqual(before);
+      if (failure !== undefined) {
+        if (process.platform !== 'win32') throw failure;
+        expect(['EPERM', 'EBUSY']).toContain(nativeRefusal?.code);
+        expect(failure).toMatchObject({ code: 'RUN_PERSISTENCE_INDETERMINATE' });
+        expect(readFileSync(path)).toEqual(before);
+        const directory = join(root, '.openslack.local/agents/runs', request.runId);
+        const owner = JSON.parse(readFileSync(join(directory, 'run.transaction.lock'), 'utf8'));
+        const intentFile = `run.intent.${owner.transactionId}.json`;
+        expect(readdirSync(directory)).toContain(intentFile);
+        const intent = JSON.parse(readFileSync(join(directory, intentFile), 'utf8'));
+        expect(intent).toMatchObject({ runId: request.runId, transactionId: owner.transactionId, operation: 'update' });
+        expect(intent.target.stateFile).toBe(`run.json.${owner.transactionId}.tmp`);
+        const temporary = readFileSync(join(directory, intent.target.stateFile));
+        expect(createHash('sha256').update(temporary).digest('hex')).toBe(intent.target.stateSha256);
+        expect(JSON.parse(temporary.toString('utf8')).status).toBe('running');
+        expect(observeRun(request.runId, root)).toMatchObject({ kind: 'unavailable', reason: 'locked' });
+        refused = true;
+      } else expect(readRunStateSnapshot(request.runId, root)?.status).toBe('running');
+    } finally { closeSync(descriptor); }
+    if (refused) expect(observeRun(request.runId, root)).toMatchObject({ kind: 'unavailable', reason: 'locked' });
+  });
+
   it('reads a bounded snapshot without sweeping stale atomic-write evidence', () => {
     const store = createRunStore(root);
     store.createRun(makeRequest());
@@ -112,6 +166,16 @@ describe('createRunStore', () => {
 
     expect(readRunStateSnapshot('RUN-20260101-TEST1234', root)?.agentId).toBe('test-agent');
     expect(readFileSync(stale, 'utf8')).toBe('stale evidence');
+  });
+
+  it('lets an explicitly maintenance-free writer preserve historical temporary evidence', () => {
+    createRunStore(root).createRun(makeRequest());
+    const stale = join(root, '.openslack.local/agents/runs/RUN-20260101-TEST1234/run.json.stale.tmp');
+    writeFileSync(stale, 'historical bytes');
+    utimesSync(stale, new Date(0), new Date(0));
+    const store = createRunStore(root, { sweepOrphans: false });
+    expect(store.getRun('RUN-20260101-TEST1234')?.status).toBe('pending');
+    expect(readFileSync(stale, 'utf8')).toBe('historical bytes');
   });
 
   it('rejects oversized state before parsing it', () => {
@@ -144,6 +208,14 @@ describe('createRunStore', () => {
     expect(found).toBeNull();
   });
 
+  it('preserves historical short and long run IDs while reporting the actual grammar', () => {
+    const store = createRunStore(root, { sweepOrphans: false });
+    for (const runId of ['RUN-A', 'RUN--', `RUN-${'A'.repeat(140)}`]) {
+      expect(store.createRun(makeRequest({ runId })).runId).toBe(runId);
+    }
+    expect(() => store.getRun('RUN-lowercase')).toThrow('Must match /^RUN-[A-Z0-9-]+$/ (historical lengths are preserved)');
+  });
+
   it('rejects invalid runId format', () => {
     const store = createRunStore(root);
     expect(() => store.getRun('../etc/passwd')).toThrow(/Invalid run ID/);
@@ -161,7 +233,9 @@ describe('createRunStore', () => {
     const runPath = join(runDir, 'run.json');
     writeFileSync(runPath, 'not-valid-json', 'utf-8');
 
-    expect(() => store.getRun('RUN-20260101-TEST1234')).toThrow(/Corrupted run metadata/);
+    expect(store.getRun('RUN-20260101-TEST1234')).toBeNull();
+    expect(store.observeRun('RUN-20260101-TEST1234')).toMatchObject({ kind: 'unavailable', reason: 'corrupt' });
+    expect(() => store.readRun('RUN-20260101-TEST1234')).toThrow(/Corrupted run metadata/);
   });
 
   it('updates run state', () => {

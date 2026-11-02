@@ -10,8 +10,8 @@ import {
   loadOpenAICompatibleRuntimeConfig,
   resolveRuntimeCredential,
 } from './openai-compatible-runtime.js';
-import { createOpenSlackAgentLauncher } from './launcher.js';
-import { createRunStore } from './run-store.js';
+import { createOpenSlackAgentLauncher, readOwnedRunIdentity } from './launcher.js';
+import { createRunStore, observeRun } from './run-store.js';
 import { readTranscript } from './transcript.js';
 import {
   AGENT_RUNTIME_CONFIG_SCHEMA,
@@ -315,7 +315,7 @@ export async function runOpenAICompatibleRuntimeSmoke(
     runId = result.runId;
     return buildOpenAISmokeReport(rootDir, doctor, runId, 'PASS', 'completed');
   } catch (error) {
-    runId = store.listRuns().at(0)?.runId;
+    runId = readOwnedRunIdentity(error);
     return buildOpenAISmokeReport(
       rootDir,
       doctor,
@@ -345,16 +345,13 @@ function buildOpenAISmokeReport(
         transcriptJsonl: join(runDir, 'transcript.jsonl'),
       }
     : {};
-  const transcript = runId ? readTranscript(runId, rootDir) : [];
-  return {
-    provider: 'openai-compatible',
-    status,
-    doctor,
-    runId,
-    terminalReason,
-    failureCode,
-    evidence,
-    checks: [
+  const observation = runId ? observeRun(runId, rootDir) : undefined;
+  let transcript: ReturnType<typeof readTranscript> = [], transcriptUnavailable = false;
+  try { if (runId && observation?.kind === 'ready') transcript = readTranscript(runId, rootDir); }
+  catch { transcriptUnavailable = true; }
+  const checks: OpenAICompatibleRuntimeSmokeReport['checks'] = [
+      ...(observation?.kind === 'unavailable' || observation?.kind === 'missing' || transcriptUnavailable ? [{ name: 'run-storage-availability', status: 'FAIL' as const,
+        detail: `This run's evidence is unavailable: ${observation?.kind === 'unavailable' ? observation.reason : observation?.kind === 'missing' ? 'missing' : 'transcript-unavailable'}. Inspect without replay.` }] : []),
       { name: 'doctor', status: doctor.status, detail: `Runtime is ${doctor.readiness}` },
       {
         name: 'terminal-event',
@@ -374,9 +371,13 @@ function buildOpenAISmokeReport(
           existsSync(evidence.transcriptJsonl)
             ? 'PASS'
             : 'FAIL',
-        detail: runId ? `Run evidence recorded for ${runId}.` : 'No run evidence recorded.',
+        detail: runId ? `Run evidence recorded for ${runId}.` : 'No run was created by this invocation.',
       },
-    ],
+    ];
+  return {
+    provider: 'openai-compatible',
+    status: status === 'PASS' && checks.every(check => check.status !== 'FAIL') ? 'PASS' : 'FAIL',
+    doctor, runId, terminalReason, failureCode, evidence, checks,
   };
 }
 

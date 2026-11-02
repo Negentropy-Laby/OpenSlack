@@ -4,6 +4,7 @@ import {
   type OpenSlackMcpRisk,
 } from '@openslack/qoder-adapter';
 import type { GovernedPlanPreview, GovernedPlanRecord } from '@openslack/operator';
+import { GovernedMutationSettlementUnconfirmedError } from '../mutations.js';
 import type {
   OpenSlackGovernedMutationInvocation,
   OpenSlackGovernedMutationPort,
@@ -163,14 +164,25 @@ export async function callGovernedMutationTool(
   if (name === 'openslack_preview_workflow') {
     return previewResult(await port.previewWorkflow(input, invocation));
   }
-  if (name === 'openslack_cancel_plan') {
-    return governedMutationRecordResult(await port.cancel(input, invocation));
-  }
   try {
-    return governedMutationRecordResult(await port.confirm(input, invocation));
+    return governedMutationRecordResult(await (name === 'openslack_cancel_plan' ? port.cancel(input, invocation) : port.confirm(input, invocation)));
   } catch (error) {
+    if (error instanceof GovernedMutationSettlementUnconfirmedError && error.durableRecord.planId === input.planId &&
+      error.operation === (name === 'openslack_cancel_plan' ? 'cancel' : 'confirm')) {
+      const record = error.durableRecord;
+      return Object.freeze({ correlationId: record.bindings.correlationId, planHash: record.bindings.planHash,
+        result: createOpenSlackMcpResult({ status: 'blocked',
+          summary: 'The governed result is durable, but host settlement is unconfirmed. Preserve evidence and reconcile without confirming again.',
+          data: { state: record.state, kind: record.canonicalPlan.kind, revision: record.revision, outcomes: record.execution?.outcomes ?? [],
+            settlement: 'unconfirmed', requiresReconciliation: true },
+          governance: { risk: maxRisk(record), approvalRequired: false, owner: record.bindings.actorId, blocker: error.code },
+          evidenceRefs: planEvidence(record), planId: record.planId,
+          ...(record.execution ? { executionId: record.execution.executionId } : {}),
+        }),
+      });
+    }
     if (
-      error &&
+      name !== 'openslack_cancel_plan' && error &&
       typeof error === 'object' &&
       ['GOVERNED_PLAN_EXECUTION_ABORTED', 'GOVERNED_PLAN_EXECUTION_UNCERTAIN'].includes(
         String((error as { readonly code?: unknown }).code),

@@ -1,4 +1,5 @@
 import { types as utilTypes } from 'node:util';
+import { CONFIRMATION_CAPABILITY_PATTERN } from '@openslack/core/internal/runtime-contracts';
 import {
   OPENSLACK_DEMO_RESET_TOOL_NAME,
   OPENSLACK_GOVERNED_MUTATION_TOOL_NAMES,
@@ -123,7 +124,6 @@ function redactString(value: string): string {
   return redactProtocolString(value, MAX_TEXT_LENGTH);
 }
 
-const CONFIRMATION_CAPABILITY = /^[A-Za-z0-9_-]{32,128}$/;
 
 function sanitizeForProtocol(
   value: unknown,
@@ -186,7 +186,7 @@ function sanitizeForProtocol(
       preserveRootConfirmationToken &&
       key === 'confirmationToken' &&
       typeof child === 'string' &&
-      CONFIRMATION_CAPABILITY.test(child)
+      CONFIRMATION_CAPABILITY_PATTERN.test(child)
     ) {
       output[key] = child;
       continue;

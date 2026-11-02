@@ -33,3 +33,12 @@ export function testPowerShellEnvironment(
   parent?: NodeJS.ProcessEnv,
   platform?: NodeJS.Platform,
 ): NodeJS.ProcessEnv;
+export function testWindowsDriveAlias(root: string, ports?: {
+  platform?: NodeJS.Platform;
+  systemRoot?: string;
+  stat?: (path: string, options: { bigint: true }) => { dev: bigint; ino: bigint; isDirectory(): boolean };
+  canonical?: (path: string) => string;
+  spawn?: (command: string, args: string[], options: SpawnSyncOptionsWithStringEncoding) => {
+    status: number | null; stdout?: string; error?: Error; signal?: NodeJS.Signals | null;
+  };
+}): Readonly<{ drive: string; dispose(): void }>;

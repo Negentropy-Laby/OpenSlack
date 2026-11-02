@@ -1,5 +1,6 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 import { workflowReadMetadata } from './workflow-read-metadata.js';
+import { readHarnessExecutionProjection } from './harness-execution.js';
 import { existsSync, lstatSync, realpathSync, statSync } from 'node:fs';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import {
@@ -404,6 +405,10 @@ function eventEvidence(event: CollaborationEvent): string {
   return `event:${event.id}`;
 }
 
+function eventWindowCutoff(sinceHours: number): number {
+  return sinceHours <= 0 ? Number.NEGATIVE_INFINITY : Date.now() - sinceHours * 60 * 60 * 1_000;
+}
+
 function eventsForWindow(rootDir: string, sinceHours: number): CollaborationEvent[] {
   const eventsPath = join(rootDir, '.openslack.local', 'collaboration', 'events.jsonl');
   const events = existsSync(eventsPath)
@@ -414,8 +419,7 @@ function eventsForWindow(rootDir: string, sinceHours: number): CollaborationEven
         accept: (event) => validateEvent(event).valid,
       })
     : [];
-  const cutoff =
-    sinceHours <= 0 ? Number.NEGATIVE_INFINITY : Date.now() - sinceHours * 60 * 60 * 1_000;
+  const cutoff = eventWindowCutoff(sinceHours);
   return events
     .filter((event) => new Date(event.timestamp).getTime() >= cutoff)
     .sort((left, right) => right.timestamp.localeCompare(left.timestamp));
@@ -1360,11 +1364,16 @@ export function createDefaultOpenSlackReadModelPorts(
       const filter: EventFilter = {};
       if (objectKind) filter.objectKind = objectKind as EventFilter['objectKind'];
       if (objectId) filter.objectId = objectId;
-      const events = filterEvents(eventsForWindow(rootDir, sinceHours), filter).slice(0, limit);
+      const anchors = filterEvents(eventsForWindow(rootDir, 0), filter);
+      const cutoff = eventWindowCutoff(sinceHours);
+      const events = anchors.filter(event => Date.parse(event.timestamp) >= cutoff).slice(0, limit);
+      const execution = objectKind === 'workflow' && objectId
+        ? readHarnessExecutionProjection(rootDir, objectId, anchors) : undefined;
       return {
         generatedAt: new Date().toISOString(),
         events: events.map(eventDto),
         evidenceRefs: events.map(eventEvidence),
+        ...(execution ? { execution } : {}),
       };
     },
     workflowProgress: async ({ runId }) => {

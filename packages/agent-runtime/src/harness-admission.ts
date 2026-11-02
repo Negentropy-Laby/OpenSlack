@@ -1,0 +1,188 @@
+import { createHash, randomUUID } from 'node:crypto';
+import {
+  closeSync, fsyncSync, linkSync, lstatSync, mkdirSync, readdirSync,
+  openSync, realpathSync, unlinkSync, writeFileSync,
+} from 'node:fs';
+import { join } from 'node:path';
+import { types as utilTypes } from 'node:util';
+import { canonicalHarnessRoot, readHarnessFile } from './harness-read.js';
+import { RUN_ID_RE } from './run-id.js';
+import { isCode } from './io-errors.js';
+import { readRunBytes, captureStorageDirectories } from './run-files.js';
+import { decodeStrictJSON } from '@openslack/core';
+import { nativePathSpellingEqual } from '@openslack/core/internal/runtime-contracts';
+
+export interface HarnessAdmissionRecord {
+  schema: 'openslack.harness_admission.v1'; key: string; requestHash: string; runId: string;
+  ownerGeneration?: string; admittedAt?: string; deadlineAt?: string;
+}
+export interface HarnessAdmissionObservation {
+  kind: 'admission'; runId: string; requestHash: string; canonicalRunPresent: boolean;
+  disposition: 'in_progress' | 'reconcile_required';
+}
+/** Typed outcomes that must never cause an automatic redispatch. */
+export class HarnessAdmissionError extends Error {
+  constructor(readonly code: 'CONFLICT' | 'INDETERMINATE' | 'BUSY' | 'IN_PROGRESS', message: string,
+    readonly observation?: HarnessAdmissionObservation) {
+    super(message); this.name = 'HarnessAdmissionError';
+  }
+}
+
+/** Canonical JSON for host-resolved inert task data. Request IDs and timestamps are excluded by callers. */
+export function canonicalHarnessInput(value: unknown): string {
+  const ancestors = new Set<object>();
+  const normalize = (item: unknown): unknown => {
+    if (item === null || typeof item === 'string' || typeof item === 'boolean') return item;
+    if (typeof item === 'number' && Number.isFinite(item)) return item;
+    if (typeof item !== 'object' || utilTypes.isProxy(item) || ancestors.has(item)) throw new HarnessInputError();
+    const prototype = Object.getPrototypeOf(item);
+    if (!Array.isArray(item) && prototype !== Object.prototype && prototype !== null) throw new HarnessInputError();
+    const keys = Reflect.ownKeys(item);
+    const descriptors = Object.getOwnPropertyDescriptors(item);
+    if (keys.some(key => typeof key !== 'string') || keys.some(key => !Object.hasOwn(descriptors[key as string]!, 'value'))) {
+      throw new HarnessInputError();
+    }
+    ancestors.add(item);
+    try {
+      if (Array.isArray(item)) {
+        if (keys.length !== item.length + 1) throw new HarnessInputError();
+        return Array.from({ length: item.length }, (_, index) => {
+          const descriptor = descriptors[String(index)];
+          if (!descriptor) throw new HarnessInputError();
+          return normalize(descriptor.value);
+        });
+      }
+      return Object.fromEntries((keys as string[]).sort().filter(key => {
+        if (!descriptors[key]!.enumerable) throw new HarnessInputError();
+        return descriptors[key]!.value !== undefined;
+      }).map(key => [key, normalize(descriptors[key]!.value)]));
+    } finally { ancestors.delete(item); }
+  };
+  return JSON.stringify(normalize(value));
+}
+
+export function hashHarnessInput(value: unknown): string {
+  return createHash('sha256').update(canonicalHarnessInput(value)).digest('hex');
+}
+
+/** Invalid host input cannot alias an existing admission's canonical digest. */
+export class HarnessInputError extends TypeError {
+  readonly code = 'HARNESS_INPUT_INVALID';
+  constructor() { super('Harness input must contain only inert finite JSON data'); this.name = 'HarnessInputError'; }
+}
+
+/** Minimal exclusive routing records. State and results remain in the canonical agent run. */
+export class HarnessAdmissionStore {
+  private readonly directory: string;
+  private readonly root: string;
+  constructor(root: string) {
+    const canonical = canonicalHarnessRoot(root);
+    this.root = canonical;
+    this.directory = join(canonical, '.openslack.local', 'agents', 'harness-admissions');
+    let parent = canonical;
+    for (const part of ['.openslack.local', 'agents', 'harness-admissions']) {
+      parent = join(parent, part);
+      mkdirSync(parent, { recursive: true, mode: 0o700 });
+      const actual = realpathSync(parent);
+      if (!lstatSync(parent).isDirectory() || lstatSync(parent).isSymbolicLink() || !nativePathSpellingEqual(actual, parent)) {
+        throw new HarnessAdmissionError('INDETERMINATE', 'Admission storage traverses an alias or link');
+      }
+    }
+  }
+
+  /** Exclusive publication, including across independent processes. A damaged record is never replaced. */
+  admit(key: string, requestHash: string, owner?: { ownerGeneration: string; admittedAt: string; deadlineAt: string }): { record: HarnessAdmissionRecord; created: boolean; publicationUnconfirmed?: true } {
+    if (!/^[a-f0-9]{64}$/.test(key) || !/^[a-f0-9]{64}$/.test(requestHash)) {
+      throw new HarnessAdmissionError('INDETERMINATE', 'Invalid admission digest');
+    }
+    if (owner && (!/^[A-Za-z0-9-]{1,128}$/.test(owner.ownerGeneration) || !Number.isFinite(Date.parse(owner.admittedAt)) ||
+      !Number.isFinite(Date.parse(owner.deadlineAt)) || Date.parse(owner.deadlineAt) <= Date.parse(owner.admittedAt))) {
+      throw new HarnessAdmissionError('INDETERMINATE', 'Invalid admission owner or deadline');
+    }
+    const record: HarnessAdmissionRecord = { schema: 'openslack.harness_admission.v1', key, requestHash,
+      runId: `RUN-${randomUUID().toUpperCase()}`, ...owner };
+    const target = join(this.directory, `${key}.json`);
+    const temporary = join(this.directory, `${key}.${randomUUID()}.tmp`);
+    const file = openSync(temporary, 'wx', 0o600);
+    try { writeFileSync(file, JSON.stringify(record)); fsyncSync(file); } finally { closeSync(file); }
+    let result: { record: HarnessAdmissionRecord; created: boolean } | undefined;
+    let failed = false;
+    let failure: unknown;
+    try {
+      try { linkSync(temporary, target); result = { record, created: true }; }
+      catch (error) {
+        if (!isCode(error, 'EEXIST')) throw new HarnessAdmissionError('INDETERMINATE', 'Admission publication is unconfirmed; reconcile without replay');
+      }
+      if (!result) {
+        const existing = this.read(target);
+        if (existing.key !== key || existing.requestHash !== requestHash) {
+          throw new HarnessAdmissionError('CONFLICT', 'This logical task already has different execution input');
+        }
+        result = { record: existing, created: false };
+      }
+    } catch (error) { failed = true; failure = error; }
+    try { unlinkSync(temporary); }
+    catch {
+      // The newly published route still belongs to this caller. Hand it back
+      // explicitly for stop/persistence settlement, never as ordinary success.
+      if (!failed && result?.created) return { ...result, publicationUnconfirmed: true };
+      if (!failed) throw new HarnessAdmissionError('INDETERMINATE', 'Admission temporary cleanup is unconfirmed; preserve and reconcile');
+      if (failure instanceof Error) Object.defineProperty(failure, 'persistenceDiagnostic', { value: 'ADMISSION_TEMPORARY_CLEANUP_UNCONFIRMED' });
+    }
+    if (failed) throw failure;
+    return result!;
+  }
+
+  private read(path: string): HarnessAdmissionRecord {
+    try {
+      const verifyDirectories = captureStorageDirectories(this.root, ['.openslack.local', 'agents', 'harness-admissions'], 'RUN-ADMISSION');
+      const before = lstatSync(path, { bigint: true });
+      let bytes: Buffer;
+      if (before.nlink === 1n) bytes = readHarnessFile(path, 4096);
+      else if (before.nlink === 2n) {
+        const name = path.slice(this.directory.length + 1), key = name.slice(0, -5);
+        const retiredPair = () => {
+          const current = lstatSync(path, { bigint: true });
+          if (current.dev !== before.dev || current.ino !== before.ino || current.mode !== before.mode || current.nlink !== 1n) throw new Error('Admission pair is not retired');
+          return readHarnessFile(path, 4096);
+        };
+        const matches = readdirSync(this.directory).filter(name => new RegExp(`^${key}\\.[a-f0-9-]{36}\\.tmp$`).test(name))
+          .map(name => join(this.directory, name)).filter(alias => {
+            try {
+              const entry = lstatSync(alias, { bigint: true });
+              return entry.isFile() && !entry.isSymbolicLink() && entry.dev === before.dev && entry.ino === before.ino && entry.nlink === 2n;
+            } catch (error) { if (isCode(error, 'ENOENT')) return false; throw error; }
+          });
+        if (matches.length === 0) bytes = retiredPair();
+        else {
+          if (matches.length !== 1) throw new Error('Unbound admission publication alias');
+          try {
+            bytes = readRunBytes(path, 4096, 'RUN-ADMISSION', 2);
+            const aliasBytes = readRunBytes(matches[0]!, 4096, 'RUN-ADMISSION', 2);
+            const final = lstatSync(path, { bigint: true }), alias = lstatSync(matches[0]!, { bigint: true });
+            if (!bytes.equals(aliasBytes) || final.dev !== before.dev || final.ino !== before.ino || final.nlink !== 2n ||
+              alias.dev !== final.dev || alias.ino !== final.ino || alias.nlink !== 2n) throw new Error('Admission publication changed');
+          } catch { bytes = retiredPair(); }
+        }
+      } else throw new Error('Admission publication has an external link');
+      verifyDirectories();
+      const value = decodeStrictJSON(bytes, 4096);
+      if (!before.isFile() || before.isSymbolicLink()) {
+        throw new Error('Admission publication is not an owned regular file');
+      }
+      if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('unstable admission');
+      const row = value as Record<string, unknown>;
+      if (row.schema !== 'openslack.harness_admission.v1' || typeof row.key !== 'string' ||
+        typeof row.requestHash !== 'string' || typeof row.runId !== 'string' || !RUN_ID_RE.test(row.runId)) throw new Error('invalid admission');
+      const hasOwner = row.ownerGeneration !== undefined || row.admittedAt !== undefined || row.deadlineAt !== undefined;
+      if (hasOwner && (typeof row.ownerGeneration !== 'string' || !/^[A-Za-z0-9-]{1,128}$/.test(row.ownerGeneration) ||
+        typeof row.admittedAt !== 'string' || typeof row.deadlineAt !== 'string' || !Number.isFinite(Date.parse(row.admittedAt)) ||
+        !Number.isFinite(Date.parse(row.deadlineAt)) || Date.parse(row.deadlineAt) <= Date.parse(row.admittedAt))) throw new Error('invalid owner binding');
+      return { schema: 'openslack.harness_admission.v1', key: row.key, requestHash: row.requestHash, runId: row.runId,
+        ...(hasOwner ? { ownerGeneration: row.ownerGeneration as string, admittedAt: row.admittedAt as string, deadlineAt: row.deadlineAt as string } : {}) };
+    } catch (error) {
+      if (error instanceof HarnessAdmissionError && error.code === 'IN_PROGRESS') throw error;
+      throw new HarnessAdmissionError('INDETERMINATE', 'Admission record is unreadable; preserve it and reconcile without replay');
+    }
+  }
+}

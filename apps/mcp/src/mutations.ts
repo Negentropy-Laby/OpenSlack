@@ -1,4 +1,8 @@
 import { types as utilTypes } from 'node:util';
+import { AsyncLocalStorage } from 'node:async_hooks';
+import { randomUUID } from 'node:crypto';
+import { fileURLToPath } from 'node:url';
+export const MUTATION_PORT_BUILD_SOURCE_PATH = fileURLToPath(import.meta.url);
 import {
   assertGovernedPlanService,
   createGovernedPlanCompiler,
@@ -41,6 +45,10 @@ export interface OpenSlackGovernedPlanCompilerInput {
   readonly compilation: GovernedPlanCompilationContext;
 }
 
+export type GovernedMutationSettlementOutcome = Readonly<{
+  operation: 'confirm' | 'cancel'; attemptId: string; aborted: boolean;
+} & ({ failed: false; record: GovernedPlanRecord } | { failed: true; failureCode?: string })>;
+
 export interface CreateOpenSlackGovernedMutationPortOptions {
   readonly service: GovernedPlanService;
   readonly authority: GovernedPlanHostAuthority;
@@ -50,7 +58,31 @@ export interface CreateOpenSlackGovernedMutationPortOptions {
   readonly compileWorkflow: (
     input: OpenSlackGovernedPlanCompilerInput,
   ) => CreateCanonicalGovernedPlanInput | Promise<CreateCanonicalGovernedPlanInput>;
+  /** Success carries the service's committed return; a thrown call never grants execution. */
+  readonly onConfirmationSettled?: (planId: string, outcome: GovernedMutationSettlementOutcome) => void | Promise<void>;
 }
+
+/** The effect is already durable. This error cannot authorize a retry or claim
+ * that a task admission was released; it only carries immutable readback. */
+export class GovernedMutationSettlementUnconfirmedError extends Error {
+  readonly code = 'GOVERNED_MUTATION_SETTLEMENT_UNCONFIRMED';
+  readonly durableRecord: GovernedPlanRecord;
+  constructor(readonly operation: 'confirm' | 'cancel', record: GovernedPlanRecord, cause: unknown) {
+    super('The governed result is durable but host settlement is unconfirmed; reconcile without replay.', { cause });
+    this.name = 'GovernedMutationSettlementUnconfirmedError';
+    const copy = structuredClone(record), pending: object[] = [copy];
+    while (pending.length) {
+      const value = pending.pop()!;
+      for (const child of Object.values(value)) if (child && typeof child === 'object' && !Object.isFrozen(child)) pending.push(child);
+      Object.freeze(value);
+    }
+    this.durableRecord = copy;
+  }
+}
+
+const mutationAttempts = new AsyncLocalStorage<string>();
+/** Correlation only, never authority; available solely inside the host's actual service invocation. */
+export function currentGovernedMutationAttempt(): string | undefined { return mutationAttempts.getStore(); }
 
 const NOMINAL_PORTS = new WeakSet<object>();
 const SAFE_AUTHORITY = /^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,255}$/;
@@ -158,7 +190,8 @@ export function createOpenSlackGovernedMutationPort(
     throw new TypeError('Governed mutation port options must be host-owned.');
   }
   const descriptors = Object.getOwnPropertyDescriptors(options);
-  const expected = ['authority', 'compileScenario', 'compileWorkflow', 'service'];
+  const expected = ['authority', 'compileScenario', 'compileWorkflow', 'service',
+    ...(Object.hasOwn(descriptors, 'onConfirmationSettled') ? ['onConfirmationSettled'] : [])];
   if (
     Reflect.ownKeys(descriptors).length !== expected.length ||
     Reflect.ownKeys(descriptors).some(
@@ -177,6 +210,27 @@ export function createOpenSlackGovernedMutationPort(
   const compileWorkflow = descriptors.compileWorkflow!.value;
   assertHostFunction(compileScenario, 'compileScenario');
   assertHostFunction(compileWorkflow, 'compileWorkflow');
+  const onSettled: CreateOpenSlackGovernedMutationPortOptions['onConfirmationSettled'] = descriptors.onConfirmationSettled?.value;
+  if (onSettled !== undefined && (typeof onSettled !== 'function' || utilTypes.isProxy(onSettled))) throw new TypeError('onConfirmationSettled must be host-owned.');
+  const settle = async (operation: 'confirm' | 'cancel', request: ReturnType<typeof tokenInput>, control: ReturnType<typeof invocation>,
+    action: () => Promise<GovernedPlanRecord>): Promise<GovernedPlanRecord> => {
+    const attemptId = randomUUID();
+    let result: GovernedPlanRecord;
+    try { result = await mutationAttempts.run(attemptId, action); }
+    catch (error) {
+      const failureCode = error && typeof error === 'object' && 'code' in error && typeof error.code === 'string' ? error.code : undefined;
+      try { await onSettled?.(request.planId, { operation, attemptId, failed: true, aborted: control.signal.aborted, ...(failureCode ? { failureCode } : {}) }); }
+      catch (secondary) {
+        const combined = new AggregateError([error, secondary], 'Governed execution and settlement both failed.', { cause: error });
+        if (failureCode) Object.defineProperty(combined, 'code', { value: failureCode });
+        throw combined;
+      }
+      throw error;
+    }
+    try { await onSettled?.(request.planId, { operation, attemptId, failed: false, aborted: control.signal.aborted, record: result }); }
+    catch (secondary) { throw new GovernedMutationSettlementUnconfirmedError(operation, result, secondary); }
+    return result;
+  };
 
   const preview = async (
     inputValue: Readonly<Record<string, unknown>>,
@@ -216,7 +270,8 @@ export function createOpenSlackGovernedMutationPort(
       invocationValue: OpenSlackGovernedMutationInvocation,
     ) => {
       const control = invocation(invocationValue);
-      return service.confirm(tokenInput(inputValue), boundAuthority, control);
+      const request = tokenInput(inputValue);
+      return settle('confirm', request, control, () => service.confirm(request, boundAuthority, control));
     },
     cancel: (
       inputValue: Readonly<Record<string, unknown>>,
@@ -226,7 +281,8 @@ export function createOpenSlackGovernedMutationPort(
       if (control.signal.aborted || Date.now() >= Date.parse(control.deadlineAt)) {
         throw new Error('GOVERNED_MUTATION_ABORTED_BEFORE_CANCEL');
       }
-      return service.cancel(tokenInput(inputValue), boundAuthority);
+      const request = tokenInput(inputValue);
+      return settle('cancel', request, control, () => service.cancel(request, boundAuthority));
     },
     get: (planId: string) => service.get(planId),
   });

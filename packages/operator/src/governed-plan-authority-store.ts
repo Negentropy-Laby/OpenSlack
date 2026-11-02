@@ -23,6 +23,7 @@ import {
   canGovernedPlanStateTransition,
   isGovernedPlanStore,
   registerGovernedPlanStore,
+  retryGovernedPlanPublication,
   type GovernedPlanStore,
   type GovernedPlanStoreWriteControl,
 } from './governed-plan-store.js';
@@ -663,6 +664,7 @@ async function writeFileAtomic(
   bytes: string,
   parentReal: string,
   maximumBytes: number,
+  prepared: PreparedAuthorityRoot,
 ): Promise<void> {
   if (Buffer.byteLength(bytes, 'utf8') > maximumBytes) {
     return fail(
@@ -670,28 +672,91 @@ async function writeFileAtomic(
       'Governance authority file exceeds its bounded byte limit.',
     );
   }
+  await assertDirectoryIdentity(prepared);
+  const previous = await lstatIfPresent(path);
+  if (previous && (!previous.isFile() || previous.isSymbolicLink())) {
+    return fail(
+      'GOVERNED_PLAN_AUTHORITY_ROUTE_UNSAFE',
+      'Governance authority replacement target is unsafe.',
+    );
+  }
   const handle = await open(
     temporary,
     fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_EXCL | NO_FOLLOW,
     0o600,
   );
-  let trusted: Stats;
+  let trusted: Stats | undefined;
+  let primary: unknown;
+  let failed = false;
   try {
-    await handle.writeFile(bytes, 'utf8');
-    await handle.sync();
-    trusted = await handle.stat();
-    const named = await lstat(temporary);
-    if (!stableIdentity(trusted, named)) {
-      return fail(
-        'GOVERNED_PLAN_AUTHORITY_ROUTE_UNSAFE',
-        'Governance authority temporary file identity changed.',
-      );
+    let writeError: unknown;
+    let writeFailed = false;
+    try {
+      // Capture ownership before a write or sync can fail; size is not ownership.
+      trusted = await handle.stat();
+      await handle.writeFile(bytes, 'utf8');
+      await handle.sync();
+      const written = await handle.stat();
+      if (!sameIdentity(trusted, written)) {
+        return fail(
+          'GOVERNED_PLAN_AUTHORITY_ROUTE_UNSAFE',
+          'Governance authority temporary file identity changed.',
+        );
+      }
+      trusted = written;
+    } catch (error) {
+      writeFailed = true;
+      writeError = error;
+      throw error;
+    } finally {
+      try {
+        await handle.close();
+      } catch (close) {
+        if (writeFailed)
+          throw new AggregateError(
+            [writeError, close],
+            'Governance authority write and close failed.',
+            { cause: writeError },
+          );
+        throw close;
+      }
     }
-  } finally {
-    await handle.close();
-  }
-  try {
-    await rename(temporary, path);
+    await retryGovernedPlanPublication(async (assertBudget) => {
+      // Only an explicitly refused rename is retried. Never replay a service
+      // request, file write, fsync, readback or a drifted publication.
+      try {
+        await assertDirectoryIdentity(prepared);
+        const named = await lstatIfPresent(temporary);
+        const target = await lstatIfPresent(path);
+        if (
+          !named ||
+          !named.isFile() ||
+          named.isSymbolicLink() ||
+          !stableIdentity(trusted!, named)
+        ) {
+          return fail(
+            'GOVERNED_PLAN_AUTHORITY_ROUTE_UNSAFE',
+            'Governance authority temporary file changed before publication.',
+          );
+        }
+        if (previous ? !target || !stableIdentity(previous, target) : target !== undefined) {
+          return fail(
+            'GOVERNED_PLAN_AUTHORITY_ROUTE_CONFLICT',
+            'Governance authority replacement target changed before publication.',
+          );
+        }
+      } catch (verification) {
+        if (verification instanceof GovernedPlanAuthorityStoreError) throw verification;
+        // A failed observation is not evidence that rename was refused.
+        throw new AggregateError(
+          [verification],
+          'Governance authority publication identity could not be verified.',
+          { cause: verification },
+        );
+      }
+      assertBudget();
+      await rename(temporary, path);
+    });
     await syncDirectory(parentReal);
     const published = await lstat(path);
     if (!sameIdentity(trusted!, published) || !published.isFile() || published.isSymbolicLink()) {
@@ -700,8 +765,39 @@ async function writeFileAtomic(
         'Governance authority file identity changed during publication.',
       );
     }
+    await assertDirectoryIdentity(prepared);
+  } catch (error) {
+    failed = true;
+    primary = error;
+    throw error;
   } finally {
-    await rm(temporary, { force: true });
+    try {
+      await assertDirectoryIdentity(prepared);
+      const remaining = await lstatIfPresent(temporary);
+      if (remaining) {
+        if (
+          !trusted ||
+          !remaining.isFile() ||
+          remaining.isSymbolicLink() ||
+          !sameIdentity(trusted, remaining)
+        ) {
+          return fail(
+            'GOVERNED_PLAN_AUTHORITY_ROUTE_UNSAFE',
+            'Governance authority temporary file ownership changed before cleanup.',
+          );
+        }
+        await rm(temporary);
+      }
+    } catch (cleanup) {
+      if (failed) {
+        throw new AggregateError(
+          [primary, cleanup],
+          'Governance authority publication and owned cleanup failed.',
+          { cause: primary },
+        );
+      }
+      throw cleanup;
+    }
   }
 }
 
@@ -954,6 +1050,7 @@ async function bindPolicy(
       `${canonicalGovernedJson(policy)}\n`,
       prepared.rootReal,
       MAX_ROUTE_BYTES,
+      prepared,
     );
     const readback = parsePolicy(await readCanonical(path, prepared.rootReal));
     if (
@@ -1593,6 +1690,7 @@ class RoutedGovernedPlanStore implements GovernedPlanStore {
       `${canonicalGovernedJson(next)}\n`,
       this.#prepared.journalReal,
       MAX_JOURNAL_BYTES,
+      this.#prepared,
     );
     const written = await this.#readJournal(entry.event.eventId);
     if (

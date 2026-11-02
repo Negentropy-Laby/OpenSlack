@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import type * as FsPromises from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve, sep } from 'node:path';
@@ -14,6 +14,18 @@ import {
 } from '../index.js';
 import { canonicalWorkflowEffectJson } from '../workflow-effect-json.js';
 
+const lockReadRace = vi.hoisted(() => ({
+  lockPath: '',
+  recordPath: '',
+  onOpen: undefined as (() => Promise<never>) | undefined,
+  onRealpath: undefined as (() => Promise<string>) | undefined,
+  verificationError: undefined as NodeJS.ErrnoException | undefined,
+  beforeRename: undefined as (() => Promise<void>) | undefined,
+  readRefusals: 0,
+  lockSources: [] as string[],
+  replacements: 0,
+}));
+
 const scanRace = vi.hoisted(() => ({
   directory: '',
   path: '',
@@ -27,6 +39,38 @@ vi.mock('node:fs/promises', async (importOriginal) => {
   const fs = await importOriginal<typeof FsPromises>();
   return {
     ...fs,
+    open: (...args: Parameters<typeof fs.open>) => {
+      if (String(args[0]) === lockReadRace.lockPath && lockReadRace.onOpen) {
+        const refuse = lockReadRace.onOpen;
+        lockReadRace.onOpen = undefined;
+        lockReadRace.readRefusals += 1;
+        return refuse();
+      }
+      return fs.open(...args);
+    },
+    realpath: (...args: Parameters<typeof fs.realpath>) => {
+      if (String(args[0]) === lockReadRace.lockPath && lockReadRace.onRealpath) {
+        const observe = lockReadRace.onRealpath;
+        lockReadRace.onRealpath = undefined;
+        lockReadRace.readRefusals += 1;
+        return observe();
+      }
+      return fs.realpath(...args);
+    },
+    link: (...args: Parameters<typeof fs.link>) => {
+      if (String(args[1]) !== lockReadRace.lockPath) return fs.link(...args);
+      return fs.link(...args).then(() => {
+        lockReadRace.lockSources.push(String(args[0]));
+      });
+    },
+    rename: (...args: Parameters<typeof fs.rename>) => {
+      if (String(args[1]) !== lockReadRace.recordPath) return fs.rename(...args);
+      return (async () => {
+        await lockReadRace.beforeRename?.();
+        await fs.rename(...args);
+        lockReadRace.replacements += 1;
+      })();
+    },
     readdir: async (...args: Parameters<typeof fs.readdir>) => {
       const entries = await fs.readdir(...args);
       if (String(args[0]) === scanRace.directory && !scanRace.fired) {
@@ -46,6 +90,11 @@ vi.mock('node:fs/promises', async (importOriginal) => {
       return entries;
     },
     lstat: async (...args: Parameters<typeof fs.lstat>) => {
+      if (String(args[0]) === lockReadRace.lockPath && lockReadRace.verificationError) {
+        const error = lockReadRace.verificationError;
+        lockReadRace.verificationError = undefined;
+        throw error;
+      }
       if (String(args[0]) === scanRace.path) {
         scanRace.stats += 1;
         if (scanRace.code && !scanRace.fired) {
@@ -110,17 +159,25 @@ function binding(
   decision: 'approved' | 'rejected',
   reasonHash: string,
 ) {
-  return decisionAuthority.issueHumanDecisionBinding({
-    principalId: 'human-reviewer',
-    capability: 'workflow.effect.decide',
-    runId: 'run-001',
-    approvalId: 'approval-001',
-    correlationId: 'business-correlation-001',
-    approvalExpiresAt: new Date(now + 60_000).toISOString(),
-    decision,
-    reasonHash,
-    expiresAt: new Date(now + 30_000).toISOString(),
-  });
+  // Issuance and the store's injected decision clock describe the same fixture
+  // window, irrespective of time spent awaiting real filesystem operations.
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(now);
+  try {
+    return decisionAuthority.issueHumanDecisionBinding({
+      principalId: 'human-reviewer',
+      capability: 'workflow.effect.decide',
+      runId: 'run-001',
+      approvalId: 'approval-001',
+      correlationId: 'business-correlation-001',
+      approvalExpiresAt: new Date(now + 60_000).toISOString(),
+      decision,
+      reasonHash,
+      expiresAt: new Date(now + 30_000).toISOString(),
+    });
+  } finally {
+    vi.useRealTimers();
+  }
 }
 
 function recordName(runId = 'run-001', approvalId = 'approval-001') {
@@ -141,6 +198,17 @@ async function deadPid(): Promise<number> {
 }
 
 afterEach(async () => {
+  Object.assign(lockReadRace, {
+    lockPath: '',
+    recordPath: '',
+    onOpen: undefined,
+    onRealpath: undefined,
+    verificationError: undefined,
+    beforeRename: undefined,
+    readRefusals: 0,
+    lockSources: [],
+    replacements: 0,
+  });
   Object.assign(scanRace, {
     directory: '',
     path: '',
@@ -271,6 +339,8 @@ describe('LocalWorkflowEffectApprovalStore', () => {
         new Date(now + 1_000).toISOString(),
       );
       await store.createPending(pending(now));
+      lockReadRace.recordPath = join(storeRoot, 'records', recordName());
+      lockReadRace.replacements = 0;
       const approvedBinding = binding(decisionAuthority, now, 'approved', approvedReasonHash);
       const rejectedBinding = binding(decisionAuthority, now, 'rejected', rejectedReasonHash);
 
@@ -293,6 +363,12 @@ describe('LocalWorkflowEffectApprovalStore', () => {
         }),
       ]);
       expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+      const winner = results.find((result) => result.status === 'fulfilled');
+      if (winner?.status !== 'fulfilled') throw new Error('Concurrent decision has no winner.');
+      expect(await readFile(lockReadRace.recordPath)).toEqual(
+        workflowEffectApprovalBytes(winner.value),
+      );
+      expect(lockReadRace.replacements).toBe(1);
       const rejected = results.find((result) => result.status === 'rejected');
       expect(rejected).toMatchObject({
         reason: { code: 'WORKFLOW_EFFECT_APPROVAL_STORE_CAS_MISMATCH' },
@@ -301,11 +377,139 @@ describe('LocalWorkflowEffectApprovalStore', () => {
       expect(final?.correlationId).toBe('business-correlation-001');
       expect(final?.revision).toBe(1);
       expect(['approved', 'rejected']).toContain(final?.status);
-      expect(final && workflowEffectApprovalBytes(final)).toEqual(
-        final && workflowEffectApprovalBytes({ ...final, correlationId: final.correlationId }),
-      );
+      expect(final).toEqual(winner.value);
     }
   }, 30_000);
+
+  it.each([
+    { code: 'EPERM', retire: true, phase: 'open', verification: false },
+    { code: 'EPERM', retire: false, phase: 'open', verification: false },
+    { code: 'EACCES', retire: true, phase: 'open', verification: false },
+    { code: 'RESOLVED', retire: true, phase: 'realpath', verification: false },
+    { code: 'RESOLVED', retire: false, phase: 'realpath', verification: false },
+    { code: 'EACCES', retire: true, phase: 'realpath', verification: true },
+  ])(
+    'keeps incumbent $phase $code / retirement=$retire / verification=$verification bound to actual lock ownership',
+    async ({ code, retire, phase, verification }) => {
+      const now = Date.now();
+      const storeRoot = await root();
+      const decisionAuthority = authority();
+      const store = new LocalWorkflowEffectApprovalStore(storeRoot, decisionAuthority, () =>
+        new Date(now + 1_000).toISOString(),
+      );
+      await store.createPending(pending(now));
+      const lockPath = join(storeRoot, 'locks', 'decision.lock');
+      let atWrite!: () => void;
+      let releaseWriter!: () => void;
+      let enteredWrite = false;
+      const writeEntered = new Promise<void>((resolveWrite) => {
+        atWrite = resolveWrite;
+      });
+      const writeGate = new Promise<void>((resolveWrite) => {
+        releaseWriter = resolveWrite;
+      });
+      Object.assign(lockReadRace, {
+        lockPath,
+        recordPath: join(storeRoot, 'records', recordName()),
+        beforeRename: async () => {
+          enteredWrite = true;
+          atWrite();
+          await writeGate;
+        },
+      });
+      const winner = store.decide({
+        runId: 'run-001',
+        approvalId: 'approval-001',
+        expectedRevision: 0,
+        decision: 'approved',
+        reasonHash: approvedReasonHash,
+        binding: binding(decisionAuthority, now, 'approved', approvedReasonHash),
+      });
+      let contender: ReturnType<typeof store.decide> | undefined;
+      const refusal = Object.assign(new Error('Controlled incumbent open refusal.'), {
+        code,
+        syscall: 'open',
+        path: lockPath,
+      });
+      try {
+        await Promise.race([writeEntered, winner]);
+        expect(enteredWrite).toBe(true);
+        const incumbent = await lstat(lockPath, { bigint: true });
+        const incumbentBytes = await readFile(lockPath);
+        const retireWriter = async () => {
+          if (!retire) return;
+          releaseWriter();
+          await winner;
+        };
+        if (phase === 'open') {
+          lockReadRace.onOpen = async () => {
+            await retireWriter();
+            throw refusal;
+          };
+        } else {
+          lockReadRace.onRealpath = async () => {
+            await retireWriter();
+            if (verification) lockReadRace.verificationError = refusal;
+            return join(storeRoot, 'unverified-incumbent-name');
+          };
+        }
+        contender = store.decide({
+          runId: 'run-001',
+          approvalId: 'approval-001',
+          expectedRevision: 0,
+          decision: 'rejected',
+          reasonHash: rejectedReasonHash,
+          binding: binding(decisionAuthority, now, 'rejected', rejectedReasonHash),
+        });
+        const [outcome] = await Promise.allSettled([contender]);
+        expect(outcome?.status).toBe('rejected');
+        const retryRetired =
+          retire &&
+          !verification &&
+          (phase === 'realpath' || (process.platform === 'win32' && code === 'EPERM'));
+        if (retryRetired) {
+          expect(outcome).toMatchObject({
+            reason: { code: 'WORKFLOW_EFFECT_APPROVAL_STORE_CAS_MISMATCH' },
+          });
+          expect(lockReadRace.lockSources).toHaveLength(2);
+          expect(new Set(lockReadRace.lockSources).size).toBe(2);
+        } else {
+          expect(outcome).toMatchObject({ status: 'rejected' });
+          if (code === 'RESOLVED') {
+            expect(outcome).toMatchObject({
+              reason: { code: 'WORKFLOW_EFFECT_APPROVAL_STORE_PATH_UNSAFE' },
+            });
+          } else if (outcome?.status === 'rejected') expect(outcome.reason).toBe(refusal);
+          expect(lockReadRace.lockSources).toHaveLength(1);
+        }
+        expect(lockReadRace.readRefusals).toBe(1);
+        if (!retire) {
+          const retained = await lstat(lockPath, { bigint: true });
+          expect([retained.dev, retained.ino]).toEqual([incumbent.dev, incumbent.ino]);
+          expect(await readFile(lockPath)).toEqual(incumbentBytes);
+          expect(lockReadRace.replacements).toBe(0);
+          const pendingRecord = validateWorkflowEffectApproval(
+            JSON.parse(await readFile(lockReadRace.recordPath, 'utf8')),
+          );
+          expect(pendingRecord.revision).toBe(0);
+          expect(pendingRecord.status).toBe('pending');
+        }
+        releaseWriter();
+        const committed = await winner;
+        const final = await store.read('run-001', 'approval-001');
+        expect(final).toEqual(committed);
+        expect(final && workflowEffectApprovalBytes(final)).toEqual(
+          workflowEffectApprovalBytes(committed),
+        );
+        expect(final?.revision).toBe(1);
+        expect(final?.status).toBe('approved');
+        expect(lockReadRace.replacements).toBe(1);
+      } finally {
+        releaseWriter();
+        await Promise.allSettled([winner, ...(contender ? [contender] : [])]);
+      }
+    },
+  );
 
   it('persists a deterministic pending audit projection and marks only that event recorded', async () => {
     const now = Date.now();

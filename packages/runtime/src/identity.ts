@@ -29,6 +29,8 @@ export function generateRuntimeIdentity(args: {
   root: string;
   agentId: string;
   provider: string;
+  /** Refuse an occupied target without reading or merging its contents. */
+  createOnly?: boolean;
 }): AgentRuntimeIdentity {
   const { root, agentId, provider } = args;
   const registry = parseAgentRegistry(root, agentId);
@@ -47,10 +49,19 @@ export function generateRuntimeIdentity(args: {
     started_at: new Date().toISOString(),
   };
 
-  // Merge into existing local identity file without clobbering credentials/paths/preferences
   const identityDir = join(root, '.openslack.local', 'agents', agentId);
   const identityPath = join(identityDir, 'identity.yaml');
 
+  if (args.createOnly === true) {
+    mkdirSync(identityDir, { recursive: true });
+    writeFileSync(identityPath, stringifyYaml(identity, { lineWidth: 0 }), {
+      encoding: 'utf-8',
+      flag: 'wx',
+    });
+    return identity;
+  }
+
+  // Legacy default: merge without clobbering credentials/paths/preferences.
   let existing: Record<string, unknown> = {};
   if (existsSync(identityPath)) {
     try {
