@@ -256,3 +256,71 @@ compatibility decisions and blocked work. Task acceptance remains NOT_COMPLETE.
 Next publication must be update-only for open Draft #425, verify head/ref/check
 SHAs, retain all failures, and wait for final full checks and PRMS. Human approval
 and merge remain outside this execution.
+
+## 2026-11-02 five remaining fixes: new local evidence
+
+Starting head `2edb2b7c1bbeb6e9adeb6eb04ba441c5f67d1f50`; implementation
+`4ffe0941eddd63745c05922b81f17a4dc4d14e47`, tree
+`9da2dc813b7a609d66e2fae729551da5cb1f66de`.
+r6 manifest:4025 bytes, SHA-256
+`b60674ed7a95b4466a13cde805df55b575dfbccb651d9b405abc36985dccb32c`.
+All22 source/generated inputs match original tree, isolated tree and index.
+Tests ran before this commit: original times and byte identities are retained,
+not rewritten as post-commit executions.
+
+Evidence root:
+`/mnt/d/users/wsman/desktop/coding task/openslack-recovery/issue-415/RUN-20261023103014-415delivery/repair-20261102-5SuPX4`.
+Raw logs and command/time/environment/exit/hash receipts: `local-validation/`.
+Source-only clone, frozen install, real emitted outputs; no old dist, dependencies,
+identity or credentials copied. Real nonprivileged user nobody UID65534; Node24.18.1,
+Bun1.4.0, Python3.12.9, pnpm11.28.5, Go1.26.5. Git2.48.1 is for local NUL-path
+verification only, not publication (no HTTPS helper). Native full Git and bot
+remain the publication path. Original Harness22ddee37 stays unpatched; actual
+public compatibility preparation reran. No426 real model task repeated.
+
+| Actual check | Result | Receipt/log under local-validation |
+| --- | --- | --- |
+| CLI command fixture body | Original4 RED; final22 GREEN | initial-cli-red.log; affected/final suites |
+| Target-bound PR gate | Nine new counterexamples RED; final42 GREEN | gate-projection-red.log; final suites |
+| Core/shared identity types | Missing exports RED; type/equivalence GREEN | core-contract-red.log; r6-typecheck.log |
+| Workflows package test entry | 1735 passed/2 skipped,88 files; actual pretest build | r6-packages.receipt.json; r6-workflows-package.log |
+| CLI package test entry | 568 passed/1 skipped,57 files; actual pretest build | r6-packages.receipt.json; r6-cli-package.log |
+| Force compatibility build/schema/bundle | exit0,actual re-emission | r6-compat.receipt.json |
+| Full configured Vitest body,2workers | 8973 passed/0failed/25skipped;598file passed/2skipped (600) | r7-full.receipt.json; r7-full-vitest.log/.json |
+| Full typecheck/lint | both exit0; 0 ESLint rule errors/warnings; Node MODULE_TYPELESS_PACKAGE_JSON warning retained | r6-quality.receipt.json |
+| workspace/self/status | all exit0 | r6-quality.receipt.json |
+| golden/Genesis | 7/7 and5/5,exit0 | r6-golden.log; r6-genesis.log |
+| docs verify/migration/notification | all exit0;no docs:generate writer | r6-quality.receipt.json |
+| Go contracts,GOWORK=off | exit0;229source inputs/five SHA changes | r6-contracts.receipt.json |
+| Production collector twice + status generate/verify | 8998declared/600files;two verify exits0;repeat generation exact bytes | r6-counts.receipt.json |
+
+Full log SHA:`3fa100aabe5daeb7cd03925c8e9baf66488e6e6d96e44a01e1bda034d5bc8d8c`.
+Full JSON SHA:`6865e9e8011863626127bd6e325a0eed1caf0baa44a85694db862cd4cbf95d3c`.
+JSON1752suite count is nested describe accounting, not600 passing files.
+25skips/2files are not PASS or platform qualification. Overlapping counts never sum.
+
+### Failed attempts preserved, actual corrections identified
+
+r3/r4/r5 package attempts exposed cwd/config and existing CLI/Chat/TUI build closure;
+their FAIL logs remain. Final pretests reuse existing root build; no tsconfig,
+source alias, dependency or timeout change. Exact snapshot export whitelist now
+includes13 legitimate diagnostic exports; forbidden-authority assertions remain.
+A redundant heavy public import was removed from that test, not its5s timeout.
+
+First r6 full remains8956passed/17failed/25skipped. All17 failed at fixture setup
+because private minimal PATH lacked existing pnpm. Only the private runner's
+fixed11.28.5 tool prefix changed; no product/Harness bytes, selection, assertions
+or timeouts changed. Independent QA matched all17 by file/fullName to r7 PASS.
+Failed log SHA:`f433e3177319afbc9b347826f7728db55ba0ac139441a7a582010eaf7e2119c5`.
+The original failed JSON/log/receipt remain, not relabeled by retry success.
+
+### Independent review and pending delivery
+
+TypeScript:APPROVED_STATIC; architecture:NO_BLOCKING_FINDINGS; both22/22 r6 bytes.
+QA:ADEQUATE after reading/hashing raw package/full/quality/count/Go logs, confirming
+repeat generation and per-case failed-to-pass comparison. Reviewers neither
+implemented nor ran tests. These are not GitHub human approval or deployment.
+
+This snapshot precedes final publication. Hosted Linux/Windows and bot PRMS are
+NOT_RUN here and must be appended as actual receipts/comments, not inferred.
+Keep Draft; no ready, approve, merge, completeClaim, release or cleanup.

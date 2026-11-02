@@ -175,3 +175,51 @@ is analysis, never human approval. No all-findings-closed claim is made.
 Required remaining repairs are not deferred as optional optimization. Pending
 Core/PR/test-entry/fixture/count work, MCP regression correction, final full tests,
 current-head hosted checks and PRMS still prevent task acceptance.
+
+## 2026-11-02 continuation: five remaining repair groups
+
+This additive section supersedes only the pending local work in the earlier
+32-candidate table. No historical run, lease, CI or refusal is relabeled.
+Starting head: `2edb2b7c1bbeb6e9adeb6eb04ba441c5f67d1f50`.
+Implementation: `4ffe0941eddd63745c05922b81f17a4dc4d14e47`;
+tree: `9da2dc813b7a609d66e2fae729551da5cb1f66de`.
+
+### P0 eligibility and preservation
+
+The old repair tree, refs and bytes were preserved before fast-forward alignment.
+No reset, stash, rebase, prune or cleanup. The original main workspace resolves
+`codex_runtime_source-repair`, provider `cli`, runtime run
+`RUN-20260919113827-kv682q`; no identity was created/copied/replaced.
+The maintainer's local registry addition has SHA-256
+`5efff8efb005891e06b7b2e405478b6d954da904dd3aa0d50e67b550fff3096f`.
+It remains uncommitted on its administration branch; the repair executor did
+not edit or stage it. Fresh production principal plus live task checks allow all
+22 source/generated paths and three existing run records, including doctor.ts.
+Self-registry, kernel, secret, approve and merge remain denied.
+The original claim/owner was renewed through public heartbeat, not a new claim.
+
+### Five necessary groups: local repair closure
+
+| Finding | Necessity and minimal repair | Local disposition |
+| --- | --- | --- |
+| #6 | Four stale CLI fixture failures needed complete preview/live report, gate and governance inputs, not weaker production checks. | FIXED_LOCAL:22 command cases pass; preview zero-query and intended trust/hash/Issue/finalizer refusals retained. |
+| #7 | Relative ignored-dist imports and incomplete package build closure were unreliable. One exact Workflows snapshot subpath replaces both imports; existing root build/schema precedes own-project Vitest. | FIXED_LOCAL: CLI/Workflows full package entries pass in source-only clone; no wildcard export/src alias/root config change. |
+| #8/#31 | Registered8861 was not actual inventory. Production collection, not hand-added111, is required. | FIXED_LOCAL:8998 declared/600 files; modules/status generated; repeat collect/generate adds no byte diff. |
+| #22/#32 | Frontends duplicated binding. PR now owns a target-bound verified projection; CLI/TUI/doctor forward actual target, not interpret criterion labels. | FIXED_LOCAL: cross-PR/stale head/base/author/hash/artifacts/missing-target tested; TUI N/A zero-write and publisher live check retained. |
+| #24 | Duplicate diagnostic evidence unions could drift. Core owns closed vocabulary; old package names remain aliases. | FIXED_LOCAL: four-domain/provenance type equivalence; executable identity stays narrow; legacy v1/strong v2 tests pass. No execution authority moved. |
+
+Only five changed existing source-lock hashes and independent Go literals were
+updated; all229 input paths, authority and non-claims remain. No Harness source,
+lock, Broker/sealed-worker, registry/policy or root build configuration edits.
+Reusing existing root build fixes real package dependency closure; it is not a
+new auxiliary tool gate. No new platform, command, daemon or approval system.
+A nonblocking additional malformed-YAML test suggestion is not promoted to scope.
+
+### Remaining delivery boundaries at this snapshot
+
+New local evidence binds22 exact inputs, not old-head CI. Full tests, quality,
+counts and independent reviews are complete. New-head publication, hosted
+Linux/Windows and authenticated PRMS remain pending. Historical MCP-1 was fixed
+through426 and inherited, not newly edited here; current full includes MCP.
+Human approval, completeClaim, production qualification, merge and release are
+not performed or implied.

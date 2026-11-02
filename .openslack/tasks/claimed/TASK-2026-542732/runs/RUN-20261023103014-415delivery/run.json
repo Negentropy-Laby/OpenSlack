@@ -239,5 +239,111 @@
     "human_approval": "NOT_REQUESTED",
     "merge": "NOT_AUTHORIZED",
     "deployment": "NOT_RUN"
+  },
+  "remaining_repair_20261102": {
+    "observed_at": "2026-11-02T08:21:31Z",
+    "record_kind": "additive_five_remaining_repairs_local_validation_pending_hosted_delivery",
+    "existing_pr": 425,
+    "parent_pr_head": "2edb2b7c1bbeb6e9adeb6eb04ba441c5f67d1f50",
+    "base_sha": "e3e2584d1349c1578e5d229e0d460feaf494f83d",
+    "implementation_commit": "4ffe0941eddd63745c05922b81f17a4dc4d14e47",
+    "implementation_tree": "9da2dc813b7a609d66e2fae729551da5cb1f66de",
+    "input_manifest": {
+      "file": "review-input-r6.json",
+      "sha256": "b60674ed7a95b4466a13cde805df55b575dfbccb651d9b405abc36985dccb32c",
+      "files": 22
+    },
+    "evidence_root": "/mnt/d/users/wsman/desktop/coding task/openslack-recovery/issue-415/RUN-20261023103014-415delivery/repair-20261102-5SuPX4",
+    "validation_environment": {
+      "root": "/tmp/openslack425-validation-nOHyAR/openslack",
+      "os_user": "nobody",
+      "uid": 65534,
+      "node": "24.18.1",
+      "bun": "1.4.0",
+      "python": "3.12.9",
+      "git": "2.48.1 (local only, no HTTPS helper; not publication transport)",
+      "pnpm": "11.28.5",
+      "go": "1.26.5",
+      "preparation": "source-only clone; frozen install; actual rebuild; no old dist or identity copied",
+      "harness_sha": "22ddee3792402c3e70ec5f86a63c3e3e895a2f60",
+      "harness_tree": "98266a99ba0e9bf6bac8ea39434f48605e40b368",
+      "harness_patches": false
+    },
+    "scope": {
+      "runtime_identity_run_id": "RUN-20260919113827-kv682q",
+      "principal": "principal:codex_runtime_source-repair",
+      "provider": "cli",
+      "registry_sha256": "5efff8efb005891e06b7b2e405478b6d954da904dd3aa0d50e67b550fff3096f",
+      "registry_change": "Maintainer-applied locally, uncommitted; not edited/staged/published by repair executor",
+      "permission_readback": "precommit.permission.readback.json",
+      "allowed_paths_verified": 25,
+      "doctor_task_scope": "live task and production principal allow",
+      "denial_boundaries": "self-registry, kernel, secret, approval and merge remain denied",
+      "claim": "original owner heartbeat only; no new claim or completeClaim",
+      "lease_expires_at_at_recording": "2026-11-02T10:16:00.567Z"
+    },
+    "repairs": {
+      "6": "CLI preview/live fixtures complete; original four failures now reach intended assertions and pass",
+      "7": "one exact Workflows snapshot subpath; both package test pretests reuse existing root build/schema staging before own Vitest project; root package/tsconfigs unchanged",
+      "24": "Core diagnostic types authoritative; compatibility aliases; executable identity remains narrow; audit v1/v2 unchanged",
+      "8/31": "production8998 cases/600 files; modules/status generated; second collection/generation byte-identical",
+      "22/32": "PR-owned governanceRequired/verifiedGovernanceIssue, exact PR/head/base/author/evidence/artifact binding; frontends/doctor forward target; TUI N/A zero-write"
+    },
+    "verification": {
+      "full_vitest": {
+        "status": "PASS",
+        "passed": 8973,
+        "failed": 0,
+        "skipped": 25,
+        "declared": 8998,
+        "passed_files": 598,
+        "skipped_files": 2,
+        "total_files": 600,
+        "receipt": "local-validation/r7-full.receipt.json",
+        "log_sha256": "3fa100aabe5daeb7cd03925c8e9baf66488e6e6d96e44a01e1bda034d5bc8d8c",
+        "json_sha256": "6865e9e8011863626127bd6e325a0eed1caf0baa44a85694db862cd4cbf95d3c"
+      },
+      "package_entries": {
+        "workflows": "1735 passed /2 skipped; 88 files; actual pretest build",
+        "cli": "568 passed /1 skipped; 57 files; actual pretest build",
+        "receipt": "local-validation/r6-packages.receipt.json"
+      },
+      "build": "PASS_ACTUAL_FORCE_EMIT_AND_SCHEMA_PLUGIN_PREPARATION",
+      "quality": "10/10 exit0; local-validation/r6-quality.receipt.json",
+      "source_lock": "229 inputs preserved; five existing SHA fields/independent Go literals only; Go contracts exit0",
+      "inventory": "8998/600; two production verify passes; second status generation identical",
+      "counts_receipt": "local-validation/r6-counts.receipt.json",
+      "red_green": "Original CLI4/gate9/Core missing exports/package-surface RED captured. r3/r4/r5 package FAIL retained. r6 full17 failures lacked pnpm; only private PATH corrected; no source/assertion/timeout changes; all17 file/fullName pass in r7."
+    },
+    "independent_reviews": [
+      {
+        "reviewer": "pr425_typescript_review",
+        "result": "APPROVED_STATIC",
+        "input": "22/22 r6 bytes"
+      },
+      {
+        "reviewer": "pr425_arch_review",
+        "result": "NO_BLOCKING_FINDINGS_NO_NEW_ADR",
+        "input": "22/22 r6 bytes"
+      },
+      {
+        "reviewer": "pr425_qa_review",
+        "result": "ADEQUATE",
+        "input": "22/22 r6 plus raw package/full/quality/count/Go logs; no test execution by reviewer"
+      }
+    ],
+    "boundaries": {
+      "historical_records": "append only; no earlier PASS/FAIL/refusal overwritten",
+      "mcp": "prior correction inherited from426; no new MCP edit; current full includes regression",
+      "production": "no identity/registry/policy/Broker/sealed-worker edits or business Workflow/runtime/deployment effects; authorized claim heartbeat is separately recorded",
+      "real_harness_model": "NOT_RUN_NOT_REQUIRED_BY_THIS_FIVE_FIX_SCOPE",
+      "hosted_ci": "NOT_RUN_AT_LOCAL_SNAPSHOT; must bind final delivery SHA",
+      "publication": "PENDING_UPDATE_ONLY_425; no newPR/force push",
+      "prms": "PENDING_AUTHENTICATED_LIVE_COLLECTION; Draft not inferred from unavailable evidence",
+      "task_acceptance": "NOT_COMPLETE_PENDING_HOSTED_SYNC_AND_HUMAN_GATES",
+      "human_approval": "NOT_GRANTED_BY_EXECUTOR",
+      "merge": "NOT_AUTHORIZED",
+      "release": "NOT_AUTHORIZED"
+    }
   }
 }
