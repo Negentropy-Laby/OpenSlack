@@ -1,0 +1,12 @@
+{
+  "schema": "openslack.cleanup_historical_binding_snapshot.v1",
+  "sourceCommit": "44deef2651b8964448f4f0ef603114f2524eb046",
+  "contract": {
+    "file": "administration-contract.json",
+    "sha256": "0ad5d5dbe2885fd22c52ea37faef1e07c811b09c4659c9dbca772426928173dc"
+  },
+  "registry": {
+    "file": "registry.yaml",
+    "sha256": "33a9b46866fedd768cb859abfd36341159fc0f3a3e306462575f1f34af7e7ebc"
+  }
+}

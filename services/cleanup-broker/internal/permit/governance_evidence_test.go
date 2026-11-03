@@ -116,9 +116,72 @@ func evidenceBytes(t *testing.T, directory string, ref evidenceRef, out any) []b
 	return data
 }
 
+// Frozen source data is not an activation input. No current contract or registry
+// lookup may reinterpret an already reviewed historical batch.
+func historicalGovernanceBinding(root string) ([]byte, []byte, error) {
+	dir := filepath.Join(root, "services/cleanup-broker/internal/permit/testdata/batch2-single-pr-20261018")
+	var snapshot struct {
+		Schema       string      `json:"schema"`
+		SourceCommit string      `json:"sourceCommit"`
+		Contract     evidenceRef `json:"contract"`
+		Registry     evidenceRef `json:"registry"`
+	}
+	data, err := os.ReadFile(filepath.Join(dir, "snapshot.json"))
+	if err != nil || Decode(data, &snapshot) != nil ||
+		snapshot.Schema != "openslack.cleanup_historical_binding_snapshot.v1" ||
+		snapshot.SourceCommit != "44deef2651b8964448f4f0ef603114f2524eb046" ||
+		snapshot.Contract != (evidenceRef{"administration-contract.json", "0ad5d5dbe2885fd22c52ea37faef1e07c811b09c4659c9dbca772426928173dc"}) ||
+		snapshot.Registry != (evidenceRef{"registry.yaml", "33a9b46866fedd768cb859abfd36341159fc0f3a3e306462575f1f34af7e7ebc"}) {
+		return nil, nil, fmt.Errorf("historical binding provenance changed")
+	}
+	var bytes [2][]byte
+	for i, ref := range []evidenceRef{snapshot.Contract, snapshot.Registry} {
+		bytes[i], err = os.ReadFile(filepath.Join(dir, ref.File))
+		if err != nil || fmt.Sprintf("%x", sha256.Sum256(bytes[i])) != ref.SHA256 {
+			return nil, nil, fmt.Errorf("historical %s bytes changed", ref.File)
+		}
+	}
+	return bytes[0], bytes[1], nil
+}
+
+func TestHistoricalCleanupBindingSnapshotRejectsChanges(t *testing.T) {
+	const directory = "services/cleanup-broker/internal/permit/testdata/batch2-single-pr-20261018"
+	for _, changed := range []string{"administration-contract.json", "registry.yaml", "snapshot.json"} {
+		t.Run(changed, func(t *testing.T) {
+			root := t.TempDir()
+			if err := os.MkdirAll(filepath.Join(root, directory), 0700); err != nil {
+				t.Fatal(err)
+			}
+			for _, file := range []string{"administration-contract.json", "registry.yaml", "snapshot.json"} {
+				bytes, err := os.ReadFile(filepath.Join(repoRoot(t), directory, file))
+				if err != nil {
+					t.Fatal(err)
+				}
+				if file == changed {
+					if file == "snapshot.json" {
+						bytes = []byte(`{"schema":"foreign"}`)
+					} else {
+						bytes = append(bytes, '\n')
+					}
+				}
+				if err := os.WriteFile(filepath.Join(root, directory, file), bytes, 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if _, _, err := historicalGovernanceBinding(root); err == nil {
+				t.Fatal("changed historical bytes were accepted")
+			}
+		})
+	}
+}
+
 func loadGovernanceEvidence(t *testing.T) governanceEvidence {
 	t.Helper()
-	root := repoRoot(t)
+	return loadGovernanceEvidenceAt(t, repoRoot(t))
+}
+
+func loadGovernanceEvidenceAt(t *testing.T, root string) governanceEvidence {
+	t.Helper()
 	dir := filepath.Join(root, ".openslack/audit/cleanup-qualification/batch2-single-pr-20261018")
 	var e governanceEvidence
 	data, err := os.ReadFile(filepath.Join(dir, "scope-evidence.json"))
@@ -134,13 +197,9 @@ func loadGovernanceEvidence(t *testing.T) governanceEvidence {
 	if Decode(evidenceBytes(t, dir, e.Scope.PolicySnapshot, &e.Policy), &e.Policy) != nil {
 		t.Fatal("original policy snapshot does not satisfy the production contract")
 	}
-	data, err = os.ReadFile(filepath.Join(root, "packages/pr/src/internal/cleanup-administration-contract.json"))
+	data, registry, err := historicalGovernanceBinding(root)
 	if err != nil || json.Unmarshal(data, &e.Contract) != nil {
-		t.Fatal("administrator contract missing")
-	}
-	registry, err := os.ReadFile(filepath.Join(root, ".openslack/agents/registry", e.Contract.RuntimeBinding.AgentID+".yaml"))
-	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("historical administrator binding missing or changed: %v", err)
 	}
 	if sum := sha256.Sum256(registry); hex.EncodeToString(sum[:]) != e.Contract.RegistrySHA256 {
 		t.Fatal("reviewed registry bytes changed")
@@ -148,8 +207,94 @@ func loadGovernanceEvidence(t *testing.T) governanceEvidence {
 	return e
 }
 
+func TestHistoricalCleanupEvidenceIgnoresCurrentContractRotation(t *testing.T) {
+	root := repoRoot(t)
+	data, err := os.ReadFile(filepath.Join(root, ".openslack/policies/pr-cleanup-grants/permit-batch2-single-pr-20261018-r1.json"))
+	var p Permit
+	if err != nil || Decode(data, &p) != nil {
+		t.Fatal("historical permit missing")
+	}
+	var expected governanceEvidence
+	data, err = os.ReadFile(filepath.Join(root, "services/cleanup-broker/internal/permit/testdata/batch2-single-pr-20261018/administration-contract.json"))
+	if err != nil || json.Unmarshal(data, &expected.Contract) != nil {
+		t.Fatal("historical contract missing")
+	}
+	for name, mutate := range map[string]func(map[string]any){
+		"registry-pin": func(c map[string]any) { c["registrySHA256"] = strings.Repeat("f", 64) },
+		"agent-id":     func(c map[string]any) { c["runtimeBinding"].(map[string]any)["agent_id"] = "future-agent" },
+		"subject":      func(c map[string]any) { c["runtimeBinding"].(map[string]any)["principal_id"] = "principal:future" },
+		"broker": func(c map[string]any) {
+			c["identities"].(map[string]any)["broker"].(map[string]any)["id"] = "future-broker"
+		},
+		"workspace": func(c map[string]any) { c["bindings"].(map[string]any)["workspaceId"] = "future-workspace" },
+		"paired-registry-replacement": func(c map[string]any) {
+			c["registrySHA256"] = fmt.Sprintf("%x", sha256.Sum256([]byte("future registry bytes\n")))
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			isolated := t.TempDir()
+			for _, directory := range []string{".openslack/audit/cleanup-qualification/batch2-single-pr-20261018", "services/cleanup-broker/internal/permit/testdata/batch2-single-pr-20261018", ".openslack/agents/registry"} {
+				entries, err := os.ReadDir(filepath.Join(root, directory))
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := os.MkdirAll(filepath.Join(isolated, directory), 0700); err != nil {
+					t.Fatal(err)
+				}
+				for _, entry := range entries {
+					if entry.IsDir() {
+						continue
+					}
+					bytes, err := os.ReadFile(filepath.Join(root, directory, entry.Name()))
+					if err != nil {
+						t.Fatal(err)
+					}
+					if err := os.WriteFile(filepath.Join(isolated, directory, entry.Name()), bytes, 0600); err != nil {
+						t.Fatal(err)
+					}
+				}
+			}
+			livePath := "packages/pr/src/internal/cleanup-administration-contract.json"
+			bytes, err := os.ReadFile(filepath.Join(root, livePath))
+			if err != nil {
+				t.Fatal(err)
+			}
+			var current map[string]any
+			if err := json.Unmarshal(bytes, &current); err != nil {
+				t.Fatal(err)
+			}
+			mutate(current)
+			bytes, err = json.Marshal(current)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.MkdirAll(filepath.Dir(filepath.Join(isolated, livePath)), 0700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(isolated, livePath), bytes, 0600); err != nil {
+				t.Fatal(err)
+			}
+			if name == "paired-registry-replacement" {
+				if err := os.WriteFile(filepath.Join(isolated, ".openslack/agents/registry/cleanup_qualification_pr418.yaml"), []byte("future registry bytes\n"), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			observed := loadGovernanceEvidenceAt(t, isolated)
+			if observed.Contract != expected.Contract {
+				t.Fatal("historical contract was rebound to current administrator bytes")
+			}
+			if err := checkGovernanceEvidence(p, observed); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
 func checkGovernanceEvidence(p Permit, e governanceEvidence) error {
 	policy := e.Policy // Historical evidence is checked against its own policy, never a later boot.
+	// This immutable batch was approved for the private repository. The current
+	// administration target can move to a separately authorized campaign; that
+	// must neither reinterpret these bytes nor transfer this historical Permit.
 	bad := func(s string) error { return fmt.Errorf("committed binding: %s", s) }
 	if e.Scope.Schema != "openslack.cleanup_governance_scope_evidence.v1" || p.ID != e.Scope.PermitID ||
 		p.TaskRef != e.Scope.TaskRef || e.Scope.TaskRefSemantics != "administrative_audit_correlation_not_live_task_authority" {
@@ -232,6 +377,22 @@ func TestCommittedCleanupActivationEvidence(t *testing.T) {
 	if err := checkGovernanceEvidence(p, e); err != nil {
 		t.Fatal(err)
 	}
+	t.Run("historical-permit-cannot-migrate-to-public-campaign", func(t *testing.T) {
+		data, err := os.ReadFile(filepath.Join(repoRoot(t), "packages/pr/src/internal/cleanup-administration-contract.json"))
+		var current governanceEvidence
+		if err != nil || json.Unmarshal(data, &current.Contract) != nil {
+			t.Fatal("current contract missing")
+		}
+		q, copy := p, e
+		copy.Target.Repository = current.Contract.Bindings.Repository
+		copy.Target.RepositoryID = current.Contract.Bindings.RepositoryID
+		copy.Target.HeadRepositoryID = copy.Target.RepositoryID
+		q.Target.Repository = copy.Target.Repository
+		q.Target.RepositoryID = copy.Target.RepositoryID
+		if err := checkGovernanceEvidence(q, copy); err == nil || err.Error() != "committed binding: observed exact target" {
+			t.Fatalf("historical target transplant was not rejected at its binding: %v", err)
+		}
+	})
 	for name, mutate := range map[string]func(*Permit, *Policy, *governanceEvidence){
 		"task-ref-typo": func(p *Permit, _ *Policy, _ *governanceEvidence) { p.TaskRef += "-typo" },
 		"paired-issuer-typo": func(p *Permit, policy *Policy, _ *governanceEvidence) {

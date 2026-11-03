@@ -6,7 +6,7 @@ authority: canonical
 audience:
   - contributors
 owner: product
-updated: 2026-09-21
+updated: 2026-11-03
 sources:
   - docs/reference/document-path-migration-v1.yaml
 ---
@@ -201,7 +201,15 @@ The broker owns durable reservation and outcome evidence; ambiguous sends are
 reconciled, not retried as fresh deletion. Reboot starts read-only until a new
 governed activation; previous reservations remain reconciliation-only.
 
-This CDD records the target contract, not qualification success. Go principal
-mapping, ledger and boot-nonce work is in progress; the deletion send boundary
-is not yet connected. Local tests, hosted CI, genuine OS isolation, scratch
+Historical A0 planning recorded principal mapping, ledger, boot nonce and the
+send boundary as unfinished. Those components and the trusted executor send
+handshake are now implemented on merged main; the old planning text is not a
+current code-status claim. This does not establish qualification success.
+
+The current campaign uses the fixed public qualification repository
+Negentropy-Laby/openslack-cleanup-qualification-public, stable ID 1381124543.
+Its exact administrator registry/App scope, installed distinct-UID isolation,
+fresh activation/Permit and real GitHub matrix still require current evidence.
+The historical private repository and its operation/consumption records remain
+preserved, not migrated. Local tests, hosted CI, genuine OS isolation, scratch
 GitHub qualification, human review and release are independent evidence layers.

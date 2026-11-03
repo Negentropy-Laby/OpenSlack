@@ -83,11 +83,36 @@ digest describe different byte collections.
 ## Independent qualification fixtures
 
 The fixture tool uses the existing human `gh` login and independently verifies
-the selected operator `wsman` (21962212), private qualification repository
-`Negentropy-Laby/openslack-cleanup-qualification` (1380965476), `main`, push
+the selected operator `wsman` (21962212), public qualification repository
+`Negentropy-Laby/openslack-cleanup-qualification-public` (1381124543), `main`, push
 permission and disabled automatic branch deletion. It is never run by the
 qualification Agent. No bot/PAT environment fallback, approval review, ruleset
 bypass or branch deletion is provided.
+
+The public campaign uses only synthetic, non-sensitive fixture content. The
+previous private repository (1380965476), its plans and its operation history
+remain historical evidence; this change neither migrates nor deletes them.
+The retained registry pin still identifies the old private-repository scope.
+Until an independent administrator supplies and reviews the exact new registry
+bytes and binding, the production workspace check must remain BLOCKED for the
+public target. A correct old registry digest does not authorize the new target.
+Fresh installation scope, instance activation and single-use Permits are also
+required; old private-target Permits cannot be extended or transferred.
+
+`inspect --batch` recognizes the exact retained private campaign and queries its
+original repository using GET requests. Historical inspection requires the fixed
+human identity and repository binding, but does not require push permission or
+current automatic-deletion settings. An inaccessible repository is an observation
+failure, not evidence tampering. Inspection leaves the plan, manifest and journal
+unchanged and appends only a separate observation file. Historical batches cannot
+run any mutation phase, including fork registration; the refusal occurs before
+confirmation, remote calls or local publication.
+
+Historical regression evidence uses the complete contract and registry bytes
+from commit `44deef2651b8964448f4f0ef603114f2524eb046`, with their recorded
+digests. That frozen pairing exercises today's verifier implementation without
+authorizing the public campaign or replacing actual distinct-UID qualification.
+The current public contract with the retained private registry remains BLOCKED.
 
 ```sh
 node ./qualification-fixtures.mjs plan --scratch-root /root/openslack-cleanup-fixtures-new
