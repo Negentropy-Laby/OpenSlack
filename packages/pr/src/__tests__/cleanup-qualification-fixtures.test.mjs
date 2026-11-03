@@ -318,9 +318,9 @@ function fixture(t, changes = {}) {
     main: sha(1),
     user: { type: 'User', login: 'wsman', id: 21962212 },
     repository: {
-      id: 1380965476,
+      id: 1381124543,
       full_name: BINDINGS.repository,
-      private: true,
+      private: false,
       default_branch: 'main',
       delete_branch_on_merge: false,
       permissions: { push: true },
@@ -437,9 +437,9 @@ function fixture(t, changes = {}) {
           head: {
             ref: payload.head,
             sha: state.refs.get(payload.head),
-            repo: { id: 1380965476, full_name: BINDINGS.repository },
+            repo: { id: 1381124543, full_name: BINDINGS.repository },
           },
-          base: { ref: payload.base, repo: { id: 1380965476, full_name: BINDINGS.repository } },
+          base: { ref: payload.base, repo: { id: 1381124543, full_name: BINDINGS.repository } },
         };
         state.prs.set(number, pr);
         return response(pr);
@@ -527,7 +527,19 @@ for (const [name, change, code] of [
   ['wrong repository id', { repository: { id: 1 } }, 'FIXTURE_REPOSITORY_MISMATCH'],
   ['automatic deletion enabled', { delete_branch_on_merge: true }, 'FIXTURE_AUTO_DELETION_ENABLED'],
   ['wrong default branch', { default_branch: 'master' }, 'FIXTURE_DEFAULT_BRANCH_MISMATCH'],
-  ['public target', { private: false }, 'FIXTURE_REPOSITORY_MISMATCH'],
+  ['private target', { private: true }, 'FIXTURE_REPOSITORY_MISMATCH'],
+  [
+    'historical private repository',
+    {
+      repository: {
+        id: 1380965476,
+        full_name: 'Negentropy-Laby/openslack-cleanup-qualification',
+        private: true,
+      },
+    },
+    'FIXTURE_REPOSITORY_MISMATCH',
+  ],
+  ['wrong public name', { full_name: 'Negentropy-Laby/OpenSlack' }, 'FIXTURE_REPOSITORY_MISMATCH'],
   ['no human push access', { permissions: { push: false } }, 'FIXTURE_PUSH_PERMISSION_REQUIRED'],
 ]) {
   test(`preflight refuses ${name} with zero remote mutation and no scratch batch`, async (t) => {
@@ -550,7 +562,7 @@ test('creation requires exact plan confirmation and creates nothing on decline',
   );
   assert.equal(f.state.mutations.length, 0);
   assert.equal(load(batch).phase, 'PLANNED_READ_ONLY');
-  assert.match(f.state.confirmations[0].phrase, /REPOSITORY 1380965476 PLAN [a-f0-9]{64}$/);
+  assert.match(f.state.confirmations[0].phrase, /REPOSITORY 1381124543 PLAN [a-f0-9]{64}$/);
 });
 test('plan tampering refuses a foreign branch before even a read-only API call', async (t) => {
   const f = fixture(t);
@@ -862,7 +874,7 @@ test('only an actually observed merged canonical-base fork PR can be recorded re
       sha: sha(555),
       repo: { id: 888, full_name: 'wsman/independently-authorised-fork' },
     },
-    base: { ref: 'main', repo: { id: 1380965476, full_name: BINDINGS.repository } },
+    base: { ref: 'main', repo: { id: 1381124543, full_name: BINDINGS.repository } },
   });
   await f.run('register-existing-fork', batch);
   assert.equal(load(batch).fork.observedPR.prNumber, 999);

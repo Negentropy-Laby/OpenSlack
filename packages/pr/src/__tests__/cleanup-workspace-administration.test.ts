@@ -22,48 +22,105 @@ const sourceRoot = fileURLToPath(new URL('../../../../', import.meta.url));
 const entry = join(sourceRoot, 'scripts/cleanup-broker/administration/verify-workspace.ts');
 const sha = (raw: string | Buffer) => createHash('sha256').update(raw).digest('hex');
 const fixtureRoots: string[] = [];
+// Synthetic parser/path coverage is deliberately not current administrator
+// authorization. The unchanged production bundle is exercised separately below.
 const fixed = {
-  agent_id: 'cleanup_qualification_pr418',
-  principal_id: 'principal:cleanup_qualification_pr418',
-  runtime_uid_claim: 'cleanup_qualification_pr418',
-  run_id: 'cleanup-pr418-f8db249a48c8492587e4515a31c60c45',
-  workspace_id: 'openslack-self',
+  agent_id: 'cleanup_fixture_agent',
+  principal_id: 'principal:cleanup_fixture_agent',
+  runtime_uid_claim: 'cleanup_fixture_uid',
+  run_id: 'cleanup-fixture-run',
+  workspace_id: 'cleanup-fixture-workspace',
 };
-const registryBytes = readFileSync(
+const contractPath = join(
+  sourceRoot,
+  'packages/pr/src/internal/cleanup-administration-contract.ts',
+);
+const productionContract = JSON.parse(readFileSync(contractPath.replace(/\.ts$/, '.json'), 'utf8'));
+const productionRegistryBytes = readFileSync(
   join(sourceRoot, '.openslack/agents/registry/cleanup_qualification_pr418.yaml'),
 );
+const syntheticRegistry = JSON.parse(productionRegistryBytes.toString());
+syntheticRegistry.agent_id = fixed.agent_id;
+syntheticRegistry.identity.uid = fixed.runtime_uid_claim;
+syntheticRegistry.identity.principal_id = fixed.principal_id;
+syntheticRegistry.repositories.allowed_product_repos = [
+  'Negentropy-Laby/openslack-cleanup-qualification-public',
+];
+const registryBytes = Buffer.from(JSON.stringify(syntheticRegistry) + '\n');
+const syntheticContract = {
+  ...productionContract,
+  bindings: { ...productionContract.bindings, workspaceId: fixed.workspace_id },
+  runtimeBinding: fixed,
+  registrySHA256: sha(registryBytes),
+};
 let bundleRoot: string;
 let tool: string;
+let productionTool: string;
 
 beforeAll(() => {
   bundleRoot = mkdtempSync(join(tmpdir(), 'cleanup-workspace-tool '));
   tool = join(bundleRoot, 'verify-workspace.mjs');
-  execFileSync('bun', ['build', entry, '--target=node', '--format=esm', '--outfile', tool], {
-    cwd: sourceRoot,
-    stdio: 'pipe',
-    timeout: 60_000,
-  });
+  productionTool = join(bundleRoot, 'verify-workspace-production.mjs');
+  execFileSync(
+    'bun',
+    ['build', entry, '--target=node', '--format=esm', '--outfile', productionTool],
+    {
+      cwd: sourceRoot,
+      stdio: 'pipe',
+      timeout: 60_000,
+    },
+  );
+  const exports = readFileSync(contractPath, 'utf8').slice(
+    readFileSync(contractPath, 'utf8').indexOf('export const'),
+  );
+  const fixtureModule = `const contract = ${JSON.stringify(syntheticContract)} as const;\n${exports}`;
+  // The sole substitution happens at test build time, never through a production
+  // option, caller permission object, environment variable or exported callback.
+  execFileSync(
+    'bun',
+    [
+      '--eval',
+      `
+    const result = await Bun.build({
+      entrypoints: [${JSON.stringify(entry)}],
+      target: 'node', format: 'esm',
+      plugins: [{ name: 'synthetic-administration-contract', setup(build) {
+        build.onLoad({ filter: /cleanup-administration-contract[.](?:ts|js)$/ }, ({ path }) => {
+          if (![${JSON.stringify(contractPath)}, ${JSON.stringify(contractPath.replace('/src/', '/dist/').replace(/\.ts$/, '.js'))}].includes(path))
+            throw new Error('unexpected contract path');
+          return { contents: ${JSON.stringify(fixtureModule)}, loader: 'ts' };
+        });
+      } }],
+    });
+    if (!result.success) throw new AggregateError(result.logs, 'fixture build failed');
+    if (result.outputs.length !== 1) throw new Error('unexpected fixture artifact count');
+    await Bun.write(${JSON.stringify(tool)}, result.outputs[0]);
+  `,
+    ],
+    { cwd: sourceRoot, stdio: 'pipe', timeout: 60_000 },
+  );
 }, 65_000);
 afterAll(() => rmSync(bundleRoot, { recursive: true, force: true }));
 afterEach(() => {
   for (const root of fixtureRoots.splice(0)) rmSync(root, { recursive: true, force: true });
 });
 
-function fixture() {
+function fixture(production = false) {
+  const binding = production ? productionContract.runtimeBinding : fixed;
   const container = mkdtempSync('/var/tmp/cleanup-workspace-fixture ');
   fixtureRoots.push(container);
   chmodSync(container, 0o700);
   const workspace = join(container, 'fixed workspace');
   mkdirSync(workspace, { mode: 0o700 });
-  const registry = join(workspace, '.openslack/agents/registry', `${fixed.agent_id}.yaml`);
-  const identity = join(workspace, '.openslack.local/agents', fixed.agent_id, 'identity.yaml');
+  const registry = join(workspace, '.openslack/agents/registry', `${binding.agent_id}.yaml`);
+  const identity = join(workspace, '.openslack.local/agents', binding.agent_id, 'identity.yaml');
   for (const directory of [
     '.openslack',
     '.openslack/agents',
     '.openslack/agents/registry',
     '.openslack.local',
     '.openslack.local/agents',
-    `.openslack.local/agents/${fixed.agent_id}`,
+    `.openslack.local/agents/${binding.agent_id}`,
   ])
     mkdirSync(join(workspace, directory), { mode: 0o700 });
   const uid = process.getuid!(),
@@ -71,15 +128,15 @@ function fixture() {
   const selectedValue = {
     schema: 'openslack.cleanup_admin_selected_bindings.v1',
     selected: {
-      ...fixed,
+      ...binding,
       target_distro: 'NON_SENSITIVE_FIXTURE',
       agent_uid: String(uid),
       agent_gid: String(gid),
       broker_uid: String(uid + 1),
       broker_gid: String(gid + 1),
       qualification_repository_owner: 'Negentropy-Laby',
-      qualification_repository_name: 'openslack-cleanup-qualification',
-      qualification_repository_numeric_id: '1380965476',
+      qualification_repository_name: 'openslack-cleanup-qualification-public',
+      qualification_repository_numeric_id: '1381124543',
       qualification_repository_default_branch: 'main',
     },
     priorInput: {
@@ -90,7 +147,7 @@ function fixture() {
   };
   const config = {
     schema: 'openslack.workspace.v1',
-    workspace_id: fixed.workspace_id,
+    workspace_id: binding.workspace_id,
     name: 'Non-sensitive dedicated workspace fixture',
     mode: 'normal',
     canonical_remote: {
@@ -104,9 +161,9 @@ function fixture() {
   };
   const identityValue = {
     schema: 'openslack.agent_runtime_identity.v1',
-    agent_id: fixed.agent_id,
-    agent_uid: fixed.runtime_uid_claim,
-    run_id: fixed.run_id,
+    agent_id: binding.agent_id,
+    agent_uid: binding.runtime_uid_claim,
+    run_id: binding.run_id,
     provider: 'cli',
     started_at: new Date().toISOString(),
     public_key_jwk: null,
@@ -119,7 +176,7 @@ function fixture() {
       mode: 0o600,
     });
   };
-  put(registry, registryBytes);
+  put(registry, production ? productionRegistryBytes : registryBytes);
   put(identity, identityValue);
   put(join(workspace, 'openslack.yaml'), config);
   put(selected, selectedValue);
@@ -131,6 +188,12 @@ function fixture() {
     '--selected-bindings-sha256',
     sha(readFileSync(selected)),
   ];
+  if (!production) {
+    const baseline = invoke(args());
+    expect(baseline.status, baseline.stderr).toBe(0);
+    expect(baseline.value.blockingIssues).toEqual([]);
+    expect(baseline.value.registry.fixedBytes).toBe(true);
+  }
   return {
     container,
     workspace,
@@ -150,7 +213,7 @@ function fixture() {
 const dedicatedGroupFixture = `
   if (process.platform === 'linux') process.getgroups = () => [process.getgid()];
 `;
-function invoke(args: string[]) {
+function invoke(args: string[], selectedTool = tool) {
   const result = spawnSync(
     process.execPath,
     [
@@ -161,7 +224,7 @@ function invoke(args: string[]) {
       import { pathToFileURL } from 'node:url';
       await import(pathToFileURL(process.argv[1]).href);
     `,
-      tool,
+      selectedTool,
       ...args,
     ],
     {
@@ -230,6 +293,38 @@ describe('standalone read-only fixed workspace acceptance', () => {
 
   if (declareLinuxCleanupTests) {
     describe('Linux owned-descriptor workspace IO', () => {
+      it('keeps the real private registry blocked for the new public target without writes', () => {
+        const value = fixture(true);
+        const before = readFileSync(value.registry);
+        const result = invoke(value.args(), productionTool);
+        expect(result.status).toBe(2);
+        expect(result.value.blockingIssues).toContainEqual({
+          code: 'WORKSPACE_REGISTRY_BINDING_MISMATCH',
+          role: 'registry',
+        });
+        expect(result.value.registry.fixedBytes).toBe(true);
+        expect(result.value.effects.filesystemWrites).toBe(false);
+        expect(result.value.effects.executionContextCreated).toBe(false);
+        expect(readFileSync(value.registry)).toEqual(before);
+        expect(existsSync(join(value.workspace, '.openslack/outbox'))).toBe(false);
+      });
+
+      it('does not migrate an old private selection into the public campaign', () => {
+        const value = fixture(true);
+        value.selectedValue.selected.qualification_repository_name =
+          'openslack-cleanup-qualification';
+        value.selectedValue.selected.qualification_repository_numeric_id = '1380965476';
+        value.put(value.selected, value.selectedValue);
+        const result = invoke(value.args(), productionTool);
+        expect(result.status).toBe(2);
+        expect(result.value.identity.state).toBe('NOT_OBSERVED');
+        expect(result.value.registry.state).toBe('NOT_OBSERVED');
+        expect(result.value.blockingIssues).toContainEqual({
+          code: 'WORKSPACE_SELECTED_BINDING_MISMATCH',
+          role: 'selection',
+        });
+        expect(result.value.effects.filesystemWrites).toBe(false);
+      });
       it('refuses root before reading selection or workspace', () => {
         const report = faultScript(
           `
@@ -286,7 +381,7 @@ describe('standalone read-only fixed workspace acceptance', () => {
         expect(existsSync(join(value.workspace, '.openslack/outbox'))).toBe(false);
       });
 
-      it('parses real production identity/registry and authorizes a non-created record path without writes', () => {
+      it('uses production parsers with synthetic identity/registry and a non-created record path without writes', () => {
         const value = fixture();
         const before = readdirSync(join(value.workspace, '.openslack'));
         const result = invoke(value.args());

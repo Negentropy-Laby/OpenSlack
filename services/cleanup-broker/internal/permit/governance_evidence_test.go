@@ -150,6 +150,11 @@ func loadGovernanceEvidence(t *testing.T) governanceEvidence {
 
 func checkGovernanceEvidence(p Permit, e governanceEvidence) error {
 	policy := e.Policy // Historical evidence is checked against its own policy, never a later boot.
+	// This immutable batch was approved for the private repository. The current
+	// administration target can move to a separately authorized campaign; that
+	// must neither reinterpret these bytes nor transfer this historical Permit.
+	const historicalRepository = "Negentropy-Laby/openslack-cleanup-qualification"
+	const historicalRepositoryID = "1380965476"
 	bad := func(s string) error { return fmt.Errorf("committed binding: %s", s) }
 	if e.Scope.Schema != "openslack.cleanup_governance_scope_evidence.v1" || p.ID != e.Scope.PermitID ||
 		p.TaskRef != e.Scope.TaskRef || e.Scope.TaskRefSemantics != "administrative_audit_correlation_not_live_task_authority" {
@@ -186,7 +191,7 @@ func checkGovernanceEvidence(p Permit, e governanceEvidence) error {
 		}
 	}
 	if e.Target.Schema != "openslack.cleanup_target_pr_observation.v1" || e.Target.ObservedAt.IsZero() || e.Target.State != "open" || e.Target.Merged ||
-		e.Target.Repository != e.Contract.Bindings.Repository || e.Target.RepositoryID != e.Contract.Bindings.RepositoryID ||
+		e.Target.Repository != historicalRepository || e.Target.RepositoryID != historicalRepositoryID ||
 		e.Target.HeadRepositoryID != e.Target.RepositoryID || e.Target.BaseRef != "main" ||
 		p.Target != (Target{e.Contract.Bindings.WorkspaceID, "github.com", e.Target.RepositoryID, e.Target.Repository, e.Target.NodeID, e.Target.Number, "refs/heads/" + e.Target.HeadRef, e.Target.HeadSHA}) {
 		return bad("observed exact target")
@@ -232,6 +237,17 @@ func TestCommittedCleanupActivationEvidence(t *testing.T) {
 	if err := checkGovernanceEvidence(p, e); err != nil {
 		t.Fatal(err)
 	}
+	t.Run("historical-permit-cannot-migrate-to-public-campaign", func(t *testing.T) {
+		q, copy := p, e
+		copy.Target.Repository = "Negentropy-Laby/openslack-cleanup-qualification-public"
+		copy.Target.RepositoryID = "1381124543"
+		copy.Target.HeadRepositoryID = copy.Target.RepositoryID
+		q.Target.Repository = copy.Target.Repository
+		q.Target.RepositoryID = copy.Target.RepositoryID
+		if err := checkGovernanceEvidence(q, copy); err == nil || err.Error() != "committed binding: observed exact target" {
+			t.Fatalf("historical target transplant was not rejected at its binding: %v", err)
+		}
+	})
 	for name, mutate := range map[string]func(*Permit, *Policy, *governanceEvidence){
 		"task-ref-typo": func(p *Permit, _ *Policy, _ *governanceEvidence) { p.TaskRef += "-typo" },
 		"paired-issuer-typo": func(p *Permit, policy *Policy, _ *governanceEvidence) {

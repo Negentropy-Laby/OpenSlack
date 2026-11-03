@@ -83,11 +83,21 @@ digest describe different byte collections.
 ## Independent qualification fixtures
 
 The fixture tool uses the existing human `gh` login and independently verifies
-the selected operator `wsman` (21962212), private qualification repository
-`Negentropy-Laby/openslack-cleanup-qualification` (1380965476), `main`, push
+the selected operator `wsman` (21962212), public qualification repository
+`Negentropy-Laby/openslack-cleanup-qualification-public` (1381124543), `main`, push
 permission and disabled automatic branch deletion. It is never run by the
 qualification Agent. No bot/PAT environment fallback, approval review, ruleset
 bypass or branch deletion is provided.
+
+The public campaign uses only synthetic, non-sensitive fixture content. The
+previous private repository (1380965476), its plans and its operation history
+remain historical evidence; this change neither migrates nor deletes them.
+The retained registry pin still identifies the old private-repository scope.
+Until an independent administrator supplies and reviews the exact new registry
+bytes and binding, the production workspace check must remain BLOCKED for the
+public target. A correct old registry digest does not authorize the new target.
+Fresh installation scope, instance activation and single-use Permits are also
+required; old private-target Permits cannot be extended or transferred.
 
 ```sh
 node ./qualification-fixtures.mjs plan --scratch-root /root/openslack-cleanup-fixtures-new

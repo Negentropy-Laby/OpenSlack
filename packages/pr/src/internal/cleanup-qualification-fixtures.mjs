@@ -401,9 +401,9 @@ export async function preflight(runtime) {
   required(
     repository.id === BINDINGS.repositoryId &&
       repository.full_name === REPO &&
-      repository.private === true,
+      repository.private === false,
     'FIXTURE_REPOSITORY_MISMATCH',
-    'only the fixed private qualification repository is allowed',
+    'only the fixed public qualification repository is allowed',
   );
   required(
     repository.default_branch === 'main',

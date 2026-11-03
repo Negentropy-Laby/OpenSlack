@@ -4,8 +4,8 @@ const contract = {
   "bindings": {
     "target": "OpenSlack-Cleanup-Qual",
     "workspaceId": "openslack-self",
-    "repository": "Negentropy-Laby/openslack-cleanup-qualification",
-    "repositoryId": "1380965476"
+    "repository": "Negentropy-Laby/openslack-cleanup-qualification-public",
+    "repositoryId": "1381124543"
   },
   "identities": {
     "broker": {
