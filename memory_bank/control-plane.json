@@ -1,7 +1,7 @@
 {
   "$schema": "../docs/reference/schemas/documentation/control-plane.schema.json",
   "schema": "openslack.control_plane.v1",
-  "updated": "2026-08-02",
+  "updated": "2026-11-03",
   "authorities": [
     {
       "fact": "project.portfolio-state",
@@ -56,6 +56,11 @@
   ],
   "documents": [
     {
+      "id": "qa-ledger-dual-qualification-2026-11-03",
+      "path": "production/qa/qa-ledger-dual-qualification-2026-11-03.md",
+      "status": "active"
+    },
+    {
       "id": "qa-cleanup-permit-2026-09-21",
       "path": "production/qa/qa-plan-cleanup-permit-2026-09-21.md",
       "status": "active"
@@ -83,6 +88,11 @@
     {
       "id": "architecture-task-claim-v2-c0",
       "path": "docs/architecture/contracts/task-claim-v2-c0.md",
+      "status": "active"
+    },
+    {
+      "id": "architecture-adr-task-claim-v2-single-host",
+      "path": "docs/architecture/adr/adr-0005-task-claim-v2-single-host.md",
       "status": "active"
     },
     {
@@ -1139,7 +1149,7 @@
   },
   "release": {
     "schema": "openslack.release_state.v1",
-    "updated": "2026-07-29",
+    "updated": "2026-11-03",
     "train": "0.2.0",
     "status": "blocked",
     "human_approval": "not_requested",
@@ -1190,7 +1200,7 @@
         "id": "model_endpoint",
         "status": "blocked",
         "evidence": ["issue:244"],
-        "notes": "Model endpoint is not configured."
+        "notes": "Historical 2026-07-29 report said model endpoint was not configured. Issue #244 remains blocked on 2026-11-03; no current release runtime/provider preflight was executed. Do not interpret the old observation as a fresh configuration diagnosis."
       },
       {
         "id": "onboarding",
@@ -1220,8 +1230,265 @@
   },
   "assignments": {
     "schema": "openslack.work_assignments.v1",
-    "updated": "2026-08-09",
+    "updated": "2026-11-03",
     "assignments": [
+      {
+        "id": "issue-411",
+        "title": "Go Workflow R-EXT preparation and authenticated qualification",
+        "status": "running",
+        "planned_owner": "codex_qualification_rext",
+        "module_or_workstream": "workflow-runtime",
+        "execution": {
+          "agent_id": "codex_qualification_rext",
+          "claim_ref": "refs/heads/openslack/claims/issue-411",
+          "started_at": "2026-11-03T09:26:18.725Z"
+        },
+        "github_issue": {
+          "number": 411,
+          "url": "https://github.com/Negentropy-Laby/OpenSlack/issues/411"
+        },
+        "pull_request": {
+          "number": 435,
+          "url": "https://github.com/Negentropy-Laby/OpenSlack/pull/435"
+        },
+        "acceptance_criteria": [
+          "Preparation/repair reviewed and clean merged candidate frozen",
+          "Exact provider/effect/checkpoint resume without duplicate calls",
+          "Restart and fixed 600-second/40-sample drain evidenced"
+        ],
+        "dependencies": ["issue-433"],
+        "blockers": [
+          "full_sealed_resume_blocked_on_checkpoint_replay",
+          "live_provider_binding_and_human_effect_decision_pending"
+        ],
+        "evidence": [
+          "https://github.com/Negentropy-Laby/OpenSlack/issues/411#issuecomment-6600248020",
+          "legacy-task-loop:heartbeat:2026-11-03T10:21:58.906Z:expiry:2026-11-03T12:21:58.906Z",
+          "preparation-local:87-pass:execution:2026-11-03T10:31:41.881Z/2026-11-03T10:31:47.410Z:full-resume-not-run",
+          "report-sha256:7a166b2a9c5569cce0254d25afa1acd8f2bb940801f84d2aed11208600c3c680",
+          "github:pr-435:draft:bot-authored:head:b8bf3fa5da19eefb33ddfbeb7aa386e7c0b03fd6:ci-pending",
+          "metadata-readback:2026-11-03T10:30:00Z:not-a-new-test-execution"
+        ],
+        "last_verified_at": "2026-11-03T10:35:48.074Z"
+      },
+      {
+        "id": "issue-427",
+        "title": "Cleanup: public-repository Permit-only qualification (2026-11)",
+        "status": "blocked",
+        "planned_owner": "unassigned",
+        "module_or_workstream": "pr-review-merge",
+        "execution": {
+          "agent_id": null,
+          "claim_ref": null,
+          "started_at": null
+        },
+        "github_issue": {
+          "number": 427,
+          "url": "https://github.com/Negentropy-Laby/OpenSlack/issues/427"
+        },
+        "pull_request": null,
+        "acceptance_criteria": [
+          "Actual independent UID isolation observed",
+          "Every negative reaches its intended guard",
+          "One actual deletion, original receipt replay, independent absent readback",
+          "Restart does not resend; unknown outcomes only reconciled"
+        ],
+        "dependencies": ["issue-432"],
+        "blockers": [
+          "administrator_public_scope_and_installation",
+          "fresh_activation_and_one_use_permits"
+        ],
+        "evidence": [
+          "github:issue-427:open:blocked",
+          "production/qa/qa-ledger-dual-qualification-2026-11-03.md"
+        ],
+        "last_verified_at": "2026-11-03T09:54:58Z"
+      },
+      {
+        "id": "issue-428",
+        "title": "Task Claim v2: close C0 single-host contract and independent review",
+        "status": "blocked",
+        "planned_owner": "unassigned",
+        "module_or_workstream": "github-task-loop",
+        "execution": {
+          "agent_id": null,
+          "claim_ref": null,
+          "started_at": null
+        },
+        "github_issue": {
+          "number": 428,
+          "url": "https://github.com/Negentropy-Laby/OpenSlack/issues/428"
+        },
+        "pull_request": null,
+        "acceptance_criteria": [
+          "Identity/delegation/time/recovery contracts precise",
+          "Canonical vectors and complete old writer/consumer fence independently reviewed",
+          "C1-C3 independent blocked tasks created",
+          "Exact decision acceptance separate from document delivery"
+        ],
+        "dependencies": [],
+        "blockers": [
+          "exact_scope_maintenance_identity_unassigned",
+          "c0_exact_r5_recommended_delivery_and_adr_acceptance_pending"
+        ],
+        "evidence": [
+          "github:issue-428:open:blocked",
+          "independent-full-td-product-security:exact-r5:favorable:adr-not-accepted",
+          "production/qa/qa-ledger-dual-qualification-2026-11-03.md"
+        ],
+        "last_verified_at": "2026-11-03T10:30:00Z"
+      },
+      {
+        "id": "issue-429",
+        "title": "Task Claim v2 C1: state kernel and TS/Go canonical conformance",
+        "status": "blocked",
+        "planned_owner": "unassigned",
+        "module_or_workstream": "github-task-loop",
+        "execution": {
+          "agent_id": null,
+          "claim_ref": null,
+          "started_at": null
+        },
+        "github_issue": {
+          "number": 429,
+          "url": "https://github.com/Negentropy-Laby/OpenSlack/issues/429"
+        },
+        "pull_request": null,
+        "acceptance_criteria": [
+          "C0 exact acceptance and scope closed",
+          "Independent TS/Go accepted/rejected vectors agree",
+          "Concurrency, stale run, expiry and receipt conflicts covered"
+        ],
+        "dependencies": ["issue-428"],
+        "blockers": ["c0_acceptance_pending", "implementation_not_authorized_this_round"],
+        "evidence": [
+          "github:issue-429:open:blocked",
+          "production/qa/qa-ledger-dual-qualification-2026-11-03.md"
+        ],
+        "last_verified_at": "2026-11-03T09:54:58Z"
+      },
+      {
+        "id": "issue-430",
+        "title": "Task Claim v2 C2: PostgreSQL authority and local authenticated sessions",
+        "status": "blocked",
+        "planned_owner": "unassigned",
+        "module_or_workstream": "github-task-loop",
+        "execution": {
+          "agent_id": null,
+          "claim_ref": null,
+          "started_at": null
+        },
+        "github_issue": {
+          "number": 430,
+          "url": "https://github.com/Negentropy-Laby/OpenSlack/issues/430"
+        },
+        "pull_request": null,
+        "acceptance_criteria": [
+          "C1 delivery and C2 scope accepted",
+          "Transactional single winner and time-after-lock proven",
+          "Sessions/restart/old-backup generation refusal/outbox qualified"
+        ],
+        "dependencies": ["issue-429"],
+        "blockers": ["c1_delivery_pending", "implementation_not_authorized_this_round"],
+        "evidence": [
+          "github:issue-430:open:blocked",
+          "production/qa/qa-ledger-dual-qualification-2026-11-03.md"
+        ],
+        "last_verified_at": "2026-11-03T09:54:58Z"
+      },
+      {
+        "id": "issue-431",
+        "title": "Task Claim v2 C3: independently governed claimed cleanup admission",
+        "status": "blocked",
+        "planned_owner": "unassigned",
+        "module_or_workstream": "pr-review-merge",
+        "execution": {
+          "agent_id": null,
+          "claim_ref": null,
+          "started_at": null
+        },
+        "github_issue": {
+          "number": 431,
+          "url": "https://github.com/Negentropy-Laby/OpenSlack/issues/431"
+        },
+        "pull_request": null,
+        "acceptance_criteria": [
+          "C2 qualification and separate action grants accepted",
+          "Service delegation/single reservation/final-boundary stale-worker fence proven",
+          "Unknown external outcomes reconcile without resend"
+        ],
+        "dependencies": ["issue-430"],
+        "blockers": ["c2_qualification_and_separate_action_grants_pending"],
+        "evidence": [
+          "github:issue-431:open:blocked",
+          "production/qa/qa-ledger-dual-qualification-2026-11-03.md"
+        ],
+        "last_verified_at": "2026-11-03T09:54:58Z"
+      },
+      {
+        "id": "issue-432",
+        "title": "Cleanup: prepare fixed public qualification target and current evidence",
+        "status": "blocked",
+        "planned_owner": "unassigned",
+        "module_or_workstream": "pr-review-merge",
+        "execution": {
+          "agent_id": null,
+          "claim_ref": null,
+          "started_at": null
+        },
+        "github_issue": {
+          "number": 432,
+          "url": "https://github.com/Negentropy-Laby/OpenSlack/issues/432"
+        },
+        "pull_request": {
+          "number": 434,
+          "url": "https://github.com/Negentropy-Laby/OpenSlack/pull/434"
+        },
+        "acceptance_criteria": [
+          "Fixed public target only; default/protection/human gates preserved",
+          "Real old registry remains refused for new target",
+          "Synthetic parser/path coverage is not admin readiness",
+          "Formal counts/docs and independent review complete"
+        ],
+        "dependencies": [],
+        "blockers": ["exact_scope_maintenance_identity_unassigned", "preparation_draft_ci_and_human_review_pending"],
+        "evidence": [
+          "github:issue-432:open:blocked",
+          "github:pr-434:draft:bot-authored:head:39a9d1a4b57c0f618f39eee7723a8893ef2d9a2c:ci-pending",
+          "production/qa/qa-ledger-dual-qualification-2026-11-03.md"
+        ],
+        "last_verified_at": "2026-11-03T10:35:43.196Z"
+      },
+      {
+        "id": "issue-433",
+        "title": "Workflow: reject-safe checkpoint replay after canonical Go resume",
+        "status": "blocked",
+        "planned_owner": "unassigned",
+        "module_or_workstream": "workflow-runtime",
+        "execution": {
+          "agent_id": null,
+          "claim_ref": null,
+          "started_at": null
+        },
+        "github_issue": {
+          "number": 433,
+          "url": "https://github.com/Negentropy-Laby/OpenSlack/issues/433"
+        },
+        "pull_request": null,
+        "acceptance_criteria": [
+          "Real initial execute/pending approval/resume exposes replay defect",
+          "Exact anchored duplicate returns original evidence without new cross-generation commit",
+          "New checkpoint path and TS/Go validators remain strict",
+          "Separate reviewed repair and needed source-lock maintenance before external qualification"
+        ],
+        "dependencies": [],
+        "blockers": ["separate_runtime_repair_scope_and_review_pending"],
+        "evidence": [
+          "github:issue-433:open:blocked",
+          "production/qa/qa-ledger-dual-qualification-2026-11-03.md"
+        ],
+        "last_verified_at": "2026-11-03T09:54:58Z"
+      },
       {
         "id": "issue-239",
         "title": "release: close OpenSlack 0.2.0 external gates",

@@ -6,7 +6,7 @@ authority: projection
 audience:
   - contributors
 owner: release-governance
-updated: 2026-07-29
+updated: 2026-11-03
 sources:
   - memory_bank/control-plane.json#/release
 generated: true
@@ -29,7 +29,7 @@ generated: true
 | clean_machine_release | blocked | issue:241 | Clean-machine release capstone remains open. |
 | npm_publication | blocked | issue:242 | Public npm publication remains open. |
 | bot_delivery | blocked | issue:243 | Clean-machine bot delivery smoke remains open. |
-| model_endpoint | blocked | issue:244 | Model endpoint is not configured. |
+| model_endpoint | blocked | issue:244 | Historical 2026-07-29 report said model endpoint was not configured. Issue #244 remains blocked on 2026-11-03; no current release runtime/provider preflight was executed. Do not interpret the old observation as a fresh configuration diagnosis. |
 | onboarding | blocked | issue:245 | Clean-machine onboarding smoke remains open. |
 | merge_capstone | blocked | issue:246 | End-to-end merge capstone remains open. |
 | agent_task_capstone | blocked | issue:247 | Agent task capstone remains open. |
