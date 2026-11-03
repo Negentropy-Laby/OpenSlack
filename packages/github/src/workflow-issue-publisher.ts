@@ -1,4 +1,5 @@
 import { getClient } from './client.js';
+import { WORKFLOW_IDENTITY, isWorkflowIdentityDigest } from '@openslack/core';
 import type { GitHubClientOptions } from './client.js';
 import { createTaskIssue } from './issue-tasks.js';
 import type {
@@ -319,12 +320,12 @@ export async function publishWorkflowRunAudit(
     throw new TypeError('Workflow run audit requires persisted or submitted identity evidence.');
   const identity = runStatus.workflowIdentity;
   const legacy =
-    identity.domain === 'unknown' &&
+    identity.domain === WORKFLOW_IDENTITY.UNKNOWN &&
     identity.provenance === 'unknown' &&
     typeof identity.digest === 'string' &&
     identity.digest.length > 0 &&
     Buffer.byteLength(identity.digest, 'utf8') <= 512 &&
-    !/^[a-f0-9]{64}$/u.test(identity.digest);
+    !isWorkflowIdentityDigest(identity.digest);
   const runIssue: WorkflowRunIssue = {
     runId: runStatus.runId,
     workflowId: runStatus.workflowName,

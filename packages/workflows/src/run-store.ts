@@ -11,6 +11,7 @@ import {
 } from 'node:fs/promises';
 import { basename, dirname, resolve } from 'node:path';
 import { scanValue } from '@openslack/collaboration';
+import { isExecutableWorkflowIdentityDomain, isWorkflowIdentityDigest } from '@openslack/core';
 import { canonicalJsonRoundTrip } from './internal/canonical-json.js';
 import { enqueueByKey } from './internal/keyed-serial-queue.js';
 import {
@@ -159,7 +160,7 @@ export interface RunMeta {
   workflowName: string;
   mode: ExecutionMode;
   manifestHash: string;
-  manifestHashDomain?: 'raw-sha256' | 'openslack.workflow-runner.workflow-source.v2';
+  manifestHashDomain?: import('./types.js').WorkflowIdentity['domain'];
   argsEncoding?: typeof WORKFLOW_ARGUMENTS_SCHEMA;
   args: Record<string, unknown> | WorkflowArgumentsEnvelope;
   startedAt: string;
@@ -592,8 +593,13 @@ export class RunStore {
       },
       runId,
     );
-    if (!WORKFLOW_BINDING_HASH_REGEX.test(normalizedMeta.manifestHash)) {
-      throw new Error('New workflow runs require a full SHA-256 workflow identity.');
+    if (
+      !isWorkflowIdentityDigest(normalizedMeta.manifestHash) ||
+      !isExecutableWorkflowIdentityDomain(normalizedMeta.manifestHashDomain)
+    ) {
+      throw new Error(
+        'New workflow runs require a full SHA-256 identity and an explicit executable identity domain.',
+      );
     }
     const normalizedBudget =
       normalizedMeta.budget === undefined
@@ -2396,11 +2402,12 @@ function validateRunMeta(value: unknown, expectedRunId: string): RunMeta {
   const manifestHashDomain = record.manifestHashDomain;
   if (
     manifestHashDomain !== undefined &&
-    ((manifestHashDomain !== 'raw-sha256' &&
-      manifestHashDomain !== 'openslack.workflow-runner.workflow-source.v2') ||
-      !WORKFLOW_BINDING_HASH_REGEX.test(manifestHash))
+    (!isExecutableWorkflowIdentityDomain(manifestHashDomain) ||
+      !isWorkflowIdentityDigest(manifestHash))
   ) {
-    throw new Error('Workflow run metadata identity domain or tagged digest is invalid.');
+    throw new Error(
+      'Workflow run metadata identity domain or full SHA-256 tagged digest is invalid.',
+    );
   }
   const argsEncoding = record.argsEncoding;
   let args: RunMeta['args'];

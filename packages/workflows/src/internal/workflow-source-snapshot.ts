@@ -1,4 +1,5 @@
 import { types as utilTypes } from 'node:util';
+import { WORKFLOW_IDENTITY, type WorkflowIdentityEvidence } from '@openslack/core';
 import { WORKFLOW_BINDING_HASH_REGEX } from './workflow-binding-field-rules.js';
 import type { WorkflowMeta } from '../types.js';
 import { canonicalJson } from './canonical-json.js';
@@ -15,6 +16,22 @@ export interface WorkflowSourceSnapshot {
   readonly manifestHash: string;
 }
 const snapshots = new WeakMap<WorkflowSourceSnapshot, { bytes: Buffer; manifest: string }>();
+
+/** A freshly computed owned snapshot is inferred evidence, not a persisted record. */
+export function snapshotWorkflowIdentity(
+  snapshot: WorkflowSourceSnapshot,
+): WorkflowIdentityEvidence {
+  if (!snapshots.has(snapshot))
+    throw new WorkflowSourceEvidenceError(
+      'SOURCE_EVIDENCE_UNRECOGNIZED',
+      'Cannot project an unrecognized workflow snapshot.',
+    );
+  return Object.freeze({
+    digest: snapshot.workflowSourceHash,
+    domain: WORKFLOW_IDENTITY.SOURCE_V2,
+    provenance: 'inferred',
+  });
+}
 
 export const WORKFLOW_SOURCE_EVIDENCE_REASONS = Object.freeze([
   'SOURCE_EVIDENCE_MISSING',
@@ -69,6 +86,49 @@ export class WorkflowSourceEvidenceError extends TypeError {
   }
 }
 
+/** Never invoke Proxy traps or accessors while inspecting diagnostic data. */
+export function workflowDiagnosticOwnValue(record: unknown, key: string): unknown {
+  if (!record || typeof record !== 'object' || utilTypes.isProxy(record)) return undefined;
+  return Object.getOwnPropertyDescriptor(record, key)?.value;
+}
+
+/** Equivalent to a bounded prototype check, stopping before every Proxy in the chain. */
+export function workflowDiagnosticHasPrototype(value: unknown, expected: object): boolean {
+  let current = value;
+  for (let depth = 0; depth < 64; depth++) {
+    if (!current || typeof current !== 'object' || utilTypes.isProxy(current)) return false;
+    if (current === expected) return true;
+    current = Object.getPrototypeOf(current);
+  }
+  return false;
+}
+
+/** Shared digest-only projection. Stderr callers deliberately omit frontend messages. */
+export function workflowSourceEvidenceProjection(error: unknown) {
+  if (!workflowDiagnosticHasPrototype(error, WorkflowSourceEvidenceError.prototype))
+    return undefined;
+  const rawReason = workflowDiagnosticOwnValue(error, 'reasonCode');
+  const reason =
+    WORKFLOW_SOURCE_EVIDENCE_REASONS.find((value) => value === rawReason) ??
+    'SOURCE_EVIDENCE_UNRECOGNIZED';
+  const identities = workflowDiagnosticOwnValue(error, 'identities');
+  const rawDomain = workflowDiagnosticOwnValue(identities, 'domain');
+  const domain = WORKFLOW_SOURCE_EVIDENCE_DOMAINS.find((value) => value === rawDomain);
+  const safeHash = (value: unknown) =>
+    typeof value === 'string' && WORKFLOW_BINDING_HASH_REGEX.test(value) ? value : undefined;
+  return {
+    code: 'WORKFLOW_SOURCE_EVIDENCE_INVALID' as const,
+    reasonCode: reason,
+    identities: domain
+      ? {
+          domain,
+          stored: safeHash(workflowDiagnosticOwnValue(identities, 'stored')),
+          current: safeHash(workflowDiagnosticOwnValue(identities, 'current')),
+        }
+      : undefined,
+  };
+}
+
 /** Frontends share presentation; a typed cause is never expanded into raw exception text. */
 export function workflowSourceEvidenceDiagnostic(error: WorkflowSourceEvidenceError) {
   const messages: Record<WorkflowSourceEvidenceReason, string> = {
@@ -84,31 +144,16 @@ export function workflowSourceEvidenceDiagnostic(error: WorkflowSourceEvidenceEr
     MANIFEST_INVALID: 'Workflow manifest is invalid.',
     LOADER_SOURCE_MISMATCH: 'Loaded workflow does not match its source evidence.',
   };
-  const ownValue = (record: unknown, key: string): unknown => {
-    if (!record || typeof record !== 'object' || utilTypes.isProxy(record)) return undefined;
-    return Object.getOwnPropertyDescriptor(record, key)?.value;
-  };
-  const rawReason = ownValue(error, 'reasonCode');
-  const reason =
-    WORKFLOW_SOURCE_EVIDENCE_REASONS.find((value) => value === rawReason) ??
-    'SOURCE_EVIDENCE_UNRECOGNIZED';
-  const details = manifestDiagnostics.get(error);
-  const identities = ownValue(error, 'identities');
-  const rawDomain = ownValue(identities, 'domain');
-  const domain = WORKFLOW_SOURCE_EVIDENCE_DOMAINS.find((value) => value === rawDomain);
-  const safeHash = (value: unknown) =>
-    typeof value === 'string' && WORKFLOW_BINDING_HASH_REGEX.test(value) ? value : undefined;
-  return {
+  const projection = workflowSourceEvidenceProjection(error) ?? {
     code: 'WORKFLOW_SOURCE_EVIDENCE_INVALID' as const,
-    reasonCode: reason,
+    reasonCode: 'SOURCE_EVIDENCE_UNRECOGNIZED' as const,
+    identities: undefined,
+  };
+  const reason = projection.reasonCode;
+  const details = manifestDiagnostics.get(error);
+  return {
+    ...projection,
     message: `${messages[reason]}${details ? ` File: ${details.path}${details.fields.length ? `; fields: ${details.fields.join(', ')}` : ''}.` : ''}`,
-    identities: domain
-      ? {
-          domain,
-          stored: safeHash(ownValue(identities, 'stored')),
-          current: safeHash(ownValue(identities, 'current')),
-        }
-      : undefined,
   };
 }
 
@@ -125,13 +170,29 @@ export function renderWorkflowSourceEvidence(
 }
 
 /** Internal loader annotation; raw parser messages are never presentation data. */
+export function sanitizeWorkflowDiagnosticPath(path: string): string {
+  let result = '';
+  for (const scalar of path) {
+    const code = scalar.codePointAt(0)!;
+    const safe =
+      code < 32 || (code >= 127 && code <= 159)
+        ? '?'
+        : code >= 0xd800 && code <= 0xdfff
+          ? '\ufffd'
+          : scalar;
+    if (result.length + safe.length > 512) break;
+    result += safe;
+  }
+  return result;
+}
+
 export function withWorkflowManifestDiagnostic(
   error: WorkflowSourceEvidenceError,
   path: string,
   fields: readonly string[],
 ): WorkflowSourceEvidenceError {
   manifestDiagnostics.set(error, {
-    path: path.replace(/[\u0000-\u001f\u007f]/gu, '?').slice(0, 512),
+    path: sanitizeWorkflowDiagnosticPath(path),
     fields: WORKFLOW_MANIFEST_DIAGNOSTIC_FIELDS.filter((field) => fields.includes(field)),
   });
   return error;
@@ -141,9 +202,12 @@ export function withWorkflowManifestDiagnostic(
 export function workflowSourceEvidenceCause(
   error: unknown,
 ): WorkflowSourceEvidenceError | undefined {
-  if (error instanceof WorkflowSourceEvidenceError) return error;
-  return error instanceof Error && error.cause instanceof WorkflowSourceEvidenceError
-    ? error.cause
+  if (workflowDiagnosticHasPrototype(error, WorkflowSourceEvidenceError.prototype))
+    return error as WorkflowSourceEvidenceError;
+  if (!workflowDiagnosticHasPrototype(error, Error.prototype)) return undefined;
+  const cause = workflowDiagnosticOwnValue(error, 'cause');
+  return workflowDiagnosticHasPrototype(cause, WorkflowSourceEvidenceError.prototype)
+    ? (cause as WorkflowSourceEvidenceError)
     : undefined;
 }
 

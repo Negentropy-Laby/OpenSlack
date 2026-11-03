@@ -297,7 +297,8 @@ describe('Workflow Runner public execution client', () => {
           runId,
           workflowName: manifest.name,
           mode: 'execute',
-          manifestHash: preparedV2!.spec.manifestHash,
+          manifestHash: expectedSourceHash,
+          manifestHashDomain: 'openslack.workflow-runner.workflow-source.v2',
           args: {},
           startedAt: NOW,
         });

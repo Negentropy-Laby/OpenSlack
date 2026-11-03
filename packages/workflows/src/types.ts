@@ -492,7 +492,9 @@ export type WorkflowFormat =
   | 'invalid';
 
 export interface WorkflowIdentity {
-  readonly domain: 'raw-sha256' | 'openslack.workflow-runner.workflow-source.v2';
+  readonly domain:
+    | typeof import('@openslack/core').WORKFLOW_IDENTITY.RAW_SHA256
+    | typeof import('@openslack/core').WORKFLOW_IDENTITY.SOURCE_V2;
   readonly digest: string;
 }
 
@@ -508,6 +510,20 @@ export interface WorkflowModule {
   sourceBody?: string; // Raw source for claude-ambient workflows (no import needed)
   source?: WorkflowSource; // Where the workflow was discovered
 }
+
+/** File loading owns executable source evidence; embedded definitions are inspection-only. */
+export interface FileWorkflowModule extends WorkflowModule {
+  readonly sourceKind: 'file';
+  sourceSnapshot: WorkflowSourceSnapshot;
+}
+
+export interface EmbeddedWorkflowModule extends WorkflowModule {
+  readonly sourceKind: 'embedded';
+  sourceSnapshot?: never;
+  workflowIdentity?: never;
+}
+
+export type LoadedWorkflowModule = FileWorkflowModule | EmbeddedWorkflowModule;
 
 // ── Pipeline ──────────────────────────────────────────────────────────────────
 

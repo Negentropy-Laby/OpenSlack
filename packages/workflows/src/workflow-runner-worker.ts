@@ -5,8 +5,9 @@ import {
 import { createHash } from 'node:crypto';
 import {
   WorkflowSourceEvidenceError,
-  WORKFLOW_SOURCE_EVIDENCE_REASONS,
-  WORKFLOW_SOURCE_EVIDENCE_DOMAINS,
+  workflowSourceEvidenceProjection,
+  workflowDiagnosticOwnValue,
+  workflowDiagnosticHasPrototype,
 } from './internal/workflow-source-snapshot.js';
 import { constants as fsConstants, writeSync, type BigIntStats } from 'node:fs';
 import { lstat, open, readdir, realpath } from 'node:fs/promises';
@@ -75,6 +76,7 @@ import {
 import { exactWorkflowRunnerLoopbackOrigin } from './workflow-runner-control-http.js';
 import { WorkflowRunnerDescriptorStore } from './workflow-runner-descriptor-store.js';
 import { classifyWorkflowRunnerRunState } from './workflow-runner-run-state.js';
+import type { WorkflowRunnerRunStateError } from './workflow-runner-run-state.js';
 import {
   createWorkflowRunnerCheckpointSourceAdapter,
   createWorkflowRunnerPreparedBudgetSourceAdapter,
@@ -103,6 +105,7 @@ import {
   type WorkflowRunnerV2ExecutionContext,
   type WorkflowRunnerV2RuntimeDeliveryPort,
   type WorkflowRunnerV2SourceLoader,
+  type WorkflowRunnerV2SessionError,
 } from './workflow-runner-v2-session.js';
 
 export const WORKFLOW_RUNNER_V2_RUNTIME_DELIVERY_ENABLED_ENV =
@@ -579,35 +582,71 @@ function installProtocolOnlyStreams(): void {
   console.error = (..._values: unknown[]) => undefined;
 }
 
+type WorkerDiagnosticCode =
+  | WorkflowRunnerV2SessionError['code']
+  | WorkflowRunnerV2BudgetBoundaryError['code']
+  | WorkflowRunnerRunStateError['code']
+  | 'WORKFLOW_RUNNER_WORKER_FAILED';
+const WORKER_DIAGNOSTIC_CODES: Readonly<Record<WorkerDiagnosticCode, true>> = Object.freeze({
+  WORKFLOW_RUNNER_V2_SESSION_STATE: true,
+  WORKFLOW_RUNNER_V2_SESSION_DIRECTION: true,
+  WORKFLOW_RUNNER_V2_REQUIRED_PROTOCOL_UNAVAILABLE: true,
+  WORKFLOW_RUNNER_V2_DOWNGRADE_FORBIDDEN: true,
+  WORKFLOW_RUNNER_V2_CAPABILITY_MISMATCH: true,
+  WORKFLOW_RUNNER_V2_ADMISSION_BINDING_MISMATCH: true,
+  WORKFLOW_RUNNER_V2_SESSION_IDENTITY: true,
+  WORKFLOW_RUNNER_V2_SESSION_SEQUENCE: true,
+  WORKFLOW_RUNNER_V2_RECEIPT_REQUIRED: true,
+  WORKFLOW_RUNNER_V2_CONTROL_DECISION_REQUIRED: true,
+  WORKFLOW_RUNNER_V2_CONTROL_DECISION_MISMATCH: true,
+  WORKFLOW_RUNNER_V2_CONTROL_DECISION_EXPIRED: true,
+  WORKFLOW_RUNNER_V2_RECONCILIATION_REQUIRED: true,
+  WORKFLOW_RUNNER_V2_TERMINAL_BEFORE_RECEIPT: true,
+  WORKFLOW_RUNNER_V2_BUDGET_REJECTED: true,
+  WORKFLOW_RUNNER_V2_BUDGET_AUTHORIZATION_MISMATCH: true,
+  WORKFLOW_RUNNER_V2_BUDGET_RECONCILIATION_REQUIRED: true,
+  WORKFLOW_RUNNER_RECOVERY_REQUIRED: true,
+  WORKFLOW_RUNNER_WORKER_FAILED: true,
+});
+const WORKER_DIAGNOSTIC_NAMES = Object.freeze([
+  'Error',
+  'TypeError',
+  'RangeError',
+  'SyntaxError',
+  'ReferenceError',
+  'URIError',
+  'EvalError',
+  'AggregateError',
+  'WorkflowRunnerWorkerConfigError',
+  'WorkflowRunnerV2SessionError',
+  'WorkflowRunnerV2BudgetBoundaryError',
+  'WorkflowRunnerRunStateError',
+]);
+
 /** @internal Safe stderr representation; does not extend the frozen runner wire protocol. */
 export function boundedDiagnostic(error: unknown): string {
-  if (error instanceof WorkflowSourceEvidenceError) {
-    // Never emit module messages, source text or provider replies to stderr.
-    const safeHash = (value: unknown) =>
-      typeof value === 'string' && WORKFLOW_BINDING_HASH_REGEX.test(value) ? value : undefined;
+  const source = workflowSourceEvidenceProjection(error);
+  if (source)
     return (
       JSON.stringify({
-        code: 'WORKFLOW_SOURCE_EVIDENCE_INVALID',
-        reasonCode: WORKFLOW_SOURCE_EVIDENCE_REASONS.includes(error.reasonCode)
-          ? error.reasonCode
-          : 'SOURCE_EVIDENCE_UNRECOGNIZED',
-        domain: WORKFLOW_SOURCE_EVIDENCE_DOMAINS.some(
-          (domain) => domain === error.identities?.domain,
-        )
-          ? error.identities?.domain
-          : undefined,
-        stored: safeHash(error.identities?.stored),
-        current: safeHash(error.identities?.current),
+        code: source.code,
+        reasonCode: source.reasonCode,
+        domain: source.identities?.domain,
+        stored: source.identities?.stored,
+        current: source.identities?.current,
         guidance: 'Reload the reviewed workflow and reconcile the run before retrying.',
       }) + '\n'
     );
-  }
-  const name = error instanceof Error ? error.name : 'Error';
+  if (!workflowDiagnosticHasPrototype(error, Error.prototype))
+    return '[WORKFLOW_RUNNER_WORKER_FAILED] Error\n';
+  const rawName = workflowDiagnosticOwnValue(error, 'name');
+  const rawCode = workflowDiagnosticOwnValue(error, 'code');
+  const name = WORKER_DIAGNOSTIC_NAMES.find((value) => value === rawName) ?? 'Error';
   const code =
-    error instanceof Error && typeof (error as Error & { code?: unknown }).code === 'string'
-      ? (error as Error & { code: string }).code
+    typeof rawCode === 'string' && Object.hasOwn(WORKER_DIAGNOSTIC_CODES, rawCode)
+      ? rawCode
       : 'WORKFLOW_RUNNER_WORKER_FAILED';
-  return `[${String(code).slice(0, 128)}] ${String(name).slice(0, 128)}\n`;
+  return `[${code}] ${name}\n`;
 }
 
 class WorkflowRunnerV2BudgetBoundaryError extends Error {

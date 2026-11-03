@@ -3,6 +3,7 @@ import {
   validateGoWorkflowResumeContext,
   checkResumeEligibility,
   createWorkflowResumePreflight,
+  WorkflowResumeRecoveryRequiredError,
 } from '../resume.js';
 import {
   createWorkflowSourceSnapshot,
@@ -25,6 +26,53 @@ import type { RunStoreFs, RunMeta } from '../run-store.js';
 import type { PhaseCheckpoint, WorkflowMeta, ExecutionMode } from '../types.js';
 
 // ── In-memory filesystem ────────────────────────────────────────────────────
+
+describe('canonical recovery identity diagnostics', () => {
+  it.each(['runner-v2-source', 'runner-v2-manifest', 'raw-sha256'] as const)(
+    'projects %s without relabelling manifest hashes as source evidence',
+    (domain) => {
+      const identities = { stored: 'a'.repeat(64), current: 'b'.repeat(64), domain };
+      const error = new WorkflowResumeRecoveryRequiredError(
+        'run-001',
+        'drift',
+        undefined,
+        'SOURCE_DRIFT',
+        identities,
+      );
+      expect(error.identities).toBe(identities);
+      expect(error.identityEvidence.stored).toMatchObject({
+        kind: domain === 'runner-v2-manifest' ? 'manifest' : 'source',
+        digest: identities.stored,
+        domain:
+          domain === 'runner-v2-source' ? 'openslack.workflow-runner.workflow-source.v2' : domain,
+        provenance: 'inferred',
+      });
+      expect(Object.isFrozen(error.identityEvidence)).toBe(true);
+      expect(Object.isFrozen(error.identityEvidence.stored)).toBe(true);
+    },
+  );
+
+  it('does not traverse getters or Proxy traps in diagnostic identities', () => {
+    const getter = vi.fn(() => {
+      throw Error('must not read');
+    });
+    const identities = Object.defineProperty({}, 'stored', { get: getter });
+    for (const input of [
+      identities,
+      new Proxy({}, { get: getter, getOwnPropertyDescriptor: getter }),
+    ]) {
+      const error = new WorkflowResumeRecoveryRequiredError(
+        'run-001',
+        'invalid',
+        undefined,
+        'EVIDENCE_INVALID',
+        input,
+      );
+      expect(error.identityEvidence).toEqual({ stored: undefined, current: undefined });
+    }
+    expect(getter).not.toHaveBeenCalled();
+  });
+});
 
 function createMemFs(): RunStoreFs & { files: Map<string, string> } {
   const files = new Map<string, string>();
@@ -84,6 +132,7 @@ function makeMeta(manifest: WorkflowMeta, overrides: Partial<RunMeta> = {}): Run
     workflowName: manifest.name,
     mode: 'execute' as ExecutionMode,
     manifestHash: TEST_HASH,
+    manifestHashDomain: 'raw-sha256',
     args: {},
     startedAt: '2026-05-28T12:00:00.000Z',
     ...overrides,
@@ -254,8 +303,11 @@ describe('checkResumable', () => {
   });
 
   it('returns false for paused run with mismatched manifest hash', async () => {
-    const { store } = makeStore();
+    const { store, fs } = makeStore();
     await initPausedRun(store, TEST_MANIFEST, ['Scan']);
+    const legacy = JSON.parse(fs.files.get(store.metaPath('run-001'))!);
+    delete legacy.manifestHashDomain;
+    fs.files.set(store.metaPath('run-001'), JSON.stringify(legacy));
 
     const modifiedManifest: WorkflowMeta = {
       ...TEST_MANIFEST,
@@ -464,7 +516,18 @@ describe('verified Go source identities', () => {
       const { bytes, loaded, route, sourceSnapshot } = fixture();
       const { store, fs } = makeStore();
       const hash = domain === 'raw' ? sourceSnapshot.rawHash : sourceSnapshot.workflowSourceHash;
-      await store.initRun('run-001', makeMeta(TEST_MANIFEST, { manifestHash: hash }));
+      await store.initRun(
+        'run-001',
+        makeMeta(TEST_MANIFEST, {
+          manifestHash: hash,
+          manifestHashDomain:
+            domain === 'raw' ? 'raw-sha256' : 'openslack.workflow-runner.workflow-source.v2',
+        }),
+      );
+      // Retained historical bytes are a fixture, not a new-record bypass.
+      const legacy = JSON.parse(fs.files.get(store.metaPath('run-001'))!);
+      delete legacy.manifestHashDomain;
+      fs.files.set(store.metaPath('run-001'), JSON.stringify(legacy));
       await store.transitionStatus('run-001', 'paused');
       const before = new Map(fs.files);
       const bound = bindGoWorkflowResumeIdentity(

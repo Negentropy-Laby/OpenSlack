@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { getClient } from './client.js';
+import { getClient, type GitHubClient, type GitHubClientOptions } from './client.js';
 import type { Octokit } from '@octokit/rest';
 
 export interface FinalizeWorkflowPROpts {
@@ -23,7 +23,11 @@ export type FinalizeWorkflowFailureCode =
   | 'GOVERNANCE_EVIDENCE_MISSING'
   | 'PR_EVIDENCE_DRIFT'
   | 'COMMENT_LOOKUP_FAILED'
+  | 'COMMENT_LOOKUP_LIMIT_EXCEEDED'
+  | 'COMMENT_LOOKUP_DEADLINE_EXCEEDED'
+  | 'COMMENT_BINDING_UNCONFIRMED'
   | 'COMMENT_RESULT_UNKNOWN'
+  | 'LIFECYCLE_CANCELLED'
   | 'LIFECYCLE_WRITE_FAILED';
 export interface FinalizeWorkflowFailure {
   code: FinalizeWorkflowFailureCode;
@@ -37,6 +41,265 @@ export interface FinalizeWorkflowPRResult {
   errors: string[];
   failures?: FinalizeWorkflowFailure[];
   dryRun?: boolean;
+}
+
+type FinalizationKind = 'governance' | 'proposal' | 'review' | 'phase';
+type CommentFailureCode = Extract<FinalizeWorkflowFailureCode, `COMMENT_${string}`>;
+interface FinalizationCommentBinding {
+  repository: string;
+  pr: number;
+  issue: number;
+  kind: 'governance' | 'review';
+  head: string;
+  base: string;
+  evidenceHash: string | null;
+}
+
+const commentFailures = new WeakMap<object, CommentFailureCode>();
+const FINALIZATION_STEPS = {
+  governance: ['comment', 'labels', 'close'],
+  review: ['comment', 'labels'],
+  proposal: ['close', 'labels'],
+  phase: ['close', 'labels'],
+} as const;
+
+function commentFailure(code: CommentFailureCode): Error {
+  const error = new Error(code);
+  commentFailures.set(error, code);
+  return error;
+}
+
+function commentFailureCode(error: unknown): CommentFailureCode | undefined {
+  return error !== null && typeof error === 'object' ? commentFailures.get(error) : undefined;
+}
+
+function neutralReviewer(
+  body: string,
+  kind: FinalizationCommentBinding['kind'],
+): string | undefined {
+  if (kind !== 'governance') return body;
+  const lines = body.split('\n');
+  if (lines.length !== 7 || !/^- \*\*Reviewer\*\*: @[a-z\d][a-z\d-]{0,38}$/iu.test(lines[5]!))
+    return undefined;
+  return [...lines.slice(0, 5), '- **Reviewer**: @<recorded>', lines[6]!].join('\n');
+}
+
+/** A marker is an identity hint, never a substitute for its complete canonical evidence body. */
+function matchesFinalizationComment(
+  body: string,
+  plainBody: string,
+  binding: FinalizationCommentBinding,
+  options: FinalizeWorkflowPROpts,
+): 'match' | 'unrelated' | 'unconfirmed' {
+  const start = body.lastIndexOf('\n\n<!-- openslack-workflow-finalize:');
+  const plain = start < 0 ? body : body.slice(0, start);
+  const neutral = neutralReviewer(plain, binding.kind);
+  const expected = neutralReviewer(plainBody, binding.kind);
+  const matchesBody = expected !== undefined && neutral === expected;
+  const title =
+    binding.kind === 'governance' ? '## Workflow Governance Completed' : '## Workflow Merged';
+  const prLine =
+    binding.kind === 'governance'
+      ? `Merged via PR #${binding.pr}.`
+      : `This workflow was merged via PR #${binding.pr}.`;
+  const relevant = plain.startsWith(`${title}\n\n${prLine}`);
+  if (start < 0) return matchesBody ? 'match' : relevant ? 'unconfirmed' : 'unrelated';
+  const marker = body.slice(start + 2);
+  const modern = marker.match(/^<!-- openslack-workflow-finalize:v2\n([^\n]*)\n-->$/u);
+  if (modern) {
+    let record: unknown;
+    try {
+      record = JSON.parse(modern[1]!);
+    } catch {
+      return relevant ? 'unconfirmed' : 'unrelated';
+    }
+    if (!record || typeof record !== 'object' || Array.isArray(record)) return 'unconfirmed';
+    const entries = Object.entries(binding);
+    const value = record as Record<string, unknown>;
+    if (value.pr !== binding.pr && !relevant) return 'unrelated';
+    return matchesBody &&
+      Object.keys(value).length === entries.length &&
+      entries.every(([key, expectedValue]) => value[key] === expectedValue)
+      ? 'match'
+      : 'unconfirmed';
+  }
+  const legacy = marker.match(/^<!-- openslack-workflow-finalize:([a-f\d]{64}) -->$/u);
+  if (!relevant) return 'unrelated';
+  // Old review callers could omit either expected SHA. Only their actual live-or-null
+  // historical combinations are compatible; arbitrary foreign digests are not.
+  const heads =
+    binding.kind === 'review' ? [binding.head, null] : [options.expectedHeadSha ?? null];
+  const bases =
+    binding.kind === 'review' ? [binding.base, null] : [options.expectedBaseSha ?? null];
+  const matchesLegacy =
+    legacy &&
+    heads.some((head) =>
+      bases.some(
+        (base) =>
+          createHash('sha256')
+            .update(JSON.stringify([binding.pr, binding.issue, head, base, plain]))
+            .digest('hex') === legacy[1],
+      ),
+    );
+  return matchesBody && matchesLegacy ? 'match' : 'unconfirmed';
+}
+
+function mergedCommentLowerBound(mergedAt: unknown): string | undefined {
+  if (
+    typeof mergedAt !== 'string' ||
+    !/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d{1,3})?Z$/u.test(mergedAt)
+  )
+    return undefined;
+  const time = Date.parse(mergedAt);
+  return Number.isFinite(time) && time >= 1_000 ? new Date(time - 1_000).toISOString() : undefined;
+}
+
+/** The local deadline also settles a stalled transport; aborting does not prove request execution. */
+function readFinalizationCommentPage(
+  client: GitHubClient,
+  issue: number,
+  page: number,
+  since: string | undefined,
+  signal: AbortSignal,
+): Promise<ReadonlyArray<{ body?: string | null }>> {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const finish = (effect: () => void) => {
+      if (settled) return;
+      settled = true;
+      signal.removeEventListener('abort', aborted);
+      effect();
+    };
+    const aborted = () => finish(() => reject(commentFailure('COMMENT_LOOKUP_DEADLINE_EXCEEDED')));
+    if (signal.aborted) {
+      aborted();
+      return;
+    }
+    signal.addEventListener('abort', aborted, { once: true });
+    try {
+      void client.octokit.issues
+        .listComments({
+          owner: client.owner,
+          repo: client.repo,
+          issue_number: issue,
+          per_page: 100,
+          page,
+          ...(since ? { since } : {}),
+          request: { signal },
+        })
+        .then(
+          (response) => finish(() => resolve(response.data)),
+          (error) => finish(() => reject(error)),
+        );
+    } catch (error) {
+      finish(() => reject(error));
+    }
+  });
+}
+
+async function findFinalizationComment(
+  client: GitHubClient,
+  binding: FinalizationCommentBinding,
+  plainBody: string,
+  options: FinalizeWorkflowPROpts,
+  since: string | undefined,
+  parent?: AbortSignal,
+): Promise<boolean> {
+  const deadline = performance.now() + 30_000;
+  const controller = new AbortController();
+  const abort = () => controller.abort();
+  const timer = setTimeout(abort, 30_000);
+  timer.unref();
+  parent?.addEventListener('abort', abort, { once: true });
+  let unconfirmed = false;
+  try {
+    for (let page = 1; page <= 100; page++) {
+      if (parent?.aborted || controller.signal.aborted || performance.now() >= deadline)
+        throw commentFailure('COMMENT_LOOKUP_DEADLINE_EXCEEDED');
+      const comments = await readFinalizationCommentPage(
+        client,
+        binding.issue,
+        page,
+        since,
+        controller.signal,
+      );
+      if (parent?.aborted || controller.signal.aborted || performance.now() >= deadline)
+        throw commentFailure('COMMENT_LOOKUP_DEADLINE_EXCEEDED');
+      const matches = comments.map((comment) =>
+        matchesFinalizationComment(comment.body ?? '', plainBody, binding, options),
+      );
+      // Synchronous classification can exhaust the budget without yielding to the timer.
+      if (parent?.aborted || controller.signal.aborted || performance.now() >= deadline)
+        throw commentFailure('COMMENT_LOOKUP_DEADLINE_EXCEEDED');
+      if (matches.includes('match')) return true;
+      unconfirmed ||= matches.includes('unconfirmed');
+      if (comments.length < 100) {
+        if (unconfirmed) throw commentFailure('COMMENT_BINDING_UNCONFIRMED');
+        return false;
+      }
+    }
+    throw commentFailure('COMMENT_LOOKUP_LIMIT_EXCEEDED');
+  } catch (error) {
+    throw commentFailureCode(error) ? error : commentFailure('COMMENT_LOOKUP_FAILED');
+  } finally {
+    clearTimeout(timer);
+    parent?.removeEventListener('abort', abort);
+  }
+}
+
+function finalizationCommentLines(
+  kind: 'governance' | 'review',
+  pr: number,
+  opts: FinalizeWorkflowPROpts,
+): string[] {
+  return kind === 'governance'
+    ? [
+        '## Workflow Governance Completed',
+        '',
+        `Merged via PR #${pr}.`,
+        `- **Evidence Hash**: ${opts.workflowHash}`,
+        `- **Trust Decision**: ${opts.trustDecision}`,
+        `- **Reviewer**: @${opts.trustReviewer}`,
+        `- **Reviewed Commit**: ${opts.trustReviewCommitOid}`,
+      ]
+    : [
+        '## Workflow Merged',
+        '',
+        `This workflow was merged via PR #${pr}.`,
+        ...(opts.workflowHash ? [`- **Hash**: ${opts.workflowHash}`] : []),
+        ...(opts.trustDecision ? [`- **Trust Decision**: ${opts.trustDecision}`] : []),
+      ];
+}
+
+function finalizationLabels(kind: FinalizationKind, opts: FinalizeWorkflowPROpts): string[] {
+  if (kind === 'governance') return ['lifecycle:accepted', `workflow:${opts.trustDecision}`];
+  if (kind === 'review')
+    return [
+      'lifecycle:accepted',
+      ...(opts.trustDecision === 'trusted' || opts.trustDecision === 'untrusted'
+        ? [`workflow:${opts.trustDecision}`]
+        : []),
+    ];
+  return ['result:completed', kind === 'phase' ? 'lifecycle:completed' : 'lifecycle:accepted'];
+}
+
+function finalizationFailureMessage(code: FinalizeWorkflowFailureCode): string {
+  switch (code) {
+    case 'LIFECYCLE_CANCELLED':
+      return 'cancelled; confirmed effects retained';
+    case 'COMMENT_RESULT_UNKNOWN':
+      return 'comment result unknown; reconcile before retrying';
+    case 'COMMENT_BINDING_UNCONFIRMED':
+      return 'existing comment binding unconfirmed; reconcile before retrying';
+    case 'COMMENT_LOOKUP_LIMIT_EXCEEDED':
+      return 'comment lookup capacity exceeded; no comment sent';
+    case 'COMMENT_LOOKUP_DEADLINE_EXCEEDED':
+      return 'comment lookup deadline exceeded or cancelled; no comment sent';
+    case 'COMMENT_LOOKUP_FAILED':
+      return 'comment lookup failed; no comment sent';
+    default:
+      return 'write failed';
+  }
 }
 
 /** Preparation only: a preview never queries a PR or enters the write boundary. */
@@ -61,6 +324,7 @@ export async function previewWorkflowFinalization(
 export async function finalizeWorkflowPR(
   prNumber: number,
   opts: FinalizeWorkflowPROpts,
+  clientOptions?: GitHubClientOptions,
 ): Promise<FinalizeWorkflowPRResult> {
   const result: FinalizeWorkflowPRResult & { failures: FinalizeWorkflowFailure[] } = {
     closedIssues: [],
@@ -88,9 +352,14 @@ export async function finalizeWorkflowPR(
       'Cannot finalize: PR and Issue numbers must be positive safe integers.',
     );
   }
+  if (clientOptions?.signal?.aborted)
+    return refuse(
+      'LIFECYCLE_CANCELLED',
+      'Cannot finalize: the caller cancelled before live verification.',
+    );
   let client: Awaited<ReturnType<typeof getClient>>;
   try {
-    client = await getClient();
+    client = await getClient(clientOptions);
   } catch {
     return refuse(
       'PR_QUERY_FAILED',
@@ -103,13 +372,14 @@ export async function finalizeWorkflowPR(
     );
     return { ...result, dryRun: true };
   }
-  let pr;
+  let pr: Awaited<ReturnType<Octokit['pulls']['get']>>['data'];
   try {
     pr = (
       await client.octokit.pulls.get({
         owner: client.owner,
         repo: client.repo,
         pull_number: prNumber,
+        ...(clientOptions?.signal ? { request: { signal: clientOptions.signal } } : {}),
       })
     ).data;
   } catch {
@@ -118,6 +388,11 @@ export async function finalizeWorkflowPR(
       'Cannot finalize: live PR query failed; restore GitHub access and retry the read-only gate.',
     );
   }
+  if (clientOptions?.signal?.aborted)
+    return refuse(
+      'LIFECYCLE_CANCELLED',
+      'Cannot finalize: the caller cancelled during live verification.',
+    );
   if (pr.merged !== true)
     return refuse(
       'PR_NOT_MERGED',
@@ -147,138 +422,89 @@ export async function finalizeWorkflowPR(
     );
   }
 
-  // Comments are keyed by their exact target/evidence, not by mutable workflow names.
-  // A failed POST is never retried here: callers must reconcile its unknown result.
-  async function commentOnce(issueNumber: number, lines: string[]): Promise<void> {
-    const plainBody = lines.join('\n');
-    const key = createHash('sha256')
-      .update(
-        JSON.stringify([
-          prNumber,
-          issueNumber,
-          opts.expectedHeadSha ?? null,
-          opts.expectedBaseSha ?? null,
-          plainBody,
-        ]),
-      )
-      .digest('hex');
-    const body = `${plainBody}\n\n<!-- openslack-workflow-finalize:${key} -->`;
-    for (let page = 1; page <= 100; page++) {
-      let comments;
+  async function commentOnce(kind: 'governance' | 'review', issueNumber: number): Promise<void> {
+    const binding: FinalizationCommentBinding = {
+      repository: `${client.owner}/${client.repo}`,
+      pr: prNumber,
+      issue: issueNumber,
+      kind,
+      head: pr.head.sha,
+      base: pr.base.sha,
+      evidenceHash: opts.workflowHash ?? null,
+    };
+    const plainBody = finalizationCommentLines(kind, prNumber, opts).join('\n');
+    const exists = await findFinalizationComment(
+      client,
+      binding,
+      plainBody,
+      opts,
+      mergedCommentLowerBound(pr.merged_at),
+      clientOptions?.signal,
+    );
+    // Cancellation can arrive after lookup resolution and before this continuation.
+    if (clientOptions?.signal?.aborted) throw commentFailure('COMMENT_LOOKUP_DEADLINE_EXCEEDED');
+    if (!exists) {
+      // POST is attempted only once. Its failure proves neither delivery nor absence.
       try {
-        comments = (
-          await client.octokit.issues.listComments({
-            owner: client.owner,
-            repo: client.repo,
-            issue_number: issueNumber,
-            per_page: 100,
-            page,
-          })
-        ).data;
+        await client.octokit.issues.createComment({
+          owner: client.owner,
+          repo: client.repo,
+          issue_number: issueNumber,
+          body: `${plainBody}\n\n<!-- openslack-workflow-finalize:v2\n${JSON.stringify(binding)}\n-->`,
+          ...(clientOptions?.signal ? { request: { signal: clientOptions.signal } } : {}),
+        });
       } catch {
-        throw new Error('COMMENT_LOOKUP_FAILED');
-      }
-      if (comments.some((comment) => comment.body === body || comment.body === plainBody)) {
-        result.commentedIssues.push(issueNumber);
-        return;
-      }
-      if (comments.length < 100) {
-        try {
-          await client.octokit.issues.createComment({
-            owner: client.owner,
-            repo: client.repo,
-            issue_number: issueNumber,
-            body,
-          });
-        } catch {
-          throw new Error('COMMENT_RESULT_UNKNOWN');
-        }
-        result.commentedIssues.push(issueNumber);
-        return;
+        throw commentFailure('COMMENT_RESULT_UNKNOWN');
       }
     }
-    throw new Error('COMMENT_LOOKUP_FAILED');
+    result.commentedIssues.push(issueNumber);
   }
 
-  async function target(
-    kind: 'governance' | 'proposal' | 'review' | 'phase',
-    issueNumber: number,
-  ): Promise<boolean> {
-    let stage: FinalizeWorkflowFailure['stage'] = 'comment';
-    try {
-      if (kind === 'governance') {
-        await commentOnce(issueNumber, [
-          '## Workflow Governance Completed',
-          '',
-          `Merged via PR #${prNumber}.`,
-          `- **Evidence Hash**: ${opts.workflowHash}`,
-          `- **Trust Decision**: ${opts.trustDecision}`,
-          `- **Reviewer**: @${opts.trustReviewer}`,
-          `- **Reviewed Commit**: ${opts.trustReviewCommitOid}`,
-        ]);
-      } else if (kind === 'review') {
-        await commentOnce(issueNumber, [
-          '## Workflow Merged',
-          '',
-          `This workflow was merged via PR #${prNumber}.`,
-          ...(opts.workflowHash ? [`- **Hash**: ${opts.workflowHash}`] : []),
-          ...(opts.trustDecision ? [`- **Trust Decision**: ${opts.trustDecision}`] : []),
-        ]);
+  async function closeIssue(issueNumber: number): Promise<void> {
+    await client.octokit.issues.update({
+      owner: client.owner,
+      repo: client.repo,
+      issue_number: issueNumber,
+      state: 'closed',
+      state_reason: 'completed',
+      ...(clientOptions?.signal ? { request: { signal: clientOptions.signal } } : {}),
+    });
+    result.closedIssues.push(issueNumber);
+  }
+
+  async function target(kind: FinalizationKind, issueNumber: number): Promise<boolean> {
+    for (const stage of FINALIZATION_STEPS[kind]) {
+      if (clientOptions?.signal?.aborted) {
+        result.failures.push({ code: 'LIFECYCLE_CANCELLED', stage, issueNumber });
+        result.errors.push(
+          `Failed to finalize ${kind} issue #${issueNumber}: ${finalizationFailureMessage('LIFECYCLE_CANCELLED')}`,
+        );
+        return false;
       }
-      if (kind === 'proposal' || kind === 'phase') {
-        stage = 'close';
-        await client.octokit.issues.update({
-          owner: client.owner,
-          repo: client.repo,
-          issue_number: issueNumber,
-          state: 'closed',
-          state_reason: 'completed',
-        });
-        result.closedIssues.push(issueNumber);
+      try {
+        if (stage === 'comment' && (kind === 'governance' || kind === 'review'))
+          await commentOnce(kind, issueNumber);
+        else if (stage === 'close') await closeIssue(issueNumber);
+        else {
+          await client.octokit.issues.addLabels({
+            owner: client.owner,
+            repo: client.repo,
+            issue_number: issueNumber,
+            labels: finalizationLabels(kind, opts),
+            ...(clientOptions?.signal ? { request: { signal: clientOptions.signal } } : {}),
+          });
+          result.updatedLabels.push(issueNumber);
+        }
+      } catch (error) {
+        const code = commentFailureCode(error) ?? 'LIFECYCLE_WRITE_FAILED';
+        result.failures.push({ code, stage, issueNumber });
+        result.errors.push(
+          `Failed to finalize ${kind} issue #${issueNumber}: ${finalizationFailureMessage(code)}`,
+        );
+        return false;
       }
-      stage = 'labels';
-      const labels =
-        kind === 'governance'
-          ? ['lifecycle:accepted', `workflow:${opts.trustDecision}`]
-          : kind === 'review'
-            ? [
-                'lifecycle:accepted',
-                ...(opts.trustDecision === 'trusted' || opts.trustDecision === 'untrusted'
-                  ? [`workflow:${opts.trustDecision}`]
-                  : []),
-              ]
-            : ['result:completed', kind === 'phase' ? 'lifecycle:completed' : 'lifecycle:accepted'];
-      await client.octokit.issues.addLabels({
-        owner: client.owner,
-        repo: client.repo,
-        issue_number: issueNumber,
-        labels,
-      });
-      result.updatedLabels.push(issueNumber);
-      if (kind === 'governance') {
-        stage = 'close';
-        await client.octokit.issues.update({
-          owner: client.owner,
-          repo: client.repo,
-          issue_number: issueNumber,
-          state: 'closed',
-          state_reason: 'completed',
-        });
-        result.closedIssues.push(issueNumber);
-      }
-      return true;
-    } catch (error) {
-      const code =
-        error instanceof Error &&
-        (error.message === 'COMMENT_LOOKUP_FAILED' || error.message === 'COMMENT_RESULT_UNKNOWN')
-          ? error.message
-          : 'LIFECYCLE_WRITE_FAILED';
-      result.failures.push({ code, stage, issueNumber });
-      result.errors.push(
-        `Failed to finalize ${kind} issue #${issueNumber}: ${code === 'COMMENT_RESULT_UNKNOWN' ? 'comment result unknown; reconcile before retrying' : code === 'COMMENT_LOOKUP_FAILED' ? 'comment lookup failed; no comment sent' : 'write failed'}`,
-      );
-      return false;
     }
+    return true;
   }
   if (opts.governanceIssue && !(await target('governance', opts.governanceIssue))) return result;
   if (opts.proposalIssue && !(await target('proposal', opts.proposalIssue))) return result;

@@ -1,4 +1,5 @@
 import { verifyAcceptedWorkflowRun } from './internal/workflow-accepted-run-proof.js';
+import { WORKFLOW_IDENTITY } from '@openslack/core';
 import { createWorkflowRunStoreRecoveryAccess } from './internal/workflow-run-store-recovery-access.js';
 import {
   isRunStatusTransitionAllowed,
@@ -86,7 +87,7 @@ export class WorkflowRunnerV2GoProjectionRunStore extends RunStore {
       meta.runId !== runId ||
       meta.workflowName !== this.#descriptor.workflowId ||
       meta.manifestHash !== this.#descriptor.workflowSourceHash ||
-      meta.manifestHashDomain !== 'openslack.workflow-runner.workflow-source.v2' ||
+      meta.manifestHashDomain !== WORKFLOW_IDENTITY.SOURCE_V2 ||
       hashWorkflowRunnerV2Input(decodeRunMetaArguments(meta)) !== this.#descriptor.inputHash
     )
       throw new WorkflowRunReadError([

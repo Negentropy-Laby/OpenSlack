@@ -1,4 +1,10 @@
 import { WORKFLOW_BINDING_HASH_REGEX } from './internal/workflow-binding-field-rules.js';
+import {
+  WORKFLOW_IDENTITY,
+  isWorkflowIdentityDigest,
+  isWorkflowIdentityDomain,
+  isWorkflowIdentityProvenance,
+} from '@openslack/core';
 import { types as utilTypes } from 'node:util';
 import { runMetaWorkflowIdentity } from './internal/workflow-run-identity.js';
 import {
@@ -6,7 +12,10 @@ import {
   compareWorkflowBinding,
   compareStoredWorkflowIdentity,
 } from './internal/workflow-identity.js';
-import { WorkflowSourceEvidenceError } from './internal/workflow-source-snapshot.js';
+import {
+  WorkflowSourceEvidenceError,
+  workflowDiagnosticOwnValue,
+} from './internal/workflow-source-snapshot.js';
 import { isWorkflowResumeStatus } from './internal/workflow-resume-state.js';
 import type { RunMeta } from './run-store.js';
 import type {
@@ -28,8 +37,57 @@ export type WorkflowResumeIdentity = WorkflowModule & {
 };
 const resumeIdentityRuns = new WeakMap<WorkflowModule, string>();
 
+export type WorkflowResumeIdentityDiagnostic =
+  | Readonly<WorkflowIdentityEvidence & { kind: 'source' }>
+  | Readonly<{
+      kind: 'manifest';
+      digest: string;
+      domain: 'runner-v2-manifest';
+      provenance: 'inferred';
+    }>;
+
+function recoveryIdentityProjection(identities: unknown) {
+  const sharedDomain = workflowDiagnosticOwnValue(identities, 'domain');
+  const side = (key: 'stored' | 'current'): WorkflowResumeIdentityDiagnostic | undefined => {
+    const value = workflowDiagnosticOwnValue(identities, key);
+    if (typeof value === 'string') {
+      if (!isWorkflowIdentityDigest(value)) return undefined;
+      if (sharedDomain === 'runner-v2-manifest')
+        return Object.freeze({
+          kind: 'manifest',
+          digest: value,
+          domain: 'runner-v2-manifest',
+          provenance: 'inferred',
+        });
+      const domain =
+        sharedDomain === 'runner-v2-source'
+          ? WORKFLOW_IDENTITY.SOURCE_V2
+          : sharedDomain === WORKFLOW_IDENTITY.RAW_SHA256
+            ? WORKFLOW_IDENTITY.RAW_SHA256
+            : WORKFLOW_IDENTITY.UNKNOWN;
+      return Object.freeze({
+        kind: 'source',
+        digest: value,
+        domain,
+        provenance: domain === WORKFLOW_IDENTITY.UNKNOWN ? 'unknown' : 'inferred',
+      });
+    }
+    const digest = workflowDiagnosticOwnValue(value, 'digest');
+    const domain = workflowDiagnosticOwnValue(value, 'domain');
+    const provenance = workflowDiagnosticOwnValue(value, 'provenance');
+    return isWorkflowIdentityDigest(digest) &&
+      isWorkflowIdentityDomain(domain) &&
+      isWorkflowIdentityProvenance(provenance)
+      ? Object.freeze({ kind: 'source', digest, domain, provenance })
+      : undefined;
+  };
+  return Object.freeze({ stored: side('stored'), current: side('current') });
+}
+
 export class WorkflowResumeRecoveryRequiredError extends Error {
   readonly code = 'WORKFLOW_RESUME_RECOVERY_REQUIRED' as const;
+  /** Canonical diagnostic view only; manifest hashes never acquire a source domain. */
+  readonly identityEvidence: ReturnType<typeof recoveryIdentityProjection>;
 
   constructor(
     readonly runId: string,
@@ -49,6 +107,7 @@ export class WorkflowResumeRecoveryRequiredError extends Error {
   ) {
     super(`Workflow run ${runId} requires operator recovery: ${reason}`, options);
     this.name = 'WorkflowResumeRecoveryRequiredError';
+    this.identityEvidence = recoveryIdentityProjection(identities);
   }
 }
 
@@ -217,8 +276,12 @@ export async function checkResumeEligibility(
   runStore: WorkflowRunReadOnlyStore,
   runId: string,
 ): Promise<ResumeEligibilityResult> {
-  const { canResume, status, reason, reasonCode, cause } = await checkResumeState(runStore, runId);
-  return { eligible: canResume, status, reason, reasonCode, cause };
+  return eligibilityOf(await checkResumeState(runStore, runId));
+}
+
+function eligibilityOf(check: ResumeCheckResult): ResumeEligibilityResult {
+  const { canResume, status, reason, reasonCode, cause } = check;
+  return { eligible: canResume, status: structuredClone(status), reason, reasonCode, cause };
 }
 
 /** Store observations must be inert plain data before clone/getter traversal. */
@@ -359,8 +422,7 @@ export async function createWorkflowResumePreflight(
   // cannot pass fabricated observations to checkResumable or prepareResume.
   return Object.freeze({
     get eligibility(): ResumeEligibilityResult {
-      const { canResume, status, reason, reasonCode, cause } = eligibility;
-      return { eligible: canResume, status: structuredClone(status), reason, reasonCode, cause };
+      return eligibilityOf(eligibility);
     },
     get meta() {
       return structuredClone(meta);

@@ -64,6 +64,7 @@ function makeMeta(manifest: WorkflowMeta, overrides: Partial<RunMeta> = {}): Run
     workflowName: manifest.name,
     mode: 'execute' as ExecutionMode,
     manifestHash: TEST_HASH,
+    manifestHashDomain: 'raw-sha256',
     args: {},
     startedAt: '2026-05-28T12:00:00.000Z',
     ...overrides,

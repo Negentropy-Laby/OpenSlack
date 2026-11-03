@@ -1,4 +1,10 @@
-import type { WorkflowIdentityEvidence } from '@openslack/core';
+import {
+  WORKFLOW_IDENTITY,
+  isWorkflowIdentityDigest,
+  isWorkflowIdentityDomain,
+  isWorkflowIdentityProvenance,
+  type WorkflowIdentityEvidence,
+} from '@openslack/core';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -236,15 +242,10 @@ export function renderWorkflowRunBody(run: WorkflowRunIssue): string {
     const identity = run.workflowIdentity;
     if (
       !identity ||
-      !/^[a-f0-9]{64}$/.test(identity.digest) ||
-      ![
-        'raw-sha256',
-        'openslack.workflow-runner.workflow-source.v2',
-        'function-source-sha256',
-        'unknown',
-      ].includes(identity.domain) ||
-      !['recorded', 'inferred', 'unknown'].includes(identity.provenance) ||
-      (identity.domain === 'unknown') !== (identity.provenance === 'unknown')
+      !isWorkflowIdentityDigest(identity.digest) ||
+      !isWorkflowIdentityDomain(identity.domain) ||
+      !isWorkflowIdentityProvenance(identity.provenance) ||
+      (identity.domain === WORKFLOW_IDENTITY.UNKNOWN) !== (identity.provenance === 'unknown')
     ) {
       throw new TypeError('Workflow run audit requires valid identity evidence.');
     }

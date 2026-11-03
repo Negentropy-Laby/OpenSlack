@@ -160,13 +160,29 @@
       "path": "services/workflow-control/cmd/runner-server/main.go",
       "sha256": "4bb1b6b1fbaed9cb4da4280aa2c6d321df22ae1eaf757330e6f066943c052a3a"
     },
+    "coreWorkflowIdentityEvidenceSource": {
+      "path": "packages/core/src/workflow-identity-evidence.ts",
+      "sha256": "3b6bd19971fff532d884bde551fad9ec8f93c20d3521ecb69467ecfd9ea416e9"
+    },
+    "corePublicSurface": {
+      "path": "packages/core/src/index.ts",
+      "sha256": "cb834efb26d267fc693c2486262aeccc5c34233142b45a3a8a51615060226eed"
+    },
+    "workflowRunnerRunStateSource": {
+      "path": "packages/workflows/src/workflow-runner-run-state.ts",
+      "sha256": "58ca9894b5bddfe6baffab1a440eaf012ab36ea81991909c7eec6a53088378a4"
+    },
+    "prWorkflowFinalizationSource": {
+      "path": "packages/pr/src/workflow-finalization.ts",
+      "sha256": "de747fdc6c62a8adee096ea28838bf5845b844297d1d5b07f960f8e1f1eee314"
+    },
     "workflowPackageSurface": {
       "path": "packages/workflows/package.json",
-      "sha256": "9f6fd36f4d780c1ba5b0d7ec12ebb1a2f07e773f9ec81fd94492d321ff180dcf"
+      "sha256": "26bd49eb73586ddce636f900b0c5cc63a317bad3ea9226f447fc638126d4cc0d"
     },
     "workflowRunStoreSource": {
       "path": "packages/workflows/src/run-store.ts",
-      "sha256": "5c485433e7b1899564fc0d83b06c2c22971e76dc4d8a6f7a935e23a26f28ad48"
+      "sha256": "5454780aa357dae99dbdcf35cd1bc93b6360b549fff901e6f23cf7dd04822fe0"
     },
     "workflowRunStoreRecoveryAccessSource": {
       "path": "packages/workflows/src/internal/workflow-run-store-recovery-access.ts",
@@ -174,11 +190,11 @@
     },
     "workflowExecutionAuthoritySource": {
       "path": "packages/workflows/src/execute.ts",
-      "sha256": "3c0b6578c28048849de6e33de37e58782cf025f7895010940fe8213ce99814be"
+      "sha256": "e8aba6105aed333e2d6f7ea5d3c5975ec66f16c725ee7f20691d71280b7160f7"
     },
     "workflowResumeReadOnlySource": {
       "path": "packages/workflows/src/resume.ts",
-      "sha256": "dd1853a5ef45e60510d066be96b86bd535f8ad27f57522f7085ad7dbb6d997ac"
+      "sha256": "ca375426f843038fa66de15f12e98db147d6c290f7753f6b27ea06fa04277666"
     },
     "workflowRunnerWorkerBinSource": {
       "path": "packages/workflows/src/workflow-runner-worker-bin.ts",
@@ -190,7 +206,7 @@
     },
     "workflowRunRoutingPublicSurface": {
       "path": "packages/workflows/src/index.ts",
-      "sha256": "1cc7abe4cfe04b01d534dffae138db5a73358920d372a0074bcc1645a627d4f7"
+      "sha256": "11a4237c4df48f9e2f81e61c24608376558bb70144c45a287854cc14f4844e7d"
     },
     "workflowRunRoutingSource": {
       "path": "packages/workflows/src/workflow-run-routing.ts",
@@ -222,15 +238,15 @@
     },
     "workflowRunnerSourceInvariantTest": {
       "path": "packages/workflows/src/__tests__/workflow-runner-source-invariants.test.ts",
-      "sha256": "39723e9348eee76be1abb47520406f363faa7d24c817bbf0e4130137ae2dabba"
+      "sha256": "d2b4ae9aeb0b87a52ce74b98f503e8833fb9de7801c446561990651514a81c30"
     },
     "workflowCLICompositionSource": {
       "path": "apps/cli/src/commands/collaboration.ts",
-      "sha256": "150ec910c5feac525c06c709fc86a25f945b43afa6d3750ce95dedb498fe7c2d"
+      "sha256": "0c24751b89152873c23bf54bf1fb5a279679f08f9120109ce5b2977c95a5d867"
     },
     "workflowTUIExecutorsSource": {
       "path": "apps/cli/src/commands/tui-executors.ts",
-      "sha256": "49ca514cce4b3747272797665a7b83dae099d455eb964fd2c2bd1de52994d611"
+      "sha256": "374e8c2f46c5e66f66b95eb812106ff8b215fe615a300bb5ecb04bad7edf387e"
     },
     "workflowTUICompositionSource": {
       "path": "apps/cli/src/commands/tui.ts",
@@ -282,7 +298,7 @@
     },
     "workflowRunnerV2GoProjectionSource": {
       "path": "packages/workflows/src/workflow-runner-v2-go-projection-store.ts",
-      "sha256": "e26dbdc0ef934ddb60137a3fa8b58f6592919791e767cbf2d53b578040327552"
+      "sha256": "ee3bfc9400db6f69be241d8321c1d2f6814e017d1e605a9d1dc6c149972fac76"
     },
     "workflowRunnerV2RuntimeDeliverySource": {
       "path": "packages/workflows/src/workflow-runner-v2-runtime-delivery.ts",
@@ -290,7 +306,7 @@
     },
     "workflowRunnerWorkerSource": {
       "path": "packages/workflows/src/workflow-runner-worker.ts",
-      "sha256": "c59eb568370c666c91aa0cd8cc27ebb8b5dbcc98eeb6750199f1d402d8fbdc2f"
+      "sha256": "ea48d2e00b78a411d124b8f5339c077b5ffc535aea5b0bcc4d3311113bd556d2"
     },
     "workflowRunRoutingTest": {
       "path": "packages/workflows/src/__tests__/workflow-run-routing.test.ts",
@@ -298,7 +314,7 @@
     },
     "workflowRunnerExecutionClientTest": {
       "path": "packages/workflows/src/__tests__/workflow-runner-execution-client.test.ts",
-      "sha256": "f799165a6bfa9134c5c709275fe319f83be978b39ca2aa5725b185d577811614"
+      "sha256": "596e57b647d9930b726d9d0e2ab5846dc7212b55987a57a4c28c5f7a030f04a9"
     },
     "workflowRunnerV2FoundationTest": {
       "path": "packages/workflows/src/__tests__/workflow-runner-v2-foundation.test.ts",
@@ -306,7 +322,7 @@
     },
     "workflowRunnerWorkerTest": {
       "path": "packages/workflows/src/__tests__/workflow-runner-worker.test.ts",
-      "sha256": "4b7116590b222694c44cf939fe4570334a831704a7b3e87a87859f6c37b942df"
+      "sha256": "5dcac2326b3c161562fd45cbee579ad6758f23274ce1391b689af1e79e813855"
     },
     "workflowControlAuthorityConfigSource": {
       "path": "services/workflow-control/internal/config/authority.go",
@@ -350,11 +366,11 @@
     },
     "workflowRunProjectionReadTest": {
       "path": "packages/workflows/src/__tests__/workflow-run-projection.test.ts",
-      "sha256": "11844c972cef51b3a2e9fbfd2c58bf02e95badbe1f5205eb037592f3c0331f67"
+      "sha256": "42d9dfbef7f1392456fe2df408b558f2f92beb4af3590369f41aba179da5a178"
     },
     "workflowGoExecutionRecoveryTest": {
       "path": "packages/workflows/src/__tests__/execute-go-authority.test.ts",
-      "sha256": "25f93963f837b336b9f3735a0205c66f146374aff7c755bf100f95f3f269a36f"
+      "sha256": "34a9a558db95a851467d3b54611dde0cf0a15db58cbcbfc9b577fe5a7812ae4c"
     },
     "runnerMixedOrphanRestartTest": {
       "path": "services/workflow-control/internal/runnerstore/postgres/runner_recovery_restart_integration_test.go",
@@ -406,7 +422,7 @@
     },
     "runIdentity": {
       "path": "packages/workflows/src/internal/workflow-run-identity.ts",
-      "sha256": "76af42616d1616bf2c22f0a53383fb9a356de8fb84aa9f2f72579e6e0297986c"
+      "sha256": "bb14427740a5b76b329df1f262cbc1bd669d693d410c0cc1e4679eee989307f8"
     },
     "runIdentityRegression": {
       "path": "packages/workflows/src/__tests__/workflow-run-identity.test.ts",
@@ -506,7 +522,7 @@
     },
     "workflowCheckpointRepairTests": {
       "path": "packages/workflows/src/__tests__/workflow-checkpoint-repair.test.ts",
-      "sha256": "b57eed00ee255a63f22dd698d555edd60f162a3725688659609a0f266b26faba"
+      "sha256": "9ec1ba91a2a4f94398a28bdd987558978de549e100206d60a07927b23371ca49"
     },
     "workflowRecoveryTestFixtures": {
       "path": "packages/workflows/src/__tests__/workflow-recovery-fixtures.ts",
@@ -522,7 +538,7 @@
     },
     "workflowReadCorrectnessTest": {
       "path": "packages/workflows/src/__tests__/workflow-read-correctness.test.ts",
-      "sha256": "c23d45b972a086b22565b6f24c038c03bd5358f0554fd4b0ddb8e819486c23e4"
+      "sha256": "f9dd6754364993dc6d16be4de30ec0346e9196a2921a3ffa6a61830190ab79c2"
     },
     "workflowMcpReadMetadataSource": {
       "path": "apps/mcp/src/workflow-read-metadata.ts",
@@ -782,7 +798,7 @@
     },
     "compatibilityHygieneRegression": {
       "path": "packages/workflows/src/__tests__/workflow-compatibility-hygiene.test.ts",
-      "sha256": "21d1fc006aaac6a728a83c1e2bf990f23cf6caffeba392c2dff5516d657b335b"
+      "sha256": "28ae95ac639ece9d0a8b5f04aea938681f08a1354f1c29f8d419e8b7f64876a3"
     },
     "budgetMaintenanceRegression": {
       "path": "services/workflow-control/internal/budgetstore/postgres/maintenance_regression_test.go",
@@ -830,19 +846,19 @@
     },
     "workflowFileLoaderSource": {
       "path": "packages/workflows/src/internal/workflow-file-loader.ts",
-      "sha256": "becbecdb60a85b86b1c73f9494d713588746f712a082fd2e1c4aa6ea1ff889ed"
+      "sha256": "58db98a059fb393353d37ce2bebbe8614176b75746349afedc2211753dea1836"
     },
     "workflowExecutableIdentitySource": {
       "path": "packages/workflows/src/internal/workflow-identity.ts",
-      "sha256": "09df35e0946ee97dae12b6ab995ae5ac05bd9c6fa5bb57759b723810f5fc1dc1"
+      "sha256": "f902a3074835b54b98d17642a22c4f3d366263d99f8d94ff71f41a985381b87e"
     },
     "workflowSourceSnapshotSource": {
       "path": "packages/workflows/src/internal/workflow-source-snapshot.ts",
-      "sha256": "5b17c46a11a7a885b19c9ee0f114ab3ff53bdd18435e754cfec3b60cb95c5fef"
+      "sha256": "a63b7a6ee51dcdc655fd0f4122d6f96b2f8336541bcc9107ae4fa91f851c17f4"
     },
     "workflowRuntimeTypesSource": {
       "path": "packages/workflows/src/types.ts",
-      "sha256": "d2694659e190adbdfa159ca27fe5a8a69b197a2875ac7afd772dcf94538b6be1"
+      "sha256": "a3923227d57e212a789b2484b4f35d2c37b31bf721220277eed2d3489c6645dc"
     },
     "workflowRunnerV2DescriptorSource": {
       "path": "packages/workflows/src/workflow-runner-v2-descriptor.ts",

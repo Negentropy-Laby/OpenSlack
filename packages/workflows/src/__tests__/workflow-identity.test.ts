@@ -7,11 +7,14 @@ import { bindWorkflowSourceIdentity } from '../internal/workflow-identity.js';
 import { runMetaWorkflowIdentity } from '../internal/workflow-run-identity.js';
 import {
   createWorkflowSourceSnapshot,
+  snapshotWorkflowIdentity,
   verifyWorkflowSourceSnapshot,
   verifyWorkflowSourceManifest,
   requireWorkflowSourceSnapshot,
   WorkflowSourceEvidenceError,
   workflowSourceEvidenceCause,
+  workflowSourceEvidenceDiagnostic,
+  withWorkflowManifestDiagnostic,
   renderWorkflowSourceEvidence,
 } from '../internal/workflow-source-snapshot.js';
 
@@ -23,6 +26,21 @@ const meta: WorkflowMeta = {
 };
 
 describe('workflow executable identity', () => {
+  it('distinguishes fresh snapshot evidence from a recorded durable identity', () => {
+    const snapshot = createWorkflowSourceSnapshot(Buffer.from('export const source = true;'), meta);
+    expect(snapshotWorkflowIdentity(snapshot)).toEqual({
+      digest: snapshot.workflowSourceHash,
+      domain: 'openslack.workflow-runner.workflow-source.v2',
+      provenance: 'inferred',
+    });
+    expect(
+      runMetaWorkflowIdentity({
+        manifestHash: snapshot.workflowSourceHash,
+        manifestHashDomain: 'openslack.workflow-runner.workflow-source.v2',
+      }).provenance,
+    ).toBe('recorded');
+    expect(() => snapshotWorkflowIdentity({ ...snapshot })).toThrow('unrecognized');
+  });
   it('reuses Core diagnostic evidence without widening executable identity domains', () => {
     expectTypeOf<WorkflowIdentityEvidence>().toEqualTypeOf<CoreEvidence>();
     expectTypeOf<WorkflowRunIdentityEvidence>().toEqualTypeOf<CoreEvidence>();
@@ -82,6 +100,43 @@ describe('workflow executable identity', () => {
     expect(workflowSourceEvidenceCause(new Error('boundary', { cause: evidence }))).toBe(evidence);
     expect(workflowSourceEvidenceCause({ reasonCode: 'MANIFEST_DRIFT' })).toBeUndefined();
     expect(workflowSourceEvidenceCause(new Error('unclassified'))).toBeUndefined();
+  });
+
+  it('does not evaluate cause accessors or Proxy prototypes to unwrap diagnostics', () => {
+    const getter = () => {
+      throw new Error('PRIVATE_CAUSE');
+    };
+    const error = Object.defineProperty(new Error('PRIVATE_MESSAGE'), 'cause', { get: getter });
+    expect(() => workflowSourceEvidenceCause(error)).not.toThrow();
+    expect(workflowSourceEvidenceCause(error)).toBeUndefined();
+    const evidence = new WorkflowSourceEvidenceError('SOURCE_DRIFT', 'PRIVATE_MESSAGE');
+    const proxy = new Proxy(evidence, {
+      getPrototypeOf: getter,
+      get: getter,
+      getOwnPropertyDescriptor: getter,
+    });
+    expect(() => workflowSourceEvidenceCause(proxy)).not.toThrow();
+    expect(workflowSourceEvidenceCause(proxy)).toBeUndefined();
+    Object.setPrototypeOf(evidence, new Proxy({}, { getPrototypeOf: getter }));
+    expect(() => workflowSourceEvidenceCause(evidence)).not.toThrow();
+    expect(workflowSourceEvidenceCause(evidence)).toBeUndefined();
+  });
+
+  it.each([
+    ['C1', 'workflow\u0085name\u009b.ts', 'workflow?name?.ts'],
+    ['surrogate boundary', 'a'.repeat(511) + '😀.ts', 'a'.repeat(511)],
+    ['unpaired surrogate', 'workflow\ud800.ts', 'workflow\ufffd.ts'],
+  ])('keeps manifest diagnostic paths bounded and well formed: %s', (_kind, input, expected) => {
+    const error = withWorkflowManifestDiagnostic(
+      new WorkflowSourceEvidenceError('MANIFEST_INVALID', 'PRIVATE_MANIFEST'),
+      input,
+      ['sideEffects'],
+    );
+    const diagnostic = workflowSourceEvidenceDiagnostic(error);
+    expect(diagnostic.message).toContain(`File: ${expected}; fields: sideEffects.`);
+    expect(diagnostic.message).not.toMatch(/[\u0080-\u009f]/u);
+    expect(diagnostic.message.isWellFormed()).toBe(true);
+    expect(diagnostic.message).not.toContain('PRIVATE_MANIFEST');
   });
   it('classifies missing loader evidence without minting it from supplied bytes', () => {
     expect(() => requireWorkflowSourceSnapshot(undefined, Buffer.from('source'), meta)).toThrow(

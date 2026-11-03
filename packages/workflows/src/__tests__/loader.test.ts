@@ -375,6 +375,29 @@ export const meta: WorkflowMeta = {
 });
 
 describe('loadWorkflow integration', () => {
+  it('distinguishes inspection-only embedded definitions from file-owned source evidence', async () => {
+    const embedded = await loadWorkflow('openslack:builtin/profile-sync');
+    expect(embedded.sourceKind).toBe('embedded');
+    expect(embedded.sourceSnapshot).toBeUndefined();
+    expect(embedded.meta.name).toBe('profile-sync');
+    expect(embedded.preview).toBeTypeOf('function');
+  });
+  it('attributes field-value words only to the actual invalid field', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'openslack-loader-field-value-'));
+    const path = join(directory, 'invalid-effect.mjs');
+    writeFileSync(
+      path,
+      'export const meta = { name: "valid", version: "1.0.0", description: "test", phases: [{title: "Read", detail: "Read"}], sideEffects: ["update title and version"] }; throw Error("MUST_NOT_IMPORT");',
+    );
+    try {
+      await expect(loadWorkflow(path)).rejects.toMatchObject({
+        reasonCode: 'MANIFEST_INVALID',
+        message: expect.stringContaining('(fields: sideEffects)'),
+      });
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
   it('reports safe path and field diagnostics while keeping source out of the message', async () => {
     const directory = mkdtempSync(join(tmpdir(), 'openslack-loader-fields-'));
     const path = join(directory, 'invalid-name.mjs');

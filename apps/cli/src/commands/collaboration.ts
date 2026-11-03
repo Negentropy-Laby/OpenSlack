@@ -92,9 +92,11 @@ import {
   createWorkflowResumePreflight,
   WorkflowResumeRecoveryRequiredError,
   requireWorkflowSourceSnapshot,
+  WorkflowSourceEvidenceError,
   workflowSourceEvidenceCause,
   renderWorkflowSourceEvidence,
   runMetaWorkflowIdentity,
+  snapshotWorkflowIdentity,
   renderRunHtml,
   renderRunJson,
   renderRunMarkdown,
@@ -136,10 +138,8 @@ import {
   publishWorkflowImprovement,
   publishWorkflowSplit,
   bootstrapWorkflowLabels,
-  finalizeWorkflowPR,
-  previewWorkflowFinalization,
 } from '@openslack/github';
-import { evaluateWorkflowGate, fetchPRDetails, loadPRCodeownerEvidence } from '@openslack/pr';
+import { finalizeWorkflowLifecycle } from '@openslack/pr';
 import {
   diagnoseNegentropyIntegration,
   exportNegentropySlotPreview,
@@ -2077,6 +2077,12 @@ export function collaborationCommands(): Command {
 
         try {
           const mod = await loadWorkflow(found.path);
+          if (mod.sourceKind === 'embedded')
+            throw new WorkflowSourceEvidenceError(
+              'SOURCE_KIND_UNSUPPORTED',
+              'Embedded workflow execution requires file-loader source evidence.',
+            );
+
           const args = parseInputs(options.input);
           const budgetTokens = parseInt(options.budgetTokens, 10);
 
@@ -2171,11 +2177,7 @@ export function collaborationCommands(): Command {
                 {
                   runId: ((result as Record<string, unknown>).runId as string) ?? 'unknown',
                   workflowName: mod.meta.name,
-                  workflowIdentity: {
-                    digest: sourceSnapshot.workflowSourceHash,
-                    domain: 'openslack.workflow-runner.workflow-source.v2',
-                    provenance: 'inferred',
-                  },
+                  workflowIdentity: snapshotWorkflowIdentity(sourceSnapshot),
                   mode: 'execute',
                   status: result.status,
                   startedAt: new Date().toISOString(),
@@ -2369,17 +2371,11 @@ export function collaborationCommands(): Command {
         if (err instanceof WorkflowResumeRecoveryRequiredError) {
           console.error(`${err.code} [${err.reasonCode}]: ${err.message}`);
           for (const side of ['stored', 'current'] as const) {
-            const evidence = err.identities?.[side];
+            const evidence = err.identityEvidence[side];
             if (!evidence) continue;
             const label = side === 'stored' ? 'Stored' : 'Current';
-            const domain =
-              typeof evidence === 'string'
-                ? ((err.identities && 'domain' in err.identities
-                    ? err.identities.domain
-                    : undefined) ?? 'unknown')
-                : `${evidence.domain}, ${evidence.provenance}`;
             console.error(
-              `  ${label} hash (${domain}): ${typeof evidence === 'string' ? evidence : evidence.digest}`,
+              `  ${label} hash (${evidence.kind}: ${evidence.domain}, ${evidence.provenance}): ${evidence.digest}`,
             );
           }
           console.error(historicalExportGuidance(runId));
@@ -2929,94 +2925,30 @@ export function collaborationCommands(): Command {
           return;
         }
 
-        let validTrust =
-          options.trust === 'trusted' || options.trust === 'untrusted' || options.trust === 'core'
-            ? options.trust
-            : undefined;
-        let workflowHash = options.hash;
-        let trustReviewer: string | undefined;
-        let trustReviewCommitOid: string | undefined;
-
         try {
-          if (await previewWorkflowFinalization(pr)) {
+          const outcome = await finalizeWorkflowLifecycle({
+            prNumber: pr,
+            mode: 'explicit-targets',
+            governanceIssue,
+            proposalIssue,
+            reviewIssue,
+            phaseIssues,
+            hash: options.hash,
+            trust: options.trust,
+          });
+          if (outcome.status === 'refused') {
+            console.log(outcome.message);
+            process.exitCode = 1;
+            return;
+          }
+          if (outcome.status === 'preview') {
             console.log(
               `Workflow PR #${pr}: preview only; live merge verification and lifecycle writes were not performed.`,
             );
             return;
           }
-          const report = await fetchPRDetails(pr, { requireLive: true, strictEvidence: true });
-          if (!report.headSha || !report.baseSha) {
-            console.log('Cannot finalize without the reviewed repository head and base.');
-            process.exitCode = 1;
-            return;
-          }
-          if (report.workflowEvidence) {
-            const { owners: codeowners } = await loadPRCodeownerEvidence(report, {
-              requireLive: true,
-              strictEvidence: true,
-            });
-            const gate = evaluateWorkflowGate({
-              prNumber: pr,
-              changedFiles: report.changedFiles,
-              body: report.body ?? '',
-              author: report.author,
-              baseSha: report.baseSha,
-              headSha: report.headSha,
-              reviews: report.reviews,
-              workflowEvidence: report.workflowEvidence,
-              governanceIssue: report.workflowGovernanceIssue,
-              codeowners,
-            });
-            if (gate.overall !== 'PASS') {
-              console.log(
-                `Cannot finalize workflow governance for PR #${pr}: gate is ${gate.overall}.`,
-              );
-              process.exitCode = 1;
-              return;
-            }
-            if (options.hash && options.hash !== gate.evidenceHash) {
-              console.log('Cannot override the repository-derived workflow evidence hash.');
-              process.exitCode = 1;
-              return;
-            }
-            if (options.trust && options.trust !== gate.trustDecision) {
-              console.log('Cannot override the current-head human Workflow-Trust review.');
-              process.exitCode = 1;
-              return;
-            }
-            const boundGovernanceIssue = gate.verifiedGovernanceIssue;
-            if (governanceIssue !== undefined && governanceIssue !== boundGovernanceIssue) {
-              console.log(
-                'Cannot override the governance issue bound to this workflow artifact change.',
-              );
-              process.exitCode = 1;
-              return;
-            }
-            governanceIssue = boundGovernanceIssue;
-            workflowHash = gate.evidenceHash;
-            validTrust = gate.trustDecision;
-            trustReviewer = gate.trustReviewer;
-            trustReviewCommitOid = gate.trustReviewCommitOid;
-          } else if (options.governanceIssue) {
-            console.log(
-              `Cannot finalize workflow governance for PR #${pr}: repository-derived workflow evidence is unavailable.`,
-            );
-            process.exitCode = 1;
-            return;
-          }
-
-          const result = await finalizeWorkflowPR(pr, {
-            governanceIssue,
-            proposalIssue,
-            reviewIssue,
-            phaseIssues,
-            workflowHash,
-            trustDecision: validTrust as 'trusted' | 'untrusted' | 'core' | undefined,
-            trustReviewer,
-            trustReviewCommitOid,
-            expectedHeadSha: report.headSha,
-            expectedBaseSha: report.baseSha,
-          });
+          if (outcome.status === 'not-required') return;
+          const { result } = outcome;
 
           if (result.errors.length > 0) {
             console.log(`Failed to finalize workflow PR #${pr}:`);
@@ -3265,13 +3197,20 @@ export function collaborationCommands(): Command {
         }
 
         try {
-          const { config, overrides } = await resolveProfileSyncConfig(options);
-
-          if (overrides.length > 0) {
-            console.log(`Config overrides: ${overrides.join(', ')}`);
-          }
-
           const mod = await loadWorkflow(found.path);
+          // Refuse inspection-only sources before prompting for execution.
+          const sourceBytes = await readWorkflowRunnerSourceBytes({
+            workflowName: mod.meta.name,
+            discoveredPath: found.path,
+            source: found.source,
+          });
+          const sourceSnapshot = requireWorkflowSourceSnapshot(
+            mod.sourceSnapshot,
+            sourceBytes,
+            mod.meta,
+          );
+          const { config, overrides } = await resolveProfileSyncConfig(options);
+          if (overrides.length > 0) console.log(`Config overrides: ${overrides.join(', ')}`);
           const onConfirm = options.yes
             ? async (_operation: string, _detail: string): Promise<boolean> => true
             : async (operation: string, detail: string): Promise<boolean> => {
@@ -3294,23 +3233,20 @@ export function collaborationCommands(): Command {
             'Submit profile-sync to the authenticated Workflow Runner',
           );
           if (!admitted) throw new Error('Workflow runner submission was not admitted.');
-          const root = findRepoRoot();
-          const runId = `run.${randomUUID()}`;
-          const sourceBytes = await readWorkflowRunnerSourceBytes({
+          // A file workflow can change during an interactive confirmation.
+          const confirmedBytes = await readWorkflowRunnerSourceBytes({
             workflowName: mod.meta.name,
             discoveredPath: found.path,
             source: found.source,
           });
-          const sourceSnapshot = requireWorkflowSourceSnapshot(
-            mod.sourceSnapshot,
-            sourceBytes,
-            mod.meta,
-          );
+          requireWorkflowSourceSnapshot(sourceSnapshot, confirmedBytes, mod.meta);
+          const root = findRepoRoot();
+          const runId = `run.${randomUUID()}`;
           const result = await executeWorkflowThroughRunner({
             workspaceRoot: root,
             workflowRunId: runId,
             workflowSource: found.source,
-            workflowSourceBytes: sourceBytes,
+            workflowSourceBytes: confirmedBytes,
             sourceSnapshot,
             manifest: mod.meta,
             args: {

@@ -163,10 +163,11 @@ export async function loadPRCodeownerEvidence(
   }
 
   const ref = report.baseSha;
-  const content = await getCODEOWNERS(ref, {
-    ...options,
-    strictEvidence: true,
-  });
+  // Preserve the strict caller's options identity so evidence reads and the
+  // final live recheck share one client; legacy callers still get strict reads.
+  const strictOptions =
+    options?.strictEvidence === true ? options : { ...options, strictEvidence: true };
+  const content = await getCODEOWNERS(ref, strictOptions);
   if (content === null) {
     throw new PRCodeownerEvidenceUnavailableError(
       `CODEOWNERS could not be loaded from ${ref}.`,

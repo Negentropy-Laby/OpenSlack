@@ -126,6 +126,11 @@ export {
   touchesWorkflowFiles,
 } from './workflow-gate.js';
 export { evaluateProfileSyncGate } from './profile-sync-gate.js';
+export { finalizeWorkflowLifecycle } from './workflow-finalization.js';
+export type {
+  WorkflowFinalizationInput,
+  WorkflowFinalizationResult,
+} from './workflow-finalization.js';
 export { summarizePRForChat, formatPRChatSummary } from './chat-report.js';
 export {
   summarizePRDecision,

@@ -353,6 +353,12 @@ export async function executeWorkflowRun(
     }
 
     // mode === 'run'
+    if (mod.sourceKind === 'embedded')
+      return {
+        success: false,
+        message: 'Embedded workflow execution is unsupported without file-loader source evidence.',
+        data: { code: 'WORKFLOW_SOURCE_EVIDENCE_INVALID', reasonCode: 'SOURCE_KIND_UNSUPPORTED' },
+      };
     const trustStore = new TrustStore({ rootDir: root });
     const trustLevel = trustStore.get(workflowName) ?? 'untrusted';
     if (trustLevel === 'untrusted' && mod.meta.risk !== 'low') {
@@ -371,6 +377,7 @@ export async function executeWorkflowRun(
       source: found.source,
     });
     const sourceSnapshot = requireWorkflowSourceSnapshot(mod.sourceSnapshot, sourceBytes, mod.meta);
+
     // Step 2: Build approval manifest from dry-run simulated effects
     const inputHash = hashString(JSON.stringify({}));
     const approvalManifest = buildApprovalManifest(
@@ -508,72 +515,23 @@ export async function finalizeWorkflowPr(
   prNumber: number,
 ): Promise<TuiActionResult> {
   try {
-    const { previewWorkflowFinalization, finalizeWorkflowPR } = await import('@openslack/github');
-    if (await previewWorkflowFinalization(prNumber))
+    const { finalizeWorkflowLifecycle } = await import('@openslack/pr');
+    const outcome = await finalizeWorkflowLifecycle({ prNumber, mode: 'governance-only' });
+    if (outcome.status === 'refused') return { success: false, message: outcome.message };
+    if (outcome.status === 'preview')
       return {
         success: true,
         message: `Workflow ${workflowName} PR #${prNumber}: preview only; live merge verification and lifecycle writes were not performed.`,
         data: { dryRun: true },
       };
-    const { fetchPRDetails, loadPRCodeownerEvidence, evaluateWorkflowGate } =
-      await import('@openslack/pr');
-    const report = await fetchPRDetails(prNumber, { requireLive: true, strictEvidence: true });
-    if (!report.workflowEvidence) {
-      return {
-        success: false,
-        message: 'Repository-derived Workflow artifact evidence is unavailable.',
-      };
-    }
-    const { owners: codeowners } = await loadPRCodeownerEvidence(report, {
-      requireLive: true,
-      strictEvidence: true,
-    });
-    const gate = evaluateWorkflowGate({
-      prNumber,
-      changedFiles: report.changedFiles,
-      body: report.body ?? '',
-      author: report.author,
-      baseSha: report.baseSha,
-      headSha: report.headSha,
-      reviews: report.reviews,
-      workflowEvidence: report.workflowEvidence,
-      governanceIssue: report.workflowGovernanceIssue,
-      codeowners,
-    });
-    if (gate.overall === 'PASS' && gate.governanceRequired === false) {
+    if (outcome.status === 'not-required') {
       return {
         success: true,
         message: `Workflow ${workflowName} PR #${prNumber} does not require a governance issue; no lifecycle writes were performed. Use finalize-pr with explicit lifecycle targets when needed.`,
         data: { governanceRequired: false },
       };
     }
-    if (
-      !report.headSha ||
-      !report.baseSha ||
-      gate.overall !== 'PASS' ||
-      !gate.evidenceHash ||
-      !gate.trustDecision ||
-      gate.governanceRequired !== true ||
-      !gate.verifiedGovernanceIssue
-    ) {
-      return {
-        success: false,
-        message:
-          gate.overall !== 'PASS'
-            ? `Cannot finalize Workflow artifact: gate is ${gate.overall}.`
-            : 'Cannot finalize Workflow artifact: repository evidence hash, trust decision, or verified bound governance issue is missing.',
-      };
-    }
-
-    const result = await finalizeWorkflowPR(prNumber, {
-      governanceIssue: gate.verifiedGovernanceIssue,
-      workflowHash: gate.evidenceHash,
-      trustDecision: gate.trustDecision,
-      trustReviewer: gate.trustReviewer,
-      trustReviewCommitOid: gate.trustReviewCommitOid,
-      expectedHeadSha: report.headSha,
-      expectedBaseSha: report.baseSha,
-    });
+    const { result } = outcome;
 
     if (result.errors.length > 0) {
       return {

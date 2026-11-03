@@ -207,6 +207,8 @@ describe('sealed Go execution recovery', { timeout: 30_000 }, () => {
       delete legacyMeta.manifestHashDomain;
       await legacyWriter.initRun(fixture.runId, {
         ...legacyMeta,
+        manifestHashDomain:
+          identity === 'v2' ? 'openslack.workflow-runner.workflow-source.v2' : 'raw-sha256',
         manifestHash:
           identity === 'v2'
             ? fixture.descriptor.workflowSourceHash
@@ -215,6 +217,10 @@ describe('sealed Go execution recovery', { timeout: 30_000 }, () => {
               : 'f'.repeat(64),
       });
       const path = fixture.reader.metaPath(fixture.runId);
+      // Model legacy bytes directly in this isolated fixture, never via a new-write bypass.
+      const historical = JSON.parse(await readFile(path, 'utf8'));
+      delete historical.manifestHashDomain;
+      await writeFile(path, JSON.stringify(historical, null, 2));
       const before = await readFile(path);
       expect(await fixture.store.runExists(fixture.runId)).toBe(false);
       const transition = vi.spyOn(fixture.authority, 'transition');

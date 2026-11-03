@@ -8,6 +8,7 @@ import type {
   ConfirmationPolicy,
   RunStatus,
 } from './types.js';
+import { WORKFLOW_IDENTITY } from '@openslack/core';
 import {
   createRuntime,
   createRuntimeWithHostAuthorities,
@@ -256,7 +257,7 @@ async function initializeRun(options: {
     workflowName: options.manifest.name,
     mode: options.mode,
     manifestHash: options.manifestHash,
-    manifestHashDomain: 'openslack.workflow-runner.workflow-source.v2',
+    manifestHashDomain: WORKFLOW_IDENTITY.SOURCE_V2,
     argsEncoding: WORKFLOW_ARGUMENTS_SCHEMA,
     args: options.args,
     startedAt,

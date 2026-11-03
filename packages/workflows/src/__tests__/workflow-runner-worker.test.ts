@@ -1119,6 +1119,75 @@ describe('GS8-B workflow runner worker', () => {
     expect(JSON.parse(diagnostic)).not.toHaveProperty('current');
   });
 
+  it.each(['reasonCode', 'identities'])('never invokes a source-error %s accessor', (field) => {
+    const error = new WorkflowSourceEvidenceError('SOURCE_DRIFT', 'PRIVATE_MESSAGE');
+    const getter = vi.fn(() => {
+      throw new Error('PRIVATE_GETTER');
+    });
+    Object.defineProperty(error, field, { get: getter });
+    let diagnostic = '';
+    expect(() => {
+      diagnostic = boundedDiagnostic(error);
+    }).not.toThrow();
+    expect(getter).not.toHaveBeenCalled();
+    expect(diagnostic).not.toContain('PRIVATE');
+    expect(JSON.parse(diagnostic).code).toBe('WORKFLOW_SOURCE_EVIDENCE_INVALID');
+  });
+
+  it('does not invoke nested identity getters while formatting stderr', () => {
+    const getter = vi.fn(() => {
+      throw new Error('PRIVATE_IDENTITY');
+    });
+    const identities = Object.defineProperties(
+      {},
+      {
+        domain: { get: getter },
+        stored: { get: getter },
+        current: { get: getter },
+      },
+    );
+    const error = new WorkflowSourceEvidenceError('SOURCE_DRIFT', 'PRIVATE_MESSAGE');
+    Object.defineProperty(error, 'identities', { value: identities });
+    expect(() => boundedDiagnostic(error)).not.toThrow();
+    expect(getter).not.toHaveBeenCalled();
+    expect(boundedDiagnostic(error)).not.toContain('PRIVATE');
+  });
+
+  it.each(['proxy', 'prototype-proxy'])(
+    'does not trigger a %s during stderr classification',
+    (kind) => {
+      const trap = vi.fn(() => {
+        throw new Error('PRIVATE_PROXY');
+      });
+      const error = new WorkflowSourceEvidenceError('SOURCE_DRIFT', 'PRIVATE_MESSAGE');
+      const value =
+        kind === 'proxy'
+          ? new Proxy(error, { get: trap, getPrototypeOf: trap, getOwnPropertyDescriptor: trap })
+          : Object.setPrototypeOf(
+              error,
+              new Proxy({}, { get: trap, getPrototypeOf: trap, getOwnPropertyDescriptor: trap }),
+            );
+      expect(() => boundedDiagnostic(value)).not.toThrow();
+      expect(boundedDiagnostic(value)).not.toContain('PRIVATE');
+      expect(trap).not.toHaveBeenCalled();
+    },
+  );
+
+  it('does not invoke generic error name/code getters or publish arbitrary data as a diagnostic code', () => {
+    const getter = vi.fn(() => {
+      throw new Error('PRIVATE_GENERIC_GETTER');
+    });
+    const error = new Error('PRIVATE_MESSAGE', { cause: 'PRIVATE_CAUSE' });
+    Object.defineProperties(error, { name: { get: getter }, code: { get: getter } });
+    expect(boundedDiagnostic(error)).toBe('[WORKFLOW_RUNNER_WORKER_FAILED] Error\n');
+    expect(getter).not.toHaveBeenCalled();
+    const untrusted = Object.assign(new Error('PRIVATE_MESSAGE'), {
+      name: 'PRIVATE_NAME',
+      code: 'PRIVATE_SOURCE_SENTINEL',
+    });
+    expect(boundedDiagnostic(untrusted)).toBe('[WORKFLOW_RUNNER_WORKER_FAILED] Error\n');
+  });
+
   it('initializes a Go-owned run from the real sealed loader identity', async () => {
     const workspaceRoot = await mkdtemp(join(tmpdir(), 'openslack-runner-identity-'));
     roots.push(workspaceRoot);

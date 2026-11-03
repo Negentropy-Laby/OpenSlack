@@ -24,6 +24,9 @@ export type {
   WorkflowSource,
   ClaudeBudgetAPI,
   WorkflowModule,
+  LoadedWorkflowModule,
+  FileWorkflowModule,
+  EmbeddedWorkflowModule,
   PipelineOptions,
   WorkflowRunInfo,
   AgentResult,
@@ -465,6 +468,7 @@ export type {
   ResumeEligibilityResult,
   ResumeState,
   WorkflowResumeIdentity,
+  WorkflowResumeIdentityDiagnostic,
 } from './resume.js';
 
 // ── Workflow Arguments and Identity ──────────────────────────────────────────
@@ -1130,6 +1134,7 @@ export {
   verifyWorkflowSourceSnapshot,
   verifyWorkflowSourceManifest,
   requireWorkflowSourceSnapshot,
+  snapshotWorkflowIdentity,
   WorkflowSourceEvidenceError,
   workflowSourceEvidenceCause,
   renderWorkflowSourceEvidence,

@@ -665,13 +665,11 @@ describe('Workflow runner F2b runtime delivery', () => {
   it('reuses exact journaled checkpoint evidence after a local cache disappears before resolution retry', async () => {
     const root = await journalRoot();
     const port = new ExactPort();
-    const resolve = vi
-      .spyOn(port, 'resolve')
-      .mockRejectedValueOnce(
-        Object.assign(new Error('temporary control I/O'), {
-          code: 'WORKFLOW_RUNNER_AUTHORITY_BINDING_CLIENT_TRANSPORT_FAILED',
-        }),
-      );
+    const resolve = vi.spyOn(port, 'resolve').mockRejectedValueOnce(
+      Object.assign(new Error('temporary control I/O'), {
+        code: 'WORKFLOW_RUNNER_AUTHORITY_BINDING_CLIENT_TRANSPORT_FAILED',
+      }),
+    );
     const source = committedSource('checkpoint_commit');
     const probe = vi.fn(source.probe);
     const commit = vi.fn(source.commit);
@@ -1993,6 +1991,7 @@ async function defaultResumeFixture(
     workflowName: 'workflow.test',
     mode: 'execute',
     manifestHash: hash,
+    manifestHashDomain: 'raw-sha256',
     args: {},
     startedAt: message.sentAt,
   });

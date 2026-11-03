@@ -1,6 +1,7 @@
 import { SAFE_IDENTIFIER_PATTERN, SAFE_IDENTIFIER_REGEX } from './workflow-binding-field-rules.js';
 import type { RunMeta } from '../run-store.js';
 import type { WorkflowIdentityEvidence } from '../types.js';
+import { WORKFLOW_IDENTITY } from '@openslack/core';
 export const WORKFLOW_RUN_ID_PATTERN = SAFE_IDENTIFIER_PATTERN;
 export const WORKFLOW_RUN_ID_REGEX = SAFE_IDENTIFIER_REGEX;
 
@@ -10,7 +11,7 @@ export function runMetaWorkflowIdentity(
 ): WorkflowIdentityEvidence {
   return {
     digest: meta.manifestHash,
-    domain: meta.manifestHashDomain ?? 'unknown',
+    domain: meta.manifestHashDomain ?? WORKFLOW_IDENTITY.UNKNOWN,
     provenance: meta.manifestHashDomain === undefined ? 'unknown' : 'recorded',
   };
 }

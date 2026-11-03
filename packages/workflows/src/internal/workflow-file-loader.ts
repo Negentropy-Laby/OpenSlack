@@ -4,13 +4,18 @@ import {
   WorkflowSourceEvidenceError,
   type WorkflowSourceSnapshot,
   withWorkflowManifestDiagnostic,
-  WORKFLOW_MANIFEST_DIAGNOSTIC_FIELDS,
+  sanitizeWorkflowDiagnosticPath,
 } from './workflow-source-snapshot.js';
 import { readFile } from 'node:fs/promises';
 import { relative, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { parseManifest, validateManifest } from '../manifest.js';
-import type { WorkflowMeta, WorkflowFormat, WorkflowModule } from '../types.js';
+import {
+  parseManifest,
+  validateManifestDiagnostics,
+  invalidManifest,
+  manifestDiagnosticFields,
+} from '../manifest.js';
+import type { WorkflowMeta, WorkflowFormat, WorkflowModule, FileWorkflowModule } from '../types.js';
 import { WORKFLOW_BINDING_HASH_REGEX } from './workflow-binding-field-rules.js';
 
 export interface WorkflowLoadOptions {
@@ -27,14 +32,8 @@ function manifestFailure(
   cause: unknown,
   missingMeta = false,
 ): WorkflowSourceEvidenceError {
-  const path = relative(process.cwd(), resolve(filePath))
-    .replace(/[\u0000-\u001f\u007f]/gu, '?')
-    .slice(0, 512);
-  // Rule messages may quote untrusted input values. Expose only known field names.
-  const detail = cause instanceof Error ? cause.message : '';
-  const fields = WORKFLOW_MANIFEST_DIAGNOSTIC_FIELDS.filter((field) =>
-    new RegExp(`\\b${field}\\b`, 'iu').test(detail),
-  );
+  const path = sanitizeWorkflowDiagnosticPath(relative(process.cwd(), resolve(filePath)));
+  const fields = manifestDiagnosticFields(cause);
   return withWorkflowManifestDiagnostic(
     new WorkflowSourceEvidenceError(
       'MANIFEST_INVALID',
@@ -55,7 +54,7 @@ function manifestFailure(
 export async function loadWorkflowFile(
   filePath: string,
   options: WorkflowLoadOptions = {},
-): Promise<WorkflowModule & { sourceSnapshot: WorkflowSourceSnapshot }> {
+): Promise<FileWorkflowModule> {
   if (
     options.moduleCacheKey !== undefined &&
     !WORKFLOW_BINDING_HASH_REGEX.test(options.moduleCacheKey)
@@ -71,8 +70,8 @@ export async function loadWorkflowFile(
   let sourceSnapshot: WorkflowSourceSnapshot;
   try {
     meta = analyzeStaticMeta(source);
-    const errors = validateManifest(meta);
-    if (errors.length > 0) throw new Error(errors.join('\n'));
+    const errors = validateManifestDiagnostics(meta);
+    if (errors.length > 0) throw invalidManifest(errors);
     sourceSnapshot = createWorkflowSourceSnapshot(sourceBytes, meta);
   } catch (cause) {
     throw manifestFailure(filePath, 'static', cause, !/export\s+const\s+meta\b/u.test(source));
@@ -84,7 +83,14 @@ export async function loadWorkflowFile(
   const sourceFormat = detectFormatFromSource(source);
 
   if (sourceFormat === 'claude-ambient') {
-    return { meta, format: 'claude-ambient', hash, sourceSnapshot, sourceBody: source };
+    return {
+      meta,
+      sourceKind: 'file',
+      format: 'claude-ambient',
+      hash,
+      sourceSnapshot,
+      sourceBody: source,
+    };
   }
 
   // Step 5: Dynamic import (only after static analysis passes, and not claude-ambient)
@@ -105,8 +111,8 @@ export async function loadWorkflowFile(
   let runtimeMeta: WorkflowMeta;
   try {
     runtimeMeta = parseManifest(mod.meta);
-    const errors = validateManifest(runtimeMeta);
-    if (errors.length > 0) throw new Error(errors.join('\n'));
+    const errors = validateManifestDiagnostics(runtimeMeta);
+    if (errors.length > 0) throw invalidManifest(errors);
     verifyWorkflowSourceManifest(sourceSnapshot, runtimeMeta);
   } catch (cause) {
     if (cause instanceof WorkflowSourceEvidenceError) throw cause;
@@ -115,6 +121,7 @@ export async function loadWorkflowFile(
 
   return {
     meta,
+    sourceKind: 'file',
     preview:
       typeof mod.preview === 'function' ? (mod.preview as WorkflowModule['preview']) : undefined,
     run: typeof mod.run === 'function' ? (mod.run as WorkflowModule['run']) : undefined,

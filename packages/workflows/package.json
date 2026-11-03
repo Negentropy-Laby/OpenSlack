@@ -13,10 +13,6 @@
     "./workflow-runner-worker": {
       "types": "./dist/workflow-runner-worker-public.d.ts",
       "import": "./dist/workflow-runner-worker-public.js"
-    },
-    "./internal/workflow-source-snapshot": {
-      "types": "./dist/internal/workflow-source-snapshot.d.ts",
-      "import": "./dist/internal/workflow-source-snapshot.js"
     }
   },
   "bin": {

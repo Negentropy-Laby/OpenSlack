@@ -199,6 +199,12 @@ describe('loadPRCodeownerEvidence', () => {
     });
   });
 
+  it('shares the exact strict live options object without weakening legacy callers', async () => {
+    const options = { requireLive: true, strictEvidence: true };
+    await loadPRCodeownerEvidence(report(), options);
+    expect(hoisted.getCODEOWNERS.mock.calls[0]![1]).toBe(options);
+  });
+
   it('fails closed when baseSha or CODEOWNERS evidence is unavailable', async () => {
     await expect(loadPRCodeownerEvidence(report({ baseSha: undefined }))).rejects.toBeInstanceOf(
       PRCodeownerEvidenceUnavailableError,

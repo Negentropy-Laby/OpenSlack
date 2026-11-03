@@ -152,16 +152,16 @@ Use an existing workflow YAML or JS module path for `<file>`. Use `dry-run` to s
 
 ### 7. Maintain organization profile
 
-The Profile Sync Robot keeps the organization's GitHub profile README in sync with an upstream whitepapers or content repository. All commands are safe by default: `check` and `preview` are read-only, and `run` requires explicit confirmation.
+The Profile Sync Robot describes synchronization of an organization's GitHub profile README with upstream content. The shipped embedded module currently supports read-only `check`, `preview`, and `status`; real execution is not delivered through that module.
 
 ```bash
 openslack collaboration workflow profile-sync check        # Verify source and target are accessible
 openslack collaboration workflow profile-sync preview       # Preview what a sync would change (no side effects)
-openslack collaboration workflow profile-sync run           # Run sync and open a PR (prompts for confirmation)
+openslack collaboration workflow profile-sync run           # Currently refuses: embedded source is not executable
 openslack collaboration workflow profile-sync status        # Show last sync date and pending PR
 ```
 
-Start with `check` to confirm readiness, then `preview` to review the proposed changes, and `run` only when you are ready for real side effects.
+Start with `check`, then inspect `preview` and `status`. The embedded `run` refuses with `SOURCE_KIND_UNSUPPORTED` before confirmation or submission; `--yes` does not bypass it. Execution requires a separately reviewed file workflow and normal authenticated Runner admission.
 
 ## Quick Reference by Role
 
@@ -1164,7 +1164,7 @@ Messages support 7 kinds: `user_message`, `agent_response`, `tool_event`, `plan`
 
 ## Profile Sync Robot
 
-The Profile Sync Robot keeps an organization's public profile (README, blog posts, featured content) in sync with an upstream whitepapers repository. It is read-only by default: `check` and `preview` have no side effects, and `run` requires explicit confirmation or `--yes`.
+The Profile Sync Robot models synchronization of public profile content with upstream whitepapers. Its embedded `check`, `preview`, and `status` are available; embedded `run` is inspection-only and cannot submit executable source evidence.
 
 | Command                                                                   | Purpose                                                            |
 | ------------------------------------------------------------------------- | ------------------------------------------------------------------ |
@@ -1172,9 +1172,9 @@ The Profile Sync Robot keeps an organization's public profile (README, blog post
 | `openslack collaboration workflow profile-sync preview`                   | Preview what a sync would change (no side effects)                 |
 | `openslack collaboration workflow profile-sync preview --format diff`     | Preview changes as a diff                                          |
 | `openslack collaboration workflow profile-sync preview --format markdown` | Preview changes as Markdown                                        |
-| `openslack collaboration workflow profile-sync run`                       | Run profile sync with real side effects (prompts for confirmation) |
-| `openslack collaboration workflow profile-sync run --yes`                 | Run sync and skip interactive confirmation                         |
-| `openslack collaboration workflow profile-sync run --agent-id <id>`       | Run sync with agent principal authorization                        |
+| `openslack collaboration workflow profile-sync run`                       | Refuse unsupported embedded execution before confirmation          |
+| `openslack collaboration workflow profile-sync run --yes`                 | Same refusal; confirmation cannot supply source evidence            |
+| `openslack collaboration workflow profile-sync run --agent-id <id>`       | Same source refusal; a principal does not supply source evidence     |
 | `openslack collaboration workflow profile-sync status`                    | Show current profile sync status, last sync date, and pending PR   |
 
 ### Options
