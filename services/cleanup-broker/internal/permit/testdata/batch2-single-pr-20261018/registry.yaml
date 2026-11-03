@@ -1,0 +1,123 @@
+{
+  "agent_id": "cleanup_qualification_pr418",
+  "approval_rules": {
+    "require_human_approval_for": [
+      "merge_to_main",
+      "policy_change",
+      "permission_change",
+      "agent_registry_change"
+    ]
+  },
+  "capabilities": {
+    "primary": [
+      "branch_cleanup_qualification"
+    ],
+    "secondary": [
+      "documentation"
+    ]
+  },
+  "display_name": "PR418 Cleanup Qualification",
+  "employee_type": "ai_agent",
+  "employment": {
+    "department": "qualification",
+    "hired_at": "2026-10-08T09:33:53.927Z",
+    "hired_by": "human:wsman",
+    "manager": "human:wsman",
+    "role": "cleanup-qualification",
+    "status": "active"
+  },
+  "execution": {
+    "max_parallel_tasks": 1,
+    "max_task_runtime_minutes": 120
+  },
+  "identity": {
+    "key_id": null,
+    "key_rotation": {
+      "last_rotated_at": null,
+      "rotation_interval_days": 90
+    },
+    "principal_id": "principal:cleanup_qualification_pr418",
+    "public_key_jwk": null,
+    "status": "active",
+    "uid": "cleanup_qualification_pr418"
+  },
+  "output_contract": {
+    "may_create": [
+      "qualification_evidence"
+    ],
+    "must_create": [
+      "workspace_run_record"
+    ],
+    "must_not_create": [
+      "direct_main_push",
+      "production_deploy",
+      "approval",
+      "merge"
+    ]
+  },
+  "permissions": {
+    "actions": {
+      "github.comment": "deny",
+      "pr.approve": "deny",
+      "pr.cleanup_branch": "deny",
+      "pr.cleanup_branch_scoped.v1": "allow",
+      "pr.comment": "deny",
+      "pr.merge": "deny",
+      "pr.propose": "deny",
+      "task.claim": "deny",
+      "task.sync": "deny"
+    },
+    "github": {
+      "can_approve": false,
+      "can_comment": false,
+      "can_create_pr": false,
+      "can_merge": false
+    },
+    "max_risk_zone": "yellow",
+    "paths": {
+      "allow": [
+        ".openslack/audit/pr418-qualification/**",
+        ".openslack/outbox/**"
+      ],
+      "deny": [
+        ".openslack/agents/**",
+        ".openslack/policies/**",
+        ".github/**",
+        "AGENTS.md",
+        "CLAUDE.md",
+        ".openslack/self/constitution.md",
+        ".openslack/self/invariants.yaml",
+        "packages/kernel/src/**",
+        ".env",
+        "**/.env",
+        "**/*.pem",
+        "**/*.key",
+        "secrets/**",
+        "credentials/**"
+      ]
+    }
+  },
+  "repositories": {
+    "allowed_product_repos": [
+      "Negentropy-Laby/openslack-cleanup-qualification"
+    ],
+    "workspace_repo": {
+      "default_branch": "main",
+      "owner": "Negentropy-Laby",
+      "repo": "OpenSlack"
+    }
+  },
+  "scheduler": {
+    "cadence_minutes": 0,
+    "preferred_mode": "manual"
+  },
+  "schema": "openslack.agent_registry.v2",
+  "task_matching": {
+    "max_risk_level": "medium"
+  },
+  "vendor": {
+    "model": "default",
+    "provider": "openai",
+    "runtime": "codex"
+  }
+}

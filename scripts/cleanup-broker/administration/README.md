@@ -99,6 +99,21 @@ public target. A correct old registry digest does not authorize the new target.
 Fresh installation scope, instance activation and single-use Permits are also
 required; old private-target Permits cannot be extended or transferred.
 
+`inspect --batch` recognizes the exact retained private campaign and queries its
+original repository using GET requests. Historical inspection requires the fixed
+human identity and repository binding, but does not require push permission or
+current automatic-deletion settings. An inaccessible repository is an observation
+failure, not evidence tampering. Inspection leaves the plan, manifest and journal
+unchanged and appends only a separate observation file. Historical batches cannot
+run any mutation phase, including fork registration; the refusal occurs before
+confirmation, remote calls or local publication.
+
+Historical regression evidence uses the complete contract and registry bytes
+from commit `44deef2651b8964448f4f0ef603114f2524eb046`, with their recorded
+digests. That frozen pairing exercises today's verifier implementation without
+authorizing the public campaign or replacing actual distinct-UID qualification.
+The current public contract with the retained private registry remains BLOCKED.
+
 ```sh
 node ./qualification-fixtures.mjs plan --scratch-root /root/openslack-cleanup-fixtures-new
 node ./qualification-fixtures.mjs inspect --batch "$cleanup_fixture_batch"

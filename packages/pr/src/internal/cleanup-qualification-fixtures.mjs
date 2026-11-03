@@ -32,6 +32,16 @@ export const BINDINGS = Object.freeze({
   login: CLEANUP_FIXTURE_OPERATOR.login,
   userId: CLEANUP_FIXTURE_OPERATOR.userId,
 });
+// A retained v1 campaign is readable, never a second mutation target. Keep the
+// complete historical binding independent of later administrator rotations.
+const HISTORICAL_BINDINGS = Object.freeze({
+  host: 'github.com',
+  repository: 'Negentropy-Laby/openslack-cleanup-qualification',
+  repositoryId: 1380965476,
+  defaultBranch: 'main',
+  login: 'wsman',
+  userId: 21962212,
+});
 const REPO = BINDINGS.repository;
 const API = `repos/${REPO}`;
 const SHA = /^[a-f0-9]{40}$/;
@@ -375,7 +385,7 @@ function createRuntime(dependencies) {
       return result.stdout;
     },
     async api(method, endpoint, payload) {
-      const args = ['api', '--hostname', BINDINGS.host, '--method', method, endpoint];
+      const args = ['api', '--hostname', runtime.host ?? BINDINGS.host, '--method', method, endpoint];
       if (payload !== undefined) args.push('--input', '-');
       const output = await runtime.gh(args, payload);
       try {
@@ -391,20 +401,25 @@ function createRuntime(dependencies) {
   return runtime;
 }
 export async function preflight(runtime) {
+  return observeRepository(runtime, BINDINGS, true);
+}
+async function observeRepository(runtime, bindings, requireMutationAccess) {
+  const api = `repos/${bindings.repository}`;
   const user = await runtime.api('GET', 'user');
   required(
-    user.type === 'User' && user.login === BINDINGS.login && user.id === BINDINGS.userId,
+    user.type === 'User' && user.login === bindings.login && user.id === bindings.userId,
     'FIXTURE_HUMAN_IDENTITY_REQUIRED',
     'current gh identity must be User wsman (21962212), never a bot or the qualification Agent',
   );
-  const repository = await runtime.api('GET', API);
+  const repository = await runtime.api('GET', api);
   required(
-    repository.id === BINDINGS.repositoryId &&
-      repository.full_name === REPO &&
-      repository.private === false,
+    repository.id === bindings.repositoryId &&
+      repository.full_name === bindings.repository &&
+      repository.private === (bindings === HISTORICAL_BINDINGS),
     'FIXTURE_REPOSITORY_MISMATCH',
-    'only the fixed public qualification repository is allowed',
+    'the observed repository must match this exact known campaign',
   );
+  if (requireMutationAccess) {
   required(
     repository.default_branch === 'main',
     'FIXTURE_DEFAULT_BRANCH_MISMATCH',
@@ -420,7 +435,8 @@ export async function preflight(runtime) {
     'FIXTURE_PUSH_PERMISSION_REQUIRED',
     'the independent human identity must have push access',
   );
-  const main = await runtime.api('GET', `${API}/git/ref/heads/main`);
+  }
+  const main = await runtime.api('GET', `${api}/git/ref/heads/main`);
   required(
     main.ref === 'refs/heads/main' && SHA.test(main.object?.sha),
     'FIXTURE_MAIN_EVIDENCE_INVALID',
@@ -509,6 +525,9 @@ export function fixtureCases(batchId) {
   ];
 }
 function validatePlan(plan) {
+  const bindings = [BINDINGS, HISTORICAL_BINDINGS].find(
+    (known) => JSON.stringify(plan?.bindings) === JSON.stringify(known),
+  );
   required(
     closed(plan, [
       'schema',
@@ -523,14 +542,15 @@ function validatePlan(plan) {
       plan.schema === PLAN_SCHEMA &&
       /^batch-[0-9]{8}T[0-9]{6}Z-[a-f0-9]{12}$/.test(plan.batchId) &&
       SHA.test(plan.initialMainSha) &&
-      JSON.stringify(plan.bindings) === JSON.stringify(BINDINGS) &&
+      bindings &&
       JSON.stringify(plan.cases) === JSON.stringify(fixtureCases(plan.batchId)) &&
       plan.authority === 'ADMINISTRATOR_FIXTURES_ONLY_NO_DEPLOYMENT_OR_PERMIT_AUTHORITY',
     'FIXTURE_PLAN_INVALID',
     'plan changed, is malformed, or has a foreign repository/ref',
   );
+  return bindings;
 }
-function validateManifest(value, plan, planHash) {
+function validateManifest(value, plan, planHash, bindings) {
   required(
     closedOptional(
       value,
@@ -556,16 +576,16 @@ function validateManifest(value, plan, planHash) {
       value.schema === MANIFEST_SCHEMA &&
       value.planSHA256 === planHash &&
       value.batchId === plan.batchId &&
-      value.repository === REPO &&
-      value.repositoryId === BINDINGS.repositoryId &&
+      value.repository === bindings.repository &&
+      value.repositoryId === bindings.repositoryId &&
       Array.isArray(value.fixtures) &&
       value.fixtures.length === plan.cases.length &&
       value.taskScopeAttested === false &&
       value.permitIssued === false &&
       value.qualificationRun === false &&
       value.administrator?.type === 'User' &&
-      value.administrator.login === BINDINGS.login &&
-      value.administrator.id === BINDINGS.userId &&
+      value.administrator.login === bindings.login &&
+      value.administrator.id === bindings.userId &&
       [
         'PLANNED_READ_ONLY',
         'CREATED',
@@ -601,12 +621,13 @@ function paths(root) {
 function loadBatch(root, anchor) {
   const p = paths(root);
   const planRecord = readLocal(p.plan, anchor);
-  validatePlan(planRecord.value);
+  const bindings = validatePlan(planRecord.value);
   const manifestRecord = readLocal(p.manifest, anchor);
-  validateManifest(manifestRecord.value, planRecord.value, planRecord.sha256);
+  validateManifest(manifestRecord.value, planRecord.value, planRecord.sha256, bindings);
   return {
     ...p,
     anchor,
+    bindings,
     planPath: p.plan,
     manifestPath: p.manifest,
     plan: planRecord.value,
@@ -740,19 +761,19 @@ async function mutationApi(runtime, batch, kind, method, endpoint, payload) {
     () => runtime.api(method, endpoint, payload),
   );
 }
-async function prObservation(runtime, number) {
+async function prObservation(runtime, number, bindings = BINDINGS) {
   required(
     Number.isSafeInteger(number) && number > 0,
     'FIXTURE_PR_INVALID',
     'PR must be a positive safe integer',
   );
-  const pr = await runtime.api('GET', `${API}/pulls/${number}`);
+  const pr = await runtime.api('GET', `repos/${bindings.repository}/pulls/${number}`);
   required(
     pr.number === number &&
       typeof pr.node_id === 'string' &&
       pr.node_id.length > 0 &&
-      pr.base?.repo?.id === BINDINGS.repositoryId &&
-      pr.base.repo.full_name === REPO &&
+      pr.base?.repo?.id === bindings.repositoryId &&
+      pr.base.repo.full_name === bindings.repository &&
       SHA.test(pr.head?.sha) &&
       ['open', 'closed'].includes(pr.state) &&
       typeof pr.merged === 'boolean',
@@ -762,7 +783,7 @@ async function prObservation(runtime, number) {
   return {
     prNumber: pr.number,
     prNodeId: pr.node_id,
-    url: `https://github.com/${REPO}/pull/${pr.number}`,
+    url: `https://github.com/${bindings.repository}/pull/${pr.number}`,
     state: pr.state,
     merged: pr.merged,
     mergedAt: pr.merged_at ?? null,
@@ -776,10 +797,10 @@ async function prObservation(runtime, number) {
     observedAt: runtime.now(),
   };
 }
-async function refObservation(runtime, branch) {
+async function refObservation(runtime, branch, bindings = BINDINGS) {
   const ref = await runtime.api(
     'GET',
-    `${API}/git/ref/heads/${branch.split('/').map(encodeURIComponent).join('/')}`,
+    `repos/${bindings.repository}/git/ref/heads/${branch.split('/').map(encodeURIComponent).join('/')}`,
   );
   required(
     ref.ref === `refs/heads/${branch}` && SHA.test(ref.object?.sha),
@@ -1149,7 +1170,9 @@ async function* pullPages(runtime, endpoint, invalidCode, incompleteCode) {
   }
 }
 async function inspectBatch(runtime, batch) {
-  const preflightResult = await preflight(runtime);
+  const bindings = batch.bindings;
+  const preflightResult = await observeRepository(runtime, bindings, bindings === BINDINGS);
+  const api = `repos/${bindings.repository}`;
   const observations = [];
   for (const item of batch.manifest.fixtures) {
     const observation = {
@@ -1164,25 +1187,25 @@ async function inspectBatch(runtime, batch) {
     };
     try {
       if (item.intendedSha || item.branchPublished)
-        observation.actualRefSha = await refObservation(runtime, item.head);
+        observation.actualRefSha = await refObservation(runtime, item.head, bindings);
       const number = item.pr?.prNumber ?? item.intendedPRNumber;
-      if (number) observation.pr = await prObservation(runtime, number);
+      if (number) observation.pr = await prObservation(runtime, number, bindings);
       else if (item.base !== null && observation.actualRefSha) {
         // A completed PR creation can lose its acknowledgement. Discover it read-only, never retry the POST.
         const matches = [];
-        const head = encodeURIComponent(`${REPO.split('/')[0]}:${item.head}`),
+        const head = encodeURIComponent(`${bindings.repository.split('/')[0]}:${item.head}`),
           base = encodeURIComponent(item.base);
         for await (const rows of pullPages(
           runtime,
-          `${API}/pulls?state=all&head=${head}&base=${base}&per_page=100`,
+          `${api}/pulls?state=all&head=${head}&base=${base}&per_page=100`,
           'FIXTURE_PARTIAL_DISCOVERY_INVALID',
           'FIXTURE_PARTIAL_DISCOVERY_INCOMPLETE',
         )) {
           for (const row of rows) {
             if (
-              row.head?.repo?.id === BINDINGS.repositoryId &&
+              row.head?.repo?.id === bindings.repositoryId &&
               row.head.ref === item.head &&
-              row.base?.repo?.id === BINDINGS.repositoryId &&
+              row.base?.repo?.id === bindings.repositoryId &&
               row.base.ref === item.base
             )
               matches.push(row.number);
@@ -1193,7 +1216,7 @@ async function inspectBatch(runtime, batch) {
           'FIXTURE_PARTIAL_PR_AMBIGUOUS',
           'multiple PRs match; preserve them and do not guess',
         );
-        if (matches.length === 1) observation.pr = await prObservation(runtime, matches[0]);
+        if (matches.length === 1) observation.pr = await prObservation(runtime, matches[0], bindings);
       }
     } catch (error) {
       observation.issue = error.code ?? 'FIXTURE_OBSERVATION_FAILED';
@@ -1203,8 +1226,8 @@ async function inspectBatch(runtime, batch) {
   const report = {
     schema: 'openslack.cleanup_fixture_observation.v1',
     observedAt: runtime.now(),
-    repository: REPO,
-    repositoryId: BINDINGS.repositoryId,
+    repository: bindings.repository,
+    repositoryId: bindings.repositoryId,
     batchId: batch.plan.batchId,
     currentMainSha: preflightResult.mainSha,
     phase: batch.manifest.phase,
@@ -1452,6 +1475,12 @@ export async function main(argv, dependencies = {}) {
   runtime.directory = anchor;
   try {
     const batch = loadBatch(options.batch, anchor);
+    required(
+      batch.bindings === BINDINGS || command === 'inspect',
+      'FIXTURE_HISTORICAL_BATCH_READ_ONLY',
+      'historical batches support inspection only; no confirmation or mutation is permitted',
+    );
+    runtime.host = batch.bindings.host;
     if (command === 'create') await createBatch(runtime, batch);
     if (command === 'close-case') await closeCase(runtime, batch);
     if (command === 'merge-targets') await mergeTargets(runtime, batch);
