@@ -1256,20 +1256,23 @@
           "Exact provider/effect/checkpoint resume without duplicate calls",
           "Restart and fixed 600-second/40-sample drain evidenced"
         ],
-        "dependencies": ["issue-433"],
+        "dependencies": ["issue-433", "issue-438"],
         "blockers": [
           "full_sealed_resume_blocked_on_checkpoint_replay",
-          "live_provider_binding_and_human_effect_decision_pending"
+          "live_provider_binding_and_human_effect_decision_pending",
+          "hosted_windows_watch_daemon_failure_requires_separate_maintenance"
         ],
         "evidence": [
           "https://github.com/Negentropy-Laby/OpenSlack/issues/411#issuecomment-6600248020",
-          "legacy-task-loop:heartbeat:2026-11-03T10:21:58.906Z:expiry:2026-11-03T12:21:58.906Z",
+          "legacy-task-loop:heartbeat:2026-11-03T11:08:33.632Z:expiry:2026-11-03T13:08:33.632Z",
           "preparation-local:87-pass:execution:2026-11-03T10:31:41.881Z/2026-11-03T10:31:47.410Z:full-resume-not-run",
           "report-sha256:7a166b2a9c5569cce0254d25afa1acd8f2bb940801f84d2aed11208600c3c680",
           "github:pr-435:draft:bot-authored:head:b8bf3fa5da19eefb33ddfbeb7aa386e7c0b03fd6:ci-pending",
+          "github:pr-435:later-windows-ci-fail:job-125864949850:baseline-watch-daemon:issue-438",
+          "github:workflow-governance-437:current-head-bound:no-human-trust-decision",
           "metadata-readback:2026-11-03T10:30:00Z:not-a-new-test-execution"
         ],
-        "last_verified_at": "2026-11-03T10:35:48.074Z"
+        "last_verified_at": "2026-11-03T11:14:25Z"
       },
       {
         "id": "issue-427",
@@ -1459,9 +1462,12 @@
         "evidence": [
           "github:issue-432:open:blocked",
           "github:pr-434:draft:bot-authored:head:39a9d1a4b57c0f618f39eee7723a8893ef2d9a2c:ci-pending",
+          "github:pr-434:initial-windows-ci-fail:job-125864915503:path-derivation",
+          "github:pr-434:followup-head:242eb95b563ea268b10b49b86fceacab492272be:ci-pending",
+          "local-followup:149-pass:report-sha256:1919ed3df0e50af3367d634f2393237a54314d4f40d0cfd64ae2823ad1f518ff",
           "production/qa/qa-ledger-dual-qualification-2026-11-03.md"
         ],
-        "last_verified_at": "2026-11-03T10:35:43.196Z"
+        "last_verified_at": "2026-11-03T11:13:46.357Z"
       },
       {
         "id": "issue-433",
@@ -1492,6 +1498,37 @@
           "production/qa/qa-ledger-dual-qualification-2026-11-03.md"
         ],
         "last_verified_at": "2026-11-03T09:54:58Z"
+      },
+      {
+        "id": "issue-438",
+        "title": "WatchDaemon: isolate test endpoints and reject startup failures",
+        "status": "blocked",
+        "planned_owner": "unassigned",
+        "module_or_workstream": "github-task-loop",
+        "execution": {
+          "agent_id": null,
+          "claim_ref": null,
+          "started_at": null
+        },
+        "github_issue": {
+          "number": 438,
+          "url": "https://github.com/Negentropy-Laby/OpenSlack/issues/438"
+        },
+        "pull_request": null,
+        "acceptance_criteria": [
+          "Preserve original Windows reset failure and prove actual endpoint ownership",
+          "Review ephemeral-port, startup-error and disconnect settlement design in separate scope",
+          "No retries, skipped Windows cases, error suppression or timeout extension",
+          "Separate maintenance identity, regressions and current Linux/Windows evidence before merge"
+        ],
+        "dependencies": [],
+        "blockers": ["separate_maintenance_scope_identity_and_design_pending", "observed_reset_origin_unresolved"],
+        "evidence": [
+          "github:issue-438:open:blocked:task-TASK-2026-198109",
+          "github:actions:41620581191:job:125864949850:windows-fail",
+          "production/qa/qa-ledger-dual-qualification-2026-11-03.md"
+        ],
+        "last_verified_at": "2026-11-03T11:14:25Z"
       },
       {
         "id": "issue-239",

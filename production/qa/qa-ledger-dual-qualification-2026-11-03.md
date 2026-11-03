@@ -71,6 +71,7 @@ runtime task was closed, no approval was submitted and nothing was merged.
 | [#431](https://github.com/Negentropy-Laby/OpenSlack/issues/431) | C3 separate claimed cleanup admission                | Qualified C2 and separate action/policy/grants                                                     |
 | [#432](https://github.com/Negentropy-Laby/OpenSlack/issues/432) | Public target source/tests/documentation preparation | Registered exact-scope maintenance remains unassigned; user-delegated draft is not a runtime Claim |
 | [#433](https://github.com/Negentropy-Laby/OpenSlack/issues/433) | Narrow checkpoint replay defect                      | Separate runtime repair scope/review, not #411 permission                                          |
+| [#438](https://github.com/Negentropy-Laby/OpenSlack/issues/438) | Baseline WatchDaemon endpoint/startup proposal        | Separate maintenance scope/identity/design; exact observed reset origin unresolved                 |
 
 [PR #425 final merged summary](https://github.com/Negentropy-Laby/OpenSlack/pull/425#issuecomment-6600245982)
 and [PR #426 final merged summary](https://github.com/Negentropy-Laby/OpenSlack/pull/426#issuecomment-6600246799)
@@ -305,3 +306,54 @@ connector. Current helpers intentionally expose no live send/approval path.
 Provider binding/counting, actual approvals, restart, 600-second drain and all
 Cleanup live cases remain NOT_RUN/BLOCKED. Hosted checks must bind new delivery
 heads; this ledger contains no new-head CI PASS or merge/acceptance assertion.
+
+## Later hosted failures and exact-scope follow-up
+
+Both first Windows release-scope jobs failed in `Qualify governed PR branch
+cleanup`. The failures are distinct and are not erased by local or later PASS.
+
+- [#434 original job](https://github.com/Negentropy-Laby/OpenSlack/actions/runs/41620570798/job/125864915503):
+  associated head `39a9d1a4b57c0f618f39eee7723a8893ef2d9a2c`, actual synthetic
+  merge checkout `5db50848cf480a7be0867b0c3d378d643691f44e`. The test-only
+  workspace builder used POSIX string replacement to derive a Windows dist
+  path and compared raw separators. A new exact win32/POSIX path case first
+  failed that expression, then passed after native joins and normalized exact
+  two-module matching. No broad interception, skip, timeout or production
+  permission change was added. Independent bounded review favored test hash
+  `bf69c0703284fd4929d1206283ef8963e03b7cedbfb2f9509f1a84740e02f41e`.
+- The additive fix is published to the same #434, not a replacement PR: head
+  `242eb95b563ea268b10b49b86fceacab492272be`, tree
+  `5146f5f32c975a5d14d8cbaac9cb106a9e93f669`; bot update-only readback confirmed
+  local/remote/PR equality at 2026-11-03T11:13:46.357Z. New CI is pending, not
+  inherited from the first head. Final four-file local follow-up is 149/149;
+  report `/var/tmp/openslack-nextstage-evidence.4Jh4MDsS/cleanup-local-final-149.json`,
+  SHA-256 `1919ed3df0e50af3367d634f2393237a54314d4f40d0cfd64ae2823ad1f518ff`.
+  Formal inventory is now 9,135/601 on this separate branch. Full typecheck,
+  relevant ESLint, docs verification, Go race/vet passed again. The earlier
+  eight-file 245-case run remains earlier-head evidence, not a fresh rerun.
+- [#435 original job](https://github.com/Negentropy-Laby/OpenSlack/actions/runs/41620581191/job/125864949850):
+  associated head `b8bf3fa5da19eefb33ddfbeb7aa386e7c0b03fd6`, actual synthetic
+  merge checkout `e083213262fbbe4bfa84a877c636037fbd30233e`, Windows Server 2022,
+  actual Node 24.18.1. `ignores an unknown action without mutating delivery
+  state` failed `read ECONNRESET` after logging port 3389. The two WatchDaemon
+  blobs are identical at main, PR head and actual checkout. Its request already
+  disables pooling and awaits response end before stop; teardown is not a proven
+  cause. Random 3101–4100 test endpoints, missing startup rejection and response
+  error handling are concrete gaps, but exact TCP reset origin is unresolved.
+  Failed step: 1 failed / 3,319 passed / 12 skipped. Retained original step text
+  SHA-256 `1dd4759f911427f74df25f6e26db5a9de5ae82c45adbfc68f83f9e63d419ec69`,
+  144,669 bytes. No blind rerun or error suppression occurred.
+
+The supported task preview/create path published #438 / TASK-2026-198109 as
+blocked, with only the two WatchDaemon paths and explicit TypeScript/Node/test
+requirements. It is a separate repair proposal, not permission for the #411
+qualification principal and not an implemented fix. No new ready task or Claim
+was manufactured. Runtime #433, this baseline gate and live driver connectors
+remain distinct unfinished code work.
+
+Production `pr workflow-governance 435` created bot-owned
+[#437](https://github.com/Negentropy-Laby/OpenSlack/issues/437), bound to current
+head/base and `sha256:9b7908755e427b887ff45ff14f3a4c21bd06111dd7fdc76404e5a33c30a9cb46`.
+Readback/doctor shows that governance-Issue gate PASS, but no human Workflow-Trust
+decision or approval exists. No live run, effect decision, activation, Permit
+consumption, GitHub deletion or merge occurred.
