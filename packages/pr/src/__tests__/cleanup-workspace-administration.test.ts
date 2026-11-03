@@ -9,6 +9,7 @@ import {
   mkdtempSync,
   readFileSync,
   readdirSync,
+  realpathSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -17,9 +18,15 @@ import { join, posix, win32 } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { parseDocument, stringify as yamlText } from 'yaml';
+import { Ajv2020 } from 'ajv/dist/2020.js';
+import { agentRegistryV2Schema } from '@openslack/workspace';
+import {
+  contractFixtureLoader,
+  contractModulePaths,
+} from './helpers/cleanup-workspace-contract-fixture.js';
 
 const sourceRoot = fileURLToPath(new URL('../../../../', import.meta.url));
-const entry = join(sourceRoot, 'scripts/cleanup-broker/administration/verify-workspace.ts');
 const sha = (raw: string | Buffer) => createHash('sha256').update(raw).digest('hex');
 const fixtureRoots: string[] = [];
 // Synthetic parser/path coverage is deliberately not current administrator
@@ -31,24 +38,58 @@ const fixed = {
   run_id: 'cleanup-fixture-run',
   workspace_id: 'cleanup-fixture-workspace',
 };
-function contractModulePaths(root: string, path: Pick<typeof posix, 'join'>): [string, string] {
-  return [
-    path.join(root, 'packages', 'pr', 'src', 'internal', 'cleanup-administration-contract.ts'),
-    path.join(root, 'packages', 'pr', 'dist', 'internal', 'cleanup-administration-contract.js'),
-  ];
-}
-const [contractPath] = contractModulePaths(sourceRoot, { join });
+const [contractPath] = contractModulePaths(sourceRoot);
 const productionContract = JSON.parse(readFileSync(contractPath.replace(/\.ts$/, '.json'), 'utf8'));
 const productionRegistryBytes = readFileSync(
-  join(sourceRoot, '.openslack/agents/registry/cleanup_qualification_pr418.yaml'),
+  join(
+    sourceRoot,
+    '.openslack/agents/registry',
+    `${productionContract.runtimeBinding.agent_id}.yaml`,
+  ),
 );
-const syntheticRegistry = JSON.parse(productionRegistryBytes.toString());
+interface FixtureRegistry {
+  agent_id: string;
+  identity: { uid: string; principal_id: string };
+  repositories: { allowed_product_repos: string[] };
+}
+const validateRegistry = new Ajv2020({ strict: false }).compile<FixtureRegistry>(
+  agentRegistryV2Schema,
+);
+function parseFixtureRegistry(raw: string) {
+  const document = parseDocument(raw, { uniqueKeys: true });
+  if (document.errors.length) throw new Error('INVALID_FIXTURE_REGISTRY_YAML');
+  const value: unknown = document.toJS({ maxAliasCount: 0 });
+  if (!validateRegistry(value)) throw new Error('INVALID_FIXTURE_REGISTRY_SCHEMA');
+  return value;
+}
+const historicalDirectory = join(
+  sourceRoot,
+  'services/cleanup-broker/internal/permit/testdata/batch2-single-pr-20261018',
+);
+const historicalSnapshot = JSON.parse(
+  readFileSync(join(historicalDirectory, 'snapshot.json'), 'utf8'),
+);
+if (historicalSnapshot.sourceCommit !== '44deef2651b8964448f4f0ef603114f2524eb046')
+  throw new Error('HISTORICAL_BINDING_PROVENANCE_CHANGED');
+function historicalBytes(name: 'contract' | 'registry') {
+  const ref = historicalSnapshot[name];
+  if (
+    ref.file !== (name === 'contract' ? 'administration-contract.json' : 'registry.yaml') ||
+    typeof ref.sha256 !== 'string' ||
+    !/^[a-f0-9]{64}$/.test(ref.sha256)
+  )
+    throw new Error('HISTORICAL_BINDING_REFERENCE_INVALID');
+  const bytes = readFileSync(join(historicalDirectory, ref.file));
+  if (sha(bytes) !== ref.sha256) throw new Error('HISTORICAL_BINDING_BYTES_CHANGED');
+  return bytes;
+}
+const historicalContract = JSON.parse(historicalBytes('contract').toString('utf8'));
+const historicalRegistryBytes = historicalBytes('registry');
+const syntheticRegistry = parseFixtureRegistry(productionRegistryBytes.toString());
 syntheticRegistry.agent_id = fixed.agent_id;
 syntheticRegistry.identity.uid = fixed.runtime_uid_claim;
 syntheticRegistry.identity.principal_id = fixed.principal_id;
-syntheticRegistry.repositories.allowed_product_repos = [
-  'Negentropy-Laby/openslack-cleanup-qualification-public',
-];
+syntheticRegistry.repositories.allowed_product_repos = [productionContract.bindings.repository];
 const registryBytes = Buffer.from(JSON.stringify(syntheticRegistry) + '\n');
 const syntheticContract = {
   ...productionContract,
@@ -59,50 +100,37 @@ const syntheticContract = {
 let bundleRoot: string;
 let tool: string;
 let productionTool: string;
+let historicalTool: string;
+let allowlistProbe: string;
 
 beforeAll(() => {
   bundleRoot = mkdtempSync(join(tmpdir(), 'cleanup-workspace-tool '));
   tool = join(bundleRoot, 'verify-workspace.mjs');
   productionTool = join(bundleRoot, 'verify-workspace-production.mjs');
+  historicalTool = join(bundleRoot, 'verify-workspace-historical.mjs');
+  allowlistProbe = join(bundleRoot, 'contract-allowlist-probe.mjs');
+  const input = join(bundleRoot, 'build-input.json');
+  writeFileSync(
+    input,
+    JSON.stringify({
+      sourceRoot,
+      builds: [
+        { name: 'production', output: productionTool },
+        { name: 'synthetic', output: tool, contract: syntheticContract },
+        { name: 'historical', output: historicalTool, contract: historicalContract },
+        { name: 'allowlist-probe', output: allowlistProbe, contract: syntheticContract },
+      ],
+    }),
+  );
   execFileSync(
     'bun',
-    ['build', entry, '--target=node', '--format=esm', '--outfile', productionTool],
+    [join(sourceRoot, 'scripts/cleanup-broker/build-workspace-test-fixture.ts'), input],
     {
       cwd: sourceRoot,
       stdio: 'pipe',
       timeout: 60_000,
+      maxBuffer: 4 * 1024 * 1024,
     },
-  );
-  const exports = readFileSync(contractPath, 'utf8').slice(
-    readFileSync(contractPath, 'utf8').indexOf('export const'),
-  );
-  const fixtureModule = `const contract = ${JSON.stringify(syntheticContract)} as const;\n${exports}`;
-  // The sole substitution happens at test build time, never through a production
-  // option, caller permission object, environment variable or exported callback.
-  execFileSync(
-    'bun',
-    [
-      '--eval',
-      `
-    import { resolve } from 'node:path';
-    const allowed = ${JSON.stringify(contractModulePaths(sourceRoot, { join }))}.map((path) => resolve(path));
-    const result = await Bun.build({
-      entrypoints: [${JSON.stringify(entry)}],
-      target: 'node', format: 'esm',
-      plugins: [{ name: 'synthetic-administration-contract', setup(build) {
-        build.onLoad({ filter: /cleanup-administration-contract[.](?:ts|js)$/ }, ({ path }) => {
-          if (!allowed.includes(resolve(path)))
-            throw new Error('unexpected contract path');
-          return { contents: ${JSON.stringify(fixtureModule)}, loader: 'ts' };
-        });
-      } }],
-    });
-    if (!result.success) throw new AggregateError(result.logs, 'fixture build failed');
-    if (result.outputs.length !== 1) throw new Error('unexpected fixture artifact count');
-    await Bun.write(${JSON.stringify(tool)}, result.outputs[0]);
-  `,
-    ],
-    { cwd: sourceRoot, stdio: 'pipe', timeout: 60_000 },
   );
 }, 65_000);
 afterAll(() => rmSync(bundleRoot, { recursive: true, force: true }));
@@ -110,8 +138,15 @@ afterEach(() => {
   for (const root of fixtureRoots.splice(0)) rmSync(root, { recursive: true, force: true });
 });
 
-function fixture(production = false) {
-  const binding = production ? productionContract.runtimeBinding : fixed;
+function fixture(profile: 'synthetic' | 'production' | 'historical' = 'synthetic') {
+  const contract =
+    profile === 'historical'
+      ? historicalContract
+      : profile === 'production'
+        ? productionContract
+        : syntheticContract;
+  const binding = contract.runtimeBinding;
+  const [repositoryOwner, repositoryName] = contract.bindings.repository.split('/');
   const container = mkdtempSync('/var/tmp/cleanup-workspace-fixture ');
   fixtureRoots.push(container);
   chmodSync(container, 0o700);
@@ -139,10 +174,10 @@ function fixture(production = false) {
       agent_gid: String(gid),
       broker_uid: String(uid + 1),
       broker_gid: String(gid + 1),
-      qualification_repository_owner: 'Negentropy-Laby',
-      qualification_repository_name: 'openslack-cleanup-qualification-public',
-      qualification_repository_numeric_id: '1381124543',
-      qualification_repository_default_branch: 'main',
+      qualification_repository_owner: repositoryOwner,
+      qualification_repository_name: repositoryName,
+      qualification_repository_numeric_id: contract.bindings.repositoryId,
+      qualification_repository_default_branch: contract.fixtureOperator.defaultBranch,
     },
     priorInput: {
       source: 'non-sensitive fixture selection, not an administrator approval',
@@ -181,7 +216,14 @@ function fixture(production = false) {
       mode: 0o600,
     });
   };
-  put(registry, production ? productionRegistryBytes : registryBytes);
+  put(
+    registry,
+    profile === 'production'
+      ? productionRegistryBytes
+      : profile === 'historical'
+        ? historicalRegistryBytes
+        : registryBytes,
+  );
   put(identity, identityValue);
   put(join(workspace, 'openslack.yaml'), config);
   put(selected, selectedValue);
@@ -193,12 +235,6 @@ function fixture(production = false) {
     '--selected-bindings-sha256',
     sha(readFileSync(selected)),
   ];
-  if (!production) {
-    const baseline = invoke(args());
-    expect(baseline.status, baseline.stderr).toBe(0);
-    expect(baseline.value.blockingIssues).toEqual([]);
-    expect(baseline.value.registry.fixedBytes).toBe(true);
-  }
   return {
     container,
     workspace,
@@ -218,7 +254,9 @@ function fixture(production = false) {
 const dedicatedGroupFixture = `
   if (process.platform === 'linux') process.getgroups = () => [process.getgid()];
 `;
+let toolInvocations = 0;
 function invoke(args: string[], selectedTool = tool) {
+  toolInvocations++;
   const result = spawnSync(
     process.execPath,
     [
@@ -256,6 +294,69 @@ function faultScript(code: string, args: string[]) {
 }
 
 describe('standalone read-only fixed workspace acceptance', () => {
+  it('uses the actual module loader for Windows case and separator equivalence', () => {
+    const contents = 'export const fixture = true';
+    const loader = contractFixtureLoader('D:\\fixture root', contents, {
+      paths: win32,
+      platform: 'win32',
+      canonicalize: (path) => win32.resolve(path).toLowerCase(),
+    });
+    for (const path of [
+      'd:/FIXTURE ROOT/packages/pr/src/internal/cleanup-administration-contract.ts',
+      'd:/FIXTURE ROOT/packages/pr/dist/internal/cleanup-administration-contract.js',
+    ])
+      expect(loader.onLoad({ path })).toEqual({ contents, loader: 'ts' });
+  });
+  it('rejects foreign roots, aliases and changed canonical paths with actionable paths', () => {
+    let changed = false;
+    const loader = contractFixtureLoader('/fixture root', 'fixture', {
+      paths: posix,
+      platform: 'linux',
+      canonicalize: (path) => (changed ? path.replace('/fixture root/', '/replacement/') : path),
+    });
+    for (const path of [
+      '/foreign/packages/pr/src/internal/cleanup-administration-contract.ts',
+      '/fixture root/packages/pr/src/other/cleanup-administration-contract.ts',
+      '/alias/packages/pr/src/internal/cleanup-administration-contract.ts',
+      '/Fixture root/packages/pr/src/internal/cleanup-administration-contract.ts',
+    ]) {
+      expect(() => loader.onLoad({ path })).toThrow(path);
+      expect(() => loader.onLoad({ path })).toThrow(JSON.stringify(loader.allowed));
+    }
+    changed = true;
+    expect(() => loader.onLoad({ path: loader.allowed[0]! })).toThrow('UNEXPECTED_CONTRACT_PATH');
+  });
+  it('builds both actual contract imports through the same loader and leaves production unintercepted', () => {
+    const report = JSON.parse(readFileSync(allowlistProbe + '.build.json', 'utf8'));
+    expect(report.intercepted.map((path: string) => realpathSync.native(path)).sort()).toEqual(
+      contractModulePaths(sourceRoot)
+        .map((path) => realpathSync.native(path))
+        .sort(),
+    );
+    expect(JSON.parse(readFileSync(productionTool + '.build.json', 'utf8')).intercepted).toEqual(
+      [],
+    );
+    const result = spawnSync(process.execPath, [allowlistProbe], {
+      encoding: 'utf8',
+      timeout: 10_000,
+    });
+    expect(result.status, result.stderr).toBe(0);
+    expect(JSON.parse(result.stdout)).toEqual({
+      source: syntheticContract.bindings,
+      distribution: syntheticContract.bindings,
+    });
+  });
+  it('accepts a block YAML registry with the same validated fields', () => {
+    const value = parseFixtureRegistry(productionRegistryBytes.toString());
+    expect(parseFixtureRegistry(yamlText(value))).toEqual(value);
+  });
+  it('refuses malformed, duplicate-key and schema-invalid fixture YAML explicitly', () => {
+    expect(() => parseFixtureRegistry('agent_id: [')).toThrow('INVALID_FIXTURE_REGISTRY_YAML');
+    expect(() => parseFixtureRegistry('agent_id: one\nagent_id: two')).toThrow(
+      'INVALID_FIXTURE_REGISTRY_YAML',
+    );
+    expect(() => parseFixtureRegistry('agent_id: one')).toThrow('INVALID_FIXTURE_REGISTRY_SCHEMA');
+  });
   it('binds exactly the source and distribution modules on Windows and POSIX', () => {
     const windows = contractModulePaths('D:\\fixture root', win32);
     expect(windows).toEqual([
@@ -267,7 +368,9 @@ describe('standalone read-only fixed workspace acceptance', () => {
       win32.resolve('D:/fixture root/packages/pr/dist/internal/cleanup-administration-contract.js'),
     );
     expect(normalized).not.toContain(
-      win32.resolve('D:/different root/packages/pr/dist/internal/cleanup-administration-contract.js'),
+      win32.resolve(
+        'D:/different root/packages/pr/dist/internal/cleanup-administration-contract.js',
+      ),
     );
     expect(contractModulePaths('/fixture root', posix)).toEqual([
       '/fixture root/packages/pr/src/internal/cleanup-administration-contract.ts',
@@ -317,8 +420,29 @@ describe('standalone read-only fixed workspace acceptance', () => {
 
   if (declareLinuxCleanupTests) {
     describe('Linux owned-descriptor workspace IO', () => {
+      it('constructs a fixture without starting a baseline tool process', () => {
+        const before = toolInvocations;
+        fixture();
+        expect(toolInvocations).toBe(before);
+      });
+      it('accepts the frozen historical contract with its exact real registry bytes without writes', () => {
+        const value = fixture('historical');
+        const before = readFileSync(value.registry);
+        const result = invoke(value.args(), historicalTool);
+        expect(result.status, result.stderr).toBe(0);
+        expect(result.value).toMatchObject({
+          status: 'PASS',
+          identity: { state: 'MATCHED' },
+          registry: { state: 'MATCHED', fixedBytes: true },
+          pathAuthorization: { decision: 'allow', immutableSnapshot: true },
+          effects: { filesystemWrites: false, executionContextCreated: false },
+        });
+        expect(result.value.blockingIssues).toEqual([]);
+        expect(readFileSync(value.registry)).toEqual(before);
+        expect(existsSync(join(value.workspace, '.openslack/outbox'))).toBe(false);
+      });
       it('keeps the real private registry blocked for the new public target without writes', () => {
-        const value = fixture(true);
+        const value = fixture('production');
         const before = readFileSync(value.registry);
         const result = invoke(value.args(), productionTool);
         expect(result.status).toBe(2);
@@ -334,10 +458,11 @@ describe('standalone read-only fixed workspace acceptance', () => {
       });
 
       it('does not migrate an old private selection into the public campaign', () => {
-        const value = fixture(true);
+        const value = fixture('production');
         value.selectedValue.selected.qualification_repository_name =
-          'openslack-cleanup-qualification';
-        value.selectedValue.selected.qualification_repository_numeric_id = '1380965476';
+          historicalContract.bindings.repository.split('/')[1];
+        value.selectedValue.selected.qualification_repository_numeric_id =
+          historicalContract.bindings.repositoryId;
         value.put(value.selected, value.selectedValue);
         const result = invoke(value.args(), productionTool);
         expect(result.status).toBe(2);
@@ -415,6 +540,7 @@ describe('standalone read-only fixed workspace acceptance', () => {
           status: 'PASS',
           scope: 'readonly-parsed-identity-and-path-evidence',
           identity: { state: 'MATCHED', runId: fixed.run_id },
+          registry: { state: 'MATCHED', fixedBytes: true },
           osIdentity: { matched: true },
           pathAuthorization: {
             decision: 'allow',

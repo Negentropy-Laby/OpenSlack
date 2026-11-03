@@ -445,7 +445,10 @@ function fixture(t, changes = {}) {
             sha: state.refs.get(payload.head),
             repo: { id: BINDINGS.repositoryId, full_name: BINDINGS.repository },
           },
-          base: { ref: payload.base, repo: { id: BINDINGS.repositoryId, full_name: BINDINGS.repository } },
+          base: {
+            ref: payload.base,
+            repo: { id: BINDINGS.repositoryId, full_name: BINDINGS.repository },
+          },
         };
         state.prs.set(number, pr);
         return response(pr);
@@ -505,10 +508,15 @@ async function createdFixture() {
   return { f, batch };
 }
 
-const historicalContract = JSON.parse(fs.readFileSync(new URL(
-  '../../../../services/cleanup-broker/internal/permit/testdata/batch2-single-pr-20261018/administration-contract.json',
-  import.meta.url,
-), 'utf8'));
+const historicalContract = JSON.parse(
+  fs.readFileSync(
+    new URL(
+      '../../../../services/cleanup-broker/internal/permit/testdata/batch2-single-pr-20261018/administration-contract.json',
+      import.meta.url,
+    ),
+    'utf8',
+  ),
+);
 const historicalBindings = Object.freeze({
   host: historicalContract.fixtureOperator.host,
   repository: historicalContract.bindings.repository,
@@ -534,24 +542,40 @@ async function historicalFixture(phase = 'PLANNED_READ_ONLY', discover = false) 
   item.intendedSha = item.publishedSha = sha(999);
   if (!discover) item.intendedPRNumber = 101;
   write(path.join(batch, 'manifest.json'), record);
-  f.state.repository = { ...f.state.repository, id: historicalBindings.repositoryId,
-    full_name: historicalBindings.repository, private: true, permissions: { push: false },
-    delete_branch_on_merge: true };
+  f.state.repository = {
+    ...f.state.repository,
+    id: historicalBindings.repositoryId,
+    full_name: historicalBindings.repository,
+    private: true,
+    permissions: { push: false },
+    delete_branch_on_merge: true,
+  };
   f.state.apiRepository = historicalBindings.repository;
   f.state.refs.set(item.head, sha(999));
   f.state.prs.set(101, {
-    number: 101, node_id: 'PR_historical_fixture', state: 'open', merged: false,
-    head: { ref: item.head, sha: sha(999), repo: { id: historicalBindings.repositoryId,
-      full_name: historicalBindings.repository } },
-    base: { ref: item.base, repo: { id: historicalBindings.repositoryId,
-      full_name: historicalBindings.repository } },
+    number: 101,
+    node_id: 'PR_historical_fixture',
+    state: 'open',
+    merged: false,
+    head: {
+      ref: item.head,
+      sha: sha(999),
+      repo: { id: historicalBindings.repositoryId, full_name: historicalBindings.repository },
+    },
+    base: {
+      ref: item.base,
+      repo: { id: historicalBindings.repositoryId, full_name: historicalBindings.repository },
+    },
   });
   return { f, batch };
 }
 test.each(['PLANNED_READ_ONLY', 'FAILED_RECONCILE_REQUIRED'])(
-  'inspects historical private %s records only in their original repository', async (phase) => {
+  'inspects historical private %s records only in their original repository',
+  async (phase) => {
     const { f, batch } = await historicalFixture(phase);
-    const before = new Map(fs.readdirSync(batch).map((name) => [name, fs.readFileSync(path.join(batch, name))]));
+    const before = new Map(
+      fs.readdirSync(batch).map((name) => [name, fs.readFileSync(path.join(batch, name))]),
+    );
     const calls = f.state.calls.length;
     const report = await f.run('inspect', batch);
     assert.equal(report.repository, historicalBindings.repository);
@@ -565,28 +589,40 @@ test.each(['PLANNED_READ_ONLY', 'FAILED_RECONCILE_REQUIRED'])(
       assert.equal(args[args.indexOf('--method') + 1], 'GET');
       assert(!args.at(-1).includes(BINDINGS.repository));
     }
-    for (const [name, bytes] of before) assert.deepEqual(fs.readFileSync(path.join(batch, name)), bytes);
+    for (const [name, bytes] of before)
+      assert.deepEqual(fs.readFileSync(path.join(batch, name)), bytes);
   },
 );
 test('historical inspection discovers an unacknowledged PR only in the historical repository', async () => {
   const { f, batch } = await historicalFixture('FAILED_RECONCILE_REQUIRED', true);
   const report = await f.run('inspect', batch);
   assert.equal(report.fixtures[0].pr.prNumber, 101);
-  assert(f.state.calls.some(({ args }) => args.at(-1).startsWith(`repos/${historicalBindings.repository}/pulls?`)));
+  assert(
+    f.state.calls.some(({ args }) =>
+      args.at(-1).startsWith(`repos/${historicalBindings.repository}/pulls?`),
+    ),
+  );
   assert.deepEqual(f.state.mutations, []);
 });
 test.each(['create', 'close-case', 'merge-targets', 'advance-drift', 'register-existing-fork'])(
-  'rejects historical %s before a confirmation, API call or local mutation', async (command) => {
+  'rejects historical %s before a confirmation, API call or local mutation',
+  async (command) => {
     const { f, batch } = await historicalFixture();
-    const before = new Map(fs.readdirSync(batch).map((name) => [name, fs.readFileSync(path.join(batch, name))]));
+    const before = new Map(
+      fs.readdirSync(batch).map((name) => [name, fs.readFileSync(path.join(batch, name))]),
+    );
     const calls = f.state.calls.length;
-    const extra = command === 'advance-drift' ? ['--permit-id', 'historical', '--approved-sha', sha(999)] : [];
-    await assert.rejects(f.run(command, batch, extra), { code: 'FIXTURE_HISTORICAL_BATCH_READ_ONLY' });
+    const extra =
+      command === 'advance-drift' ? ['--permit-id', 'historical', '--approved-sha', sha(999)] : [];
+    await assert.rejects(f.run(command, batch, extra), {
+      code: 'FIXTURE_HISTORICAL_BATCH_READ_ONLY',
+    });
     assert.equal(f.state.calls.length, calls);
     assert.deepEqual(f.state.confirmations, []);
     assert.deepEqual(f.state.mutations, []);
     assert.deepEqual(fs.readdirSync(batch).sort(), [...before.keys()].sort());
-    for (const [name, bytes] of before) assert.deepEqual(fs.readFileSync(path.join(batch, name)), bytes);
+    for (const [name, bytes] of before)
+      assert.deepEqual(fs.readFileSync(path.join(batch, name)), bytes);
   },
 );
 test('historical repository access failure is an observation failure, not plan tampering', async () => {
@@ -663,7 +699,10 @@ test('creation requires exact plan confirmation and creates nothing on decline',
   );
   assert.equal(f.state.mutations.length, 0);
   assert.equal(load(batch).phase, 'PLANNED_READ_ONLY');
-  assert.match(f.state.confirmations[0].phrase, new RegExp(`REPOSITORY ${BINDINGS.repositoryId} PLAN [a-f0-9]{64}$`));
+  assert.match(
+    f.state.confirmations[0].phrase,
+    new RegExp(`REPOSITORY ${BINDINGS.repositoryId} PLAN [a-f0-9]{64}$`),
+  );
 });
 test('plan tampering refuses a foreign branch before even a read-only API call', async (t) => {
   const f = fixture(t);

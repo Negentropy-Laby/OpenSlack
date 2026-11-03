@@ -385,7 +385,14 @@ function createRuntime(dependencies) {
       return result.stdout;
     },
     async api(method, endpoint, payload) {
-      const args = ['api', '--hostname', runtime.host ?? BINDINGS.host, '--method', method, endpoint];
+      const args = [
+        'api',
+        '--hostname',
+        runtime.host ?? BINDINGS.host,
+        '--method',
+        method,
+        endpoint,
+      ];
       if (payload !== undefined) args.push('--input', '-');
       const output = await runtime.gh(args, payload);
       try {
@@ -420,21 +427,21 @@ async function observeRepository(runtime, bindings, requireMutationAccess) {
     'the observed repository must match this exact known campaign',
   );
   if (requireMutationAccess) {
-  required(
-    repository.default_branch === 'main',
-    'FIXTURE_DEFAULT_BRANCH_MISMATCH',
-    'default branch must remain main',
-  );
-  required(
-    repository.delete_branch_on_merge === false,
-    'FIXTURE_AUTO_DELETION_ENABLED',
-    'automatic branch deletion must already be false; this tool does not change repository settings',
-  );
-  required(
-    repository.permissions?.push === true,
-    'FIXTURE_PUSH_PERMISSION_REQUIRED',
-    'the independent human identity must have push access',
-  );
+    required(
+      repository.default_branch === 'main',
+      'FIXTURE_DEFAULT_BRANCH_MISMATCH',
+      'default branch must remain main',
+    );
+    required(
+      repository.delete_branch_on_merge === false,
+      'FIXTURE_AUTO_DELETION_ENABLED',
+      'automatic branch deletion must already be false; this tool does not change repository settings',
+    );
+    required(
+      repository.permissions?.push === true,
+      'FIXTURE_PUSH_PERMISSION_REQUIRED',
+      'the independent human identity must have push access',
+    );
   }
   const main = await runtime.api('GET', `${api}/git/ref/heads/main`);
   required(
@@ -1216,7 +1223,8 @@ async function inspectBatch(runtime, batch) {
           'FIXTURE_PARTIAL_PR_AMBIGUOUS',
           'multiple PRs match; preserve them and do not guess',
         );
-        if (matches.length === 1) observation.pr = await prObservation(runtime, matches[0], bindings);
+        if (matches.length === 1)
+          observation.pr = await prObservation(runtime, matches[0], bindings);
       }
     } catch (error) {
       observation.issue = error.code ?? 'FIXTURE_OBSERVATION_FAILED';
