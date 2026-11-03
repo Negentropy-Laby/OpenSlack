@@ -13,7 +13,7 @@ import {
   symlinkSync,
   writeFileSync,
 } from 'node:fs';
-import { join } from 'node:path';
+import { join, posix, win32 } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
@@ -31,10 +31,13 @@ const fixed = {
   run_id: 'cleanup-fixture-run',
   workspace_id: 'cleanup-fixture-workspace',
 };
-const contractPath = join(
-  sourceRoot,
-  'packages/pr/src/internal/cleanup-administration-contract.ts',
-);
+function contractModulePaths(root: string, path: Pick<typeof posix, 'join'>): [string, string] {
+  return [
+    path.join(root, 'packages', 'pr', 'src', 'internal', 'cleanup-administration-contract.ts'),
+    path.join(root, 'packages', 'pr', 'dist', 'internal', 'cleanup-administration-contract.js'),
+  ];
+}
+const [contractPath] = contractModulePaths(sourceRoot, { join });
 const productionContract = JSON.parse(readFileSync(contractPath.replace(/\.ts$/, '.json'), 'utf8'));
 const productionRegistryBytes = readFileSync(
   join(sourceRoot, '.openslack/agents/registry/cleanup_qualification_pr418.yaml'),
@@ -81,12 +84,14 @@ beforeAll(() => {
     [
       '--eval',
       `
+    import { resolve } from 'node:path';
+    const allowed = ${JSON.stringify(contractModulePaths(sourceRoot, { join }))}.map((path) => resolve(path));
     const result = await Bun.build({
       entrypoints: [${JSON.stringify(entry)}],
       target: 'node', format: 'esm',
       plugins: [{ name: 'synthetic-administration-contract', setup(build) {
         build.onLoad({ filter: /cleanup-administration-contract[.](?:ts|js)$/ }, ({ path }) => {
-          if (![${JSON.stringify(contractPath)}, ${JSON.stringify(contractPath.replace('/src/', '/dist/').replace(/\.ts$/, '.js'))}].includes(path))
+          if (!allowed.includes(resolve(path)))
             throw new Error('unexpected contract path');
           return { contents: ${JSON.stringify(fixtureModule)}, loader: 'ts' };
         });
@@ -251,6 +256,25 @@ function faultScript(code: string, args: string[]) {
 }
 
 describe('standalone read-only fixed workspace acceptance', () => {
+  it('binds exactly the source and distribution modules on Windows and POSIX', () => {
+    const windows = contractModulePaths('D:\\fixture root', win32);
+    expect(windows).toEqual([
+      'D:\\fixture root\\packages\\pr\\src\\internal\\cleanup-administration-contract.ts',
+      'D:\\fixture root\\packages\\pr\\dist\\internal\\cleanup-administration-contract.js',
+    ]);
+    const normalized = windows.map((path) => win32.resolve(path));
+    expect(normalized).toContain(
+      win32.resolve('D:/fixture root/packages/pr/dist/internal/cleanup-administration-contract.js'),
+    );
+    expect(normalized).not.toContain(
+      win32.resolve('D:/different root/packages/pr/dist/internal/cleanup-administration-contract.js'),
+    );
+    expect(contractModulePaths('/fixture root', posix)).toEqual([
+      '/fixture root/packages/pr/src/internal/cleanup-administration-contract.ts',
+      '/fixture root/packages/pr/dist/internal/cleanup-administration-contract.js',
+    ]);
+  });
+
   it.each(
     [
       [],
