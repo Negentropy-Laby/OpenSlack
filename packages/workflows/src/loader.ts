@@ -13,7 +13,13 @@ import {
 } from './internal/workflow-file-loader.js';
 import { resolveWorkflowIdentityHash } from './internal/workflow-identity.js';
 import { validateManifest } from './manifest.js';
-import type { WorkflowMeta, WorkflowFormat, WorkflowModule, WorkflowSource } from './types.js';
+import type {
+  WorkflowMeta,
+  WorkflowFormat,
+  WorkflowModule,
+  WorkflowSource,
+  LoadedWorkflowModule,
+} from './types.js';
 
 export { analyzeStaticMeta, detectFormat, detectFormatFromSource };
 export type { WorkflowLoadOptions };
@@ -158,7 +164,7 @@ export async function discoverWorkflows(
 export async function loadWorkflow(
   filePath: string,
   options: WorkflowLoadOptions = {},
-): Promise<WorkflowModule> {
+): Promise<LoadedWorkflowModule> {
   if (
     options.moduleCacheKey !== undefined &&
     !WORKFLOW_BINDING_HASH_REGEX.test(options.moduleCacheKey)
@@ -173,7 +179,8 @@ export async function loadWorkflow(
     }
     return {
       ...embedded,
-      format: detectFormat(embedded as unknown as Record<string, unknown>),
+      sourceKind: 'embedded',
+      format: detectFormat({ meta: embedded.meta, preview: embedded.preview, run: embedded.run }),
       hash: resolveWorkflowIdentityHash(embedded),
     };
   }

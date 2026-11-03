@@ -110,6 +110,7 @@ function makeMeta(overrides: Partial<RunMeta> = {}): RunMeta {
     workflowName: 'test-scan',
     mode: 'execute' as ExecutionMode,
     manifestHash: 'a'.repeat(64),
+    manifestHashDomain: 'raw-sha256',
     args: {},
     startedAt: '2026-05-28T12:00:00.000Z',
     ...overrides,
@@ -117,6 +118,58 @@ function makeMeta(overrides: Partial<RunMeta> = {}): RunMeta {
 }
 
 describe('RunStore', () => {
+  it.each([undefined, 'unknown', 'function-source-sha256', 'runner-v2-manifest'])(
+    'rejects new execution identity domain %s before the first filesystem effect',
+    async (domain) => {
+      const { store, fs } = makeStore();
+      await expect(
+        store.initRun('run-001', {
+          ...makeMeta(),
+          manifestHashDomain: domain,
+        } as RunMeta),
+      ).rejects.toThrow();
+      expect(fs.files.size).toBe(0);
+    },
+  );
+
+  it('reads historical untagged strong metadata without promoting or rewriting it', async () => {
+    const { store, fs } = makeStore();
+    const legacy = { ...makeMeta() };
+    delete legacy.manifestHashDomain;
+    const bytes = JSON.stringify(legacy);
+    fs.files.set(store.metaPath('run-001'), bytes);
+    expect(await store.loadMeta('run-001')).toMatchObject({ manifestHash: legacy.manifestHash });
+    expect((await store.loadMeta('run-001'))?.manifestHashDomain).toBeUndefined();
+    expect(fs.files.get(store.metaPath('run-001'))).toBe(bytes);
+    expect(fs.files.size).toBe(1);
+  });
+
+  it.each(['raw-sha256', 'openslack.workflow-runner.workflow-source.v2'] as const)(
+    'preserves the recorded %s identity domain without rewriting reads',
+    async (manifestHashDomain) => {
+      const { store, fs } = makeStore();
+      await store.initRun('run-001', { ...makeMeta(), manifestHashDomain });
+      const before = new Map(fs.files);
+      expect(await store.loadMeta('run-001')).toMatchObject({ manifestHashDomain });
+      expect(fs.files).toEqual(before);
+    },
+  );
+
+  it.each([
+    { manifestHashDomain: 'invented', manifestHash: 'a'.repeat(64) },
+    { manifestHashDomain: 'raw-sha256', manifestHash: 'weak' },
+  ])('rejects invalid tagged metadata on read: %j', async (fields) => {
+    const { store, fs } = makeStore();
+    await expect(
+      store.initRun('run-001', { ...makeMeta(), ...fields } as RunMeta),
+    ).rejects.toThrow();
+    expect([...fs.files.keys()].some((path) => path.endsWith('/meta.json'))).toBe(false);
+    await store.initRun('run-001', makeMeta());
+    const path = [...fs.files.keys()].find((key) => key.endsWith('/meta.json'))!;
+    fs.files.set(path, JSON.stringify({ ...makeMeta(), ...fields }));
+    await expect(store.loadMeta('run-001')).rejects.toThrow();
+  });
+
   it('fails closed when legacy JavaScript omits or invents the access mode', () => {
     for (const options of [
       { baseDir: '/test/workflows' },

@@ -1,0 +1,451 @@
+{
+  "schema": "openslack.issue415.delivery_run.v1",
+  "r24_final_qa_receipt_20261103": {
+    "record_kind": "receipt_only_citation_after_review_not_self_hashed_input",
+    "path": "/tmp/openslack425-r24-final-20261103.9vvHTxkN/review-qa-prepublication-v3.md",
+    "bytes": 12403,
+    "sha256": "ff67220f17dcc185a67b95f20daf63af53b7d7d299ba489eb8318c51c108502d",
+    "verdict": "ADEQUATE_LOCAL_SCOPE_MAY_CONTINUE_ADDITIVE_COMMIT_AND_UPDATE_ONLY_425",
+    "limits": "No new-head CI, PRMS, human approval, merge, release or completeClaim is established by this receipt"
+  },
+  "r24_prepublication_20261103": {
+    "record_kind": "additive_local_gate_result_before_delivery",
+    "parent_head": "dd5d637531e2bb9264f516ee735fef7c3c339ad0",
+    "evidence_root": "/tmp/openslack425-r24-final-20261103.9vvHTxkN",
+    "input_manifest": {"path": "remaining-review-v2.json", "bytes": 69322, "sha256": "6f25da1fc41f9a8697952fb363ee5abfaf9931b9ccd5e903a28134ad8377fcf7", "changed": 59, "entries": 278, "tested": 275, "untested_delivery_ledgers": 3},
+    "scope_approval": "source-input-approval.json; user approved one exact source append, not PR approval",
+    "source_inputs": {"status": "APPROVED_SCOPED_SYNC", "source": 212, "contract": 17, "legal": 4, "total_unique": 233, "new_business_logic": false, "other_bindings_or_authority_changes": false},
+    "controlled_root": {"status": "PASS", "passed": 9105, "failed": 0, "skipped": 25, "declared": 9130, "files": 601, "workers": 4, "timeout_changed": false, "log_sha256": "55906effaf5a5b2ddf4d611665b9f0de958cf82726c8153c0de5f0e4b2fb098f", "json_sha256": "d5322c50489c62914dddcef122802d5deb91ef4e18fdc1c25d1d9be9da3fa9aa", "receipt": "r24-root-exclusive-observation.receipt.json", "condition": "No other heavy gate arranged by this executor during root; not a claim of OS zero-load"},
+    "other_gates": "Actual forced build/preparation, complete typecheck, lint0errors4warnings, docs/migration/notification, workspace/policy/golden/Genesis, Go module/vet, sealed smoke and production counts all recorded exit0",
+    "go_module": {"named_pass": 942, "named_skip": 206, "named_fail": 0, "package_pass": 44, "package_no_tests": 5, "qualification": "Skipped database/GS checks are not promoted"},
+    "generation": "Production9130/601; repeat module/status hashes identical",
+    "independent_reviews": ["review-go-fourth-input-v2.md", "review-architecture-fourth-input-v2.md", "review-qa-timeout-diagnosis-v2.md", "review-qa-prepublication-v3.md delivered separately before publication"],
+    "task_snapshot_sha256": "934d70663f90cb95e42e301564ffb6df60196987ee8635941c5cbf2c614f4a43",
+    "lease_expires_at_at_recording": "2026-11-03T05:15:38.101Z",
+    "historical_limitations": ["Earlier three root timeouts retained; exact cause Unknown, not a demonstrated code fix", "D-side old evidence retention gap Unknown", "Unsupported embedded builtin execution not delivered", "Nonconforming historical subjects preserved", "P2 lint/advisory polish does not gate necessary repairs"],
+    "delivery": "PENDING_ADDITIVE_COMMIT_AND_UPDATE_ONLY_425; later external receipt/comment must carry exact synchronized SHA and new CI/PRMS",
+    "overall": "LOCAL_GATES_PASS_AWAITING_FINAL_QA_DELIVERY_HOSTED_CI_PRMS",
+    "not_authorized": ["new_pr", "history_rewrite", "self_registry_or_identity_edit", "Ready transition", "approval", "merge", "release", "completeClaim"]
+  },
+  "r24_remaining_local_validation_20261103": {
+    "record_kind": "additive_local_observation_not_completion",
+    "parent_head": "dd5d637531e2bb9264f516ee735fef7c3c339ad0",
+    "parent_tree": "ab92b17d57ef4cda89787af38a81d76079a81743",
+    "evidence_root": "/tmp/openslack425-r24-continue-20261103.uCGAlrOL",
+    "command_evidence": "/tmp/openslack425-r24-validation-b3Ly0ueN/evidence",
+    "latest_heartbeat_receipt": "/tmp/openslack425-source-lock-20261103.yY2qk0R1/qualification-2026-11-03T02-24-27-196Z.json",
+    "lease_expires_at_at_recording": "2026-11-03T04:24:24.112Z",
+    "scope": "Existing owner,72 formal task paths, independent17/17 intersection; no self-grant",
+    "implemented_local": ["R24-01", "R24-02", "R24-03", "R24-04", "R24-05", "R24-07", "R24-08", "R24-09", "R24-10", "R24-11", "R24-13", "R24-14", "R24-15", "R24-16", "R24-17", "R24-18", "R24-20", "R24-21"],
+    "disposition_not_code_fix": {
+      "R24-06": "Reported counterexample refuted; numeric boundary regression added",
+      "R24-12": "Retain actual injected-read defense; no five duplicate walks",
+      "R24-19": "Correct existing complete package build/staging retained",
+      "R24-22": "No cosmetic-only churn/commit",
+      "R24-23": "Nonconforming published subject retained; no history rewrite",
+      "R24-24": "Second published subject independently retained; no history rewrite"
+    },
+    "frozen_review_input": {
+      "path": "remaining-review-v1.json",
+      "bytes": 68826,
+      "sha256": "42059ab256ce15d5f4bfa6b67fd91779f24913ffdd34bc4b2fa2412293e4779d",
+      "entries": 276,
+      "changed": 57,
+      "later_delta": "One profile test separately bound by TS reviewer; two generated projections are later observed bytes, not inherited v1 review"
+    },
+    "local_results": {
+      "root_vitest": { "status": "FAIL", "passed": 9102, "failed": 3, "skipped": 25, "declared": 9130, "files": 601, "receipt": "r24-root-vitest-full.receipt.json" },
+      "root_failure_diagnostic": { "status": "TARGETED_PASS_NOT_ROOT_PASS", "passed": 19, "files": 3, "cause": "Unknown; load sensitivity is only a hypothesis", "receipt": "r24-full-timeout-diagnostic.receipt.json" },
+      "workflows_package": "1759 PASS/2 SKIP",
+      "cli_package": "592 PASS/1 SKIP",
+      "core_pr_github": "2310 PASS; overlapping scopes are not summed",
+      "main_targeted": "121 PASS",
+      "profile_delta_file": "46 PASS",
+      "build_typecheck": "Recorded actual build/preparation and complete typecheck exit0",
+      "lint": "Exit0,0 errors/4 warnings",
+      "docs_workspace_policy_golden": "Recorded checks exit0",
+      "go_module": "942 named PASS/206 named SKIP;44 package PASS/5 no-test packages; unavailable qualification not promoted",
+      "go_vet_budget_history": "Exit0",
+      "inventory": "Production9130/601; final verify exits0",
+      "generation": "Second generation identical module/status SHA-256"
+    },
+    "source_lock": {
+      "current_declared": 232,
+      "refreshed_existing_hashes": 18,
+      "new_input_pending_authorization": "packages/pr/src/workflow-finalization.ts",
+      "bytes": 5577,
+      "sha256": "de747fdc6c62a8adee096ea28838bf5845b844297d1d5b07f960f8e1f1eee314",
+      "evidence": "bundle-before-scope-decision.json",
+      "proposed_count": 233,
+      "status": "SOURCE_QUALIFICATION_AND_FINAL_SEALING_PENDING_EXACT_SCOPE_DECISION"
+    },
+    "independent_review": "Delivered TS/architecture/QA/Go reports bind v1 and explicit later profile delta, not full-root success or hosted CI",
+    "remaining": ["exact fourth source-input decision", "full-suite timeout diagnosis", "final candidate-bound checks/review", "ordinary additive commit and bot update-only PR425 delivery", "new-head Linux/Windows CI", "authenticated PRMS and human review"],
+    "overall": "R24_INCOMPLETE",
+    "not_performed": ["stage", "commit", "push", "new_pr", "history_rewrite", "self_registry_or_identity_edit", "approval", "merge", "release", "completeClaim"]
+  },
+  "r24_task_scope_refresh_20261103": {
+    "record_kind": "additive_execution_continuation_not_task_completion",
+    "maintainer_receipt": "/mnt/d/tmp/openslack415-task-scope-20261103.oWcUEuv2/FINAL-RECEIPT.json",
+    "live_qualification": "/tmp/openslack425-source-lock-20261103.yY2qk0R1/qualification-2026-11-03T01-53-49-486Z.json",
+    "task_snapshot": "/tmp/openslack425-r24-continue-20261103.uCGAlrOL/task-snapshot.live.json",
+    "body_sha256": "2ffdc56894b8ea114bf5361c09eef1e2781dbfc0ef65aa7866c7b34dee5ada69",
+    "task_snapshot_sha256": "d522da1a48e2fffd189a65b1f82eaa9585a66f5e2a0a7b888fcbb15713bb6fbe",
+    "task_snapshot_updated_at": "2026-11-03T01:39:28Z",
+    "snapshot_limit": "Snapshot predates the next heartbeat; immutable historical capture, not a substitute for live delivery recheck.",
+    "allowed_paths": 72,
+    "new_paths_intersection": "17/17",
+    "registry_sha256": "7b724c2408cd26d658eb883023b0b19195f24bca9fd379383682cf27c1dbd46f",
+    "claim_owner": "codex_runtime_source-repair",
+    "lease_expires_at": "2026-11-03T03:53:47.785Z",
+    "parent_head": "dd5d637531e2bb9264f516ee735fef7c3c339ad0",
+    "phase": "remaining_R24_implementation_and_validation",
+    "not_performed": ["new_claim", "identity_provision", "registry_edit", "new_pr", "approval", "merge", "release"]
+  },
+  "task_id": "TASK-2026-542732",
+  "issue_number": 415,
+  "agent_id": "codex_runtime_source-repair",
+  "run_id": "RUN-20261023103014-415delivery",
+  "record_kind": "initial_validation_snapshot_with_additive_followup",
+  "initial_candidate_sha": "6d68634e5970f3737a31b294b29b971f4c4a5377",
+  "top_level_validation_scope": "Initial snapshot for initial_candidate_sha; current_validation below supersedes candidate-specific results without replacing the historical evidence. review_repair_20261023 records the later local authorized subset and supersedes no historical result silently.",
+  "observation_anchor_at": "2026-10-23T10:58:29.698Z",
+  "phase_at_recording": "validated_for_independent_draft_publication",
+  "base_sha": "184adb088c6157ceec148061a6b8cef5f8444377",
+  "base_source": "freshly fetched origin/main; remote main equality checked before isolated worktree creation",
+  "branch": "agent/codex_runtime_source-repair/TASK-2026-542732/RUN-20261023103014-415delivery",
+  "worktree": ".worktrees/RUN-20261023103014-415delivery",
+  "original_run_id": "RUN-20260919113827-kv682q",
+  "original_base_sha": "06a680c69b0a7c38c003701ec4e7896bb45a2476",
+  "original_changed_file_count": 35,
+  "original_ledger_count": 3,
+  "original_content_sha256": "77685c2ce9b2112f01bc141086f706dc8f4c039a837aa74c84fde3748c4a2eb3",
+  "validated_content_sha256": "b711a753c10fc8a9147d544b1ab1dae1a813d454401c2f4e461213a62e7a6189",
+  "content_hash_algorithm": "sort 35 source paths; join path + NUL + SHA256(file bytes) with LF; SHA256",
+  "implementation_diff_sha256": "e1b7a61f79dc936a632ecdd4ab0101684b92fc2bd42b5c4a36448bed71f10ea9",
+  "candidate_binding": "The commit containing this snapshot binds its files. Publication must verify local HEAD = remote branch = PR head = queried check head; the live bot receipt and PR carry the exact commit SHA.",
+  "recovery_archive": "/mnt/d/users/wsman/desktop/coding task/openslack-recovery/issue-415/RUN-20261023103014-415delivery",
+  "recovery_manifest_sha256": "01f5e9f95b7add05f85ab208d4d9e30317b9b737432f55e5d4178d42307d079d",
+  "recovery_patch_sha256": "33ae423ecf7d61d8e35d0158dd558f5ffa75dd6e4a075190fc0d7d3dde2dafb8",
+  "preservation": "All 35 original source files and 3 historical ledgers rehashed against the manifest and both backup copies. Original branch remains at 06a680c6. No credentials, runtime identity or dependencies copied; no worktree prune or claim cleanup.",
+  "principal_binding": "Existing primary-checkout codex_runtime_source-repair principal revalidated. Its bootstrap run identity is retained; the new run is a recorded continuation, not a copied or modified runtime identity.",
+  "claim_ref": "refs/heads/openslack/claims/issue-415",
+  "claim_id": "203e550c-ee33-4dc3-9304-c7c437c1d8da",
+  "claim_evidence": "https://github.com/Negentropy-Laby/OpenSlack/issues/415#issuecomment-5741602873",
+  "lease_at_recording": {
+    "operation": "supported heartbeat and readback",
+    "owner": "codex_runtime_source-repair",
+    "outcome": "completed",
+    "expires_at": "2026-10-23T12:58:29.698Z",
+    "next_heartbeat_at": "2026-10-23T11:13:29.698Z",
+    "heartbeat_minutes": 15,
+    "background_renewal": false
+  },
+  "publication_preconditions": "Revalidate live owner, lease, Issue scope, principal permission, exact 38 paths and configured bot identity before pushing. Bot service enforces installation permissions and synchronized head; preserve Draft and prohibit approval/merge.",
+  "scope_validation": "PASS: live manifest, capability, risk, forbidden-path and principal checks for 35 source files plus these 3 records; no registry/policy/config changes",
+  "repair_tests": {
+    "status": "PASS",
+    "files": 27,
+    "tests": 554,
+    "duration_seconds": 140.9,
+    "log": "focused-regression.log"
+  },
+  "build": "PASS",
+  "typecheck": "PASS",
+  "lint": "PASS_0_ERRORS_2_UNUSED_VARIABLE_WARNINGS",
+  "documentation": "PASS_161_ACTIVE_DOCUMENTS_103_MIGRATION_ENTRIES",
+  "workspace": "PASS",
+  "go_contracts": "PASS",
+  "source_lock": "PASS_229_BINDINGS_NO_INVENTORY_OR_AUTHORITY_CHANGE",
+  "test_inventory": {
+    "status": "FAIL_COUNTS_DRIFT_OUTSIDE_PRINCIPAL_SCOPE",
+    "registered_cases": 8077,
+    "collected_declared_cases": 8149,
+    "module_deltas": [
+      "modules.1:1392->1406",
+      "modules.2:2091->2104",
+      "modules.3:2139->2153",
+      "modules.4:4683->4742"
+    ],
+    "scope_evidence": "CORRECTION: the initial filterByPath probe checked forbidden paths, not allowed_paths membership. Explicit live membership excludes .openslack/modules.yaml and docs/status/current.md, and the verified principal also denies both. The effective intersection excludes them; no changes were made.",
+    "log": "test-inventory.log",
+    "scope_receipt": "scope-gaps-explicit.json"
+  },
+  "independent_reviews": [
+    {
+      "reviewer": "review415_identity",
+      "scope": "identity, source ownership, opaque resume, historical initialization and worker boundaries",
+      "result": "NO_REMAINING_P1_P2_AFTER_RECOVERY_2_FIX",
+      "reviewed_implementation_diff_sha256": "e1b7a61f79dc936a632ecdd4ab0101684b92fc2bd42b5c4a36448bed71f10ea9"
+    },
+    {
+      "reviewer": "review415_lifecycle",
+      "scope": "audit v1/v2, persisted identity, finalize targets and zero-write boundaries, source pins and #417 retention",
+      "result": "NO_REMAINING_P1_P2_AFTER_RECOVERY_1_FIX",
+      "reviewed_implementation_diff_sha256": "e1b7a61f79dc936a632ecdd4ab0101684b92fc2bd42b5c4a36448bed71f10ea9"
+    }
+  ],
+  "container_qualification": "BLOCKED_LOCAL_DOCKER_DAEMON_UNAVAILABLE",
+  "hosted_ci_at_recording": "PENDING_DRAFT_PUBLICATION_QUERY_SAME_HEAD_LINUX_AND_WINDOWS_AFTER_PUBLICATION",
+  "historical_test_evidence": "Old 546-test PASS remains historical and is not reused as this run's result",
+  "external_plan_file": "MISSING: C:/Users/WSMAN/.claude/plans/23e6c168-pr-shimmering-meerkat.md; not reconstructed from archives",
+  "task_acceptance": "NOT_COMPLETE",
+  "human_approval": "NOT_REQUESTED_OR_GRANTED_BY_AGENT",
+  "merge": "NOT_AUTHORIZED",
+  "provider_calls": 0,
+  "r_ext": "NOT_RUN",
+  "excluded": ["#411", "GS10", "GS11", "GS12", "GS13", "production operations", "release"],
+  "current_validation": {
+    "observed_at": "2026-10-23T11:19:12Z",
+    "parent_candidate_sha": "6d68634e5970f3737a31b294b29b971f4c4a5377",
+    "reason": "Hosted full tests exposed lost safe missing-meta diagnostic compatibility; restore the fixed hint while retaining typed MANIFEST_INVALID and pre-import rejection.",
+    "source_content_sha256": "f6998535ae0ca6c3d40b4e036a387fe9698fc9f35d9d86c813b3d08a3d45c9be",
+    "implementation_diff_sha256": "9ac563a825d26a0e3e736ed0981c4f742990fd2d51effb52ea56dcdc1c976ec1",
+    "delivery_binding": "The additive commit containing this continuation is the next candidate; bot publication must recheck local/remote/PR/check SHAs. Previous candidate PASS is not inherited.",
+    "focused_tests": {
+      "status": "PASS",
+      "files": 28,
+      "tests": 581,
+      "duration_seconds": 102.5,
+      "log": "followup-focused.log"
+    },
+    "loader_red_green": "Two failing loader diagnostics reproduced, then 76 cases passed. The 581-case run includes these cases; counts are not added.",
+    "build": "PASS",
+    "typecheck": "PASS",
+    "lint": "PASS_0_ERRORS_2_WARNINGS",
+    "documentation": "PASS_161_ACTIVE_DOCUMENTS",
+    "workspace": "PASS",
+    "go_contracts": "PASS",
+    "source_lock": "PASS_229_BINDINGS_INVENTORY_UNCHANGED",
+    "independent_reviews": "review415_identity and review415_lifecycle both re-reviewed the four-file followup and exact 35-file hashes; no new P1/P2",
+    "scope_correction": "Explicit allowed_paths membership, forbidden filter and principal authorization are separate. CLI fixture, count/status paths, Windows timeout fixture paths and claude-loader.test.ts are outside the effective intersection. No excluded file was edited, moved or copied into another test path to bypass the scope.",
+    "remaining": [
+      "Two legacy CLI fixture failures require the exact excluded commands/__tests__/collaboration-workflow-issues.test.ts path; retain production verified-binding checks",
+      "Initial Windows artifact run also reported timeout and suite-launch failures in excluded fixtures; no unsupported baseline/flakiness claim",
+      "Initial inventory measured 8077 registered vs 8149 collected; this followup adds one declared case, so it is not a fresh current-head count result",
+      "Local Docker remains blocked; current-head hosted Linux/Windows must rerun after this push",
+      "Human approval, merge, task completion and release remain unperformed"
+    ]
+  },
+  "initial_hosted_observations": {
+    "head": "6d68634e5970f3737a31b294b29b971f4c4a5377",
+    "full_tests": "8140 passed, 3 failed, 6 skipped; failure logs preserved. One loader failure is addressed by this followup; two excluded CLI fixtures remain.",
+    "windows_runtime": "PASS on the initial head only, not inherited by the followup",
+    "linux_runtime": "Still running at the continuation snapshot",
+    "tag_release": "SKIPPED, zero steps executed"
+  },
+  "findings": "findings.md",
+  "validation": "validation.md",
+  "review_repair_20261023": {
+    "observed_at": "2026-10-23T15:59:03.250230Z",
+    "record_kind": "local_reviewable_authorized_subset_not_published",
+    "parent_pr_head": "4327aa58009a3919b89212dbc21c458589454b12",
+    "local_implementation_commit": "f346cd5ea5a8813f2b955365258a6456531d3c19",
+    "source_diff_sha256": "9c50e9807f64ba9e0bc94dc628375f0e4c4688e0b7dc5910597207912d1d78d7",
+    "branch": "agent/codex_runtime_source-repair/TASK-2026-542732/RUN-20261023103014-415delivery",
+    "existing_pr": 425,
+    "draft": true,
+    "remote_publication": "NOT_RUN_RUNTIME_BINDING_MISSING",
+    "implementation_files": 30,
+    "scope": {
+      "static_changed_path_intersection": "PASS",
+      "requested_extra_paths": 12,
+      "task_amendment": "LIVE_VERIFIED",
+      "principal_amendment": "NOT_EFFECTIVE",
+      "runtime_identity": "MISSING_DO_NOT_BOOTSTRAP",
+      "additional_mcp_test": "TASK_AND_PRINCIPAL_PATH_NOT_ALLOWED",
+      "fresh_runtime_permission_snapshot": "NOT_AVAILABLE"
+    },
+    "verification": {
+      "focused": {
+        "status": "PASS",
+        "files": 11,
+        "cases": 351,
+        "log": "focused-owned-copy-final.log"
+      },
+      "full_linux": {
+        "status": "FAIL",
+        "passed": 8171,
+        "failed": 5,
+        "skipped": 6,
+        "total": 8182,
+        "log": "full-vitest-authorized.log",
+        "scope_note": "Executed before six additional identity compatibility cases; those six passed in the final focused run. No full final-tree PASS is claimed."
+      },
+      "known_cli_fixture_failures": 4,
+      "mcp_aggregate_failure": {
+        "status": "UNRESOLVED_OUTSIDE_SCOPE",
+        "isolated_cases": 20,
+        "isolated_result": "PASS",
+        "log": "mcp-failure-isolated.log",
+        "classification": "Both active blockers are legitimate; no baseline/flakiness fix claimed."
+      },
+      "build": "PASS",
+      "typecheck": "PASS",
+      "eslint": "0_ERRORS_0_WARNINGS",
+      "workflow_control_go_race": "PASS",
+      "workflow_control_go_vet": "PASS",
+      "sealed_runner_bundle": {
+        "status": "PASS_LOCAL_DEFAULT_OFF_AND_BYTE_VALIDATION",
+        "sha256": "41eae08d50f3d013a278f62ff27873000fe901d8a89226a46cd5ece7e80fdc94",
+        "bytes": 3046811,
+        "qualification": "No real PostgreSQL/container qualification implied"
+      },
+      "workspace": "PASS",
+      "golden": "7_OF_7_PASS",
+      "genesis": "5_OF_5_PASS",
+      "documentation": "PASS",
+      "status_projection_consistency": "PASS_WITH_OLD_8077_REGISTRY_ONLY",
+      "production_test_collector": {
+        "status": "FAIL_DRIFT",
+        "registered": 8077,
+        "collected": 8188,
+        "module_changes": {
+          "1": [1392, 1416],
+          "2": [2091, 2120],
+          "3": [2139, 2163],
+          "4": [4683, 4765]
+        },
+        "updated": false
+      },
+      "source_lock": {
+        "status": "PASS",
+        "bindings": 229,
+        "changed_existing_digests": 14,
+        "inventory_and_authority_unchanged": true
+      },
+      "new_head_hosted_windows_linux_packaging": "NOT_RUN_NOT_PUBLISHED",
+      "new_head_prms": "NOT_RUN_NOT_PUBLISHED"
+    },
+    "independent_readonly_review": {
+      "scope": "30-file source subset plus read-only diagnosis of MCP blocker",
+      "result": "NO_CONCRETE_NEW_DEFECT_IN_SOURCE_SUBSET",
+      "diff_sha256": "9c50e9807f64ba9e0bc94dc628375f0e4c4688e0b7dc5910597207912d1d78d7",
+      "limitations": "Not human approval, full acceptance, or review of permission-blocked implementation."
+    },
+    "claim_heartbeat": {
+      "result": "PASS_EXACT_OWNER_REF",
+      "expires_at": "2026-10-23T17:45:42.439Z",
+      "log": "claim-heartbeat-direct-native.log"
+    },
+    "evidence_root": "/var/tmp/openslack-pr425-repair-evidence-20261023",
+    "remaining": [
+      "Maintainer applies governed principal amendment and restores/identifies original fixed runtime binding without bootstrap",
+      "Core identity shared authority and PR gate binding projection",
+      "Controlled internal package subpath and build-first test entries",
+      "Old CLI fixture migration and canonical count/projection regeneration",
+      "Additional authorized MCP test-only correction and complete final full suite",
+      "Update-only #425 publication, exact-head hosted checks and PRMS"
+    ],
+    "acceptance": "NOT_COMPLETE",
+    "human_approval": "NOT_REQUESTED",
+    "merge": "NOT_AUTHORIZED",
+    "deployment": "NOT_RUN"
+  },
+  "remaining_repair_20261102": {
+    "observed_at": "2026-11-02T08:21:31Z",
+    "record_kind": "additive_five_remaining_repairs_local_validation_pending_hosted_delivery",
+    "existing_pr": 425,
+    "parent_pr_head": "2edb2b7c1bbeb6e9adeb6eb04ba441c5f67d1f50",
+    "base_sha": "e3e2584d1349c1578e5d229e0d460feaf494f83d",
+    "implementation_commit": "4ffe0941eddd63745c05922b81f17a4dc4d14e47",
+    "implementation_tree": "9da2dc813b7a609d66e2fae729551da5cb1f66de",
+    "input_manifest": {
+      "file": "review-input-r6.json",
+      "sha256": "b60674ed7a95b4466a13cde805df55b575dfbccb651d9b405abc36985dccb32c",
+      "files": 22
+    },
+    "evidence_root": "/mnt/d/users/wsman/desktop/coding task/openslack-recovery/issue-415/RUN-20261023103014-415delivery/repair-20261102-5SuPX4",
+    "validation_environment": {
+      "root": "/tmp/openslack425-validation-nOHyAR/openslack",
+      "os_user": "nobody",
+      "uid": 65534,
+      "node": "24.18.1",
+      "bun": "1.4.0",
+      "python": "3.12.9",
+      "git": "2.48.1 (local only, no HTTPS helper; not publication transport)",
+      "pnpm": "11.28.5",
+      "go": "1.26.5",
+      "preparation": "source-only clone; frozen install; actual rebuild; no old dist or identity copied",
+      "harness_sha": "22ddee3792402c3e70ec5f86a63c3e3e895a2f60",
+      "harness_tree": "98266a99ba0e9bf6bac8ea39434f48605e40b368",
+      "harness_patches": false
+    },
+    "scope": {
+      "runtime_identity_run_id": "RUN-20260919113827-kv682q",
+      "principal": "principal:codex_runtime_source-repair",
+      "provider": "cli",
+      "registry_sha256": "5efff8efb005891e06b7b2e405478b6d954da904dd3aa0d50e67b550fff3096f",
+      "registry_change": "Maintainer-applied locally, uncommitted; not edited/staged/published by repair executor",
+      "permission_readback": "precommit.permission.readback.json",
+      "allowed_paths_verified": 25,
+      "doctor_task_scope": "live task and production principal allow",
+      "denial_boundaries": "self-registry, kernel, secret, approval and merge remain denied",
+      "claim": "original owner heartbeat only; no new claim or completeClaim",
+      "lease_expires_at_at_recording": "2026-11-02T10:16:00.567Z"
+    },
+    "repairs": {
+      "6": "CLI preview/live fixtures complete; original four failures now reach intended assertions and pass",
+      "7": "one exact Workflows snapshot subpath; both package test pretests reuse existing root build/schema staging before own Vitest project; root package/tsconfigs unchanged",
+      "24": "Core diagnostic types authoritative; compatibility aliases; executable identity remains narrow; audit v1/v2 unchanged",
+      "8/31": "production8998 cases/600 files; modules/status generated; second collection/generation byte-identical",
+      "22/32": "PR-owned governanceRequired/verifiedGovernanceIssue, exact PR/head/base/author/evidence/artifact binding; frontends/doctor forward target; TUI N/A zero-write"
+    },
+    "verification": {
+      "full_vitest": {
+        "status": "PASS",
+        "passed": 8973,
+        "failed": 0,
+        "skipped": 25,
+        "declared": 8998,
+        "passed_files": 598,
+        "skipped_files": 2,
+        "total_files": 600,
+        "receipt": "local-validation/r7-full.receipt.json",
+        "log_sha256": "3fa100aabe5daeb7cd03925c8e9baf66488e6e6d96e44a01e1bda034d5bc8d8c",
+        "json_sha256": "6865e9e8011863626127bd6e325a0eed1caf0baa44a85694db862cd4cbf95d3c"
+      },
+      "package_entries": {
+        "workflows": "1735 passed /2 skipped; 88 files; actual pretest build",
+        "cli": "568 passed /1 skipped; 57 files; actual pretest build",
+        "receipt": "local-validation/r6-packages.receipt.json"
+      },
+      "build": "PASS_ACTUAL_FORCE_EMIT_AND_SCHEMA_PLUGIN_PREPARATION",
+      "quality": "10/10 exit0; local-validation/r6-quality.receipt.json",
+      "source_lock": "229 inputs preserved; five existing SHA fields/independent Go literals only; Go contracts exit0",
+      "inventory": "8998/600; two production verify passes; second status generation identical",
+      "counts_receipt": "local-validation/r6-counts.receipt.json",
+      "red_green": "Original CLI4/gate9/Core missing exports/package-surface RED captured. r3/r4/r5 package FAIL retained. r6 full17 failures lacked pnpm; only private PATH corrected; no source/assertion/timeout changes; all17 file/fullName pass in r7."
+    },
+    "independent_reviews": [
+      {
+        "reviewer": "pr425_typescript_review",
+        "result": "APPROVED_STATIC",
+        "input": "22/22 r6 bytes"
+      },
+      {
+        "reviewer": "pr425_arch_review",
+        "result": "NO_BLOCKING_FINDINGS_NO_NEW_ADR",
+        "input": "22/22 r6 bytes"
+      },
+      {
+        "reviewer": "pr425_qa_review",
+        "result": "ADEQUATE",
+        "input": "22/22 r6 plus raw package/full/quality/count/Go logs; no test execution by reviewer"
+      }
+    ],
+    "boundaries": {
+      "historical_records": "append only; no earlier PASS/FAIL/refusal overwritten",
+      "mcp": "prior correction inherited from426; no new MCP edit; current full includes regression",
+      "production": "no identity/registry/policy/Broker/sealed-worker edits or business Workflow/runtime/deployment effects; authorized claim heartbeat is separately recorded",
+      "real_harness_model": "NOT_RUN_NOT_REQUIRED_BY_THIS_FIVE_FIX_SCOPE",
+      "hosted_ci": "NOT_RUN_AT_LOCAL_SNAPSHOT; must bind final delivery SHA",
+      "publication": "PENDING_UPDATE_ONLY_425; no newPR/force push",
+      "prms": "PENDING_AUTHENTICATED_LIVE_COLLECTION; Draft not inferred from unavailable evidence",
+      "task_acceptance": "NOT_COMPLETE_PENDING_HOSTED_SYNC_AND_HUMAN_GATES",
+      "human_approval": "NOT_GRANTED_BY_EXECUTOR",
+      "merge": "NOT_AUTHORIZED",
+      "release": "NOT_AUTHORIZED"
+    }
+  }
+}

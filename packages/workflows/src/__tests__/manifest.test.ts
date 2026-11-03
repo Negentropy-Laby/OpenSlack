@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { parseManifest, validateManifest, computeManifestHash } from '../manifest.js';
+import {
+  parseManifest,
+  validateManifest,
+  validateManifestDiagnostics,
+  manifestDiagnosticFields,
+  computeManifestHash,
+} from '../manifest.js';
 import type { WorkflowMeta } from '../types.js';
 
 describe('parseManifest', () => {
@@ -160,6 +166,40 @@ describe('parseManifest', () => {
 });
 
 describe('validateManifest', () => {
+  it('owns field attribution independently of arbitrary manifest values', () => {
+    const meta: WorkflowMeta = {
+      name: 'valid',
+      description: 'test',
+      version: '1.0.0',
+      phases: [{ title: 'Read', detail: 'Read' }],
+      sideEffects: ['update title and version'],
+      permissions: { github: ['read'], filesystem: 'inputs description' as never },
+    };
+    const diagnostics = validateManifestDiagnostics(meta);
+    expect(diagnostics.map((item) => item.field)).toEqual(['sideEffects', 'permissions']);
+    expect(validateManifest(meta)).toEqual(diagnostics.map((item) => item.message));
+  });
+
+  it('does not obtain field identities from a forged error or its getter', () => {
+    const getter = {
+      get message() {
+        throw Error('must not read');
+      },
+    };
+    expect(manifestDiagnosticFields(getter)).toEqual([]);
+    expect(
+      manifestDiagnosticFields(
+        new Proxy(
+          {},
+          {
+            get() {
+              throw Error('must not read');
+            },
+          },
+        ),
+      ),
+    ).toEqual([]);
+  });
   it('returns empty array for valid manifest', () => {
     const meta: WorkflowMeta = {
       name: 'valid-workflow',

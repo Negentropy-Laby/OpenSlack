@@ -18,6 +18,7 @@ export function diagnosePR(
 
   // Initialize workflow gate as N/A; will be re-evaluated after basic checks
   const workflowGate = evaluateWorkflowGate({
+    prNumber: report.prNumber,
     changedFiles: report.changedFiles,
     body: report.body ?? '',
     author: report.author,

@@ -1,16 +1,16 @@
 import * as profileSync from './builtins/profile-sync.js';
-import type { WorkflowModule } from './types.js';
+import type { OpenSlackWorkflow } from './types.js';
 
 const PREFIX = 'openslack:builtin/';
 
-const BUILTINS: Readonly<Record<string, WorkflowModule>> = {
-  'profile-sync': profileSync as unknown as WorkflowModule,
-};
+const BUILTINS: Readonly<Record<string, OpenSlackWorkflow>> = Object.freeze({
+  'profile-sync': { meta: profileSync.meta, preview: profileSync.preview, run: profileSync.run },
+});
 
 export function listEmbeddedBuiltins(): Array<{
   name: string;
   path: string;
-  module: WorkflowModule;
+  module: OpenSlackWorkflow;
 }> {
   return Object.entries(BUILTINS).map(([name, module]) => ({
     name,
@@ -19,6 +19,6 @@ export function listEmbeddedBuiltins(): Array<{
   }));
 }
 
-export function getEmbeddedBuiltin(path: string): WorkflowModule | undefined {
+export function getEmbeddedBuiltin(path: string): OpenSlackWorkflow | undefined {
   return path.startsWith(PREFIX) ? BUILTINS[path.slice(PREFIX.length)] : undefined;
 }

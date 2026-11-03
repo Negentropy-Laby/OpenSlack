@@ -2,8 +2,13 @@ import {
   bindWorkflowSourceIdentity,
   compareWorkflowBinding,
 } from './internal/workflow-identity.js';
-import { createWorkflowSourceSnapshot } from './internal/workflow-source-snapshot.js';
 import { createHash } from 'node:crypto';
+import {
+  WorkflowSourceEvidenceError,
+  workflowSourceEvidenceProjection,
+  workflowDiagnosticOwnValue,
+  workflowDiagnosticHasPrototype,
+} from './internal/workflow-source-snapshot.js';
 import { constants as fsConstants, writeSync, type BigIntStats } from 'node:fs';
 import { lstat, open, readdir, realpath } from 'node:fs/promises';
 import { homedir } from 'node:os';
@@ -71,6 +76,7 @@ import {
 import { exactWorkflowRunnerLoopbackOrigin } from './workflow-runner-control-http.js';
 import { WorkflowRunnerDescriptorStore } from './workflow-runner-descriptor-store.js';
 import { classifyWorkflowRunnerRunState } from './workflow-runner-run-state.js';
+import type { WorkflowRunnerRunStateError } from './workflow-runner-run-state.js';
 import {
   createWorkflowRunnerCheckpointSourceAdapter,
   createWorkflowRunnerPreparedBudgetSourceAdapter,
@@ -99,6 +105,7 @@ import {
   type WorkflowRunnerV2ExecutionContext,
   type WorkflowRunnerV2RuntimeDeliveryPort,
   type WorkflowRunnerV2SourceLoader,
+  type WorkflowRunnerV2SessionError,
 } from './workflow-runner-v2-session.js';
 
 export const WORKFLOW_RUNNER_V2_RUNTIME_DELIVERY_ENABLED_ENV =
@@ -457,7 +464,11 @@ function createSealedWorkflowSourceLoaderCore<TDescriptor extends SealedWorkflow
         throw new Error(policy.messages.changedRoot);
       }
       if (policy.hashSource(source.bytes) !== descriptor.workflowSourceHash) {
-        throw new Error(policy.messages.sourceHash);
+        throw new WorkflowSourceEvidenceError('SOURCE_DRIFT', policy.messages.sourceHash, {
+          domain: 'runner-v2-source',
+          stored: descriptor.workflowSourceHash,
+          current: policy.hashSource(source.bytes),
+        });
       }
       assertWorkflowRunnerSourceIsSelfContained(source.bytes);
       return Object.freeze({
@@ -475,7 +486,11 @@ function createSealedWorkflowSourceLoaderCore<TDescriptor extends SealedWorkflow
         !beforeImport.bytes.equals(prepared.bytes) ||
         policy.hashSource(beforeImport.bytes) !== descriptor.workflowSourceHash
       ) {
-        throw new Error(policy.messages.changedSource);
+        throw new WorkflowSourceEvidenceError('SOURCE_DRIFT', policy.messages.changedSource, {
+          domain: 'runner-v2-source',
+          stored: descriptor.workflowSourceHash,
+          current: policy.hashSource(beforeImport.bytes),
+        });
       }
       const workflow = await loadWorkflowFile(prepared.path, {
         moduleCacheKey: descriptor.workflowSourceHash,
@@ -484,9 +499,15 @@ function createSealedWorkflowSourceLoaderCore<TDescriptor extends SealedWorkflow
       // on every supported platform. Re-verify immediately after import and
       // fail closed if the path or bytes crossed that residual boundary.
       const afterImport = await readSealedWorkflowSource(prepared.path);
-      if (
-        sourceIdentity(afterImport.stat) !== prepared.identity ||
+      const currentManifestHash = policy.hashManifest(workflow.meta);
+      const currentSourceHash = policy.hashSource(afterImport.bytes);
+      const sourceIdentityChanged = sourceIdentity(afterImport.stat) !== prepared.identity;
+      const sourceChanged =
         !afterImport.bytes.equals(prepared.bytes) ||
+        currentSourceHash !== descriptor.workflowSourceHash;
+      if (
+        sourceIdentityChanged ||
+        sourceChanged ||
         compareWorkflowBinding(
           {
             workflowId: descriptor.workflowId,
@@ -497,18 +518,31 @@ function createSealedWorkflowSourceLoaderCore<TDescriptor extends SealedWorkflow
           {
             workflowId: workflow.meta.name,
             workflowVersion: workflow.meta.version ?? '0.0.0',
-            manifestHash: policy.hashManifest(workflow.meta),
-            workflowSourceHash: policy.hashSource(afterImport.bytes),
+            manifestHash: currentManifestHash,
+            workflowSourceHash: currentSourceHash,
           },
         ) !== undefined
       ) {
-        throw new Error(policy.messages.loadedIdentity);
+        const manifestChanged = currentManifestHash !== descriptor.manifestHash;
+        throw new WorkflowSourceEvidenceError(
+          manifestChanged
+            ? 'MANIFEST_DRIFT'
+            : sourceChanged
+              ? 'SOURCE_DRIFT'
+              : sourceIdentityChanged
+                ? 'SOURCE_IDENTITY_DRIFT'
+                : 'LOADER_SOURCE_MISMATCH',
+          sourceIdentityChanged && !sourceChanged && !manifestChanged
+            ? 'Workflow file identity changed after import, although its source digest is unchanged.'
+            : policy.messages.loadedIdentity,
+          {
+            domain: manifestChanged ? 'runner-v2-manifest' : 'runner-v2-source',
+            stored: manifestChanged ? descriptor.manifestHash : descriptor.workflowSourceHash,
+            current: manifestChanged ? currentManifestHash : currentSourceHash,
+          },
+        );
       }
-      return bindWorkflowSourceIdentity(
-        workflow,
-        afterImport.bytes,
-        workflow.sourceSnapshot ?? createWorkflowSourceSnapshot(afterImport.bytes, workflow.meta),
-      );
+      return bindWorkflowSourceIdentity(workflow, afterImport.bytes, workflow.sourceSnapshot);
     },
   });
 }
@@ -548,13 +582,71 @@ function installProtocolOnlyStreams(): void {
   console.error = (..._values: unknown[]) => undefined;
 }
 
-function boundedDiagnostic(error: unknown): string {
-  const name = error instanceof Error ? error.name : 'Error';
+type WorkerDiagnosticCode =
+  | WorkflowRunnerV2SessionError['code']
+  | WorkflowRunnerV2BudgetBoundaryError['code']
+  | WorkflowRunnerRunStateError['code']
+  | 'WORKFLOW_RUNNER_WORKER_FAILED';
+const WORKER_DIAGNOSTIC_CODES: Readonly<Record<WorkerDiagnosticCode, true>> = Object.freeze({
+  WORKFLOW_RUNNER_V2_SESSION_STATE: true,
+  WORKFLOW_RUNNER_V2_SESSION_DIRECTION: true,
+  WORKFLOW_RUNNER_V2_REQUIRED_PROTOCOL_UNAVAILABLE: true,
+  WORKFLOW_RUNNER_V2_DOWNGRADE_FORBIDDEN: true,
+  WORKFLOW_RUNNER_V2_CAPABILITY_MISMATCH: true,
+  WORKFLOW_RUNNER_V2_ADMISSION_BINDING_MISMATCH: true,
+  WORKFLOW_RUNNER_V2_SESSION_IDENTITY: true,
+  WORKFLOW_RUNNER_V2_SESSION_SEQUENCE: true,
+  WORKFLOW_RUNNER_V2_RECEIPT_REQUIRED: true,
+  WORKFLOW_RUNNER_V2_CONTROL_DECISION_REQUIRED: true,
+  WORKFLOW_RUNNER_V2_CONTROL_DECISION_MISMATCH: true,
+  WORKFLOW_RUNNER_V2_CONTROL_DECISION_EXPIRED: true,
+  WORKFLOW_RUNNER_V2_RECONCILIATION_REQUIRED: true,
+  WORKFLOW_RUNNER_V2_TERMINAL_BEFORE_RECEIPT: true,
+  WORKFLOW_RUNNER_V2_BUDGET_REJECTED: true,
+  WORKFLOW_RUNNER_V2_BUDGET_AUTHORIZATION_MISMATCH: true,
+  WORKFLOW_RUNNER_V2_BUDGET_RECONCILIATION_REQUIRED: true,
+  WORKFLOW_RUNNER_RECOVERY_REQUIRED: true,
+  WORKFLOW_RUNNER_WORKER_FAILED: true,
+});
+const WORKER_DIAGNOSTIC_NAMES = Object.freeze([
+  'Error',
+  'TypeError',
+  'RangeError',
+  'SyntaxError',
+  'ReferenceError',
+  'URIError',
+  'EvalError',
+  'AggregateError',
+  'WorkflowRunnerWorkerConfigError',
+  'WorkflowRunnerV2SessionError',
+  'WorkflowRunnerV2BudgetBoundaryError',
+  'WorkflowRunnerRunStateError',
+]);
+
+/** @internal Safe stderr representation; does not extend the frozen runner wire protocol. */
+export function boundedDiagnostic(error: unknown): string {
+  const source = workflowSourceEvidenceProjection(error);
+  if (source)
+    return (
+      JSON.stringify({
+        code: source.code,
+        reasonCode: source.reasonCode,
+        domain: source.identities?.domain,
+        stored: source.identities?.stored,
+        current: source.identities?.current,
+        guidance: 'Reload the reviewed workflow and reconcile the run before retrying.',
+      }) + '\n'
+    );
+  if (!workflowDiagnosticHasPrototype(error, Error.prototype))
+    return '[WORKFLOW_RUNNER_WORKER_FAILED] Error\n';
+  const rawName = workflowDiagnosticOwnValue(error, 'name');
+  const rawCode = workflowDiagnosticOwnValue(error, 'code');
+  const name = WORKER_DIAGNOSTIC_NAMES.find((value) => value === rawName) ?? 'Error';
   const code =
-    error instanceof Error && typeof (error as Error & { code?: unknown }).code === 'string'
-      ? (error as Error & { code: string }).code
+    typeof rawCode === 'string' && Object.hasOwn(WORKER_DIAGNOSTIC_CODES, rawCode)
+      ? rawCode
       : 'WORKFLOW_RUNNER_WORKER_FAILED';
-  return `[${String(code).slice(0, 128)}] ${String(name).slice(0, 128)}\n`;
+  return `[${code}] ${name}\n`;
 }
 
 class WorkflowRunnerV2BudgetBoundaryError extends Error {

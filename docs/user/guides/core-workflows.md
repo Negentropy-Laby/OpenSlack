@@ -194,11 +194,10 @@ bun run openslack collaboration workflow profile-sync check
 
 ```bash
 bun run openslack collaboration workflow profile-sync preview
-bun run openslack collaboration workflow profile-sync run
 bun run openslack collaboration workflow profile-sync status
 ```
 
-Preview shows the diff of what would change. Run applies the projection update. Status confirms whether the profile is currently in sync. Run `check` periodically or after whitepaper updates to catch drift early.
+Preview shows the proposed diff; status inspects existing sync evidence. The shipped embedded `profile-sync run` currently refuses with `SOURCE_KIND_UNSUPPORTED` before confirmation or submission because it has no file-loader source evidence. Actual synchronization is not delivered through this embedded module; it requires a separately reviewed file workflow and normal authenticated Runner admission. Do not use `--yes` as a workaround. Run `check` periodically or after whitepaper updates to catch drift early.
 
 ---
 

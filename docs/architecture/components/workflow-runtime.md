@@ -630,9 +630,13 @@ remain inspectable and exportable but cannot execute.
    once into an opaque context before loading code; the context retains its own canonical receipt.
 2. Load the workflow and retain an owned source snapshot. Reject modules without an execution function.
 3. Consume that context to compare workflow name/version before hashing, then source and manifest.
-   A copied or fabricated context cannot authorize binding.
+   The context proves process-local ownership of a validated copy, not receipt authenticity.
+   The source/manifest comparison against the anchored route supplies the identity check.
 4. Verify the persisted executable identity and load the completed checkpoint prefix.
-5. After confirmation, read source again. Any change rejects submission before authority or descriptor writes.
+5. The CLI reads source again after confirmation. The client compares those fresh bytes
+   with loader evidence and rejects drift before authority or descriptor writes.
+   Other callers must acquire fresh source evidence at their own confirmation boundary;
+   the execution client does not perform this CLI disk read on their behalf.
 6. The execution client revalidates the immutable route and authenticated head and submits v2.
 7. The sealed worker independently verifies source before and after import, then validates
    persisted arguments, budget and checkpoint bindings before resuming execution.
@@ -659,6 +663,74 @@ recovery/export procedure; there is no force-resume override for changed source.
 The routing policy expiry limits initial route selection. An existing immutable route
 retains its selection-time evidence after that policy expires; each new execution descriptor
 and lease must still satisfy its own expiry checks.
+
+### Source Evidence Boundaries
+
+File loading returns an owned snapshot. CLI/TUI submission and Go resume reject missing
+loader snapshots; unsupported embedded builtins cannot be made eligible by hashing an
+unrelated file. Snapshot construction is internal, but hiding the constructor is not an
+authentication guarantee. The worker and authority still verify their independent anchors.
+
+`checkResumeEligibility` returns `eligible` for state-only preflight. It does not expose
+`canResume` or assert a manifest match. Identity-verified resume and the final authority/CAS
+checks remain separate requirements. The client retains caller byte/manifest copies before
+its first asynchronous lookup; worker pre/post-import validation remains independent.
+
+`createWorkflowResumePreflight(store, runId)` owns one read-only state/metadata observation.
+Its `check(identity)` and `prepare(identity)` closures cannot be rebound to another store or
+run; returned metadata/status values are copies. They are diagnostic preparation, not an
+authorization ticket. Ordinary `checkResumable`/`prepareResume` calls create new observations.
+The CLI reuses one observation before confirmation; the execution client still reads the
+latest authenticated authority and rejects state/revision drift after that wait.
+
+Loaded-file frontends require loader snapshots. Internal client/descriptor APIs accepting
+raw bytes may construct owned snapshots because they independently check route/descriptor
+anchors; that construction does not prove an imported module matches those bytes.
+
+Client evidence failures map to control input errors for new runs and recovery-required
+errors for existing runs, retaining the typed cause and hash summary. Worker source failures
+before lease acceptance retain the frozen `unsupported` rejection; post-lease fatal failures
+use bounded reason/domain/digest stderr diagnostics and reconciliation. No wire vocabulary
+or authority protocol is extended.
+
+Snapshot verification classifies missing/unrecognized evidence, source drift, manifest
+drift and loader/source mismatch with `WORKFLOW_SOURCE_EVIDENCE_INVALID` and a reason code.
+File-loader static/runtime manifest validation uses `MANIFEST_INVALID`; divergence of a
+valid runtime manifest from its static snapshot uses `MANIFEST_DRIFT`. Arbitrary module
+execution exceptions are not relabeled as drift.
+Comparison summaries contain hashes only, never workflow source. Manifest-only verification
+checks the owned snapshot without copying its source back into a self-comparison.
+
+`checkResumable` and `prepareResume` require the opaque `WorkflowResumeIdentity` returned
+by `bindGoWorkflowResumeIdentity`. A plain loaded module, copied object, forced type cast,
+or identity bound to another run cannot establish resumability. This process-local binding
+does not authenticate a remote receipt or replace final authority checks.
+
+Resume results expose one `storedIdentity` and one `currentIdentity`, each containing
+`digest`, `domain`, and `provenance` (`recorded`, `inferred`, or `unknown`). Unknown legacy
+domains are not labeled raw. Identity failures from `prepareResume` preserve these objects
+in their comparison evidence. Source/manifest binding errors retain their typed comparison
+summaries for their distinct hash domains.
+
+New Go projections persist `manifestHashDomain: openslack.workflow-runner.workflow-source.v2`.
+Tagged records compare within their declared domain; there is no cross-domain fallback.
+Untagged historical raw/v2 records remain read-only compatible only with anchored source
+evidence. Reads do not add domain fields. Older readers may reject the new optional field;
+rollback must retain a domain-aware reader, never strip metadata to fake compatibility.
+
+New run audit publications use `openslack.workflow_run.v2` with one `workflow_identity`
+object (digest, domain, provenance); v1 records remain supported as historical evidence.
+Historical `audit-run` reads persisted run metadata without locating or importing the
+current Workflow file. Untagged records without an independent domain anchor remain
+`unknown`; malformed evidence cannot be published. Existing historical Go export
+restrictions are unchanged. TUI finalization uses the repository artifact gate and a
+live merged-PR check, updates only the gate-bound governance issue, and does not close
+unbound proposal/review/phase issues merely because their Workflow name was supplied.
+The shared lifecycle publisher verifies live `merged === true` before any issue write.
+Governance publication also requires repository evidence and matching reviewed head/base;
+lookup failure or drift rejects the entire write batch. CLI explicitly selected lifecycle
+targets remain supported. Dry-run results carry `dryRun: true` and both frontends report
+preview, not successful merge verification or lifecycle completion.
 
 ## Anthropic Compatibility Shim (`anthropic-compat.ts`)
 
@@ -1562,3 +1634,44 @@ completion. Production waits retain absolute lease deadlines.
 Run-path validation distinguishes invalid logical IDs from historical IDs unsupported by the host filesystem. The latter returns `WORKFLOW_RUN_PLATFORM_UNSUPPORTED` and requires inspection on a compatible platform; checkpoint repair cannot rename evidence. Worker admission checks run-path support before local access or authority mutations. Resume completion preserves typed path and identity failures instead of promising cache repair. Indexed RunStore lists retain healthy rows and enumerable per-run diagnostics.
 
 The budget compatibility ledger remains the generation input. Its non-generated `compatibility-history.json` safety baseline must be explicitly extended with each reviewed rotation. Generation requires matching complete history and rejects conflicting inputs under a separate output root before emitting projections. The PR check independently verifies the historical prefix against the exact target-base commit, including the original source constant and manifest bytes on the first migration; deleting generated outputs cannot erase compatibility.
+
+### Source-evidence recovery and lifecycle compatibility
+
+File execution requires the loader's original source snapshot. Embedded builtin
+modules remain available for inspection and preview, but have no file-loader
+proof and cannot be submitted to the sealed runner. Their execution reports
+`SOURCE_KIND_UNSUPPORTED`; reading a later compiled file does not repair that
+proof. Profile-sync approval cards do not recommend an unsupported execution
+command.
+
+Go resume callers first validate the observed run/workspace route with
+`validateGoWorkflowResumeContext`, bind the loaded file and fresh bytes with
+`bindGoWorkflowResumeIdentity`, and call the run-owned preflight's `prepare`.
+Unbound, copied and cross-run identities remain rejected. The preflight captures
+inert private observations and returns copies at public boundaries. Missing
+metadata is an evidence failure, distinct from a weak historical identity.
+Execution still rereads source after confirmation and independently rechecks
+current authority; a prior eligibility result grants no execution permission.
+
+Historical audit publication uses `runMetaWorkflowIdentity` and the persisted
+run identifier, never today's source file. Strong identities use the v2 audit;
+weak untagged history uses the compatible v1 record with an explicit
+`Legacy/unverified` notice. Neither audit authorizes execution or resume. Older
+audit hashes remain historical producer observations and are correlated by run
+ID, without rewriting the original metadata or claiming the hashes are equal.
+
+Workflow finalization has an explicit credential-free preview before live PR
+queries. The live publisher checks merged status and the reviewed head/base
+before any Issue write. A changed base requires fresh gate evaluation, not an
+automatic substitution. TUI finalization selects only the verified governance
+Issue. Governance N/A returns an explicit no-write result; proposal, review and
+phase targets continue to require explicit CLI selection.
+
+Each confirmed lifecycle write retains its receipt, including when a later
+write fails. Completion comments carry a stable target/evidence key, and a
+repeat queries existing matching comments before posting. An unknown comment
+POST result stops further writes and requires reconciliation before retrying.
+This is not a claim of cross-process exactly-once GitHub publication. CLI and TUI
+retain partial receipts and typed failures instead of reporting completion.
+Source diagnostics use fixed reason messages, validated digest fields and safe
+loader path/field details; source text and raw exception causes are not rendered.

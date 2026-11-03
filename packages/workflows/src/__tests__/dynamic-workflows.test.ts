@@ -659,6 +659,7 @@ async function initWorkflowRunStore(
     workflowName: 'test-workflow',
     mode: 'execute',
     manifestHash: 'a'.repeat(64),
+    manifestHashDomain: 'raw-sha256',
     args: {},
     startedAt: '2026-01-01T00:00:00.000Z',
     budget: { tokens: budgetPolicy.tokenBudget, costUsd: 0 },

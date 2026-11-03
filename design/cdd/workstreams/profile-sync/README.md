@@ -21,6 +21,17 @@ Teams publish insights, posts, or whitepapers in a dedicated repository (for exa
 
 ## Pipeline
 
+### Current delivery boundary
+
+The pipeline below is the intended product behavior, not evidence of executable
+embedded delivery. The shipped embedded definition supports read-only `check`,
+`preview`, and `status`. Its `run` is currently refused with
+`SOURCE_KIND_UNSUPPORTED` before confirmation or Runner submission because it
+lacks file-loader source evidence. This repair does not deliver sealed builtin
+execution or restore a TypeScript execution fallback. A reviewed file workflow
+still needs normal authenticated Runner admission. This clarification does not
+promote this CDD's In Review status or claim business acceptance.
+
 Profile Sync runs through a fixed, observable pipeline:
 
 1. **Collect** — Fetch the latest posts from the configured source repository (`source.repo`, `source.path`, `source.branch`).
@@ -69,7 +80,7 @@ All values can be overridden on the command line with flags such as `--source`, 
 
 ## Commands
 
-Profile Sync is a built-in workflow under the Collaboration Layer. It is read-only by default; `run` requires explicit confirmation.
+Profile Sync is an embedded definition under the Collaboration Layer. Read-only commands are available; embedded execution is unsupported in the current delivery.
 
 ```bash
 # Check source/target reachability and marker presence
@@ -81,14 +92,14 @@ openslack collaboration workflow profile-sync preview --format diff
 # Preview the rendered patch as Markdown
 openslack collaboration workflow profile-sync preview --format markdown
 
-# Run the full pipeline and open a PR (prompts for confirmation)
+# Current embedded run refuses before confirmation; it does not open a PR
 openslack collaboration workflow profile-sync run
 
 # Show last sync date, pending PR, and any failure state
 openslack collaboration workflow profile-sync status
 ```
 
-Use `check` and `preview` first. `run` mutates the target repository and opens a PR, so it is gated by confirmation or `--yes`.
+Use `check`, `preview`, and `status`. The embedded `run`, including `--yes`, cannot supply the missing source evidence and remains refused. The intended mutation pipeline needs a separately reviewed executable source and normal governance; it is not delivered by this change.
 
 ## Safety & Governance
 

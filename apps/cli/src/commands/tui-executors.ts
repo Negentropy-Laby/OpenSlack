@@ -1,4 +1,9 @@
-import { createWorkflowSourceSnapshot, verifyWorkflowSourceSnapshot } from '@openslack/workflows';
+import {
+  requireWorkflowSourceSnapshot,
+  workflowSourceEvidenceCause,
+  renderWorkflowSourceEvidence,
+  workflowSourceEvidenceDiagnostic,
+} from '@openslack/workflows';
 import type { ConversationActionCard, TuiActionResult, TuiAskResult } from '@openslack/tui';
 import type { ActionRegistryPort, LLMPlannerProviderRegistryPort } from '@openslack/operator';
 import {
@@ -212,8 +217,8 @@ export async function executeApproval(
         return {
           success: false,
           message:
-            'Profile sync approval requires explicit human action. Use CLI: openslack collaboration workflow profile-sync run',
-          data: { cliCommand: 'openslack collaboration workflow profile-sync run' },
+            'Embedded profile-sync execution is unsupported without file-loader source evidence. Inspect the profile-sync preview; a reviewed file workflow is required for execution.',
+          data: { code: 'SOURCE_KIND_UNSUPPORTED' },
         };
       }
 
@@ -321,14 +326,10 @@ export async function executeWorkflowRun(
     hashString,
   } = await import('@openslack/workflows');
 
-  const found = await findWorkflow(workflowName, root);
-  if (!found) {
-    return { success: false, message: `Workflow "${workflowName}" not found.` };
-  }
-
-  const mod = await loadWorkflow(found.path);
-
   try {
+    const found = await findWorkflow(workflowName, root);
+    if (!found) return { success: false, message: `Workflow "${workflowName}" not found.` };
+    const mod = await loadWorkflow(found.path);
     if (mode === 'preview') {
       const result = await executePreview(mod, { manifest: mod.meta, args: {} });
       return {
@@ -352,6 +353,12 @@ export async function executeWorkflowRun(
     }
 
     // mode === 'run'
+    if (mod.sourceKind === 'embedded')
+      return {
+        success: false,
+        message: 'Embedded workflow execution is unsupported without file-loader source evidence.',
+        data: { code: 'WORKFLOW_SOURCE_EVIDENCE_INVALID', reasonCode: 'SOURCE_KIND_UNSUPPORTED' },
+      };
     const trustStore = new TrustStore({ rootDir: root });
     const trustLevel = trustStore.get(workflowName) ?? 'untrusted';
     if (trustLevel === 'untrusted' && mod.meta.risk !== 'low') {
@@ -369,9 +376,8 @@ export async function executeWorkflowRun(
       discoveredPath: found.path,
       source: found.source,
     });
-    const sourceSnapshot = mod.sourceSnapshot
-      ? verifyWorkflowSourceSnapshot(mod.sourceSnapshot, sourceBytes, mod.meta)
-      : createWorkflowSourceSnapshot(sourceBytes, mod.meta);
+    const sourceSnapshot = requireWorkflowSourceSnapshot(mod.sourceSnapshot, sourceBytes, mod.meta);
+
     // Step 2: Build approval manifest from dry-run simulated effects
     const inputHash = hashString(JSON.stringify({}));
     const approvalManifest = buildApprovalManifest(
@@ -408,6 +414,17 @@ export async function executeWorkflowRun(
       data: { status: result.status, dryRunEffects: dryResult.simulatedEffects },
     };
   } catch (error: unknown) {
+    const sourceError = workflowSourceEvidenceCause(error);
+    if (sourceError) {
+      return {
+        success: false,
+        message: renderWorkflowSourceEvidence(
+          sourceError,
+          'Reload the workflow and repeat dry-run before approval.',
+        ).join('\n'),
+        data: workflowSourceEvidenceDiagnostic(sourceError),
+      };
+    }
     if (error instanceof WorkflowPausedError) {
       return {
         success: false,
@@ -496,28 +513,25 @@ export async function requestWorkflowReview(
 export async function finalizeWorkflowPr(
   workflowName: string,
   prNumber: number,
-  root: string,
 ): Promise<TuiActionResult> {
   try {
-    const { findWorkflow, loadWorkflow, TrustStore } = await import('@openslack/workflows');
-    const found = await findWorkflow(workflowName);
-    if (!found) {
-      return { success: false, message: `Workflow "${workflowName}" not found.` };
+    const { finalizeWorkflowLifecycle } = await import('@openslack/pr');
+    const outcome = await finalizeWorkflowLifecycle({ prNumber, mode: 'governance-only' });
+    if (outcome.status === 'refused') return { success: false, message: outcome.message };
+    if (outcome.status === 'preview')
+      return {
+        success: true,
+        message: `Workflow ${workflowName} PR #${prNumber}: preview only; live merge verification and lifecycle writes were not performed.`,
+        data: { dryRun: true },
+      };
+    if (outcome.status === 'not-required') {
+      return {
+        success: true,
+        message: `Workflow ${workflowName} PR #${prNumber} does not require a governance issue; no lifecycle writes were performed. Use finalize-pr with explicit lifecycle targets when needed.`,
+        data: { governanceRequired: false },
+      };
     }
-    const mod = await loadWorkflow(found.path);
-    const trustStore = new TrustStore({ rootDir: root });
-    const trustDecision = trustStore.get(workflowName) ?? 'untrusted';
-
-    const { finalizeWorkflowPR, fetchWorkflowLifecycleIssues } = await import('@openslack/github');
-    const lifecycle = await fetchWorkflowLifecycleIssues(workflowName);
-
-    const result = await finalizeWorkflowPR(prNumber, {
-      proposalIssue: lifecycle.proposalIssue?.number,
-      reviewIssue: lifecycle.reviewIssue?.number,
-      phaseIssues: lifecycle.phaseIssues.map((p) => p.number),
-      workflowHash: mod.hash,
-      trustDecision: trustDecision as 'trusted' | 'untrusted' | 'core',
-    });
+    const { result } = outcome;
 
     if (result.errors.length > 0) {
       return {
@@ -526,6 +540,8 @@ export async function finalizeWorkflowPr(
         data: {
           closed: result.closedIssues,
           commented: result.commentedIssues,
+          updatedLabels: result.updatedLabels,
+          failures: result.failures,
           errors: result.errors,
         },
       };
@@ -533,7 +549,9 @@ export async function finalizeWorkflowPr(
 
     return {
       success: true,
-      message: `Workflow PR #${prNumber} finalized. Closed ${result.closedIssues.length} issue(s), updated ${result.commentedIssues.length}.`,
+      message: result.dryRun
+        ? `Workflow ${workflowName} PR #${prNumber}: preview only; live merge verification and lifecycle writes were not performed.`
+        : `Workflow ${workflowName} PR #${prNumber} governance finalized. Unbound lifecycle issues were left unchanged.`,
       data: { closed: result.closedIssues, commented: result.commentedIssues },
     };
   } catch (error: unknown) {
@@ -893,7 +911,7 @@ export function createActionHandlers(
     requestWorkflowReview: (name) => requestWorkflowReview(name, root, actorId),
     splitWorkflowIntoIssues: (name, parentIssue) =>
       splitWorkflowIntoIssues(name, parentIssue, root),
-    finalizeWorkflowPr: (name, prNumber) => finalizeWorkflowPr(name, prNumber, root),
+    finalizeWorkflowPr: (name, prNumber) => finalizeWorkflowPr(name, prNumber),
     submitWorkbenchAsk: (input, threadId) =>
       submitWorkbenchAskFromTui(input, root, actorId, threadId, operatorContext),
     recordWorkbenchAction: (threadId, card, message) =>

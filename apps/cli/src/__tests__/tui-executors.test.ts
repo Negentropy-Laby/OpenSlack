@@ -9,6 +9,7 @@ import {
   executeApproval,
   executeTrustChange,
   executeWorkflowRun,
+  finalizeWorkflowPr,
   recordWorkbenchActionFromTui,
   saveWorkflowRunScriptFromTui,
   splitWorkflowIntoIssues,
@@ -47,6 +48,7 @@ vi.mock('@openslack/collaboration', async () => {
 
 vi.mock('@openslack/pr', () => ({
   mergeIfReady: vi.fn(),
+  finalizeWorkflowLifecycle: vi.fn(),
 }));
 
 vi.mock('@openslack/github', () => ({
@@ -144,6 +146,27 @@ vi.mock('@openslack/workflows', async () => {
 // ── Constants ──────────────────────────────────────────────────────────────────
 
 const ROOT = '/test/root';
+const loaderFixtureRoots: string[] = [];
+
+async function loadedWorkflowFixture(
+  meta: MockModule2.WorkflowMeta,
+): Promise<MockModule2.FileWorkflowModule> {
+  const root = mkdtempSync(join(tmpdir(), 'openslack-tui-loader-source-'));
+  loaderFixtureRoots.push(root);
+  const path = join(root, 'workflow.mjs');
+  const source = `export const meta = ${JSON.stringify(meta)};\nexport async function run() { return { status: 'completed' }; }\n`;
+  writeFileSync(path, source, 'utf8');
+  const actual = await vi.importActual<typeof MockModule2>('@openslack/workflows');
+  const loaded = await actual.loadWorkflow(path);
+  if (loaded.sourceKind !== 'file') throw new Error('Expected a real file-loader fixture.');
+  const mocked = await import('@openslack/workflows');
+  vi.mocked(mocked.readWorkflowRunnerSourceBytes).mockResolvedValue(Buffer.from(source));
+  return loaded;
+}
+
+afterEach(() => {
+  for (const root of loaderFixtureRoots.splice(0)) rmSync(root, { recursive: true, force: true });
+});
 
 // ── Helpers ─────────────────────────────────────────────────────────────────────
 
@@ -189,6 +212,115 @@ function githubReviewParams(overrides?: Partial<ApprovalExecutionParams>): Appro
 }
 
 // ── executeApproval ─────────────────────────────────────────────────────────────
+
+describe('finalizeWorkflowPr package orchestration', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(pr.finalizeWorkflowLifecycle).mockResolvedValue({
+      status: 'finalized',
+      result: {
+        closedIssues: [41],
+        commentedIssues: [41],
+        updatedLabels: [41],
+        errors: [],
+        failures: [],
+      },
+    });
+  });
+
+  it('selects only the governance policy and target PR, without rebuilding evidence', async () => {
+    expect(await finalizeWorkflowPr('test', 42)).toMatchObject({ success: true });
+    expect(pr.finalizeWorkflowLifecycle).toHaveBeenCalledExactlyOnceWith({
+      prNumber: 42,
+      mode: 'governance-only',
+    });
+  });
+
+  it('returns every confirmed partial receipt and typed failure', async () => {
+    vi.mocked(pr.finalizeWorkflowLifecycle).mockResolvedValue({
+      status: 'finalized',
+      result: {
+        closedIssues: [],
+        commentedIssues: [41],
+        updatedLabels: [41],
+        errors: ['write failed'],
+        failures: [{ code: 'LIFECYCLE_WRITE_FAILED', stage: 'close', issueNumber: 41 }],
+      },
+    });
+    expect(await finalizeWorkflowPr('test', 42)).toMatchObject({
+      success: false,
+      data: {
+        closed: [],
+        commented: [41],
+        updatedLabels: [41],
+        failures: [{ code: 'LIFECYCLE_WRITE_FAILED', stage: 'close' }],
+      },
+    });
+  });
+
+  it('renders governance N/A as zero writes, not completed finalization', async () => {
+    vi.mocked(pr.finalizeWorkflowLifecycle).mockResolvedValue({ status: 'not-required' });
+    expect(await finalizeWorkflowPr('existing', 42)).toMatchObject({
+      success: true,
+      data: { governanceRequired: false },
+      message: expect.stringContaining('no lifecycle writes'),
+    });
+  });
+
+  it('renders credential-free preview without claiming live verification', async () => {
+    vi.mocked(pr.finalizeWorkflowLifecycle).mockResolvedValue({
+      status: 'preview',
+      result: {
+        dryRun: true,
+        closedIssues: [],
+        commentedIssues: [],
+        updatedLabels: [],
+        errors: [],
+      },
+    });
+    expect(await finalizeWorkflowPr('test', 42)).toMatchObject({
+      success: true,
+      data: { dryRun: true },
+      message: expect.stringContaining('preview only'),
+    });
+  });
+
+  it.each(['gate is FAIL', 'verified Issue missing', 'repository evidence unavailable'])(
+    'preserves the package refusal: %s',
+    async (message) => {
+      vi.mocked(pr.finalizeWorkflowLifecycle).mockResolvedValue({ status: 'refused', message });
+      expect(await finalizeWorkflowPr('test', 42)).toEqual({ success: false, message });
+    },
+  );
+
+  it.each(['PR_NOT_MERGED', 'PR_EVIDENCE_DRIFT', 'PR_QUERY_FAILED'] as const)(
+    'reports shared publisher refusal %s',
+    async (code) => {
+      vi.mocked(pr.finalizeWorkflowLifecycle).mockResolvedValue({
+        status: 'finalized',
+        result: {
+          closedIssues: [],
+          commentedIssues: [],
+          updatedLabels: [],
+          errors: [code],
+          failures: [{ code, stage: 'preflight' }],
+        },
+      });
+      expect(await finalizeWorkflowPr('test', 42)).toMatchObject({
+        success: false,
+        message: expect.stringContaining(code),
+      });
+    },
+  );
+
+  it('does not relabel a coordinator exception as success', async () => {
+    vi.mocked(pr.finalizeWorkflowLifecycle).mockRejectedValue(new Error('evidence read failed'));
+    expect(await finalizeWorkflowPr('test', 42)).toEqual({
+      success: false,
+      message: 'evidence read failed',
+    });
+  });
+});
 
 describe('executeApproval', () => {
   beforeEach(() => {
@@ -552,16 +684,14 @@ describe('workflow start and save/share handlers', () => {
       name: 'test-wf',
       source: 'openslack-project',
     });
-    vi.mocked(loadWorkflow).mockResolvedValueOnce({
-      meta: {
+    vi.mocked(loadWorkflow).mockResolvedValueOnce(
+      await loadedWorkflowFixture({
         name: 'test-wf',
         description: 'Test',
         phases: [{ title: 'Scan', detail: 'Scan' }],
         risk: 'medium',
-      },
-      format: 'openslack-native',
-      hash: 'hash123',
-    });
+      }),
+    );
     vi.mocked(github.publishWorkflowSplit).mockResolvedValueOnce({
       parentIssueNumber: 100,
       subIssues: [{ phase: 'Scan', issueNumber: 101, url: 'https://github.com/test/101' }],
@@ -588,16 +718,14 @@ describe('workflow start and save/share handlers', () => {
       name: 'test-wf',
       source: 'openslack-project',
     });
-    vi.mocked(loadWorkflow).mockResolvedValueOnce({
-      meta: {
+    vi.mocked(loadWorkflow).mockResolvedValueOnce(
+      await loadedWorkflowFixture({
         name: 'test-wf',
         description: 'Test',
         phases: [{ title: 'Scan', detail: 'Scan' }],
         risk: 'medium',
-      },
-      format: 'openslack-native',
-      hash: 'hash123',
-    });
+      }),
+    );
     vi.mocked(github.publishWorkflowSplit).mockResolvedValueOnce({
       parentIssueNumber: 42,
       subIssues: [{ phase: 'Scan', issueNumber: 43, url: 'https://github.com/test/43' }],
@@ -623,8 +751,54 @@ describe('workflow start and save/share handlers', () => {
 // ── executeWorkflowRun ───────────────────────────────────────────────────────────
 
 describe('executeWorkflowRun', () => {
+  it('refuses any embedded source before dry-run, approval construction, or submission', async () => {
+    const mocked = await import('@openslack/workflows');
+    const actual = await vi.importActual<typeof MockModule2>('@openslack/workflows');
+    vi.mocked(mocked.findWorkflow).mockResolvedValueOnce({
+      name: 'profile-sync',
+      path: 'openslack:builtin/profile-sync',
+      source: 'builtin',
+    });
+    vi.mocked(mocked.loadWorkflow).mockResolvedValueOnce(
+      await actual.loadWorkflow('openslack:builtin/profile-sync'),
+    );
+    expect(await executeWorkflowRun('profile-sync', 'run', ROOT)).toMatchObject({
+      success: false,
+      data: { reasonCode: 'SOURCE_KIND_UNSUPPORTED' },
+    });
+    expect(mocked.executeDryRun).not.toHaveBeenCalled();
+    expect(mocked.buildApprovalManifest).not.toHaveBeenCalled();
+    expect(mocked.executeWorkflowThroughRunner).not.toHaveBeenCalled();
+  });
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  it('returns a bounded typed loader refusal without leaking message or identity sentinels', async () => {
+    const { findWorkflow, loadWorkflow, WorkflowSourceEvidenceError } =
+      await import('@openslack/workflows');
+    vi.mocked(findWorkflow).mockResolvedValueOnce({
+      name: 'test',
+      path: '/test/invalid.mjs',
+      source: 'openslack-project',
+    });
+    vi.mocked(loadWorkflow).mockRejectedValueOnce(
+      new WorkflowSourceEvidenceError('SOURCE_DRIFT', 'PRIVATE_MESSAGE_SENTINEL', {
+        domain: 'runner-v2-source',
+        stored: 'a'.repeat(64),
+        current: 'PRIVATE_CURRENT_SENTINEL',
+      }),
+    );
+    const result = await executeWorkflowRun('test', 'preview', ROOT);
+    expect(result).toMatchObject({
+      success: false,
+      data: {
+        code: 'WORKFLOW_SOURCE_EVIDENCE_INVALID',
+        reasonCode: 'SOURCE_DRIFT',
+        identities: { stored: 'a'.repeat(64) },
+      },
+    });
+    expect(JSON.stringify(result)).not.toContain('PRIVATE_');
   });
 
   it('returns not found for missing workflow', async () => {
@@ -662,16 +836,14 @@ describe('executeWorkflowRun', () => {
       name: 'test-wf',
       source: 'openslack-project',
     });
-    vi.mocked(loadWorkflow).mockResolvedValue({
-      meta: {
+    vi.mocked(loadWorkflow).mockResolvedValue(
+      await loadedWorkflowFixture({
         name: 'test-wf',
         description: 'Test',
         phases: [{ title: 'Scan', detail: 'Scan' }],
         risk: 'medium',
-      },
-      format: 'openslack-native',
-      hash: 'hash123',
-    });
+      }),
+    );
     vi.mocked(TrustStore).mockImplementation(
       () =>
         ({
@@ -723,7 +895,6 @@ describe('executeWorkflowRun', () => {
       executeWorkflowThroughRunner,
       buildApprovalManifest,
       readWorkflowRunnerSourceBytes,
-      createWorkflowSourceSnapshot,
     } = await import('@openslack/workflows');
     const meta = {
       name: 'test-wf',
@@ -731,18 +902,13 @@ describe('executeWorkflowRun', () => {
       phases: [{ title: 'Scan', detail: 'Scan' }],
       risk: 'low' as const,
     };
-    const sourceSnapshot = createWorkflowSourceSnapshot(new Uint8Array([1, 2, 3]), meta);
+    const loaded = await loadedWorkflowFixture(meta);
     vi.mocked(findWorkflow).mockResolvedValue({
       path: '/test/wf.js',
       name: 'test-wf',
       source: 'openslack-project',
     });
-    vi.mocked(loadWorkflow).mockResolvedValue({
-      meta,
-      format: 'openslack-native',
-      hash: sourceSnapshot.rawHash,
-      sourceSnapshot,
-    });
+    vi.mocked(loadWorkflow).mockResolvedValue(loaded);
     vi.mocked(executeDryRun).mockImplementation(async () => {
       vi.mocked(readWorkflowRunnerSourceBytes).mockResolvedValueOnce(new Uint8Array([4, 5, 6]));
       return {
@@ -755,7 +921,10 @@ describe('executeWorkflowRun', () => {
     });
     const result = await executeWorkflowRun('test-wf', 'run', ROOT);
     expect(result.success).toBe(false);
-    expect(result.message).toContain('changed since its snapshot');
+    expect(result.data).toMatchObject({
+      code: 'WORKFLOW_SOURCE_EVIDENCE_INVALID',
+      reasonCode: 'SOURCE_DRIFT',
+    });
     expect(buildApprovalManifest).not.toHaveBeenCalled();
     expect(executeWorkflowThroughRunner).not.toHaveBeenCalled();
   });
@@ -767,16 +936,14 @@ describe('executeWorkflowRun', () => {
       name: 'risky-wf',
       source: 'openslack-project',
     });
-    vi.mocked(loadWorkflow).mockResolvedValue({
-      meta: {
+    vi.mocked(loadWorkflow).mockResolvedValue(
+      await loadedWorkflowFixture({
         name: 'risky-wf',
         description: 'Risky',
         phases: [{ title: 'Scan', detail: 'Scan' }],
         risk: 'high',
-      },
-      format: 'openslack-native',
-      hash: 'hash123',
-    });
+      }),
+    );
     vi.mocked(TrustStore).mockImplementation(
       () =>
         ({
@@ -806,16 +973,14 @@ describe('executeWorkflowRun', () => {
       name: 'test-wf',
       source: 'openslack-project',
     });
-    vi.mocked(loadWorkflow).mockResolvedValue({
-      meta: {
+    vi.mocked(loadWorkflow).mockResolvedValue(
+      await loadedWorkflowFixture({
         name: 'test-wf',
         description: 'Test',
         phases: [{ title: 'Scan', detail: 'Scan' }],
         risk: 'low',
-      },
-      format: 'openslack-native',
-      hash: 'hash123',
-    });
+      }),
+    );
     vi.mocked(executeDryRun).mockResolvedValue({
       dryRun: true,
       runId: 'dryrun-001',

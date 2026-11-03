@@ -24,6 +24,9 @@ export type {
   WorkflowSource,
   ClaudeBudgetAPI,
   WorkflowModule,
+  LoadedWorkflowModule,
+  FileWorkflowModule,
+  EmbeddedWorkflowModule,
   PipelineOptions,
   WorkflowRunInfo,
   AgentResult,
@@ -453,6 +456,7 @@ export {
   bindGoWorkflowResumeIdentity,
   validateGoWorkflowResumeContext,
   checkResumeEligibility,
+  createWorkflowResumePreflight,
   checkResumable,
   prepareResume,
   replayCachedPhases,
@@ -461,8 +465,10 @@ export {
 export type {
   GoWorkflowResumeContext,
   ResumeCheckResult,
+  ResumeEligibilityResult,
   ResumeState,
   WorkflowResumeIdentity,
+  WorkflowResumeIdentityDiagnostic,
 } from './resume.js';
 
 // ── Workflow Arguments and Identity ──────────────────────────────────────────
@@ -1125,9 +1131,16 @@ export {
 
 export {
   workflowSourceSnapshotBytes,
-  createWorkflowSourceSnapshot,
   verifyWorkflowSourceSnapshot,
+  verifyWorkflowSourceManifest,
+  requireWorkflowSourceSnapshot,
+  snapshotWorkflowIdentity,
+  WorkflowSourceEvidenceError,
+  workflowSourceEvidenceCause,
+  renderWorkflowSourceEvidence,
+  workflowSourceEvidenceDiagnostic,
 } from './internal/workflow-source-snapshot.js';
+export { runMetaWorkflowIdentity } from './internal/workflow-run-identity.js';
 export type { WorkflowSourceSnapshot } from './internal/workflow-source-snapshot.js';
 
-export type { WorkflowIdentity } from './types.js';
+export type { WorkflowIdentity, WorkflowIdentityEvidence } from './types.js';

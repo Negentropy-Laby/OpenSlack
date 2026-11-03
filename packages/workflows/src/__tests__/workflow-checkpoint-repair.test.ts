@@ -60,6 +60,7 @@ async function fixture() {
     workflowName: 'workflow.test',
     mode: 'execute',
     manifestHash: binding.manifestHash,
+    manifestHashDomain: 'raw-sha256',
     args: {},
     startedAt: initial.updatedAt,
   });

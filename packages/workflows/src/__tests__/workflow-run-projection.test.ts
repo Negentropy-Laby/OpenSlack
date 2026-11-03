@@ -49,6 +49,7 @@ async function fixture() {
       workflowName: 'workflow-test',
       mode: 'execute',
       manifestHash: HASH,
+      manifestHashDomain: 'raw-sha256',
       args: {},
       startedAt: '2026-09-05T00:00:00.000Z',
     });

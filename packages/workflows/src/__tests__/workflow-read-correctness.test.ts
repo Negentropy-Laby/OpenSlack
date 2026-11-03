@@ -41,6 +41,7 @@ async function fixture(backend: 'ts-local' | 'go' = 'ts-local') {
     workflowName: 'salvage-test',
     mode: 'execute',
     manifestHash: 'a'.repeat(64),
+    manifestHashDomain: 'raw-sha256',
     args: {},
     startedAt: '2026-09-05T00:00:00.000Z',
   });

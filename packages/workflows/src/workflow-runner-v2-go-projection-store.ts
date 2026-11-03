@@ -1,4 +1,5 @@
 import { verifyAcceptedWorkflowRun } from './internal/workflow-accepted-run-proof.js';
+import { WORKFLOW_IDENTITY } from '@openslack/core';
 import { createWorkflowRunStoreRecoveryAccess } from './internal/workflow-run-store-recovery-access.js';
 import {
   isRunStatusTransitionAllowed,
@@ -86,6 +87,7 @@ export class WorkflowRunnerV2GoProjectionRunStore extends RunStore {
       meta.runId !== runId ||
       meta.workflowName !== this.#descriptor.workflowId ||
       meta.manifestHash !== this.#descriptor.workflowSourceHash ||
+      meta.manifestHashDomain !== WORKFLOW_IDENTITY.SOURCE_V2 ||
       hashWorkflowRunnerV2Input(decodeRunMetaArguments(meta)) !== this.#descriptor.inputHash
     )
       throw new WorkflowRunReadError([
@@ -113,6 +115,12 @@ export class WorkflowRunnerV2GoProjectionRunStore extends RunStore {
       if (
         existingMeta?.runId !== meta.runId ||
         existingMeta.workflowName !== meta.workflowName ||
+        existingMeta.manifestHash !== meta.manifestHash ||
+        // Older partial initialization files have no domain tag. Only accept
+        // the exact v2 digest independently anchored above; never rewrite them
+        // or fall back to a raw digest during this initialization path.
+        (existingMeta.manifestHashDomain !== undefined &&
+          existingMeta.manifestHashDomain !== meta.manifestHashDomain) ||
         status?.status !== 'running'
       ) {
         throw projectionFailure(

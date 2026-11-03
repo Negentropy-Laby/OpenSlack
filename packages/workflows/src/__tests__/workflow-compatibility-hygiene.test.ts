@@ -39,6 +39,7 @@ describe('portable creation and legacy intent compatibility', () => {
           startedAt: '2026-01-01T00:00:00.000Z',
           args: {},
           manifestHash: 'a'.repeat(64),
+          manifestHashDomain: 'raw-sha256',
         } as RunMeta);
         // Seed historical bytes explicitly; the production restore seam requires authority proof.
         await rename(join(root, 'runs', 'portable-fixture'), join(root, 'runs', runId));

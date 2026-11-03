@@ -19,10 +19,11 @@
     "openslack-workflow-runner": "./dist/workflow-runner-worker-bin.js"
   },
   "scripts": {
+    "pretest": "bun run --cwd ../.. build",
     "build:runner-worker": "bun ../../scripts/qualification/workflow-runner-bundle.ts build",
     "typecheck": "tsc",
-    "test": "vitest run",
-    "test:watch": "vitest"
+    "test": "cd ../.. && vitest run --project @openslack/workflows",
+    "test:watch": "cd ../.. && vitest --project @openslack/workflows"
   },
   "dependencies": {
     "@openslack/core": "workspace:*",

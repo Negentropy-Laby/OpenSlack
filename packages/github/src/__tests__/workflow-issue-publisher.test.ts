@@ -462,6 +462,70 @@ describe('workflow issue publishers', () => {
   });
 
   describe('publishWorkflowRunAudit', () => {
+    it.each([false, true])(
+      'publishes explicitly unverified historical identity (dry-run: %s)',
+      async (isDryRun) => {
+        const createComment = vi.fn().mockResolvedValue({ data: { html_url: 'audit-url' } });
+        mockGetClient.mockResolvedValue({
+          owner: 'test',
+          repo: 'repo',
+          isDryRun,
+          octokit: { issues: { createComment } },
+        } as unknown as GitHubClient);
+        const result = await publishWorkflowRunAudit(
+          {
+            runId: 'historical-run',
+            workflowName: 'removed-workflow',
+            workflowIdentity: {
+              digest: 'legacy-16-bytes',
+              domain: 'unknown',
+              provenance: 'unknown',
+            },
+            mode: 'execute',
+            status: 'completed',
+            startedAt: '2026-05-30T00:00:00Z',
+          },
+          { issueNumber: 42 },
+        );
+        expect(result).toMatchObject({ issueNumber: 42, isComment: true });
+        if (isDryRun) expect(createComment).not.toHaveBeenCalled();
+        else
+          expect(createComment).toHaveBeenCalledWith(
+            expect.objectContaining({
+              body: expect.stringMatching(
+                /openslack.workflow_run.v1[\s\S]*legacy-16-bytes[\s\S]*Legacy\/unverified/,
+              ),
+            }),
+          );
+      },
+    );
+    it.each([
+      undefined,
+      { digest: 'weak', domain: 'raw-sha256', provenance: 'recorded' },
+      { digest: 'a'.repeat(64), domain: 'invented', provenance: 'recorded' },
+      { digest: 'a'.repeat(64), domain: 'unknown', provenance: 'recorded' },
+    ])(
+      'rejects invalid identity evidence before any GitHub access: %j',
+      async (workflowIdentity) => {
+        mockGetClient.mockClear();
+        mockCreateTaskIssue.mockClear();
+        await expect(
+          publishWorkflowRunAudit(
+            {
+              runId: 'run_001',
+              workflowName: 'test',
+              mode: 'execute',
+              status: 'completed',
+              startedAt: '2026-05-30T00:00:00Z',
+              workflowIdentity,
+            } as never,
+            { issueNumber: 42 },
+          ),
+        ).rejects.toThrow();
+        expect(mockGetClient).not.toHaveBeenCalled();
+        expect(mockCreateTaskIssue).not.toHaveBeenCalled();
+      },
+    );
     it('creates a new run audit issue', async () => {
       mockCreateTaskIssue.mockResolvedValue({
         issueNumber: 44,
@@ -472,6 +536,11 @@ describe('workflow issue publishers', () => {
       const result = await publishWorkflowRunAudit(
         {
           runId: 'run_001',
+          workflowIdentity: {
+            digest: 'a'.repeat(64),
+            domain: 'raw-sha256',
+            provenance: 'recorded',
+          },
           workflowName: 'test-workflow',
           mode: 'execute',
           status: 'completed',
@@ -508,6 +577,11 @@ describe('workflow issue publishers', () => {
       const result = await publishWorkflowRunAudit(
         {
           runId: 'run_001',
+          workflowIdentity: {
+            digest: 'a'.repeat(64),
+            domain: 'raw-sha256',
+            provenance: 'recorded',
+          },
           workflowName: 'test-workflow',
           mode: 'execute',
           status: 'completed',
@@ -529,6 +603,11 @@ describe('workflow issue publishers', () => {
       const result = await publishWorkflowRunAudit(
         {
           runId: 'run_001',
+          workflowIdentity: {
+            digest: 'a'.repeat(64),
+            domain: 'raw-sha256',
+            provenance: 'recorded',
+          },
           workflowName: 'test',
           mode: 'dry-run',
           status: 'completed',

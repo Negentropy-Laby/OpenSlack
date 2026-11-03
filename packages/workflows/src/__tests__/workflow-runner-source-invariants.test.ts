@@ -245,6 +245,21 @@ describe('GS9-I TypeScript writer deletion invariants', () => {
         import: './dist/workflow-runner-worker-public.js',
       },
     });
+    const publicResolution = execFileSync(
+      process.execPath,
+      [
+        '--input-type=module',
+        '-e',
+        `import.meta.resolve('@openslack/workflows'); try { import.meta.resolve('@openslack/workflows/internal/workflow-source-snapshot'); console.log('EXPORTED'); } catch (error) { console.log(error.code); }`,
+      ],
+      { cwd: resolve(process.cwd(), 'apps/cli'), encoding: 'utf8', timeout: 10_000 },
+    ).trim();
+    expect(publicResolution).toBe('ERR_PACKAGE_PATH_NOT_EXPORTED');
+    for (const test of ['workflow-resume-identity.test.ts', 'tui-executors.test.ts']) {
+      const fixture = await source(`apps/cli/src/__tests__/${test}`);
+      expect(fixture).not.toContain('@openslack/workflows/internal/');
+      expect(fixture).not.toMatch(/from ['"][^'"]*dist\/internal/u);
+    }
     expect(workerPublic).toContain('runWorkflowRunnerV2Worker');
     expect(workerPublic).toContain('loadWorkflowRunnerV2WorkerConfig');
     expect(workerPublic).not.toContain('executeWorkflowRunnerV2AuthorityJob');

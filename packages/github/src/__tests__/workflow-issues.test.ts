@@ -133,6 +133,36 @@ describe('workflow issue renderers', () => {
   });
 
   describe('renderWorkflowRunBody', () => {
+    it.each([
+      ['unknown', 'unknown'],
+      ['raw-sha256', 'recorded'],
+      ['openslack.workflow-runner.workflow-source.v2', 'recorded'],
+      ['function-source-sha256', 'recorded'],
+    ] as const)(
+      'renders %s audit identity without a competing legacy hash field',
+      (domain, provenance) => {
+        const run: WorkflowRunIssue = {
+          schema: 'openslack.workflow_run.v2',
+          runId: 'run.test',
+          workflowId: 'workflow.test',
+          mode: 'execute',
+          actor: 'test',
+          startedAt: '2026-01-01T00:00:00Z',
+          status: 'completed',
+          workflowIdentity: { digest: 'a'.repeat(64), domain, provenance },
+        };
+        const body = renderWorkflowRunBody(run);
+        expect(body).toContain('schema: "openslack.workflow_run.v2"');
+        expect(body).toContain(`workflow_identity: ${JSON.stringify(run.workflowIdentity)}`);
+        expect(body).not.toContain('workflow_hash:');
+        expect(() =>
+          renderWorkflowRunBody({
+            ...run,
+            workflowIdentity: { ...run.workflowIdentity, digest: 'weak' },
+          }),
+        ).toThrow('identity evidence');
+      },
+    );
     it('renders run metadata', () => {
       const run: WorkflowRunIssue = {
         schema: 'openslack.workflow_run.v1',

@@ -152,16 +152,16 @@ Use an existing workflow YAML or JS module path for `<file>`. Use `dry-run` to s
 
 ### 7. Maintain organization profile
 
-The Profile Sync Robot keeps the organization's GitHub profile README in sync with an upstream whitepapers or content repository. All commands are safe by default: `check` and `preview` are read-only, and `run` requires explicit confirmation.
+The Profile Sync Robot describes synchronization of an organization's GitHub profile README with upstream content. The shipped embedded module currently supports read-only `check`, `preview`, and `status`; real execution is not delivered through that module.
 
 ```bash
 openslack collaboration workflow profile-sync check        # Verify source and target are accessible
 openslack collaboration workflow profile-sync preview       # Preview what a sync would change (no side effects)
-openslack collaboration workflow profile-sync run           # Run sync and open a PR (prompts for confirmation)
+openslack collaboration workflow profile-sync run           # Currently refuses: embedded source is not executable
 openslack collaboration workflow profile-sync status        # Show last sync date and pending PR
 ```
 
-Start with `check` to confirm readiness, then `preview` to review the proposed changes, and `run` only when you are ready for real side effects.
+Start with `check`, then inspect `preview` and `status`. The embedded `run` refuses with `SOURCE_KIND_UNSUPPORTED` before confirmation or submission; `--yes` does not bypass it. Execution requires a separately reviewed file workflow and normal authenticated Runner admission.
 
 ## Quick Reference by Role
 
@@ -1164,7 +1164,7 @@ Messages support 7 kinds: `user_message`, `agent_response`, `tool_event`, `plan`
 
 ## Profile Sync Robot
 
-The Profile Sync Robot keeps an organization's public profile (README, blog posts, featured content) in sync with an upstream whitepapers repository. It is read-only by default: `check` and `preview` have no side effects, and `run` requires explicit confirmation or `--yes`.
+The Profile Sync Robot models synchronization of public profile content with upstream whitepapers. Its embedded `check`, `preview`, and `status` are available; embedded `run` is inspection-only and cannot submit executable source evidence.
 
 | Command                                                                   | Purpose                                                            |
 | ------------------------------------------------------------------------- | ------------------------------------------------------------------ |
@@ -1172,9 +1172,9 @@ The Profile Sync Robot keeps an organization's public profile (README, blog post
 | `openslack collaboration workflow profile-sync preview`                   | Preview what a sync would change (no side effects)                 |
 | `openslack collaboration workflow profile-sync preview --format diff`     | Preview changes as a diff                                          |
 | `openslack collaboration workflow profile-sync preview --format markdown` | Preview changes as Markdown                                        |
-| `openslack collaboration workflow profile-sync run`                       | Run profile sync with real side effects (prompts for confirmation) |
-| `openslack collaboration workflow profile-sync run --yes`                 | Run sync and skip interactive confirmation                         |
-| `openslack collaboration workflow profile-sync run --agent-id <id>`       | Run sync with agent principal authorization                        |
+| `openslack collaboration workflow profile-sync run`                       | Refuse unsupported embedded execution before confirmation          |
+| `openslack collaboration workflow profile-sync run --yes`                 | Same refusal; confirmation cannot supply source evidence            |
+| `openslack collaboration workflow profile-sync run --agent-id <id>`       | Same source refusal; a principal does not supply source evidence     |
 | `openslack collaboration workflow profile-sync status`                    | Show current profile sync status, last sync date, and pending PR   |
 
 ### Options
@@ -1207,11 +1207,12 @@ The `preview` command also accepts `--format <format>` (`diff`, `json`, or `mark
    openslack collaboration workflow profile-sync preview --format diff
    ```
 
-3. **Create the sync PR** — run the sync and let it open a pull request:
-
-   ```bash
-   openslack collaboration workflow profile-sync run
-   ```
+3. **Check the execution source** — the embedded `profile-sync` module supports
+   the read-only commands above but does not carry file-loader source evidence.
+   Its `run` command currently refuses with `SOURCE_KIND_UNSUPPORTED`; it does not
+   create a sync PR. Execution requires a supported file workflow and the normal
+   authenticated Workflow Runner admission. Reloading the embedded module or
+   passing `--yes` cannot supply the missing evidence.
 
 4. **View status** — check last sync date, pending PR, and any failures:
    ```bash
@@ -1230,13 +1231,26 @@ requires recovery. TypeScript-owned historical runs remain read-only.
 
 Failures distinguish `RUN_NOT_FOUND`, `STATUS_NOT_RESUMABLE`, `EVIDENCE_INVALID`,
 `ROUTE_INVALID`, `RUN_MISMATCH`, `WORKSPACE_MISMATCH`, `WORKFLOW_MISMATCH`,
-`VERSION_MISMATCH`, `LOADER_SOURCE_MISMATCH`, `SOURCE_DRIFT`, `MANIFEST_DRIFT` and
+`VERSION_MISMATCH`, `LOADER_SOURCE_MISMATCH`, `SOURCE_DRIFT`, `SOURCE_IDENTITY_DRIFT`,
+`SOURCE_KIND_UNSUPPORTED`, `MANIFEST_DRIFT` and
 `IDENTITY_UNVERIFIED`. Use `openslack collaboration workflow runs inspect <runId>`
 for evidence and recovery diagnosis. Source edited during confirmation is rejected before
 submission, including with `--yes`; that option does not bypass identity or effect checks.
 Restore the exact original source or use governed recovery/export; changed source cannot
 be force-resumed. Expired initial routing policy does not invalidate an existing run's
 ownership, while current descriptor and execution lease expiry remain enforced.
+
+`audit-run` reads the original run's persisted identity even when its source has
+changed or disappeared. A weak historical identifier is published as an explicitly
+legacy/unverified v1 audit, never as resume or execution authorization. Strong
+identity evidence retains its recorded domain in the v2 audit.
+
+Without GitHub credentials, `finalize-pr` provides a preview that performs no live
+merge verification or lifecycle writes. Live finalization rechecks the reviewed
+head and base before writing. TUI finalization leaves lifecycle Issues unchanged
+when governance is not required; use explicit CLI lifecycle targets when needed.
+Partial results identify confirmed comments, labels and closes. An unknown comment
+result requires reconciliation before retrying.
 
 Real execution is available only through the authenticated loopback Workflow Runner. Configure all
 four values together: `OPENSLACK_WORKFLOW_RUNNER_CONTROL_ORIGIN`,
