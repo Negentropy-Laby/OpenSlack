@@ -48,6 +48,13 @@ the supported App-authenticated delivery service:
   preparation, head `b8bf3fa5da19eefb33ddfbeb7aa386e7c0b03fd6`, tree
   `d6723f311ca3683017511c498f05e327e1e194dc`.
 
+[#436](https://github.com/Negentropy-Laby/OpenSlack/pull/436) delivers the C0
+proposal and this ledger. Its initial App delivery observed equal published
+branch/PR head `827f4ab17083b6607cbb2256e909ccd0ff56e594` at
+2026-11-03T10:38:42.346Z; this follow-up records the actual new PR association.
+It does not reuse the initial head's checks for a later metadata commit. The
+four exact normative R5 digests below remain unchanged.
+
 Both live readbacks were OPEN/Draft, base main, author
 `app/openslack-agent-operator`, with PR and published branch heads equal.
 New-head checks had started, not completed. Local task drafts remain preserved

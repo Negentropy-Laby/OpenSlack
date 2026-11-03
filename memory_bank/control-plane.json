@@ -1319,7 +1319,10 @@
           "number": 428,
           "url": "https://github.com/Negentropy-Laby/OpenSlack/issues/428"
         },
-        "pull_request": null,
+        "pull_request": {
+          "number": 436,
+          "url": "https://github.com/Negentropy-Laby/OpenSlack/pull/436"
+        },
         "acceptance_criteria": [
           "Identity/delegation/time/recovery contracts precise",
           "Canonical vectors and complete old writer/consumer fence independently reviewed",
@@ -1329,14 +1332,15 @@
         "dependencies": [],
         "blockers": [
           "exact_scope_maintenance_identity_unassigned",
-          "c0_exact_r5_recommended_delivery_and_adr_acceptance_pending"
+          "c0_exact_r5_recommended_draft_ci_and_adr_acceptance_pending"
         ],
         "evidence": [
           "github:issue-428:open:blocked",
+          "github:pr-436:draft:bot-authored:ci-pending:adr-not-accepted",
           "independent-full-td-product-security:exact-r5:favorable:adr-not-accepted",
           "production/qa/qa-ledger-dual-qualification-2026-11-03.md"
         ],
-        "last_verified_at": "2026-11-03T10:30:00Z"
+        "last_verified_at": "2026-11-03T10:38:42.346Z"
       },
       {
         "id": "issue-429",

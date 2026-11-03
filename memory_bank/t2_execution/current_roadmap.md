@@ -25,7 +25,7 @@ generated: true
 | --- | --- | --- | --- | --- | --- |
 | issue-411 | Go Workflow R-EXT preparation and authenticated qualification | running | codex_qualification_rext | workflow-runtime | full_sealed_resume_blocked_on_checkpoint_replay<br>live_provider_binding_and_human_effect_decision_pending |
 | issue-427 | Cleanup: public-repository Permit-only qualification (2026-11) | blocked | unassigned | pr-review-merge | administrator_public_scope_and_installation<br>fresh_activation_and_one_use_permits |
-| issue-428 | Task Claim v2: close C0 single-host contract and independent review | blocked | unassigned | github-task-loop | exact_scope_maintenance_identity_unassigned<br>c0_exact_r5_recommended_delivery_and_adr_acceptance_pending |
+| issue-428 | Task Claim v2: close C0 single-host contract and independent review | blocked | unassigned | github-task-loop | exact_scope_maintenance_identity_unassigned<br>c0_exact_r5_recommended_draft_ci_and_adr_acceptance_pending |
 | issue-429 | Task Claim v2 C1: state kernel and TS/Go canonical conformance | blocked | unassigned | github-task-loop | c0_acceptance_pending<br>implementation_not_authorized_this_round |
 | issue-430 | Task Claim v2 C2: PostgreSQL authority and local authenticated sessions | blocked | unassigned | github-task-loop | c1_delivery_pending<br>implementation_not_authorized_this_round |
 | issue-431 | Task Claim v2 C3: independently governed claimed cleanup admission | blocked | unassigned | pr-review-merge | c2_qualification_and_separate_action_grants_pending |
