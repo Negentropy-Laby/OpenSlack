@@ -2,8 +2,16 @@ import { WORKFLOW_RUNNER_CAPABILITIES } from '../workflow-runner-contract.js';
 import { bindGoWorkflowResumeIdentity, validateGoWorkflowResumeContext } from '../resume.js';
 import { createWorkflowSourceSnapshot } from '../internal/workflow-source-snapshot.js';
 import type { WorkflowMeta } from '../types.js';
+import { expect, vi } from 'vitest';
+import {
+  workflowControlAuthorityInitialRecord,
+  type WorkflowControlAuthorityPort,
+} from '../workflow-control-authority-client.js';
+import { WorkflowRunnerV2GoProjectionRunStore } from '../workflow-runner-v2-go-projection-store.js';
+import { resolveWorkflowRunProjectionRoot } from '../workflow-run-projection.js';
 import {
   validateWorkflowRunRouteReceipt,
+  WorkflowRunRouter,
   type WorkflowRunRouteReceipt,
 } from '../workflow-run-routing.js';
 
@@ -68,6 +76,76 @@ import {
 
 const DEFAULT_CREATED_AT = '2026-08-15T02:00:00.000Z';
 const DEFAULT_EXPIRES_AT = '2026-08-15T03:00:00.000Z';
+
+/** Shared test composition only: real route/projection checks, deterministic authority I/O. */
+export function workflowRunnerGoAuthorityFixture(input: {
+  rootDir: string;
+  descriptor: WorkflowRunnerV2ExecutionDescriptor;
+  qualificationEnvironmentId: string;
+  runner: { jobId: string; attemptId: string; leaseId: string; fencingToken: number };
+}) {
+  const { descriptor } = input;
+  if (descriptor.authorityRoute.backend !== 'go')
+    throw new Error('Go authority fixture requires an explicit Go descriptor.');
+  const runId = descriptor.workflowRunId;
+  const route = new WorkflowRunRouter({
+    schema: 'openslack.workflow_run_routing_policy.v1',
+    workspaceId: descriptor.workspaceId,
+    backend: 'go',
+    routingEpoch: descriptor.authorityRoute.routingEpoch,
+    authorityBuildHash: descriptor.authorityRoute.authorityBuildHash,
+    qualificationEnvironmentId: input.qualificationEnvironmentId,
+    workflowAllowlist: [descriptor.workflowId],
+    runAllowlist: [],
+    expiresAt: descriptor.expiresAt,
+  }).select({
+    workspaceId: descriptor.workspaceId,
+    runId,
+    workflowId: descriptor.workflowId,
+    workflowVersion: descriptor.workflowVersion,
+    workflowSourceHash: descriptor.workflowSourceHash,
+    manifestHash: descriptor.manifestHash,
+    inputHash: descriptor.inputHash,
+    correlationId: descriptor.correlationId,
+    selectedAt: descriptor.createdAt,
+  });
+  let record = workflowControlAuthorityInitialRecord(route);
+  const authority: WorkflowControlAuthorityPort = {
+    inspectBinding: vi.fn(),
+    accept: vi.fn(),
+    async read() {
+      return {
+        ...record,
+        schema: 'openslack.workflow_control_authority_read.v2',
+        recordHash: 'f'.repeat(64),
+        record,
+        updatedAt: descriptor.createdAt,
+      };
+    },
+    async readIfExists() {
+      return this.read(runId, route.route);
+    },
+    async transition(next, expected) {
+      expect(expected).toMatchObject({ revision: record.revision, state: record.state });
+      expect(next.revision).toBe(record.revision + 1);
+      record = next;
+      return {} as never;
+    },
+  };
+  const baseDir = resolveWorkflowRunProjectionRoot(input.rootDir, 'go');
+  const store = new WorkflowRunnerV2GoProjectionRunStore({ baseDir, descriptor, authority });
+  const binding = {
+    ...input.runner,
+    workspaceId: descriptor.workspaceId,
+    workflowRunId: runId,
+    correlationId: descriptor.correlationId,
+    runnerBuildHash: descriptor.authorityRoute.authorityBuildHash,
+    workflowSourceHash: descriptor.workflowSourceHash,
+    manifestHash: descriptor.manifestHash,
+    inputHash: descriptor.inputHash,
+  };
+  return { route, authority, baseDir, store, binding, runId };
+}
 
 export function workflowRunnerV2DescriptorFixture(
   overrides: Partial<CreateWorkflowRunnerV2ExecutionDescriptorInput> = {},

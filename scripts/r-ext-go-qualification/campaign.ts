@@ -1,5 +1,6 @@
 import { constants } from 'node:fs';
-import { open, lstat } from 'node:fs/promises';
+import { open } from 'node:fs/promises';
+import { readWorkflowEvidenceText } from '../../packages/workflows/src/internal/workflow-evidence-file.js';
 import { CANDIDATE_SHA, SAFE_ID, SHA256, exactKeys, timestamp } from './evidence.js';
 import { parseWorkflowEffectJson } from '../../packages/workflows/src/workflow-effect-json.js';
 
@@ -204,6 +205,8 @@ const MAX_BYTES = 16_384;
 /** New evidence only: exclusive creation refuses overwrite/reset of old attempts. */
 export async function createCampaignFile(path: string, value: Campaign): Promise<void> {
   const encoded = `${JSON.stringify(validateCampaign(value))}\n`;
+  if (Buffer.byteLength(encoded, 'utf8') > MAX_BYTES)
+    throw new Error('Campaign evidence exceeds its byte limit.');
   const file = await open(
     path,
     constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | NO_FOLLOW,
@@ -219,22 +222,13 @@ export async function createCampaignFile(path: string, value: Campaign): Promise
 
 /** Read-only recovery: malformed/unsafe data never becomes a fresh allowance. */
 export async function readCampaignFile(path: string): Promise<Campaign> {
-  const before = await lstat(path);
-  if (!before.isFile() || before.isSymbolicLink() || before.nlink !== 1 || before.size > MAX_BYTES)
-    throw new Error('Unsafe campaign evidence file.');
-  const file = await open(path, constants.O_RDONLY | NO_FOLLOW);
-  try {
-    const bound = await file.stat();
-    if (before.dev !== bound.dev || before.ino !== bound.ino || before.size !== bound.size)
-      throw new Error('Campaign evidence changed while opening.');
-    const bytes = await file.readFile();
-    const after = await file.stat();
-    if (bound.size !== after.size || bound.mtimeMs !== after.mtimeMs || bytes.length > MAX_BYTES)
-      throw new Error('Campaign evidence changed while reading.');
-    return validateCampaign(parseWorkflowEffectJson(bytes));
-  } finally {
-    await file.close();
-  }
+  const text = await readWorkflowEvidenceText(
+    path,
+    MAX_BYTES,
+    { scope: 'workspace' },
+    { requireSingleLink: true },
+  );
+  return validateCampaign(parseWorkflowEffectJson(Buffer.from(text, 'utf8')));
 }
 
 // Deliberately no live send/update entrypoint: #433 blocks this preparation.

@@ -1,6 +1,9 @@
-import { join } from 'node:path';
-import { readWorkflowEffectApprovalRecordExact } from '../../packages/workflows/src/workflow-effect-approval-store.js';
-import { SAFE_ID, timestamp } from './evidence.js';
+import {
+  readWorkflowEffectApprovalRecordExact,
+  resolveWorkflowEffectApprovalRoot,
+} from '../../packages/workflows/src/workflow-effect-approval-store.js';
+import { SAFE_IDENTIFIER_REGEX } from '../../packages/workflows/src/internal/workflow-binding-field-rules.js';
+import { preparationStatus, timestamp } from './evidence.js';
 
 /** Inspect only. This module cannot issue a binding, decide, or supply a TTY answer. */
 export async function inspectPendingApproval(
@@ -9,11 +12,11 @@ export async function inspectPendingApproval(
   approvalId: string,
   now: string,
 ) {
-  if (!SAFE_ID.test(runId) || !SAFE_ID.test(approvalId))
+  if (!SAFE_IDENTIFIER_REGEX.test(runId) || !SAFE_IDENTIFIER_REGEX.test(approvalId))
     throw new Error('Invalid exact approval identity.');
   timestamp(now);
   const approval = await readWorkflowEffectApprovalRecordExact(
-    join(workspaceRoot, '.openslack.local', 'workflows', 'effect-approvals'),
+    resolveWorkflowEffectApprovalRoot(workspaceRoot),
     runId,
     approvalId,
   );
@@ -36,7 +39,7 @@ export async function inspectPendingApproval(
     requiredCapability: approval.requiredCapability,
     expiresAt: approval.expiresAt,
     executionAllowed: false as const,
-    blocker: '#433' as const,
+    blocker: preparationStatus().blocker,
     humanDecisionRequired: true as const,
   });
 }

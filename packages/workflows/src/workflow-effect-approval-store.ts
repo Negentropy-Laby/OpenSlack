@@ -54,6 +54,11 @@ const LOCK_SCHEMA = 'openslack.workflow_effect_approval_lock.v1';
 const PROCESS_SESSION_ID = randomUUID();
 const AUTHORITY_STORE_SECURITY = productionJournalSecurity();
 
+/** @internal Layout only; callers retain all store and decision authority checks. */
+export function resolveWorkflowEffectApprovalRoot(workspaceRoot: string): string {
+  return join(workspaceRoot, '.openslack.local', 'workflows', 'effect-approvals');
+}
+
 function hasWorkflowEffectAuthorityRoot(approvalStoreRoot: string): boolean {
   if (!isAbsolute(approvalStoreRoot) || resolve(approvalStoreRoot) !== approvalStoreRoot) {
     throw new WorkflowEffectApprovalStoreError(

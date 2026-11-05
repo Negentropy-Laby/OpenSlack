@@ -1,4 +1,3 @@
-import { join } from 'node:path';
 import { types as nodeTypes } from 'node:util';
 import {
   deriveWorkflowEffectApprovalId,
@@ -10,6 +9,7 @@ import { createPendingWorkflowEffectApproval } from './workflow-effect-approval.
 import {
   persistWorkflowEffectApprovalPending,
   readWorkflowEffectApprovalRecordExact,
+  resolveWorkflowEffectApprovalRoot,
 } from './workflow-effect-approval-store.js';
 import {
   isWorkflowControlObservationPort,
@@ -141,12 +141,7 @@ export function createWorkflowEffectAuthorizationPort(options: {
   ) {
     throw new TypeError('Workflow effect approval TTL must be between 1 minute and 24 hours.');
   }
-  const approvalRoot = join(
-    options.workspaceRoot,
-    '.openslack.local',
-    'workflows',
-    'effect-approvals',
-  );
+  const approvalRoot = resolveWorkflowEffectApprovalRoot(options.workspaceRoot);
   const store = new LocalWorkflowEffectAuthorityStore(approvalRoot, now);
   const observeAuthority = (scope: WorkflowEffectShadowObservationScope) => {
     try {

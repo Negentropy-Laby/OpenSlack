@@ -67,6 +67,38 @@ function route(backend: 'ts-local' | 'go') {
   return locateReadOnly;
 }
 describe('read correctness across evidence boundaries', () => {
+  it('makes single-link evidence an explicit policy without narrowing historical readers', async () => {
+    const root = await fs.mkdtemp(join(tmpdir(), 'workflow-evidence-links-'));
+    roots.push(root);
+    const path = join(root, 'campaign.json');
+    await fs.writeFile(path, '{"schema":"fixture"}\n');
+    await fs.link(path, join(root, 'other-name.json'));
+    await expect(readWorkflowEvidenceText(path)).resolves.toBe('{"schema":"fixture"}\n');
+    await expect(
+      readWorkflowEvidenceText(path, 16_384, { scope: 'workspace' }, { requireSingleLink: true }),
+    ).rejects.toMatchObject({ code: 'WORKFLOW_RUN_EVIDENCE_PATH_INVALID' });
+  });
+
+  it('rejects an extra evidence alias introduced between path inspection and descriptor open', async () => {
+    const root = await fs.mkdtemp(join(tmpdir(), 'workflow-evidence-open-link-'));
+    roots.push(root);
+    const path = join(root, 'campaign.json');
+    await fs.writeFile(path, '{"schema":"fixture"}\n');
+    const actual = await vi.importActual<typeof fs>('node:fs/promises');
+    let linked = false;
+    vi.mocked(fs.open).mockImplementation(async (...args: Parameters<typeof fs.open>) => {
+      if (String(args[0]) === path && !linked) {
+        linked = true;
+        await actual.link(path, join(root, 'late-name.json'));
+      }
+      return actual.open(...args);
+    });
+    await expect(
+      readWorkflowEvidenceText(path, 16_384, { scope: 'workspace' }, { requireSingleLink: true }),
+    ).rejects.toMatchObject({ code: 'WORKFLOW_RUN_EVIDENCE_IO_FAILED' });
+    expect(linked).toBe(true);
+  });
+
   it('reports a non-directory agent result path with its run identity', async () => {
     const { root, directory, progress } = await fixture();
     await fs.rmdir(join(directory, 'agents'));

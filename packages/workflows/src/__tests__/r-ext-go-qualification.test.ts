@@ -1,5 +1,5 @@
 import { appendFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -12,14 +12,11 @@ import { validateWorkflowCheckpointShadowEnvelope } from '../workflow-checkpoint
 import { executeGoAuthorityRun } from '../execute.js';
 import { createWorkflowCheckpointLeaseAuthority } from '../internal/workflow-checkpoint-lease-authority.js';
 import { bindGoWorkflowResumeIdentity, validateGoWorkflowResumeContext } from '../resume.js';
-import { WorkflowRunRouter } from '../workflow-run-routing.js';
-import { workflowRunnerV2DescriptorFixture } from './workflow-runner-v2-test-fixture.js';
 import {
-  workflowControlAuthorityInitialRecord,
-  type WorkflowControlAuthorityPort,
-} from '../workflow-control-authority-client.js';
-import { WorkflowRunnerV2GoProjectionRunStore } from '../workflow-runner-v2-go-projection-store.js';
-import { resolveWorkflowRunProjectionRoot } from '../workflow-run-projection.js';
+  workflowRunnerV2DescriptorFixture,
+  workflowRunnerGoAuthorityFixture,
+} from './workflow-runner-v2-test-fixture.js';
+import { platformTestTimeout } from '../../../../scripts/testing/process-fixture.mjs';
 import { RunStore } from '../run-store.js';
 import { createWorkflowRunnerV2EffectAuthorizationPort } from '../workflow-runner-v2-effect-authorization.js';
 import { WorkflowEffectApprovalPendingError } from '../internal/workflow-effect-authorization-contract.js';
@@ -329,6 +326,120 @@ describe('R-EXT credential-free preparation', () => {
       agentId: 'codex_qualification_rext',
       providerCalls: 0,
     });
+    const { preparationStatus } = await preparation('evidence');
+    const { CAMPAIGN_LIMITS, MAIN_CHAIN_PURPOSES } = await preparation('campaign');
+    expect(await workflow.preview!({ phase() {} } as never, {})).toMatchObject({
+      preparationBlocker: preparationStatus().blocker,
+    });
+    expect(workflow.meta.whenToUse).toContain(preparationStatus().blocker);
+    expect(workflow.meta.budgetPolicy?.maxAgents).toBe(MAIN_CHAIN_PURPOSES.length);
+    expect(workflow.meta.budgetPolicy?.tokenBudget).toBe(
+      CAMPAIGN_LIMITS.tokensPerAttempt * MAIN_CHAIN_PURPOSES.length,
+    );
+  });
+
+  it.each(['campaign:local', 'a'.repeat(160), 'a'.repeat(161), 'campaign@wire', ''])(
+    'keeps the sealed campaign alphabet aligned without asserting registration: %s',
+    async (campaignId) => {
+      const workflow = await loadWorkflowFile(
+        join(root, '.openslack/workflows/r-ext-go-qualification.mjs'),
+      );
+      const { SAFE_ID } = await preparation('evidence');
+      const agent = vi.fn(async (): Promise<never> => {
+        throw new Error('correlation reached the deterministic launcher');
+      });
+      await expect(
+        workflow.run!({ args: { campaignId }, phase() {}, checkpoint: {}, agent } as never, {}),
+      ).rejects.toThrow(
+        SAFE_ID.test(campaignId) ? /deterministic launcher/ : /well-formed campaignId/,
+      );
+      expect(agent).toHaveBeenCalledTimes(SAFE_ID.test(campaignId) ? 1 : 0);
+    },
+  );
+
+  it.each([Number.NaN, Number.POSITIVE_INFINITY, -1, 30_000])(
+    'rejects invalid or already-missed clock readings before asking the authority: %s',
+    async (next) => {
+      const { observeDrain } = await preparation('observe');
+      let reads = 0;
+      const clock = { ...observationClock(), now: () => (++reads === 1 ? 0 : next) };
+      const authority = vi.fn(async () => drainedSnapshot());
+      expect(await observeDrain(authority, clock)).toMatchObject({
+        status: 'FAIL',
+        samples: [],
+      });
+      expect(authority).not.toHaveBeenCalled();
+    },
+  );
+
+  it('rejects a broken deadline scheduler without starting a read or leaking rejection text', async () => {
+    const { observeDrain } = await preparation('observe');
+    const authority = vi.fn(async () => drainedSnapshot());
+    const result = await observeDrain(authority, {
+      ...observationClock(),
+      schedule() {
+        throw new Error('scheduler secret sentinel');
+      },
+    });
+    expect(result).toMatchObject({ status: 'FAIL', reason: 'clock_invalid', samples: [] });
+    expect(authority).not.toHaveBeenCalled();
+    expect(JSON.stringify(result)).not.toContain('scheduler secret sentinel');
+  });
+
+  it('does not amend a timed-out observation when the old read later completes', async () => {
+    const { observeDrain } = await preparation('observe');
+    const clock = observationClock();
+    let finish!: (value: ReturnType<typeof drainedSnapshot>) => void;
+    const read = vi.fn(
+      () =>
+        new Promise<ReturnType<typeof drainedSnapshot>>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const pending = observeDrain(read, clock);
+    await Promise.resolve();
+    clock.advance(15_000);
+    const failed = await pending;
+    const bytes = JSON.stringify(failed);
+    expect(failed).toMatchObject({
+      status: 'FAIL',
+      samples: [{ valid: false, reason: 'authority_read_timeout' }],
+    });
+    finish(drainedSnapshot());
+    await Promise.resolve();
+    expect(JSON.stringify(await pending)).toBe(bytes);
+    expect(read).toHaveBeenCalledTimes(1);
+    expect(clock.activeTimers()).toBe(0);
+  });
+
+  it('uses the production approval identifier grammar without inventing a pending approval', async () => {
+    const { inspectPendingApproval } = await preparation('approval');
+    const directory = await mkdtemp(join(tmpdir(), 'rext-wire-id-'));
+    temporaryRoots.push(directory);
+    await expect(
+      inspectPendingApproval(directory, 'run@wire', 'approval@wire', '2026-11-05T00:00:00.000Z'),
+    ).rejects.toMatchObject({ code: 'WORKFLOW_EFFECT_APPROVAL_STORE_NOT_FOUND' });
+  });
+
+  it('keeps CLI candidate failure distinct from the blocked preparation exit', async () => {
+    const checkout = await preparationCheckout();
+    const invoke = () =>
+      spawnSync(
+        process.platform === 'win32' ? 'bun.exe' : 'bun',
+        [join(root, 'scripts/r-ext-go-qualification/preflight.ts'), '--candidate', checkout.head()],
+        { cwd: checkout.directory, encoding: 'utf8', timeout: 10_000, windowsHide: true },
+      );
+    const clean = invoke();
+    expect(clean.status, clean.stderr).toBe(2);
+    expect(JSON.parse(clean.stdout)).toMatchObject({ clean: true, liveExecutionEnabled: false });
+    await appendFile(
+      join(checkout.directory, '.openslack/workflows/r-ext-go-qualification.mjs'),
+      '\n// unsafe candidate sentinel\n',
+    );
+    const dirty = invoke();
+    expect(dirty.status).toBe(1);
+    expect(dirty.stdout).toBe('');
+    expect(dirty.stderr).not.toContain('unsafe candidate sentinel');
   });
 
   it('passes the actual sealed source-admission policy on the exact fixture bytes', async () => {
@@ -400,7 +511,7 @@ describe('R-EXT credential-free preparation', () => {
     },
   );
 
-  it('preserves all four counted attempts and measured overage, while rejecting later execution', async () => {
+  it('counts all four attempts and rejects a fifth attempt or a second settlement', async () => {
     const { newCampaign, beginAttempt, settleAttempt } = await preparation('campaign');
     let campaign = newCampaign({
       candidate: 'c'.repeat(40),
@@ -410,26 +521,42 @@ describe('R-EXT credential-free preparation', () => {
     for (const [index, purpose] of ['initial', 'resume', 'preflight', 'preflight'].entries()) {
       const id = `${purpose}.${index}`;
       campaign = beginAttempt(campaign, id, purpose, '2026-11-03T09:00:01.000Z');
-      const exceeded = settleAttempt(campaign, id, {
-        outcome: 'reported',
-        totalTokens: 8193,
-        receiptHash: 'a'.repeat(64),
-      });
-      expect(exceeded.attempts.at(-1).settlement.totalTokens).toBe(8193);
-      expect(() =>
-        beginAttempt(exceeded, 'after-overage', 'preflight', '2026-11-03T09:00:02.000Z'),
-      ).toThrow(/reconciliation/);
       campaign = settleAttempt(campaign, id, {
         outcome: 'reported',
         totalTokens: 8192,
         receiptHash: 'a'.repeat(64),
       });
-      expect(() => settleAttempt(campaign, id, { outcome: 'not_sent', totalTokens: 0 })).toThrow();
     }
     expect(campaign.attempts).toHaveLength(4);
     expect(() =>
+      settleAttempt(campaign, 'initial.0', { outcome: 'not_sent', totalTokens: 0 }),
+    ).toThrow();
+    expect(() =>
       beginAttempt(campaign, 'fifth', 'replacement', '2026-11-03T09:00:02.000Z'),
     ).toThrow();
+  });
+
+  it('retains measured overage and freezes every subsequent attempt', async () => {
+    const { newCampaign, beginAttempt, settleAttempt } = await preparation('campaign');
+    const started = beginAttempt(
+      newCampaign({
+        candidate: 'c'.repeat(40),
+        runId: 'run.overage',
+        createdAt: '2026-11-05T00:00:00.000Z',
+      }),
+      'initial.1',
+      'initial',
+      '2026-11-05T00:00:01.000Z',
+    );
+    const exceeded = settleAttempt(started, 'initial.1', {
+      outcome: 'reported',
+      totalTokens: 8193,
+      receiptHash: 'a'.repeat(64),
+    });
+    expect(exceeded.attempts[0].settlement.totalTokens).toBe(8193);
+    expect(() =>
+      beginAttempt(exceeded, 'after-overage', 'preflight', '2026-11-05T00:00:02.000Z'),
+    ).toThrow(/reconciliation/);
   });
 
   it('allows a replacement only for an exact confirmed not-sent predecessor', async () => {
@@ -493,174 +620,133 @@ describe('R-EXT credential-free preparation', () => {
     expect(agent).not.toHaveBeenCalled();
   });
 
-  it('initializes normally, persists the first call/checkpoint, and naturally pauses before any audit effect', async () => {
-    const directory = await mkdtemp(
-      join(process.platform === 'win32' ? tmpdir() : '/tmp', 'rext-initial-'),
-    );
-    temporaryRoots.push(directory);
-    const workflowPath = join(root, '.openslack/workflows/r-ext-go-qualification.mjs');
-    const workflow = await loadWorkflowFile(workflowPath);
-    const sourceBytes = await readFile(workflowPath);
-    const createdAt = new Date().toISOString();
-    const expiresAt = new Date(Date.parse(createdAt) + 60 * 60_000).toISOString();
-    const descriptor = workflowRunnerV2DescriptorFixture({
-      workflowSourceBytes: sourceBytes,
-      manifest: workflow.meta,
-      input: { campaignId: 'campaign.local.normal' },
-      budgetPolicy: {
-        accountId: 'budget.rext.local',
-        policyHash: 'b'.repeat(64),
-        rateNanoUsdPerToken: '10',
-        tokenLimit: '16384',
-        costLimitNanoUsd: '163840',
-        callLimit: '2',
-      },
-      authorityRoute: {
-        backend: 'go',
-        authority: 'workflow-control',
-        routingEpoch: 9,
-        authorityBuildHash: 'a'.repeat(64),
-      },
-      createdAt,
-      expiresAt,
-    });
-    const route = new WorkflowRunRouter({
-      schema: 'openslack.workflow_run_routing_policy.v1',
-      workspaceId: descriptor.workspaceId,
-      backend: 'go',
-      routingEpoch: 9,
-      authorityBuildHash: 'a'.repeat(64),
-      qualificationEnvironmentId: 'rext.local.test',
-      workflowAllowlist: [workflow.meta.name],
-      runAllowlist: [],
-      expiresAt,
-    }).select({
-      workspaceId: descriptor.workspaceId,
-      runId: descriptor.workflowRunId,
-      workflowId: descriptor.workflowId,
-      workflowVersion: descriptor.workflowVersion,
-      workflowSourceHash: descriptor.workflowSourceHash,
-      manifestHash: descriptor.manifestHash,
-      inputHash: descriptor.inputHash,
-      correlationId: descriptor.correlationId,
-      selectedAt: createdAt,
-    });
-    let record = workflowControlAuthorityInitialRecord(route);
-    const authority: WorkflowControlAuthorityPort = {
-      inspectBinding: vi.fn(),
-      accept: vi.fn(),
-      async read() {
-        return {
-          ...record,
-          schema: 'openslack.workflow_control_authority_read.v2',
-          recordHash: 'f'.repeat(64),
-          record,
-          updatedAt: createdAt,
-        };
-      },
-      async readIfExists() {
-        return this.read(descriptor.workflowRunId, route.route);
-      },
-      async transition(next, expected) {
-        expect(expected).toMatchObject({ revision: record.revision, state: record.state });
-        expect(next.revision).toBe(record.revision + 1);
-        record = next;
-        return {} as never;
-      },
-    };
-    const baseDir = resolveWorkflowRunProjectionRoot(directory, 'go');
-    const store = new WorkflowRunnerV2GoProjectionRunStore({ baseDir, descriptor, authority });
-    const effects = await createWorkflowRunnerV2EffectAuthorizationPort({
-      workspaceRoot: directory,
-      descriptor,
-      context: { resumeGeneration: 0 } as WorkflowRunnerV2ExecutionContext,
-    });
-    const checkpointAuthority = createWorkflowCheckpointLeaseAuthority({
-      workspaceId: descriptor.workspaceId,
-      jobId: 'job.rext.local',
-      workflowRunId: descriptor.workflowRunId,
-      attemptId: 'attempt.rext.local',
-      leaseId: 'lease.rext.local',
-      fencingToken: 1,
-      correlationId: descriptor.correlationId,
-      runnerBuildHash: descriptor.authorityRoute.authorityBuildHash,
-      workflowSourceHash: descriptor.workflowSourceHash,
-      manifestHash: descriptor.manifestHash,
-      inputHash: descriptor.inputHash,
-    });
-    const launcher = vi.fn(async (_prompt: string, _options: AgentOptions) => ({
-      data: { ok: true, stage: 'first' },
-      tokenUsage: 7,
-    }));
-    let pending: WorkflowEffectApprovalPendingError | undefined;
-    try {
-      await executeGoAuthorityRun(
-        bindGoWorkflowResumeIdentity(
-          validateGoWorkflowResumeContext(descriptor.workflowRunId, route, descriptor.workspaceId),
-          workflow,
-          sourceBytes,
-        ),
-        {
-          runId: descriptor.workflowRunId,
-          manifest: workflow.meta,
-          rootDir: directory,
-          args: { campaignId: 'campaign.local.normal' },
-          // Deterministic fixture rate, not a real provider pricing claim.
-          budget: { tokens: 16_384, costUsd: 0.00016384 },
-          allowUnattended: true,
-          agentLauncher: launcher,
+  it(
+    'initializes normally, persists the first call/checkpoint, and naturally pauses before any audit effect',
+    async () => {
+      const directory = await mkdtemp(join(tmpdir(), 'rext-initial-'));
+      temporaryRoots.push(directory);
+      const workflowPath = join(root, '.openslack/workflows/r-ext-go-qualification.mjs');
+      const workflow = await loadWorkflowFile(workflowPath);
+      const sourceBytes = await readFile(workflowPath);
+      const createdAt = new Date().toISOString();
+      const expiresAt = new Date(Date.parse(createdAt) + 60 * 60_000).toISOString();
+      const descriptor = workflowRunnerV2DescriptorFixture({
+        workflowSourceBytes: sourceBytes,
+        manifest: workflow.meta,
+        input: { campaignId: 'campaign.local.normal' },
+        budgetPolicy: {
+          accountId: 'budget.rext.local',
+          policyHash: 'b'.repeat(64),
+          rateNanoUsdPerToken: '10',
+          tokenLimit: '16384',
+          costLimitNanoUsd: '163840',
+          callLimit: '2',
         },
-        store,
-        checkpointAuthority,
-        effects,
-      );
-      throw new Error('The normal initial path must wait for exact approval.');
-    } catch (error) {
-      if (!(error instanceof WorkflowEffectApprovalPendingError)) throw error;
-      pending = error;
-    }
-    expect(launcher).toHaveBeenCalledTimes(1);
-    const [prompt, options] = launcher.mock.calls[0]!;
-    expect(options).toMatchObject({
-      agentType: 'codex_qualification_rext',
-      label: 'r-ext:first',
-      budget: { tokens: 8192 },
-    });
-    const reader = new RunStore({ baseDir, access: 'read-only' });
-    expect(await reader.loadStatus(descriptor.workflowRunId)).toMatchObject({
-      status: 'paused_waiting_approval',
-    });
-    expect(
-      (await reader.loadCheckpointControl(descriptor.workflowRunId))?.checkpoints,
-    ).toHaveLength(1);
-    expect(await reader.loadBudgetSnapshot(descriptor.workflowRunId)).toMatchObject({
-      usage: { agentCalls: 1, tokensUsed: 7 },
-    });
-    expect(await reader.readAuditRecords(descriptor.workflowRunId)).toHaveLength(0);
-    expect(
-      await reader.loadAgentResult(
-        descriptor.workflowRunId,
-        computeAgentCacheKey(workflow.meta.name, options.phase, options.label, prompt),
-      ),
-    ).toMatchObject({ data: { ok: true, stage: 'first' }, tokenUsage: 7 });
-    const { inspectPendingApproval } = await preparation('approval');
-    expect(
-      await inspectPendingApproval(
-        directory,
-        descriptor.workflowRunId,
-        pending!.approvalId,
-        new Date().toISOString(),
-      ),
-    ).toMatchObject({
-      runId: descriptor.workflowRunId,
-      approvalId: pending!.approvalId,
-      humanDecisionRequired: true,
-      executionAllowed: false,
-      blocker: '#433',
-    });
-    // Deliberately stop here: no test decision, seeded status or fake resume
-    // obscures the separately reproduced sealed-worker checkpoint replay defect.
-  });
+        authorityRoute: {
+          backend: 'go',
+          authority: 'workflow-control',
+          routingEpoch: 9,
+          authorityBuildHash: 'a'.repeat(64),
+        },
+        createdAt,
+        expiresAt,
+      });
+      const { route, baseDir, store, binding } = workflowRunnerGoAuthorityFixture({
+        rootDir: directory,
+        descriptor,
+        qualificationEnvironmentId: 'rext.local.test',
+        runner: {
+          jobId: 'job.rext.local',
+          attemptId: 'attempt.rext.local',
+          leaseId: 'lease.rext.local',
+          fencingToken: 1,
+        },
+      });
+      const effects = await createWorkflowRunnerV2EffectAuthorizationPort({
+        workspaceRoot: directory,
+        descriptor,
+        context: { resumeGeneration: 0 } as WorkflowRunnerV2ExecutionContext,
+      });
+      const checkpointAuthority = createWorkflowCheckpointLeaseAuthority(binding);
+      const launcher = vi.fn(async (_prompt: string, _options: AgentOptions) => ({
+        data: { ok: true, stage: 'first' },
+        tokenUsage: 7,
+      }));
+      let pending: WorkflowEffectApprovalPendingError | undefined;
+      try {
+        await executeGoAuthorityRun(
+          bindGoWorkflowResumeIdentity(
+            validateGoWorkflowResumeContext(
+              descriptor.workflowRunId,
+              route,
+              descriptor.workspaceId,
+            ),
+            workflow,
+            sourceBytes,
+          ),
+          {
+            runId: descriptor.workflowRunId,
+            manifest: workflow.meta,
+            rootDir: directory,
+            args: { campaignId: 'campaign.local.normal' },
+            // Deterministic fixture rate, not a real provider pricing claim.
+            budget: { tokens: 16_384, costUsd: 0.00016384 },
+            allowUnattended: true,
+            agentLauncher: launcher,
+          },
+          store,
+          checkpointAuthority,
+          effects,
+        );
+        throw new Error('The normal initial path must wait for exact approval.');
+      } catch (error) {
+        if (!(error instanceof WorkflowEffectApprovalPendingError)) throw error;
+        pending = error;
+      }
+      expect(launcher).toHaveBeenCalledTimes(1);
+      const [prompt, options] = launcher.mock.calls[0]!;
+      expect(options).toMatchObject({
+        agentType: 'codex_qualification_rext',
+        label: 'r-ext:first',
+        budget: { tokens: 8192 },
+      });
+      const reader = new RunStore({ baseDir, access: 'read-only' });
+      expect(await reader.loadStatus(descriptor.workflowRunId)).toMatchObject({
+        status: 'paused_waiting_approval',
+      });
+      expect(
+        (await reader.loadCheckpointControl(descriptor.workflowRunId))?.checkpoints,
+      ).toHaveLength(1);
+      expect(await reader.loadBudgetSnapshot(descriptor.workflowRunId)).toMatchObject({
+        usage: { agentCalls: 1, tokensUsed: 7 },
+      });
+      expect(await reader.readAuditRecords(descriptor.workflowRunId)).toHaveLength(0);
+      expect(
+        await reader.loadAgentResult(
+          descriptor.workflowRunId,
+          computeAgentCacheKey(workflow.meta.name, options.phase, options.label, prompt),
+        ),
+      ).toMatchObject({ data: { ok: true, stage: 'first' }, tokenUsage: 7 });
+      const { inspectPendingApproval } = await preparation('approval');
+      expect(
+        await inspectPendingApproval(
+          directory,
+          descriptor.workflowRunId,
+          pending!.approvalId,
+          new Date().toISOString(),
+        ),
+      ).toMatchObject({
+        runId: descriptor.workflowRunId,
+        approvalId: pending!.approvalId,
+        humanDecisionRequired: true,
+        executionAllowed: false,
+        blocker: '#433',
+      });
+      // Deliberately stop here: no test decision, seeded status or fake resume
+      // obscures the separately reproduced sealed-worker checkpoint replay defect.
+    },
+    platformTestTimeout(5_000),
+  );
 
   it('takes exactly forty fixed-deadline observations and does not fabricate missed slots', async () => {
     const { observeDrain } = await preparation('observe');

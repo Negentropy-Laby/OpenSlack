@@ -13,6 +13,7 @@ import {
 import {
   persistWorkflowEffectApprovalPending,
   readWorkflowEffectApprovalRecordExact,
+  resolveWorkflowEffectApprovalRoot,
   WorkflowEffectApprovalStoreError,
 } from './workflow-effect-approval-store.js';
 import {
@@ -470,12 +471,7 @@ export async function createWorkflowRunnerV2EffectAuthorizationPort(options: {
   readonly now?: () => string;
 }): Promise<WorkflowEffectAuthorizationPort> {
   const now = options.now ?? (() => new Date().toISOString());
-  const approvalRoot = join(
-    options.workspaceRoot,
-    '.openslack.local',
-    'workflows',
-    'effect-approvals',
-  );
+  const approvalRoot = resolveWorkflowEffectApprovalRoot(options.workspaceRoot);
   const journal = new WorkflowRunnerV2EffectSiblingJournal(
     join(options.workspaceRoot, '.openslack.local', 'workflows', 'effect-authority-v2-siblings'),
   );
