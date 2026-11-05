@@ -145,6 +145,7 @@ export class WatchDaemon {
   private webhookBodyReadOptions: WebhookBodyReadOptions;
   private server: Server | null = null;
   private starting: Promise<void> | null = null;
+  private stopping: Promise<void> | null = null;
   private pollTimer: ReturnType<typeof setInterval> | null = null;
   private pollInFlight = false;
   private profileSyncWorker: ProfileSyncWorker | null = null;
@@ -225,6 +226,7 @@ export class WatchDaemon {
   }
 
   async start(port: number): Promise<void> {
+    if (this.stopping) throw new Error('WATCH_DAEMON_STOPPING');
     if (this.server || this.starting) throw new Error('WATCH_DAEMON_ALREADY_STARTED');
     const starting = this.startServer(port);
     this.starting = starting;
@@ -321,8 +323,19 @@ export class WatchDaemon {
   }
 
   async stop(): Promise<void> {
-    // A concurrent stop waits for owned startup, including its failure cleanup.
-    // The internal failure path never awaits its own startup promise.
+    if (this.stopping) return this.stopping;
+    const stopping = this.stopAfterStartup();
+    this.stopping = stopping;
+    try {
+      await stopping;
+    } finally {
+      if (this.stopping === stopping) this.stopping = null;
+    }
+  }
+
+  private async stopAfterStartup(): Promise<void> {
+    // The internal startup failure path never awaits its own promise. A public
+    // stop owns the lifecycle until both startup and resource cleanup settle.
     if (this.starting) {
       try {
         await this.starting;
@@ -334,6 +347,7 @@ export class WatchDaemon {
   }
 
   private async stopResources(): Promise<void> {
+    const server = this.server;
     this.stopPolling();
     const errors: unknown[] = [];
     for (const stop of [
@@ -350,7 +364,6 @@ export class WatchDaemon {
         errors.push(error);
       }
     }
-    const server = this.server;
     if (server?.listening) {
       await new Promise<void>((resolve) => server.close(() => resolve()));
     }

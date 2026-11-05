@@ -172,3 +172,10 @@ after rejection. Request, response, abort, close and JSON failures settle once;
 premature responses and disconnects reject. The slow-request helper does not
 suppress resets, and no retry, longer timeout or skipped Windows case is added.
 Required current-head checks and human governance remain independent gates.
+
+Independent review of the first #438 patch found an idle-stop/start race: a
+stop could consume a newer listener after yielding to worker cleanup. Its two
+regressions failed before the follow-up. Startup now refuses while a stop owns
+the lifecycle, concurrent stops share one cleanup, and cleanup captures its
+listener before awaiting. Restart is allowed after confirmed cleanup. The
+intermediate patch and failed regressions remain recorded.

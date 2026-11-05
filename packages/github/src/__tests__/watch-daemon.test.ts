@@ -447,6 +447,64 @@ describe('WatchDaemon', () => {
     }
   });
 
+  it('does not let an idle stop consume a concurrently starting listener', async () => {
+    const daemon = new WatchDaemon(config, secret, new WatchDedupeStore(tempDir));
+    const stopping = daemon.stop();
+    const starting = daemon.start(0);
+    const candidate: unknown = Reflect.get(daemon, 'server');
+    try {
+      await expect(starting).rejects.toThrow('WATCH_DAEMON_STOPPING');
+      await stopping;
+      await startTestDaemon(daemon);
+      const owned: unknown = Reflect.get(daemon, 'server');
+      expect(owned).toBeInstanceOf(Server);
+      await daemon.stop();
+      expect((owned as Server).listening).toBe(false);
+      expect(Reflect.get(daemon, 'server')).toBeNull();
+    } finally {
+      await stopping;
+      await daemon.stop();
+      // Preserve test ownership even when the old implementation loses it.
+      if (candidate instanceof Server && candidate.listening)
+        await new Promise<void>((resolve) => candidate.close(() => resolve()));
+    }
+  });
+
+  it('shares concurrent stops and allows restart only after cleanup completes', async () => {
+    const daemon = new WatchDaemon(config, secret, new WatchDedupeStore(tempDir));
+    await startTestDaemon(daemon);
+    const router = Reflect.get(daemon, 'deliveryRouter') as WatchDeliveryRouter;
+    const originalStop = router.stop.bind(router);
+    let release = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const stop = vi.spyOn(router, 'stop').mockImplementationOnce(async () => {
+      await gate;
+      await originalStop();
+    });
+    const first = daemon.stop();
+    const second = daemon.stop();
+    try {
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(stop).toHaveBeenCalledTimes(1);
+      await expect(daemon.start(0)).rejects.toThrow('WATCH_DAEMON_STOPPING');
+      release();
+      await Promise.all([first, second]);
+      stop.mockRestore();
+      await startTestDaemon(daemon);
+      const owned: unknown = Reflect.get(daemon, 'server');
+      await daemon.stop();
+      expect(owned instanceof Server && owned.listening).toBe(false);
+      expect(Reflect.get(daemon, 'server')).toBeNull();
+    } finally {
+      release();
+      await Promise.all([first, second]);
+      stop.mockRestore();
+      await daemon.stop();
+    }
+  });
+
   it('rejects an invalid listen input without starting or retaining workers', async () => {
     const deliveryStart = vi.spyOn(WatchDeliveryRouter.prototype, 'start');
     const profileStart = vi.spyOn(ProfileSyncWorker.prototype, 'start');
