@@ -98,3 +98,50 @@ The command never calls GitHub or a model.
 Report local regression, full sealed composition, hosted CI, provider/GitHub
 qualification, human approval, merge and release separately. Current helpers do
 not close #411, #433, R-REC/R-DOC, GS10–GS13 or any release gate.
+
+## PR #435 review repair boundary (2026-11-05)
+
+These repairs are human-delegated source maintenance on the existing Draft PR,
+not execution by the qualification principal. They cover preparation helpers,
+shared Workflow validation/read/layout mechanics, their tests, the root typecheck
+entrypoint and necessary existing source pins and generated telemetry. They do
+not bootstrap an identity, change registry permissions, renew a claim, grant live
+execution, approve an effect or close #411/#433. Formal qualification remains
+BLOCKED/NOT_RUN as stated above.
+
+The original Claude Code review contained 32 angle-level candidates. The table
+retains all original IDs under 27 topic groups; maintenance suggestions and
+corrected attributions are not counted as independent production vulnerabilities.
+The original incomplete verification reports and the unrelated #438 failure stay
+historical. Validation results belong to the exact PR head and its evidence,
+not to this static disposition table.
+
+| Group | Original IDs | Topic                         | Disposition and regression boundary                                                                                                              |
+| ----- | ------------ | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| G01   | C-1          | Windows integration budget    | Use the existing platform timeout only for the real-ACL initial/pause case; keep Linux at 5 seconds and Windows at 120 seconds.                  |
+| G02   | B-1, E-1     | Frozen candidate identity     | Reject dirty tracked inputs, untracked targets, byte mismatches and HEAD/lock/source drift; clean inspection remains BLOCKED.                    |
+| G03   | B-2          | Campaign correlation wording  | Describe the format check as correlation only; registration and durable live-send admission remain unimplemented.                                |
+| G04   | A-1          | Stalled observation clock     | Reject a resolved sleep with no progress; do not spin or fabricate a sample.                                                                     |
+| G05   | A-2, E-2     | Observation time domains      | Clock owns the absolute read deadline and cancellation. The NTP/native-timer claim is not adopted; injected-domain divergence is covered.        |
+| G06   | A-3          | Persisted main-chain slots    | Validate every prefix with the same slot rule used by beginAttempt; impossible histories are refused.                                            |
+| G07   | A-4, D-1     | UTC timestamp bounds          | Reuse the four-digit UTC predicate. The wider general ISO predicate remains unchanged.                                                           |
+| G08   | D-3          | Not-sent usage evidence       | Require zero usage and no usage receipt for not_sent; preserve and refuse invalid old evidence.                                                  |
+| G09   | D-2          | Read versus payload failure   | Use distinct fixed reasons for transport, timeout, invalid snapshot and clock failure; archive no raw error or rejected payload.                 |
+| G10   | C-2          | Root typecheck coverage       | Include the preparation script project in the root gate; a disposable type-error mutation demonstrates the entrypoint.                           |
+| G11   | REU-1        | Raw SHA-256 helper            | Reuse the existing raw workflow-source hash implementation without changing digest spelling.                                                     |
+| G12   | REU-2        | Timestamp helper reuse        | Use the shared UTC validator rather than another Date round-trip implementation.                                                                 |
+| G13   | REU-3        | Identifier semantics          | Share neutral hash/approval rules; retain the deliberately narrower campaign alphabet and test its sealed-source parity.                         |
+| G14   | REU-4        | Closed inert evidence         | Reuse descriptor-based closed-record mechanics with explicit optional fields; reject proxies, accessors, symbols and foreign prototypes.         |
+| G15   | REU-5        | Campaign file I/O             | Reuse stable bounded reads with an explicit single-link policy. Keep exclusive new-file creation: overwriting atomic writers are not equivalent. |
+| G16   | REU-6        | Candidate Git semantics       | Reuse candidateRevision tracked-clean policy; unrelated untracked files are not frozen inputs.                                                   |
+| G17   | REU-7, ALT-5 | Approval-root layout          | One internal layout resolver serves both production writers and preparation inspection; no decision authority or public package export is added. |
+| G18   | ALT-1        | Budget literals               | Share campaign ceilings and main-chain purposes; cross-check the necessary sealed fixture literals.                                              |
+| G19   | ALT-2        | Approval blocker              | Derive the inspector blocker from preparationStatus.                                                                                             |
+| G20   | ALT-4        | Sealed preview blocker        | Cross-check preview and whenToUse against preparationStatus while keeping source self-contained.                                                 |
+| G21   | ALT-3        | Go authority test composition | Share route, deterministic authority and production projection assembly across both test consumers; keep real effect authorization.              |
+| G22   | SIM-1, EFF-2 | Repeated preflight reads      | Remove the unused first bookend read and repeated hash; retain independent post-load and committed-byte checks.                                  |
+| G23   | SIM-2        | Freeze-rule duplication       | One campaign inspection computes frozen state for both validation and transitions.                                                               |
+| G24   | SIM-3        | Redundant drained guards      | Read already-validated counters directly when checking whether authority is drained.                                                             |
+| G25   | SIM-4        | Repeated overage assertions   | Separate measured-overage preservation from the four-slot and duplicate-settlement regression.                                                   |
+| G26   | SIM-5        | Temporary directory roots     | Use tmpdir consistently; keep test artifacts in owned temporary directories.                                                                     |
+| G27   | EFF-1        | Windows security cost         | Retain real ACL hardening and native-process cost intentionally; add no production security-injection switch.                                    |
