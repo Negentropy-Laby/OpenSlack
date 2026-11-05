@@ -82,7 +82,13 @@ export function workflowRunnerGoAuthorityFixture(input: {
   rootDir: string;
   descriptor: WorkflowRunnerV2ExecutionDescriptor;
   qualificationEnvironmentId: string;
-  runner: { jobId: string; attemptId: string; leaseId: string; fencingToken: number };
+  runner: {
+    jobId: string;
+    attemptId: string;
+    leaseId: string;
+    fencingToken: number;
+    runnerBuildHash: string;
+  };
 }) {
   const { descriptor } = input;
   if (descriptor.authorityRoute.backend !== 'go')
@@ -139,7 +145,6 @@ export function workflowRunnerGoAuthorityFixture(input: {
     workspaceId: descriptor.workspaceId,
     workflowRunId: runId,
     correlationId: descriptor.correlationId,
-    runnerBuildHash: descriptor.authorityRoute.authorityBuildHash,
     workflowSourceHash: descriptor.workflowSourceHash,
     manifestHash: descriptor.manifestHash,
     inputHash: descriptor.inputHash,

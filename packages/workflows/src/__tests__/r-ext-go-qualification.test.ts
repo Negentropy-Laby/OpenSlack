@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { loadWorkflowFile } from '../internal/workflow-file-loader.js';
 import * as workflowLoader from '../internal/workflow-file-loader.js';
+import * as agentResolver from '../agent-resolver.js';
 import { assertWorkflowRunnerSourceIsSelfContained } from '../workflow-runner-source-policy.js';
 import { checkpointEvidence } from '../internal/workflow-runner-checkpoint-evidence.js';
 import { validateWorkflowCheckpointShadowEnvelope } from '../workflow-checkpoint-shadow-contract.js';
@@ -153,6 +154,34 @@ describe('R-EXT credential-free preparation', () => {
       }),
     ).toThrow();
     expect(campaign.attempts[0].settlement).toBeUndefined();
+  });
+
+  it('rejects unknown usage with a receipt in transitions and retained campaign bytes', async () => {
+    const { newCampaign, beginAttempt, settleAttempt, readCampaignFile } =
+      await preparation('campaign');
+    const campaign = beginAttempt(
+      newCampaign({
+        candidate: 'b'.repeat(40),
+        runId: 'run.unknown-receipt',
+        createdAt: '2026-11-05T00:00:00.000Z',
+      }),
+      'initial.1',
+      'initial',
+      '2026-11-05T00:00:01.000Z',
+    );
+    const settlement = { outcome: 'unknown', receiptHash: 'a'.repeat(64) };
+    expect(() => settleAttempt(campaign, 'initial.1', settlement)).toThrow();
+    expect(campaign.attempts[0].settlement).toBeUndefined();
+    const directory = await mkdtemp(join(tmpdir(), 'rext-unknown-receipt-'));
+    temporaryRoots.push(directory);
+    const path = join(directory, 'campaign.json');
+    const retained = JSON.stringify({
+      ...campaign,
+      attempts: [{ ...campaign.attempts[0], settlement }],
+    });
+    await writeFile(path, retained);
+    await expect(readCampaignFile(path)).rejects.toThrow();
+    expect(await readFile(path, 'utf8')).toBe(retained);
   });
 
   it.each(['+010000-01-01T00:00:00.000Z', '-000001-01-01T00:00:00.000Z'])(
@@ -385,6 +414,96 @@ describe('R-EXT credential-free preparation', () => {
     expect(authority).not.toHaveBeenCalled();
     expect(JSON.stringify(result)).not.toContain('scheduler secret sentinel');
   });
+
+  it.each(['now-throws', 'wall-throws', 'wall-invalid', 'now-nan'] as const)(
+    'classifies an invalid initial clock without leaking exceptions: %s',
+    async (fault) => {
+      const { observeDrain } = await preparation('observe');
+      const authority = vi.fn(async () => drainedSnapshot());
+      const clock = observationClock();
+      if (fault === 'now-throws')
+        clock.now = () => {
+          throw new Error('clock private sentinel');
+        };
+      if (fault === 'wall-throws')
+        clock.wallNow = () => {
+          throw new Error('clock private sentinel');
+        };
+      if (fault === 'wall-invalid') clock.wallNow = () => 'clock private sentinel';
+      if (fault === 'now-nan') clock.now = () => Number.NaN;
+      const result = await observeDrain(authority, clock);
+      expect(result).toMatchObject({ status: 'FAIL', reason: 'clock_invalid', samples: [] });
+      if (fault.startsWith('wall-')) expect(result).not.toHaveProperty('startedAt');
+      else expect(result.startedAt).toBe('2026-11-05T00:00:00.000Z');
+      expect(authority).not.toHaveBeenCalled();
+      expect(JSON.stringify(result)).not.toContain('private sentinel');
+    },
+  );
+
+  it('rejects a synchronously firing scheduler before starting an authority read', async () => {
+    const { observeDrain } = await preparation('observe');
+    const authority = vi.fn(async () => drainedSnapshot());
+    const cancel = vi.fn();
+    const result = await observeDrain(authority, {
+      ...observationClock(),
+      schedule(_deadline: number, callback: () => void) {
+        callback();
+        return cancel;
+      },
+    });
+    expect(result).toMatchObject({ status: 'FAIL', reason: 'clock_invalid', samples: [] });
+    expect(authority).not.toHaveBeenCalled();
+    expect(cancel).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['success', 'transport', 'timeout'] as const)(
+    'retains measured evidence and the primary result when deadline cancellation fails: %s',
+    async (outcome) => {
+      const { observeDrain } = await preparation('observe');
+      const clock = observationClock();
+      const schedule = clock.schedule;
+      clock.schedule = (deadline, callback) => {
+        const cancel = schedule(deadline, callback);
+        return () => {
+          cancel();
+          throw new Error('cancellation private sentinel');
+        };
+      };
+      const authority = vi.fn(async () => {
+        if (outcome === 'transport') throw new Error('transport private sentinel');
+        if (outcome === 'timeout') return new Promise<ReturnType<typeof drainedSnapshot>>(() => {});
+        return drainedSnapshot();
+      });
+      const pending = observeDrain(authority, clock);
+      if (outcome === 'timeout') {
+        await Promise.resolve();
+        clock.advance(15_000);
+      }
+      const result = await pending;
+      const reason =
+        outcome === 'success'
+          ? 'clock_invalid'
+          : outcome === 'transport'
+            ? 'authority_read_failed'
+            : 'authority_read_timeout';
+      expect(result).toMatchObject({
+        status: 'FAIL',
+        reason,
+        samples: [
+          {
+            valid: false,
+            reason,
+            ...(outcome === 'success'
+              ? { snapshot: drainedSnapshot() }
+              : { cleanupReason: 'clock_invalid' }),
+          },
+        ],
+      });
+      expect(authority).toHaveBeenCalledTimes(1);
+      expect(clock.activeTimers()).toBe(0);
+      expect(JSON.stringify(result)).not.toContain('private sentinel');
+    },
+  );
 
   it('does not amend a timed-out observation when the old read later completes', async () => {
     const { observeDrain } = await preparation('observe');
@@ -620,9 +739,17 @@ describe('R-EXT credential-free preparation', () => {
     expect(agent).not.toHaveBeenCalled();
   });
 
-  it(
-    'initializes normally, persists the first call/checkpoint, and naturally pauses before any audit effect',
-    async () => {
+  it.each([false, true])(
+    'initializes normally, persists the first call/checkpoint, and naturally pauses before any audit effect (resolved agent %s)',
+    async (resolved) => {
+      vi.spyOn(agentResolver, 'resolveAgentType').mockReturnValue(
+        resolved
+          ? {
+              agentId: 'codex_qualification_rext',
+              source: 'openslack-registry',
+            }
+          : null,
+      );
       const directory = await mkdtemp(join(tmpdir(), 'rext-initial-'));
       temporaryRoots.push(directory);
       const workflowPath = join(root, '.openslack/workflows/r-ext-go-qualification.mjs');
@@ -660,6 +787,7 @@ describe('R-EXT credential-free preparation', () => {
           attemptId: 'attempt.rext.local',
           leaseId: 'lease.rext.local',
           fencingToken: 1,
+          runnerBuildHash: 'e'.repeat(64),
         },
       });
       const effects = await createWorkflowRunnerV2EffectAuthorizationPort({
@@ -724,7 +852,13 @@ describe('R-EXT credential-free preparation', () => {
       expect(
         await reader.loadAgentResult(
           descriptor.workflowRunId,
-          computeAgentCacheKey(workflow.meta.name, options.phase, options.label, prompt),
+          computeAgentCacheKey(
+            workflow.meta.name,
+            options.phase,
+            options.label,
+            prompt,
+            options.resolvedAgentConfig?.agentId ?? options.resolvedAgentId,
+          ),
         ),
       ).toMatchObject({ data: { ok: true, stage: 'first' }, tokenUsage: 7 });
       const { inspectPendingApproval } = await preparation('approval');

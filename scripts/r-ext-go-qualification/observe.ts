@@ -8,6 +8,11 @@ export interface DrainSnapshot {
   reconciliationRequired: number;
   authorityConsistent: boolean;
 }
+/**
+ * now/schedule share one monotonic domain. wallNow must not move backwards,
+ * and its elapsed time must stay within 15 seconds of the monotonic elapsed time.
+ * A resolved sleep must advance now; scheduling must not fire before its deadline.
+ */
 interface Clock {
   now(): number;
   wallNow(): string;
@@ -32,6 +37,7 @@ interface Sample {
   valid: boolean;
   snapshot?: DrainSnapshot;
   reason?: FailureReason;
+  cleanupReason?: 'clock_invalid';
 }
 
 function validateSnapshot(value: unknown): DrainSnapshot {
@@ -74,16 +80,30 @@ export async function observeDrain(
   clock: Clock,
 ): Promise<{
   status: QualificationStatus;
-  startedAt: string;
+  startedAt?: string;
   samples: Sample[];
   reason?: FailureReason;
+  cleanupReason?: 'clock_invalid';
 }> {
-  const startedAt = timestamp(clock.wallNow());
-  const origin = clock.now();
-  if (!Number.isFinite(origin)) throw new Error('Invalid monotonic observation clock.');
-  let priorWall = Date.parse(startedAt);
+  let startedAt: string | undefined;
+  let origin: number;
   const samples: Sample[] = [];
-  const fail = (reason: FailureReason) => ({ status: 'FAIL' as const, startedAt, samples, reason });
+  const fail = (reason: FailureReason, cleanupReason?: 'clock_invalid') => ({
+    status: 'FAIL' as const,
+    ...(startedAt === undefined ? {} : { startedAt }),
+    samples,
+    reason,
+    ...(cleanupReason === undefined ? {} : { cleanupReason }),
+  });
+  try {
+    startedAt = timestamp(clock.wallNow());
+    origin = clock.now();
+    if (!Number.isFinite(origin)) return fail('clock_invalid');
+  } catch {
+    return fail('clock_invalid');
+  }
+  const startedWall = Date.parse(startedAt);
+  let priorWall = startedWall;
   let prior = origin;
   for (let k = 1; k <= 40; k += 1) {
     const deadline = origin + k * 15_000;
@@ -114,33 +134,76 @@ export async function observeDrain(
     let snapshot: DrainSnapshot | undefined;
     let reason: FailureReason | undefined;
     const cancellation = new AbortController();
-    let cancelDeadline: (() => void) | undefined;
+    let cleanupReason: 'clock_invalid' | undefined;
+    let registering = true;
+    let active = true;
+    let expired: 'clock_invalid' | 'authority_read_timeout' | undefined;
+    let settleDeadline!: (reason: 'clock_invalid' | 'authority_read_timeout') => void;
+    const bounded = new Promise<'clock_invalid' | 'authority_read_timeout'>((resolve) => {
+      settleDeadline = resolve;
+    });
+    let cancelDeadline: () => void;
     try {
-      const bounded = new Promise<never>((_resolve, reject) => {
-        cancelDeadline = clock.schedule(deadline + 15_000, () => {
-          cancellation.abort();
-          reject(new Error('Authority sample deadline elapsed.'));
-        });
+      cancelDeadline = clock.schedule(deadline + 15_000, () => {
+        if (!active) return;
+        let reading: number;
+        try {
+          reading = clock.now();
+        } catch {
+          reading = Number.NaN;
+        }
+        expired =
+          registering || !Number.isFinite(reading) || reading < deadline + 15_000
+            ? 'clock_invalid'
+            : 'authority_read_timeout';
+        cancellation.abort();
+        settleDeadline(expired);
       });
-      // Invalid scheduling ports still fail closed without an unhandled rejection.
-      void bounded.catch(() => {});
-      if (typeof cancelDeadline !== 'function') return fail('clock_invalid');
-      const value = await (cancellation.signal.aborted
-        ? bounded
-        : Promise.race([read(cancellation.signal), bounded]));
-      try {
-        snapshot = validateSnapshot(value);
-      } catch {
-        reason = 'authority_snapshot_invalid';
+      if (typeof cancelDeadline !== 'function') {
+        active = false;
+        return fail('clock_invalid');
       }
     } catch {
-      reason = cancellation.signal.aborted ? 'authority_read_timeout' : 'authority_read_failed';
-    } finally {
+      active = false;
+      return fail('clock_invalid');
+    }
+    registering = false;
+    // An invalid scheduler has not observed an authority timeout or started a read.
+    if (expired !== undefined) {
+      active = false;
       try {
-        cancelDeadline?.();
+        cancelDeadline();
       } catch {
-        reason = 'clock_invalid';
-        snapshot = undefined;
+        cleanupReason = 'clock_invalid';
+      }
+      return fail('clock_invalid', cleanupReason);
+    }
+    try {
+      const outcome = await Promise.race([
+        read(cancellation.signal).then(
+          (value) => ({ kind: 'value' as const, value }),
+          () => ({ kind: 'failed' as const }),
+        ),
+        bounded.then((failure) => ({ kind: 'deadline' as const, failure })),
+      ]);
+      if (outcome.kind === 'deadline') reason = outcome.failure;
+      else if (outcome.kind === 'failed') reason = 'authority_read_failed';
+      else {
+        try {
+          snapshot = validateSnapshot(outcome.value);
+        } catch {
+          reason = 'authority_snapshot_invalid';
+        }
+      }
+    } catch {
+      reason = 'authority_read_failed';
+    } finally {
+      active = false;
+      try {
+        cancelDeadline();
+      } catch {
+        if (reason === undefined) reason = 'clock_invalid';
+        else cleanupReason = 'clock_invalid';
       }
     }
     let actual: number;
@@ -157,9 +220,10 @@ export async function observeDrain(
       reason === undefined &&
       actual < deadline + 15_000 &&
       observedWall >= priorWall &&
-      Math.abs(observedWall - Date.parse(startedAt) - (actual - origin)) < 15_000 &&
+      Math.abs(observedWall - startedWall - (actual - origin)) < 15_000 &&
       snapshot !== undefined &&
       drained(snapshot);
+    const failure = valid ? undefined : (reason ?? 'invalid_or_missed_observation');
     samples.push({
       k,
       scheduledOffsetMs: k * 15_000,
@@ -168,9 +232,10 @@ export async function observeDrain(
       observedAt,
       valid,
       ...(snapshot === undefined ? {} : { snapshot }),
-      ...(reason ? { reason } : !valid ? { reason: 'invalid_or_missed_observation' } : {}),
+      ...(failure === undefined ? {} : { reason: failure }),
+      ...(cleanupReason === undefined ? {} : { cleanupReason }),
     });
-    if (!valid) return fail(reason ?? 'invalid_or_missed_observation');
+    if (failure !== undefined) return fail(failure, cleanupReason);
     prior = actual;
     priorWall = observedWall;
   }

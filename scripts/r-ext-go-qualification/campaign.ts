@@ -63,7 +63,7 @@ function inspectCampaign(value: unknown): { campaign: Campaign; frozen: boolean 
   ) {
     throw new Error('Invalid campaign identity.');
   }
-  timestamp(value.createdAt);
+  const createdAt = timestamp(value.createdAt);
   exactKeys(value.limits, ['attempts', 'tokensPerAttempt', 'totalTokens']);
   if (
     value.limits.attempts !== CAMPAIGN_LIMITS.attempts ||
@@ -77,7 +77,7 @@ function inspectCampaign(value: unknown): { campaign: Campaign; frozen: boolean 
   const main = new Set<string>();
   let total = 0;
   let unresolved = false;
-  let previousTime = Date.parse(String(value.createdAt));
+  let previousTime = Date.parse(createdAt);
   for (const attempt of value.attempts) {
     exactKeys(
       attempt,
@@ -116,8 +116,7 @@ function inspectCampaign(value: unknown): { campaign: Campaign; frozen: boolean 
         throw new Error('Preserve the main-chain attempt slots.');
     }
     ids.add(attempt.id);
-    timestamp(attempt.startedAt);
-    const started = Date.parse(String(attempt.startedAt));
+    const started = Date.parse(timestamp(attempt.startedAt));
     if (started < previousTime) throw new Error('Campaign attempt time moved backwards.');
     previousTime = started;
     if (attempt.purpose === 'initial' || attempt.purpose === 'resume') {
@@ -144,25 +143,24 @@ function inspectCampaign(value: unknown): { campaign: Campaign; frozen: boolean 
     )
       throw new Error('Invalid usage receipt hash.');
     if (settlement.outcome === 'unknown') {
-      if (settlement.totalTokens !== undefined)
+      if (settlement.totalTokens !== undefined || settlement.receiptHash !== undefined)
         throw new Error('Unknown usage cannot be invented.');
       unresolved = true;
     } else {
+      const tokens = settlement.totalTokens;
       if (
-        !Number.isSafeInteger(settlement.totalTokens) ||
-        Number(settlement.totalTokens) < 0 ||
+        typeof tokens !== 'number' ||
+        !Number.isSafeInteger(tokens) ||
+        tokens < 0 ||
         (settlement.outcome === 'not_sent' &&
           (settlement.totalTokens !== 0 || settlement.receiptHash !== undefined)) ||
         (settlement.outcome !== 'not_sent' && settlement.receiptHash === undefined)
       )
         throw new Error('Invalid usage evidence; reconciliation required.');
-      total += Number(settlement.totalTokens);
+      total += tokens;
       // Preserve measured overage as evidence instead of relabeling it as an
       // in-budget result or discarding it. It freezes every subsequent attempt.
-      if (
-        Number(settlement.totalTokens) > CAMPAIGN_LIMITS.tokensPerAttempt ||
-        total > CAMPAIGN_LIMITS.totalTokens
-      )
+      if (tokens > CAMPAIGN_LIMITS.tokensPerAttempt || total > CAMPAIGN_LIMITS.totalTokens)
         unresolved = true;
     }
   }

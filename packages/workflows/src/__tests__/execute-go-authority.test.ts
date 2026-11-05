@@ -39,7 +39,12 @@ afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
 
-async function execution(mode: 'run' | 'resume', meta = manifest, historicalRunId?: string) {
+async function execution(
+  mode: 'run' | 'resume',
+  meta = manifest,
+  historicalRunId?: string,
+  resumeRunnerHash?: string,
+) {
   const rootDir = await mkdtemp(join(tmpdir(), 'openslack-go-execute-'));
   roots.push(rootDir);
   const sourceBytes = Buffer.from('export const workflow = true;', 'utf8');
@@ -64,6 +69,7 @@ async function execution(mode: 'run' | 'resume', meta = manifest, historicalRunI
       attemptId: 'attempt.first',
       leaseId: 'lease.first',
       fencingToken: 1,
+      runnerBuildHash: 'e'.repeat(64),
     },
   });
   if (mode === 'resume') {
@@ -89,7 +95,13 @@ async function execution(mode: 'run' | 'resume', meta = manifest, historicalRunI
   const checkpointAuthority = createWorkflowCheckpointLeaseAuthority(
     mode === 'run'
       ? binding
-      : { ...binding, attemptId: 'attempt.resume', leaseId: 'lease.resume', fencingToken: 2 },
+      : {
+          ...binding,
+          attemptId: 'attempt.resume',
+          leaseId: 'lease.resume',
+          fencingToken: 2,
+          runnerBuildHash: resumeRunnerHash ?? binding.runnerBuildHash,
+        },
   );
   // These workflows call providers but perform no governed effects. An attempted
   // effect is an error, not an authorization shortcut in the test composition.
@@ -110,6 +122,7 @@ async function execution(mode: 'run' | 'resume', meta = manifest, historicalRunI
     sourceSnapshot,
     descriptor,
     authority,
+    binding,
     runId,
     options,
     // Reopen the files to assert durable state independently of the writer object.
@@ -132,6 +145,26 @@ async function execution(mode: 'run' | 'resume', meta = manifest, historicalRunI
 
 // Real recovery files include Windows owner-only ACL checks on each write.
 describe('sealed Go execution recovery', { timeout: 30_000 }, () => {
+  it('keeps the runner build independent from the Go authority build', async () => {
+    const fixture = await execution('resume');
+    expect(fixture.descriptor.authorityRoute.authorityBuildHash).toBe('a'.repeat(64));
+    expect(fixture.binding.runnerBuildHash).toBe('e'.repeat(64));
+    expect(
+      (await fixture.reader.loadCheckpointControl(fixture.runId))?.activeBinding.runnerBuildHash,
+    ).toBe('e'.repeat(64));
+  });
+
+  it('rejects a changed runner build before entering resumed workflow code', async () => {
+    const fixture = await execution('resume', manifest, undefined, 'f'.repeat(64));
+    const run = vi.fn(async () => ({ status: 'completed' }));
+    const before = await fixture.reader.loadCheckpointControl(fixture.runId);
+    await expect(fixture.execute(run)).rejects.toMatchObject({
+      code: 'WORKFLOW_CHECKPOINT_RESUME_INVALID',
+    });
+    expect(run).not.toHaveBeenCalled();
+    expect(await fixture.reader.loadCheckpointControl(fixture.runId)).toEqual(before);
+  });
+
   it.each(['v2', 'raw', 'different'] as const)(
     'recovers only an anchored historical partial initialization with %s metadata',
     async (identity) => {

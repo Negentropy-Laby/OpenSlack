@@ -1,4 +1,5 @@
 import { createServer, type IncomingMessage, type ServerResponse, type Server } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { join } from 'node:path';
 import { createDefaultCredentialStore, type CredentialStore } from '@openslack/credentials';
 import type { GitHubWatchConfig, GitHubWatchRoute } from './watch-config.js';
@@ -225,6 +226,13 @@ export class WatchDaemon {
     }
   }
 
+  /** OS-observed listener address only; never exposes ownership of the server. */
+  address(): Readonly<AddressInfo> | null {
+    if (!this.server?.listening) return null;
+    const address = this.server.address();
+    return address && typeof address !== 'string' ? Object.freeze({ ...address }) : null;
+  }
+
   async start(port: number): Promise<void> {
     if (this.stopping) throw new Error('WATCH_DAEMON_STOPPING');
     if (this.server || this.starting) throw new Error('WATCH_DAEMON_ALREADY_STARTED');
@@ -232,6 +240,7 @@ export class WatchDaemon {
     this.starting = starting;
     try {
       await starting;
+      if (this.stopping) throw new Error('WATCH_DAEMON_STOPPING');
     } finally {
       if (this.starting === starting) this.starting = null;
     }

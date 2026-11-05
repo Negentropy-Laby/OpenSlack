@@ -247,8 +247,7 @@ function makeRepositoryEventPayload(eventName: string, action: string): string {
 // mistake a requested random port for the IPv4 endpoint actually under test.
 async function startTestDaemon(daemon: WatchDaemon): Promise<number> {
   await daemon.start(0);
-  const server: unknown = Reflect.get(daemon, 'server');
-  const address = server instanceof Server ? server.address() : null;
+  const address = daemon.address();
   if (!address || typeof address === 'string' || address.port <= 0) {
     await daemon.stop();
     throw new Error('WATCH_TEST_LISTENER_UNAVAILABLE');
@@ -405,6 +404,27 @@ describe('notification-service admission policy', () => {
 });
 
 describe('WatchDaemon', () => {
+  it('returns a frozen independent address only while its own listener is bound', async () => {
+    const daemon = new WatchDaemon(config, secret, new WatchDedupeStore(tempDir));
+    expect(daemon.address()).toBeNull();
+    try {
+      const port = await startTestDaemon(daemon);
+      const address = daemon.address()!;
+      expect(address).toMatchObject({ port });
+      expect(Object.isFrozen(address)).toBe(true);
+      expect(daemon.address()).not.toBe(address);
+      expect(Reflect.set(address, 'port', 0)).toBe(false);
+      expect(daemon.address()?.port).toBe(port);
+      await daemon.stop();
+      expect(daemon.address()).toBeNull();
+      await startTestDaemon(daemon);
+      expect(daemon.address()?.port).toBeGreaterThan(0);
+      expect(daemon.address()).not.toBe(address);
+    } finally {
+      await daemon.stop();
+    }
+  });
+
   it('keeps concurrent ephemeral endpoints tied to their own delivery state', async () => {
     const firstStore = new WatchDedupeStore(join(tempDir, 'first'));
     const secondStore = new WatchDedupeStore(join(tempDir, 'second'));
@@ -451,22 +471,16 @@ describe('WatchDaemon', () => {
     const daemon = new WatchDaemon(config, secret, new WatchDedupeStore(tempDir));
     const stopping = daemon.stop();
     const starting = daemon.start(0);
-    const candidate: unknown = Reflect.get(daemon, 'server');
     try {
       await expect(starting).rejects.toThrow('WATCH_DAEMON_STOPPING');
       await stopping;
       await startTestDaemon(daemon);
-      const owned: unknown = Reflect.get(daemon, 'server');
-      expect(owned).toBeInstanceOf(Server);
+      expect(daemon.address()?.port).toBeGreaterThan(0);
       await daemon.stop();
-      expect((owned as Server).listening).toBe(false);
-      expect(Reflect.get(daemon, 'server')).toBeNull();
+      expect(daemon.address()).toBeNull();
     } finally {
       await stopping;
       await daemon.stop();
-      // Preserve test ownership even when the old implementation loses it.
-      if (candidate instanceof Server && candidate.listening)
-        await new Promise<void>((resolve) => candidate.close(() => resolve()));
     }
   });
 
@@ -493,14 +507,29 @@ describe('WatchDaemon', () => {
       await Promise.all([first, second]);
       stop.mockRestore();
       await startTestDaemon(daemon);
-      const owned: unknown = Reflect.get(daemon, 'server');
       await daemon.stop();
-      expect(owned instanceof Server && owned.listening).toBe(false);
-      expect(Reflect.get(daemon, 'server')).toBeNull();
+      expect(daemon.address()).toBeNull();
     } finally {
       release();
       await Promise.all([first, second]);
       stop.mockRestore();
+      await daemon.stop();
+    }
+  });
+
+  it('rejects an in-flight start when stop takes lifecycle ownership', async () => {
+    const daemon = new WatchDaemon(config, secret, new WatchDedupeStore(tempDir));
+    const startup = daemon.start(0).then(
+      () => ({ started: true as const }),
+      (error: unknown) => ({ error }),
+    );
+    const stopping = daemon.stop();
+    try {
+      const [outcome] = await Promise.all([startup, stopping]);
+      expect(outcome).toMatchObject({ error: new Error('WATCH_DAEMON_STOPPING') });
+      expect(await startTestDaemon(daemon)).toBeGreaterThan(0);
+    } finally {
+      await stopping;
       await daemon.stop();
     }
   });
@@ -513,7 +542,7 @@ describe('WatchDaemon', () => {
       await expect(daemon.start(-1)).rejects.toMatchObject({ code: 'ERR_SOCKET_BAD_PORT' });
       expect(deliveryStart).not.toHaveBeenCalled();
       expect(profileStart).not.toHaveBeenCalled();
-      expect(Reflect.get(daemon, 'server')).toBeNull();
+      expect(daemon.address()).toBeNull();
       expect(await startTestDaemon(daemon)).toBeGreaterThan(0);
     } finally {
       await daemon.stop();
@@ -551,7 +580,7 @@ describe('WatchDaemon', () => {
       await waitFor(() => outcome !== undefined);
       await startup;
       expect(outcome).toEqual({ code: 'EADDRINUSE' });
-      expect(Reflect.get(daemon, 'server')).toBeNull();
+      expect(daemon.address()).toBeNull();
       expect(await startTestDaemon(daemon)).toBeGreaterThan(0);
     } finally {
       listen.mockRestore();
@@ -697,15 +726,12 @@ describe('WatchDaemon', () => {
   });
 
   it('closes a slow chunked request after the bounded body-read timeout', async () => {
-    const daemon = new WatchDaemon(
-      config,
-      secret,
-      new WatchDedupeStore(tempDir),
-      undefined,
-      undefined,
-      mockRecordEvent,
-      { maxBytes: 64, timeoutMs: 30 },
-    );
+    const store = new WatchDedupeStore(tempDir);
+    const event = vi.fn(mockRecordEvent);
+    const daemon = new WatchDaemon(config, secret, store, undefined, undefined, event, {
+      maxBytes: 64,
+      timeoutMs: 30,
+    });
     const port = await startTestDaemon(daemon);
 
     try {
@@ -713,7 +739,42 @@ describe('WatchDaemon', () => {
       expect(response).toContain('HTTP/1.1 408 Request Timeout');
       expect(response.toLowerCase()).toContain('connection: close');
       expect(response).toContain('BODY_READ_TIMEOUT');
+      expect(response).toMatch(/\r\n0\r\n\r\n$/u);
+      expect(store.getStats().count).toBe(0);
+      expect(event).not.toHaveBeenCalled();
     } finally {
+      await daemon.stop();
+    }
+  });
+
+  it('releases a disconnected incomplete upload without admitting an event', async () => {
+    const store = new WatchDedupeStore(tempDir);
+    const event = vi.fn(mockRecordEvent);
+    const daemon = new WatchDaemon(config, secret, store, undefined, undefined, event, {
+      maxBytes: 64,
+      timeoutMs: 30,
+    });
+    const port = await startTestDaemon(daemon);
+    const socket = connect({ host: '127.0.0.1', port });
+    try {
+      await new Promise<void>((resolve, reject) => {
+        socket.once('error', reject);
+        socket.once('connect', () => {
+          socket.write(
+            'POST /github/webhook HTTP/1.1\r\nHost: localhost\r\nTransfer-Encoding: chunked\r\n\r\n1\r\n{\r\n',
+            () => {
+              socket.destroy();
+            },
+          );
+        });
+        socket.once('close', () => resolve());
+      });
+      await daemon.stop();
+      expect(daemon.address()).toBeNull();
+      expect(store.getStats().count).toBe(0);
+      expect(event).not.toHaveBeenCalled();
+    } finally {
+      socket.destroy();
       await daemon.stop();
     }
   });
