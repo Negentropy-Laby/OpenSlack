@@ -25,6 +25,7 @@ import {
   writeExclusive,
 } from './workflow-control-shadow.js';
 import { readWorkflowEffectApprovalRecordExact } from './workflow-effect-approval-store.js';
+import { resolveWorkflowEffectApprovalRoot } from './internal/workflow-effect-approval-layout.js';
 import {
   createPendingWorkflowEffectApproval,
   validateWorkflowEffectApproval,
@@ -3183,7 +3184,7 @@ export async function repairWorkflowEffectAuthoritySecurity(
     });
   }
   const localRoot = join(workspaceRoot, '.openslack.local', 'workflows');
-  const approvalRoot = join(localRoot, 'effect-approvals');
+  const approvalRoot = resolveWorkflowEffectApprovalRoot(workspaceRoot);
   const authorityRoot = join(localRoot, AUTHORITY_DIRECTORY);
   const roots = [approvalRoot, authorityRoot];
   const existingRoots: string[] = [];

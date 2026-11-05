@@ -1,8 +1,8 @@
-import { appendFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { appendFile, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { execFileSync, spawnSync } from 'node:child_process';
+import type * as ChildProcess from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { join } from 'node:path';
-import { tmpdir } from 'node:os';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { loadWorkflowFile } from '../internal/workflow-file-loader.js';
 import * as workflowLoader from '../internal/workflow-file-loader.js';
@@ -17,7 +17,11 @@ import {
   workflowRunnerV2DescriptorFixture,
   workflowRunnerGoAuthorityFixture,
 } from './workflow-runner-v2-test-fixture.js';
-import { platformTestTimeout } from '../../../../scripts/testing/process-fixture.mjs';
+import {
+  platformTestTimeout,
+  testTemporaryDirectory,
+  testExecutable,
+} from '../../../../scripts/testing/process-fixture.mjs';
 import { RunStore } from '../run-store.js';
 import { createWorkflowRunnerV2EffectAuthorizationPort } from '../workflow-runner-v2-effect-authorization.js';
 import { WorkflowEffectApprovalPendingError } from '../internal/workflow-effect-authorization-contract.js';
@@ -29,6 +33,21 @@ const root = fileURLToPath(new URL('../../../../', import.meta.url));
 const preparation = (name: string) =>
   import(pathToFileURL(join(root, 'scripts/r-ext-go-qualification', `${name}.ts`)).href);
 const temporaryRoots: string[] = [];
+const gitProbe = vi.hoisted(() => ({
+  transform: undefined as
+    | ((args: readonly string[], output: Buffer | string) => Buffer | string)
+    | undefined,
+}));
+vi.mock('node:child_process', async (importOriginal) => {
+  const original = await importOriginal<typeof ChildProcess>();
+  return {
+    ...original,
+    execFileSync: (...args: Parameters<typeof original.execFileSync>) => {
+      const output = Reflect.apply(original.execFileSync, original, args);
+      return gitProbe.transform?.(Array.isArray(args[1]) ? args[1] : [], output) ?? output;
+    },
+  };
+});
 
 function drainedSnapshot() {
   return {
@@ -71,7 +90,7 @@ function observationClock() {
 }
 
 async function preparationCheckout() {
-  const directory = await mkdtemp(join(tmpdir(), 'rext-preflight-'));
+  const directory = testTemporaryDirectory('rext-preflight-');
   temporaryRoots.push(directory);
   await mkdir(join(directory, '.openslack/workflows'), { recursive: true });
   await writeFile(
@@ -80,9 +99,10 @@ async function preparationCheckout() {
   );
   await writeFile(join(directory, 'bun.lock'), 'fixture lock bytes\n');
   await writeFile(join(directory, 'README.md'), 'tracked fixture\n');
+  const gitExecutable = testExecutable('git');
   const git = (...args: string[]) =>
     execFileSync(
-      process.platform === 'win32' ? 'git.exe' : 'git',
+      gitExecutable,
       [
         '-c',
         'core.hooksPath=' + join(directory, '.git/disabled-hooks'),
@@ -106,6 +126,7 @@ async function preparationCheckout() {
 afterEach(async () => {
   vi.useRealTimers();
   vi.restoreAllMocks();
+  gitProbe.transform = undefined;
   await Promise.all(
     temporaryRoots.splice(0).map((path) => rm(path, { recursive: true, force: true })),
   );
@@ -127,7 +148,7 @@ describe('R-EXT credential-free preparation', () => {
       settlement: { outcome: 'reported', totalTokens: 8192, receiptHash: 'a'.repeat(64) },
     }));
     expect(() => validateCampaign(campaign)).toThrow();
-    const directory = await mkdtemp(join(tmpdir(), 'rext-forged-prefix-'));
+    const directory = testTemporaryDirectory('rext-forged-prefix-');
     temporaryRoots.push(directory);
     const path = join(directory, 'campaign.json');
     await writeFile(path, JSON.stringify(campaign));
@@ -172,7 +193,7 @@ describe('R-EXT credential-free preparation', () => {
     const settlement = { outcome: 'unknown', receiptHash: 'a'.repeat(64) };
     expect(() => settleAttempt(campaign, 'initial.1', settlement)).toThrow();
     expect(campaign.attempts[0].settlement).toBeUndefined();
-    const directory = await mkdtemp(join(tmpdir(), 'rext-unknown-receipt-'));
+    const directory = testTemporaryDirectory('rext-unknown-receipt-');
     temporaryRoots.push(directory);
     const path = join(directory, 'campaign.json');
     const retained = JSON.stringify({
@@ -309,6 +330,61 @@ describe('R-EXT credential-free preparation', () => {
       liveExecutionEnabled: false,
     });
   });
+
+  it('reads both committed inputs with one tree and one binary-safe batch command', async () => {
+    const { inspectPreparation } = await preparation('preflight');
+    const checkout = await preparationCheckout();
+    const lock = 'lock\u0000blob 123\n\n';
+    await writeFile(join(checkout.directory, 'bun.lock'), lock);
+    checkout.git('add', 'bun.lock');
+    checkout.git('commit', '--quiet', '-m', 'fixture: freeze framed lock bytes');
+    const candidate = checkout.head();
+    const commands: string[][] = [];
+    gitProbe.transform = (args, output) => {
+      commands.push([...args]);
+      return output;
+    };
+    expect(await inspectPreparation(checkout.directory, candidate)).toMatchObject({
+      candidate,
+      liveExecutionEnabled: false,
+    });
+    expect(commands.filter((args) => args[0] === 'ls-tree')).toEqual([
+      [
+        'ls-tree',
+        '-z',
+        candidate,
+        '--',
+        '.openslack/workflows/r-ext-go-qualification.mjs',
+        'bun.lock',
+      ],
+    ]);
+    expect(commands.filter((args) => args[0] === 'cat-file')).toEqual([['cat-file', '--batch']]);
+    expect(commands.filter((args) => args[0] === 'show')).toHaveLength(0);
+  });
+
+  it.each(['truncated', 'wrong-id', 'wrong-type', 'oversized', 'extra-output'] as const)(
+    'rejects a malformed committed input batch: %s',
+    async (fault) => {
+      const { inspectPreparation } = await preparation('preflight');
+      const checkout = await preparationCheckout();
+      const candidate = checkout.head();
+      gitProbe.transform = (args, output) => {
+        if (args[0] !== 'cat-file') return output;
+        const bytes = Buffer.from(output);
+        if (fault === 'truncated') return bytes.subarray(0, -1);
+        if (fault === 'extra-output') return Buffer.concat([bytes, Buffer.from('unexpected')]);
+        const end = bytes.indexOf(10);
+        const header = bytes.toString('ascii', 0, end).split(' ');
+        if (fault === 'wrong-id') header[0] = '0'.repeat(40);
+        if (fault === 'wrong-type') header[1] = 'tree';
+        if (fault === 'oversized') header[2] = String(2 * 1024 * 1024 + 1);
+        return Buffer.concat([Buffer.from(header.join(' ') + '\n'), bytes.subarray(end + 1)]);
+      };
+      await expect(inspectPreparation(checkout.directory, candidate)).rejects.toThrow(
+        /committed blobs/,
+      );
+    },
+  );
 
   it.each(['HEAD', 'lock', 'workflow'])(
     'refuses candidate drift during the real loader boundary: %s',
@@ -456,6 +532,76 @@ describe('R-EXT credential-free preparation', () => {
     expect(cancel).toHaveBeenCalledTimes(1);
   });
 
+  it('does not accept a valid snapshot after the scheduler fires before its deadline', async () => {
+    const { observeDrain } = await preparation('observe');
+    const clock = observationClock();
+    let deadline!: () => void;
+    const cancel = vi.fn();
+    const read = vi.fn(async () => {
+      deadline();
+      return drainedSnapshot();
+    });
+    const result = await observeDrain(read, {
+      ...clock,
+      schedule(_at: number, callback: () => void) {
+        deadline = callback;
+        return cancel;
+      },
+    });
+    expect(result).toMatchObject({ status: 'FAIL', reason: 'clock_invalid' });
+    expect(read).toHaveBeenCalledTimes(1);
+    expect(cancel).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([14_999, 15_000])('retains the strict clock-coherence bound at %s ms', async (shift) => {
+    const { observeDrain } = await preparation('observe');
+    const clock = observationClock();
+    let observed = false;
+    const result = await observeDrain(
+      async () => {
+        observed = true;
+        return drainedSnapshot();
+      },
+      {
+        ...clock,
+        wallNow: () => new Date(Date.parse(clock.wallNow()) + (observed ? shift : 0)).toISOString(),
+      },
+    );
+    expect(result.status).toBe(shift < 15_000 ? 'PASS' : 'FAIL');
+    if (shift === 15_000)
+      expect(result).toMatchObject({
+        reason: 'invalid_or_missed_observation',
+        samples: [{ valid: false, snapshot: drainedSnapshot() }],
+      });
+    expect(clock.activeTimers()).toBe(0);
+  });
+
+  it.each([0, -1])('classifies an abort-aware read at deadline offset %s', async (offset) => {
+    const { observeDrain } = await preparation('observe');
+    const clock = observationClock();
+    const schedule = clock.schedule;
+    clock.schedule = (deadline, callback) => schedule(deadline + offset, callback);
+    const read = vi.fn(
+      (signal: AbortSignal) =>
+        new Promise<ReturnType<typeof drainedSnapshot>>((_resolve, reject) => {
+          signal.addEventListener('abort', () => reject(new Error('abort private sentinel')), {
+            once: true,
+          });
+        }),
+    );
+    const pending = observeDrain(read, clock);
+    await Promise.resolve();
+    expect(read).toHaveBeenCalledTimes(1);
+    clock.advance(15_000 + offset);
+    const result = await pending;
+    expect(result).toMatchObject({
+      status: 'FAIL',
+      reason: offset === 0 ? 'authority_read_timeout' : 'clock_invalid',
+    });
+    expect(clock.activeTimers()).toBe(0);
+    expect(JSON.stringify(result)).not.toContain('private sentinel');
+  });
+
   it.each(['success', 'transport', 'timeout'] as const)(
     'retains measured evidence and the primary result when deadline cancellation fails: %s',
     async (outcome) => {
@@ -533,7 +679,7 @@ describe('R-EXT credential-free preparation', () => {
 
   it('uses the production approval identifier grammar without inventing a pending approval', async () => {
     const { inspectPendingApproval } = await preparation('approval');
-    const directory = await mkdtemp(join(tmpdir(), 'rext-wire-id-'));
+    const directory = testTemporaryDirectory('rext-wire-id-');
     temporaryRoots.push(directory);
     await expect(
       inspectPendingApproval(directory, 'run@wire', 'approval@wire', '2026-11-05T00:00:00.000Z'),
@@ -542,9 +688,10 @@ describe('R-EXT credential-free preparation', () => {
 
   it('keeps CLI candidate failure distinct from the blocked preparation exit', async () => {
     const checkout = await preparationCheckout();
+    const bun = testExecutable('bun');
     const invoke = () =>
       spawnSync(
-        process.platform === 'win32' ? 'bun.exe' : 'bun',
+        bun,
         [join(root, 'scripts/r-ext-go-qualification/preflight.ts'), '--candidate', checkout.head()],
         { cwd: checkout.directory, encoding: 'utf8', timeout: 10_000, windowsHide: true },
       );
@@ -564,6 +711,78 @@ describe('R-EXT credential-free preparation', () => {
   it('passes the actual sealed source-admission policy on the exact fixture bytes', async () => {
     const source = await readFile(join(root, '.openslack/workflows/r-ext-go-qualification.mjs'));
     expect(() => assertWorkflowRunnerSourceIsSelfContained(source)).not.toThrow();
+  });
+
+  it('preserves the four checkpoint artifact bytes and optional result hashes', async () => {
+    const workflow = await loadWorkflowFile(
+      join(root, '.openslack/workflows/r-ext-go-qualification.mjs'),
+    );
+    const stages = ['first', 'approved', 'second', 'completed'];
+    const first = { ok: true, stage: 'first' };
+    const second = { ok: true, stage: 'second' };
+    const { digest } = await preparation('evidence');
+    const firstHash = digest(Buffer.from(JSON.stringify(first)));
+    const secondHash = digest(Buffer.from(JSON.stringify(second)));
+    const artifacts: { artifact: Uint8Array; resultHash?: string }[] = [];
+    const order: string[] = [];
+    const agent = vi.fn(async (_prompt: string, options: AgentOptions) =>
+      options.label === 'r-ext:first' ? first : second,
+    );
+    const audit = vi.fn(async () => {
+      order.push('audit');
+    });
+    await workflow.run!(
+      {
+        runId: 'run.artifact',
+        args: { campaignId: 'campaign.artifact' },
+        phase: (phase: string) => order.push(phase),
+        agent,
+        openslack: { governance: { audit } },
+        checkpoint: {
+          commit: async (value: { artifact: Uint8Array; resultHash?: string }) => {
+            artifacts.push(value);
+            order.push(stages[artifacts.length - 1]!);
+          },
+        },
+      } as never,
+      {},
+    );
+    const extra = [
+      { resultHash: firstHash },
+      {},
+      { resultHash: secondHash },
+      { firstHash, secondHash },
+    ];
+    expect(artifacts).toHaveLength(4);
+    for (const [index, value] of artifacts.entries()) {
+      expect(Buffer.from(value.artifact)).toEqual(
+        Buffer.from(
+          JSON.stringify({
+            schema: 'openslack.r_ext_checkpoint.v1',
+            campaignId: 'campaign.artifact',
+            runId: 'run.artifact',
+            stage: stages[index],
+            ...extra[index],
+          }),
+        ),
+      );
+      if (index === 0 || index === 2)
+        expect(value.resultHash).toBe(index === 0 ? firstHash : secondHash);
+      else expect(value).not.toHaveProperty('resultHash');
+    }
+    expect(agent).toHaveBeenCalledTimes(2);
+    expect(audit).toHaveBeenCalledTimes(1);
+    expect(order).toEqual([
+      'FirstCall',
+      'first',
+      'Approval',
+      'audit',
+      'approved',
+      'SecondCall',
+      'second',
+      'Complete',
+      'completed',
+    ]);
   });
 
   it('counts failed and unknown attempts, preserves the main-chain slots, and never resets', async () => {
@@ -622,7 +841,7 @@ describe('R-EXT credential-free preparation', () => {
       expect(() =>
         beginAttempt(JSON.parse(raw), 'resume.1', 'resume', '2026-11-03T09:00:02.000Z'),
       ).toThrow();
-      const directory = await mkdtemp(join(tmpdir(), 'rext-invalid-enum-'));
+      const directory = testTemporaryDirectory('rext-invalid-enum-');
       temporaryRoots.push(directory);
       const path = join(directory, 'campaign.json');
       await writeFile(path, raw);
@@ -702,7 +921,7 @@ describe('R-EXT credential-free preparation', () => {
 
   it('never overwrites campaign evidence or treats corrupted evidence as a new allowance', async () => {
     const { newCampaign, createCampaignFile, readCampaignFile } = await preparation('campaign');
-    const directory = await mkdtemp(join(tmpdir(), 'rext-campaign-'));
+    const directory = testTemporaryDirectory('rext-campaign-');
     temporaryRoots.push(directory);
     const path = join(directory, 'campaign.json');
     const campaign = newCampaign({
@@ -750,7 +969,7 @@ describe('R-EXT credential-free preparation', () => {
             }
           : null,
       );
-      const directory = await mkdtemp(join(tmpdir(), 'rext-initial-'));
+      const directory = testTemporaryDirectory('rext-initial-');
       temporaryRoots.push(directory);
       const workflowPath = join(root, '.openslack/workflows/r-ext-go-qualification.mjs');
       const workflow = await loadWorkflowFile(workflowPath);
@@ -885,14 +1104,7 @@ describe('R-EXT credential-free preparation', () => {
   it('takes exactly forty fixed-deadline observations and does not fabricate missed slots', async () => {
     const { observeDrain } = await preparation('observe');
     const clock = observationClock();
-    const good = async () => ({
-      admissionClosed: true,
-      activeRuns: 0,
-      pendingEffects: 0,
-      openReservations: 0,
-      reconciliationRequired: 0,
-      authorityConsistent: true,
-    });
+    const good = async () => drainedSnapshot();
     const complete = await observeDrain(good, clock);
     expect(complete.status).toBe('PASS');
     expect(complete.samples).toHaveLength(40);
@@ -914,14 +1126,7 @@ describe('R-EXT credential-free preparation', () => {
 
   it('rejects a failing authority read, open admission and backwards observation time', async () => {
     const { observeDrain } = await preparation('observe');
-    const good = {
-      admissionClosed: true,
-      activeRuns: 0,
-      pendingEffects: 0,
-      openReservations: 0,
-      reconciliationRequired: 0,
-      authorityConsistent: true,
-    };
+    const good = drainedSnapshot();
     const failedRead = await observeDrain(async () => {
       throw new Error('not archived');
     }, observationClock());

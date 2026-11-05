@@ -9,18 +9,51 @@ import { CAMPAIGN_LIMITS, MAIN_CHAIN_PURPOSES } from './campaign.js';
 
 const WORKFLOW_PATH = '.openslack/workflows/r-ext-go-qualification.mjs';
 
-function committedInput(root: string, candidate: string, path: string): Buffer {
-  const git = (...args: string[]) =>
+const COMMITTED_INPUT_LIMIT = 2 * 1024 * 1024;
+
+function committedInputs(root: string, candidate: string, paths: readonly string[]): Buffer[] {
+  const git = (args: string[], input?: string) =>
     execFileSync(process.platform === 'win32' ? 'git.exe' : 'git', args, {
       cwd: root,
       timeout: 10_000,
       windowsHide: true,
-      maxBuffer: 2 * 1024 * 1024,
+      input,
+      maxBuffer: paths.length * COMMITTED_INPUT_LIMIT + 1024,
     });
-  const entry = git('ls-tree', '-z', candidate, '--', path).toString('utf8');
-  if (!/^100(?:644|755) blob [0-9a-f]{40}\t/u.test(entry))
-    throw new Error('Preparation input is not a regular committed file.');
-  return git('show', candidate + ':' + path);
+  const invalid = (): never => {
+    throw new Error('Preparation inputs are not exact bounded regular committed blobs.');
+  };
+  const tree = git(['ls-tree', '-z', candidate, '--', ...paths]).toString('utf8');
+  if (!tree.endsWith('\0')) return invalid();
+  const entries = tree.slice(0, -1).split('\0');
+  if (entries.length !== paths.length) return invalid();
+  const objects = new Map<string, string>();
+  for (const entry of entries) {
+    const match = /^100(?:644|755) blob ([0-9a-f]{40})\t(.+)$/u.exec(entry);
+    if (!match || !paths.includes(match[2]!) || objects.has(match[2]!)) return invalid();
+    objects.set(match[2]!, match[1]!);
+  }
+  const ids = paths.map((path) => objects.get(path) ?? invalid());
+  const batch = git(['cat-file', '--batch'], ids.join('\n') + '\n');
+  const results: Buffer[] = [];
+  let offset = 0;
+  for (const id of ids) {
+    const headerEnd = batch.indexOf(10, offset);
+    if (headerEnd < 0) return invalid();
+    const header = /^([0-9a-f]{40}) blob (0|[1-9][0-9]*)$/u.exec(
+      batch.toString('ascii', offset, headerEnd),
+    );
+    if (!header || header[1] !== id) return invalid();
+    const size = Number(header[2]);
+    if (!Number.isSafeInteger(size) || size > COMMITTED_INPUT_LIMIT) return invalid();
+    const start = headerEnd + 1;
+    const end = start + size;
+    if (end >= batch.length || batch[end] !== 10) return invalid();
+    results.push(batch.subarray(start, end));
+    offset = end + 1;
+  }
+  if (offset !== batch.length) return invalid();
+  return results;
 }
 
 /** Repository-only inspection. Never touches App/provider configuration or credentials. */
@@ -30,8 +63,10 @@ export async function inspectPreparation(root: string, expectedCandidate: string
   const candidate = before.commit;
   if (candidate !== expectedCandidate)
     throw new Error('Candidate changed; do not inherit prior evidence.');
-  const committedWorkflow = committedInput(root, candidate, WORKFLOW_PATH);
-  const committedLock = committedInput(root, candidate, 'bun.lock');
+  const [committedWorkflow, committedLock] = committedInputs(root, candidate, [
+    WORKFLOW_PATH,
+    'bun.lock',
+  ]);
   const workflowPath = join(root, WORKFLOW_PATH);
   const workflow = await loadWorkflowFile(workflowPath);
   if (
@@ -43,10 +78,10 @@ export async function inspectPreparation(root: string, expectedCandidate: string
   }
   const current = Buffer.from(await readWorkflowEvidenceText(workflowPath), 'utf8');
   const sourceHash = digest(current);
-  if (!committedWorkflow.equals(current) || workflow.sourceSnapshot.rawHash !== sourceHash)
+  if (!committedWorkflow!.equals(current) || workflow.sourceSnapshot.rawHash !== sourceHash)
     throw new Error('Workflow source changed during inspection.');
   const lock = Buffer.from(await readWorkflowEvidenceText(join(root, 'bun.lock')), 'utf8');
-  if (!committedLock.equals(lock))
+  if (!committedLock!.equals(lock))
     throw new Error('Candidate lock bytes changed during inspection.');
   const after = candidateRevision(root);
   if (after.commit !== candidate || after.tree !== before.tree)

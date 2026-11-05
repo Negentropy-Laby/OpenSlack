@@ -72,14 +72,12 @@ export async function readWorkflowEvidenceText(
   context: ReadContext = { scope: 'workspace' },
   options: WorkflowEvidenceReadOptions = {},
 ): Promise<string> {
+  const linkAllowed = (entry: { nlink: bigint }): boolean =>
+    !options.requireSingleLink || entry.nlink === 1n;
   try {
     await assertWorkflowEvidencePath(path, context);
     const entry = await lstat(path, { bigint: true });
-    if (
-      !entry.isFile() ||
-      entry.isSymbolicLink() ||
-      (options.requireSingleLink && entry.nlink !== 1n)
-    )
+    if (!entry.isFile() || entry.isSymbolicLink() || !linkAllowed(entry))
       throw failure('WORKFLOW_RUN_EVIDENCE_PATH_INVALID', context);
     if (entry.size > BigInt(maxBytes)) throw failure('WORKFLOW_RUN_EVIDENCE_TOO_LARGE', context);
     const handle = await open(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
@@ -87,7 +85,7 @@ export async function readWorkflowEvidenceText(
       const before = await handle.stat({ bigint: true });
       if (
         !before.isFile() ||
-        (options.requireSingleLink && before.nlink !== 1n) ||
+        !linkAllowed(before) ||
         entry.dev !== before.dev ||
         entry.ino !== before.ino ||
         entry.mode !== before.mode
@@ -107,7 +105,8 @@ export async function readWorkflowEvidenceText(
       const current = await lstat(path, { bigint: true });
       await assertWorkflowEvidencePath(path, context);
       if (
-        (options.requireSingleLink && (after.nlink !== 1n || current.nlink !== 1n)) ||
+        !linkAllowed(after) ||
+        !linkAllowed(current) ||
         before.size !== BigInt(count) ||
         before.size !== after.size ||
         before.mtimeNs !== after.mtimeNs ||

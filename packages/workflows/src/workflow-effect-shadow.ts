@@ -1,8 +1,9 @@
 import { createHash } from 'node:crypto';
 import { lstat, readdir, rename, unlink } from 'node:fs/promises';
-import { basename, isAbsolute, join, resolve } from 'node:path';
+import { basename, isAbsolute, join, relative, resolve } from 'node:path';
 import { types as nodeTypes } from 'node:util';
 import { SAFE_IDENTIFIER_REGEX } from './internal/workflow-binding-field-rules.js';
+import { resolveWorkflowEffectApprovalRoot } from './internal/workflow-effect-approval-layout.js';
 import {
   isWorkflowEffectShadowObservationPort,
   registerWorkflowEffectShadowObservationPort,
@@ -746,7 +747,7 @@ export async function createWorkflowEffectShadowObservationPort(
       workspaceRoot: options.workspaceRoot,
       journalRoot: options.journalRoot,
       protectedRelativeRoots: [
-        join('workflows', 'effect-approvals'),
+        relative(localRoot, resolveWorkflowEffectApprovalRoot(options.workspaceRoot)),
         join('workflows', 'effect-authority'),
       ],
     });
@@ -776,7 +777,7 @@ export async function createWorkflowEffectShadowObservationPort(
   }
   return registerWorkflowEffectShadowObservationPort(
     new ObservationPort(
-      join(localRoot, 'workflows', 'effect-approvals'),
+      resolveWorkflowEffectApprovalRoot(options.workspaceRoot),
       entries,
       locks,
       quarantine,

@@ -518,6 +518,8 @@ describe('WatchDaemon', () => {
   });
 
   it('rejects an in-flight start when stop takes lifecycle ownership', async () => {
+    const deliveryStart = vi.spyOn(WatchDeliveryRouter.prototype, 'start');
+    const profileStart = vi.spyOn(ProfileSyncWorker.prototype, 'start');
     const daemon = new WatchDaemon(config, secret, new WatchDedupeStore(tempDir));
     const startup = daemon.start(0).then(
       () => ({ started: true as const }),
@@ -527,6 +529,8 @@ describe('WatchDaemon', () => {
     try {
       const [outcome] = await Promise.all([startup, stopping]);
       expect(outcome).toMatchObject({ error: new Error('WATCH_DAEMON_STOPPING') });
+      expect(deliveryStart).not.toHaveBeenCalled();
+      expect(profileStart).not.toHaveBeenCalled();
       expect(await startTestDaemon(daemon)).toBeGreaterThan(0);
     } finally {
       await stopping;

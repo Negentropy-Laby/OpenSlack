@@ -20,10 +20,11 @@ import {
   type Stats,
 } from 'node:fs';
 import { userInfo } from 'node:os';
-import { isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { createInterface } from 'node:readline/promises';
 import { types as nodeTypes } from 'node:util';
 import { SAFE_IDENTIFIER_REGEX } from './internal/workflow-binding-field-rules.js';
+import { resolveWorkflowEffectApprovalRoot } from './internal/workflow-effect-approval-layout.js';
 import {
   createWorkflowEffectDecisionAuthority,
   type HumanWorkflowEffectDecisionBinding,
@@ -409,12 +410,14 @@ function approvalStoreDirectory(
   dependencies: LocalHumanAttestationDependencies,
 ): string {
   const local = localStateDirectory(root, dependencies, true)!;
-  const workflows = lstatPresent(join(local.real, 'workflows'))
-    ? inspectDirectory(root, join(local.real, 'workflows'), dependencies, true)
-    : ensureDirectory(root, local, 'workflows', dependencies, true);
-  const approvals = lstatPresent(join(workflows.real, 'effect-approvals'))
-    ? inspectDirectory(root, join(workflows.real, 'effect-approvals'), dependencies, true)
-    : ensureDirectory(root, workflows, 'effect-approvals', dependencies, true);
+  const approvalRoot = resolveWorkflowEffectApprovalRoot(root.real);
+  const workflowRoot = dirname(approvalRoot);
+  const workflows = lstatPresent(workflowRoot)
+    ? inspectDirectory(root, workflowRoot, dependencies, true)
+    : ensureDirectory(root, local, basename(workflowRoot), dependencies, true);
+  const approvals = lstatPresent(approvalRoot)
+    ? inspectDirectory(root, approvalRoot, dependencies, true)
+    : ensureDirectory(root, workflows, basename(approvalRoot), dependencies, true);
   return approvals.real;
 }
 

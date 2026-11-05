@@ -85,21 +85,24 @@ export async function run(ctx) {
   if (typeof campaignId !== 'string' || !SAFE_ID.test(campaignId))
     throw new Error('R-EXT requires a well-formed campaignId for evidence correlation.');
 
+  const commit = (stage, extra = {}, resultHash) =>
+    ctx.checkpoint.commit({
+      artifact: bytes({
+        schema: 'openslack.r_ext_checkpoint.v1',
+        campaignId,
+        runId: ctx.runId,
+        stage,
+        ...extra,
+      }),
+      ...(resultHash === undefined ? {} : { resultHash }),
+    });
+
   ctx.phase('FirstCall');
   const first = await call(ctx, 'first', 'FirstCall');
   const firstHash = await sha256(bytes(first));
   // Stable across function re-entry: never add timestamps, random values or
   // resume generation. The pending #433 defect must be fixed, not worked around.
-  await ctx.checkpoint.commit({
-    artifact: bytes({
-      schema: 'openslack.r_ext_checkpoint.v1',
-      campaignId,
-      runId: ctx.runId,
-      stage: 'first',
-      resultHash: firstHash,
-    }),
-    resultHash: firstHash,
-  });
+  await commit('first', { resultHash: firstHash }, firstHash);
 
   ctx.phase('Approval');
   await ctx.openslack.governance.audit('r-ext-go-qualification-approved', {
@@ -108,38 +111,13 @@ export async function run(ctx) {
     runId: ctx.runId,
     marker: 'r-ext-go-qualification-approved',
   });
-  await ctx.checkpoint.commit({
-    artifact: bytes({
-      schema: 'openslack.r_ext_checkpoint.v1',
-      campaignId,
-      runId: ctx.runId,
-      stage: 'approved',
-    }),
-  });
+  await commit('approved');
 
   ctx.phase('SecondCall');
   const second = await call(ctx, 'second', 'SecondCall');
   const secondHash = await sha256(bytes(second));
-  await ctx.checkpoint.commit({
-    artifact: bytes({
-      schema: 'openslack.r_ext_checkpoint.v1',
-      campaignId,
-      runId: ctx.runId,
-      stage: 'second',
-      resultHash: secondHash,
-    }),
-    resultHash: secondHash,
-  });
+  await commit('second', { resultHash: secondHash }, secondHash);
   ctx.phase('Complete');
-  await ctx.checkpoint.commit({
-    artifact: bytes({
-      schema: 'openslack.r_ext_checkpoint.v1',
-      campaignId,
-      runId: ctx.runId,
-      stage: 'completed',
-      firstHash,
-      secondHash,
-    }),
-  });
+  await commit('completed', { firstHash, secondHash });
   return { status: 'completed', campaignId, firstHash, secondHash };
 }

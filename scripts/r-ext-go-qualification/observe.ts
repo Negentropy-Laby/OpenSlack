@@ -137,27 +137,39 @@ export async function observeDrain(
     let cleanupReason: 'clock_invalid' | undefined;
     let registering = true;
     let active = true;
-    let expired: 'clock_invalid' | 'authority_read_timeout' | undefined;
-    let settleDeadline!: (reason: 'clock_invalid' | 'authority_read_timeout') => void;
-    const bounded = new Promise<'clock_invalid' | 'authority_read_timeout'>((resolve) => {
-      settleDeadline = resolve;
+    let settled = false;
+    let registrationFault = false;
+    type ReadOutcome =
+      | { kind: 'value'; value: DrainSnapshot }
+      | { kind: 'failed' }
+      | { kind: 'deadline'; failure: 'clock_invalid' | 'authority_read_timeout' };
+    let settleRead!: (outcome: ReadOutcome) => void;
+    const bounded = new Promise<ReadOutcome>((resolve) => {
+      settleRead = (outcome) => {
+        if (!active || settled) return;
+        settled = true;
+        resolve(outcome);
+      };
     });
     let cancelDeadline: () => void;
     try {
       cancelDeadline = clock.schedule(deadline + 15_000, () => {
-        if (!active) return;
+        if (!active || settled) return;
         let reading: number;
         try {
           reading = clock.now();
         } catch {
           reading = Number.NaN;
         }
-        expired =
+        registrationFault = registering;
+        const failure =
           registering || !Number.isFinite(reading) || reading < deadline + 15_000
             ? 'clock_invalid'
             : 'authority_read_timeout';
+        // Record the host deadline before aborting a read whose abort listener
+        // can reject synchronously. Only the first observed outcome is retained.
+        settleRead({ kind: 'deadline', failure });
         cancellation.abort();
-        settleDeadline(expired);
       });
       if (typeof cancelDeadline !== 'function') {
         active = false;
@@ -169,7 +181,7 @@ export async function observeDrain(
     }
     registering = false;
     // An invalid scheduler has not observed an authority timeout or started a read.
-    if (expired !== undefined) {
+    if (registrationFault) {
       active = false;
       try {
         cancelDeadline();
@@ -179,13 +191,15 @@ export async function observeDrain(
       return fail('clock_invalid', cleanupReason);
     }
     try {
-      const outcome = await Promise.race([
-        read(cancellation.signal).then(
-          (value) => ({ kind: 'value' as const, value }),
-          () => ({ kind: 'failed' as const }),
-        ),
-        bounded.then((failure) => ({ kind: 'deadline' as const, failure })),
-      ]);
+      try {
+        void read(cancellation.signal).then(
+          (value) => settleRead({ kind: 'value', value }),
+          () => settleRead({ kind: 'failed' }),
+        );
+      } catch {
+        settleRead({ kind: 'failed' });
+      }
+      const outcome = await bounded;
       if (outcome.kind === 'deadline') reason = outcome.failure;
       else if (outcome.kind === 'failed') reason = 'authority_read_failed';
       else {

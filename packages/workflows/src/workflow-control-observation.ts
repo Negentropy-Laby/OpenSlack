@@ -23,6 +23,7 @@ import {
   type WorkflowEffectApprovalRecord,
 } from './workflow-effect-approval.js';
 import { parseWorkflowEffectJson } from './workflow-effect-json.js';
+import { resolveWorkflowEffectApprovalRoot } from './internal/workflow-effect-approval-layout.js';
 
 const SAFE_ID = SAFE_IDENTIFIER_REGEX;
 const HASH = WORKFLOW_BINDING_HASH_REGEX;
@@ -493,7 +494,7 @@ export async function buildWorkflowControlObservation(
   });
 
   const effectCounts = zeroCounts();
-  const effectRoot = options.effectApprovalRoot ?? join(workflowRoot, 'effect-approvals');
+  const effectRoot = options.effectApprovalRoot ?? resolveWorkflowEffectApprovalRoot(workspaceRoot);
   if (!isAbsolute(effectRoot) || resolve(effectRoot) !== effectRoot) {
     fail('WORKFLOW_CONTROL_OBSERVATION_PATH_UNSAFE', 'Effect approval root must be absolute.');
   }

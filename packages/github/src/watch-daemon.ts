@@ -296,6 +296,9 @@ export class WatchDaemon {
           reject(error);
         }
       });
+      // A stop requested during startup owns the listener cleanup. Do not start
+      // workers (or drain queued work) for a start that will be rejected.
+      if (this.stopping) return;
       if (!this.legacyMigrationFinalized) this.deliveryRouter.start();
       this.deliveryRouterV2?.start();
       if (ProfileWorker) {
