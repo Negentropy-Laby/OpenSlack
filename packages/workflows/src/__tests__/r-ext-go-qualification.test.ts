@@ -1,9 +1,11 @@
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { appendFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { execFileSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { loadWorkflowFile } from '../internal/workflow-file-loader.js';
+import * as workflowLoader from '../internal/workflow-file-loader.js';
 import { assertWorkflowRunnerSourceIsSelfContained } from '../workflow-runner-source-policy.js';
 import { checkpointEvidence } from '../internal/workflow-runner-checkpoint-evidence.js';
 import { validateWorkflowCheckpointShadowEnvelope } from '../workflow-checkpoint-shadow-contract.js';
@@ -29,6 +31,80 @@ const root = fileURLToPath(new URL('../../../../', import.meta.url));
 const preparation = (name: string) =>
   import(pathToFileURL(join(root, 'scripts/r-ext-go-qualification', `${name}.ts`)).href);
 const temporaryRoots: string[] = [];
+
+function drainedSnapshot() {
+  return {
+    admissionClosed: true,
+    activeRuns: 0,
+    pendingEffects: 0,
+    openReservations: 0,
+    reconciliationRequired: 0,
+    authorityConsistent: true,
+  };
+}
+
+function observationClock() {
+  let now = 0;
+  const epoch = Date.parse('2026-11-05T00:00:00.000Z');
+  const timers = new Map<symbol, { deadline: number; callback: () => void }>();
+  const advance = (ms: number) => {
+    now += ms;
+    for (const [id, timer] of [...timers]) {
+      if (timer.deadline <= now) {
+        timers.delete(id);
+        timer.callback();
+      }
+    }
+  };
+  return {
+    now: () => now,
+    wallNow: () => new Date(epoch + now).toISOString(),
+    sleep: async (ms: number) => advance(ms),
+    schedule(deadline: number, callback: () => void) {
+      const id = Symbol('observation deadline');
+      timers.set(id, { deadline, callback });
+      return () => {
+        timers.delete(id);
+      };
+    },
+    advance,
+    activeTimers: () => timers.size,
+  };
+}
+
+async function preparationCheckout() {
+  const directory = await mkdtemp(join(tmpdir(), 'rext-preflight-'));
+  temporaryRoots.push(directory);
+  await mkdir(join(directory, '.openslack/workflows'), { recursive: true });
+  await writeFile(
+    join(directory, '.openslack/workflows/r-ext-go-qualification.mjs'),
+    await readFile(join(root, '.openslack/workflows/r-ext-go-qualification.mjs')),
+  );
+  await writeFile(join(directory, 'bun.lock'), 'fixture lock bytes\n');
+  await writeFile(join(directory, 'README.md'), 'tracked fixture\n');
+  const git = (...args: string[]) =>
+    execFileSync(
+      process.platform === 'win32' ? 'git.exe' : 'git',
+      [
+        '-c',
+        'core.hooksPath=' + join(directory, '.git/disabled-hooks'),
+        '-c',
+        'commit.gpgsign=false',
+        '-c',
+        'user.name=Qualification Fixture',
+        '-c',
+        'user.email=qualification@example.invalid',
+        ...args,
+      ],
+      { cwd: directory, encoding: 'utf8', timeout: 10_000, windowsHide: true },
+    ).trim();
+  git('init', '--quiet');
+  git('config', 'core.autocrlf', 'false');
+  git('add', '.');
+  git('commit', '--quiet', '-m', 'fixture: freeze preparation bytes');
+  return { directory, git, head: () => git('rev-parse', 'HEAD') };
+}
+
 afterEach(async () => {
   vi.useRealTimers();
   vi.restoreAllMocks();
@@ -38,6 +114,202 @@ afterEach(async () => {
 });
 
 describe('R-EXT credential-free preparation', () => {
+  it('rejects persisted campaign prefixes that consume the reserved main-chain slots', async () => {
+    const { newCampaign, validateCampaign, readCampaignFile } = await preparation('campaign');
+    const campaign = newCampaign({
+      candidate: 'b'.repeat(40),
+      runId: 'run.forged-prefix',
+      createdAt: '2026-11-05T00:00:00.000Z',
+    });
+    campaign.attempts = Array.from({ length: 4 }, (_, index) => ({
+      id: 'preflight.' + index,
+      purpose: 'preflight',
+      startedAt: '2026-11-05T00:00:01.000Z',
+      reservedTokens: 8192,
+      settlement: { outcome: 'reported', totalTokens: 8192, receiptHash: 'a'.repeat(64) },
+    }));
+    expect(() => validateCampaign(campaign)).toThrow();
+    const directory = await mkdtemp(join(tmpdir(), 'rext-forged-prefix-'));
+    temporaryRoots.push(directory);
+    const path = join(directory, 'campaign.json');
+    await writeFile(path, JSON.stringify(campaign));
+    await expect(readCampaignFile(path)).rejects.toThrow();
+  });
+
+  it('rejects a not-sent settlement carrying a usage receipt without changing the open attempt', async () => {
+    const { newCampaign, beginAttempt, settleAttempt } = await preparation('campaign');
+    const campaign = beginAttempt(
+      newCampaign({
+        candidate: 'b'.repeat(40),
+        runId: 'run.not-sent-receipt',
+        createdAt: '2026-11-05T00:00:00.000Z',
+      }),
+      'preflight.1',
+      'preflight',
+      '2026-11-05T00:00:01.000Z',
+    );
+    expect(() =>
+      settleAttempt(campaign, 'preflight.1', {
+        outcome: 'not_sent',
+        totalTokens: 0,
+        receiptHash: 'a'.repeat(64),
+      }),
+    ).toThrow();
+    expect(campaign.attempts[0].settlement).toBeUndefined();
+  });
+
+  it.each(['+010000-01-01T00:00:00.000Z', '-000001-01-01T00:00:00.000Z'])(
+    'rejects timestamps outside the shared four-digit UTC contract: %s',
+    async (value) => {
+      const { timestamp } = await preparation('evidence');
+      expect(() => timestamp(value)).toThrow();
+    },
+  );
+
+  it.each(['symbol', 'prototype', 'getter', 'proxy'])(
+    'rejects non-inert evidence before invoking user code: %s',
+    async (kind) => {
+      const { exactKeys } = await preparation('evidence');
+      const touched = vi.fn();
+      let value: object = { a: 1 };
+      if (kind === 'symbol') value = { a: 1, [Symbol('extra')]: true };
+      if (kind === 'prototype') value = Object.assign(Object.create({ extra: true }), { a: 1 });
+      if (kind === 'getter') {
+        value = Object.defineProperty({}, 'a', { enumerable: true, get: touched });
+      }
+      if (kind === 'proxy') {
+        value = new Proxy(value, {
+          getOwnPropertyDescriptor(target, property) {
+            touched();
+            return Reflect.getOwnPropertyDescriptor(target, property);
+          },
+        });
+      }
+      expect(() => exactKeys(value, ['a'])).toThrow();
+      expect(touched).not.toHaveBeenCalled();
+    },
+  );
+
+  it('fails promptly when sleep resolves without advancing the observation clock', async () => {
+    const { observeDrain } = await preparation('observe');
+    let sleeps = 0;
+    const clock = {
+      ...observationClock(),
+      sleep: async () => {
+        // Keep the old implementation bounded while exposing its missing guard.
+        if (++sleeps > 1) throw new Error('stalled-clock regression guard');
+      },
+    };
+    await expect(observeDrain(async () => drainedSnapshot(), clock)).resolves.toMatchObject({
+      status: 'FAIL',
+      reason: 'clock_stalled',
+      samples: [],
+    });
+    expect(sleeps).toBe(1);
+  });
+
+  it('uses the supplied deadline scheduler rather than a different native timebase', async () => {
+    const { observeDrain } = await preparation('observe');
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const clock = observationClock();
+    let settleFirst!: (value: ReturnType<typeof drainedSnapshot>) => void;
+    let calls = 0;
+    const pending = observeDrain(async () => {
+      if (++calls === 1) {
+        return new Promise<ReturnType<typeof drainedSnapshot>>((resolve) => {
+          settleFirst = resolve;
+        });
+      }
+      return drainedSnapshot();
+    }, clock);
+    let settled = false;
+    void pending.then(() => {
+      settled = true;
+    });
+    await Promise.resolve();
+    try {
+      expect(calls).toBe(1);
+      await vi.advanceTimersByTimeAsync(15_000);
+      expect(settled).toBe(false);
+    } finally {
+      settleFirst(drainedSnapshot());
+    }
+    expect(await pending).toMatchObject({ status: 'PASS' });
+    expect(clock.activeTimers()).toBe(0);
+  });
+
+  it('distinguishes malformed authority evidence from a failed read without archiving it', async () => {
+    const { observeDrain } = await preparation('observe');
+    const malformed = await observeDrain(
+      async () => ({ ...drainedSnapshot(), activeRuns: 'secret sentinel' }),
+      observationClock(),
+    );
+    expect(malformed).toMatchObject({
+      status: 'FAIL',
+      samples: [{ valid: false, reason: 'authority_snapshot_invalid' }],
+    });
+    expect(JSON.stringify(malformed)).not.toContain('secret sentinel');
+  });
+
+  it.each(['worktree', 'index', 'lock', 'untracked-target'])(
+    'refuses a candidate whose frozen inputs differ from HEAD: %s',
+    async (change) => {
+      const { inspectPreparation } = await preparation('preflight');
+      const checkout = await preparationCheckout();
+      const path = join(checkout.directory, '.openslack/workflows/r-ext-go-qualification.mjs');
+      if (change === 'untracked-target') {
+        checkout.git('rm', '--cached', '.openslack/workflows/r-ext-go-qualification.mjs');
+        checkout.git('commit', '--quiet', '-m', 'fixture: remove workflow from candidate');
+      } else {
+        await inspectPreparation(checkout.directory, checkout.head());
+        await appendFile(
+          change === 'lock' ? join(checkout.directory, 'bun.lock') : path,
+          '\n// candidate drift\n',
+        );
+        if (change === 'index')
+          checkout.git('add', '.openslack/workflows/r-ext-go-qualification.mjs');
+      }
+      await expect(inspectPreparation(checkout.directory, checkout.head())).rejects.toThrow();
+    },
+  );
+
+  it('accepts unrelated untracked files without counting them as frozen candidate content', async () => {
+    const { inspectPreparation } = await preparation('preflight');
+    const checkout = await preparationCheckout();
+    await writeFile(join(checkout.directory, 'unrelated.tmp'), 'not a candidate input');
+    expect(await inspectPreparation(checkout.directory, checkout.head())).toMatchObject({
+      candidate: checkout.head(),
+      clean: true,
+      liveExecutionEnabled: false,
+    });
+  });
+
+  it.each(['HEAD', 'lock', 'workflow'])(
+    'refuses candidate drift during the real loader boundary: %s',
+    async (change) => {
+      const { inspectPreparation } = await preparation('preflight');
+      const checkout = await preparationCheckout();
+      const expected = checkout.head();
+      const load = workflowLoader.loadWorkflowFile;
+      vi.spyOn(workflowLoader, 'loadWorkflowFile').mockImplementationOnce(async (...args) => {
+        const workflow = await load(...args);
+        if (change === 'HEAD') {
+          checkout.git('commit', '--quiet', '--allow-empty', '-m', 'fixture: move candidate');
+        } else {
+          await appendFile(
+            join(
+              checkout.directory,
+              change === 'lock' ? 'bun.lock' : '.openslack/workflows/r-ext-go-qualification.mjs',
+            ),
+            '\n// inspection drift\n',
+          );
+        }
+        return workflow;
+      });
+      await expect(inspectPreparation(checkout.directory, expected)).rejects.toThrow();
+    },
+  );
+
   it('loads a dedicated fixed-identity fixture without running a provider', async () => {
     const workflow = await loadWorkflowFile(
       join(root, '.openslack/workflows/r-ext-go-qualification.mjs'),
@@ -207,7 +479,7 @@ describe('R-EXT credential-free preparation', () => {
     await expect(readCampaignFile(path)).rejects.toThrow();
   });
 
-  it('fails before a provider when checkpoint or campaign evidence is missing', async () => {
+  it('fails before a provider when checkpoint or campaign correlation is missing', async () => {
     const workflow = await loadWorkflowFile(
       join(root, '.openslack/workflows/r-ext-go-qualification.mjs'),
     );
@@ -392,14 +664,7 @@ describe('R-EXT credential-free preparation', () => {
 
   it('takes exactly forty fixed-deadline observations and does not fabricate missed slots', async () => {
     const { observeDrain } = await preparation('observe');
-    let now = 0;
-    const clock = {
-      now: () => now,
-      wallNow: () => new Date(Date.parse('2026-11-03T09:00:00.000Z') + now).toISOString(),
-      sleep: async (ms: number) => {
-        now += ms;
-      },
-    };
+    const clock = observationClock();
     const good = async () => ({
       admissionClosed: true,
       activeRuns: 0,
@@ -413,30 +678,22 @@ describe('R-EXT credential-free preparation', () => {
     expect(complete.samples).toHaveLength(40);
     expect(complete.samples[0].scheduledOffsetMs).toBe(15_000);
     expect(complete.samples[39].actualOffsetMs).toBe(600_000);
-    now = 0;
+    expect(clock.activeTimers()).toBe(0);
+    const missedClock = observationClock();
     let reads = 0;
     const missed = await observeDrain(async () => {
       reads += 1;
-      if (reads === 2) now += 30_000;
+      if (reads === 2) missedClock.advance(30_000);
       return good();
-    }, clock);
+    }, missedClock);
     expect(missed.status).toBe('FAIL');
     expect(missed.samples.length).toBeLessThan(40);
     expect(missed.samples.some((sample: { valid: boolean }) => !sample.valid)).toBe(true);
+    expect(missedClock.activeTimers()).toBe(0);
   });
 
   it('rejects a failing authority read, open admission and backwards observation time', async () => {
     const { observeDrain } = await preparation('observe');
-    let now = 0;
-    let backwards = false;
-    const clock = {
-      now: () => now,
-      wallNow: () =>
-        new Date(Date.parse('2026-11-03T09:00:00.000Z') + (backwards ? -1 : now)).toISOString(),
-      sleep: async (ms: number) => {
-        now += ms;
-      },
-    };
     const good = {
       admissionClosed: true,
       activeRuns: 0,
@@ -447,23 +704,26 @@ describe('R-EXT credential-free preparation', () => {
     };
     const failedRead = await observeDrain(async () => {
       throw new Error('not archived');
-    }, clock);
+    }, observationClock());
     expect(failedRead).toMatchObject({
       status: 'FAIL',
       samples: [{ valid: false, reason: 'authority_read_failed' }],
     });
-    now = 0;
     expect(
-      await observeDrain(async () => ({ ...good, admissionClosed: false }), clock),
+      await observeDrain(async () => ({ ...good, admissionClosed: false }), observationClock()),
     ).toMatchObject({ status: 'FAIL' });
-    now = 0;
     const unsafe = await observeDrain(
       async () => ({ ...good, unapprovedPayload: 'must not be archived' }),
-      clock,
+      observationClock(),
     );
     expect(unsafe.status).toBe('FAIL');
     expect(JSON.stringify(unsafe)).not.toContain('must not be archived');
-    now = 0;
+    let backwards = false;
+    const monotonic = observationClock();
+    const clock = {
+      ...monotonic,
+      wallNow: () => (backwards ? '2026-11-04T23:59:59.999Z' : monotonic.wallNow()),
+    };
     expect(
       await observeDrain(async () => {
         backwards = true;
@@ -474,34 +734,29 @@ describe('R-EXT credential-free preparation', () => {
 
   it('bounds an authority read that never completes and does not fabricate its sample', async () => {
     const { observeDrain } = await preparation('observe');
-    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
-    let now = 0;
     let started = false;
-    const clock = {
-      now: () => now,
-      wallNow: () => new Date(Date.parse('2026-11-03T09:00:00.000Z') + now).toISOString(),
-      sleep: async (ms: number) => {
-        now += ms;
-      },
-    };
+    const clock = observationClock();
     const pending = observeDrain(async () => {
       started = true;
       return new Promise<never>(() => {});
     }, clock);
     await Promise.resolve();
     expect(started).toBe(true);
-    now += 15_000;
-    await vi.advanceTimersByTimeAsync(15_000);
+    clock.advance(15_000);
     expect(await pending).toMatchObject({
       status: 'FAIL',
       samples: [{ valid: false, reason: 'authority_read_timeout' }],
     });
+    expect(clock.activeTimers()).toBe(0);
   });
 
   it('does not infer live readiness or accept a different candidate in preflight', async () => {
     const { inspectPreparation } = await preparation('preflight');
+    const checkout = await preparationCheckout();
     await expect(inspectPreparation(root, 'not-a-commit')).rejects.toThrow(/full candidate/);
-    await expect(inspectPreparation(root, '0'.repeat(40))).rejects.toThrow(/Candidate changed/);
+    await expect(inspectPreparation(checkout.directory, '0'.repeat(40))).rejects.toThrow(
+      /Candidate changed/,
+    );
   });
 
   it('retains #433 as a reproduced runtime blocker rather than claiming resume passed', async () => {

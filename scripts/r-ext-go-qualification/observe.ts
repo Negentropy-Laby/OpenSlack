@@ -12,7 +12,17 @@ interface Clock {
   now(): number;
   wallNow(): string;
   sleep(ms: number): Promise<void>;
+  /** Same monotonic domain as now(); returns an idempotent cancellation. */
+  schedule(deadlineMs: number, callback: () => void): () => void;
 }
+type FailureReason =
+  | 'clock_invalid'
+  | 'clock_stalled'
+  | 'clock_sleep_failed'
+  | 'authority_read_timeout'
+  | 'authority_read_failed'
+  | 'authority_snapshot_invalid'
+  | 'invalid_or_missed_observation';
 interface Sample {
   k: number;
   scheduledOffsetMs: number;
@@ -21,7 +31,7 @@ interface Sample {
   observedAt: string;
   valid: boolean;
   snapshot?: DrainSnapshot;
-  reason?: string;
+  reason?: FailureReason;
 }
 
 function validateSnapshot(value: unknown): DrainSnapshot {
@@ -49,14 +59,12 @@ function validateSnapshot(value: unknown): DrainSnapshot {
 
 function drained(value: DrainSnapshot): boolean {
   return (
-    value?.admissionClosed === true &&
+    value.admissionClosed &&
     value.authorityConsistent === true &&
-    [
-      value.activeRuns,
-      value.pendingEffects,
-      value.openReservations,
-      value.reconciliationRequired,
-    ].every((count) => Number.isSafeInteger(count) && count === 0)
+    value.activeRuns === 0 &&
+    value.pendingEffects === 0 &&
+    value.openReservations === 0 &&
+    value.reconciliationRequired === 0
   );
 }
 
@@ -64,49 +72,89 @@ function drained(value: DrainSnapshot): boolean {
 export async function observeDrain(
   read: (signal: AbortSignal) => Promise<DrainSnapshot>,
   clock: Clock,
-): Promise<{ status: QualificationStatus; startedAt: string; samples: Sample[] }> {
+): Promise<{
+  status: QualificationStatus;
+  startedAt: string;
+  samples: Sample[];
+  reason?: FailureReason;
+}> {
   const startedAt = timestamp(clock.wallNow());
   const origin = clock.now();
   if (!Number.isFinite(origin)) throw new Error('Invalid monotonic observation clock.');
   let priorWall = Date.parse(startedAt);
   const samples: Sample[] = [];
+  const fail = (reason: FailureReason) => ({ status: 'FAIL' as const, startedAt, samples, reason });
   let prior = origin;
   for (let k = 1; k <= 40; k += 1) {
     const deadline = origin + k * 15_000;
-    let current = clock.now();
-    if (current < prior) return { status: 'FAIL', startedAt, samples };
+    let current: number;
+    try {
+      current = clock.now();
+    } catch {
+      return fail('clock_invalid');
+    }
+    if (!Number.isFinite(current) || current < prior) return fail('clock_invalid');
     while (current < deadline) {
-      await clock.sleep(deadline - current);
-      const next = clock.now();
-      if (!Number.isFinite(next) || next < current) return { status: 'FAIL', startedAt, samples };
+      try {
+        await clock.sleep(deadline - current);
+      } catch {
+        return fail('clock_sleep_failed');
+      }
+      let next: number;
+      try {
+        next = clock.now();
+      } catch {
+        return fail('clock_invalid');
+      }
+      if (!Number.isFinite(next) || next < current) return fail('clock_invalid');
+      if (next === current) return fail('clock_stalled');
       current = next;
     }
+    if (current >= deadline + 15_000) return fail('invalid_or_missed_observation');
     let snapshot: DrainSnapshot | undefined;
-    let reason: string | undefined;
+    let reason: FailureReason | undefined;
     const cancellation = new AbortController();
-    let timeout: ReturnType<typeof setTimeout> | undefined;
+    let cancelDeadline: (() => void) | undefined;
     try {
       const bounded = new Promise<never>((_resolve, reject) => {
-        timeout = setTimeout(
-          () => {
-            cancellation.abort();
-            reject(new Error('Authority sample deadline elapsed.'));
-          },
-          Math.max(1, deadline + 15_000 - current),
-        );
+        cancelDeadline = clock.schedule(deadline + 15_000, () => {
+          cancellation.abort();
+          reject(new Error('Authority sample deadline elapsed.'));
+        });
       });
-      snapshot = validateSnapshot(await Promise.race([read(cancellation.signal), bounded]));
+      // Invalid scheduling ports still fail closed without an unhandled rejection.
+      void bounded.catch(() => {});
+      if (typeof cancelDeadline !== 'function') return fail('clock_invalid');
+      const value = await (cancellation.signal.aborted
+        ? bounded
+        : Promise.race([read(cancellation.signal), bounded]));
+      try {
+        snapshot = validateSnapshot(value);
+      } catch {
+        reason = 'authority_snapshot_invalid';
+      }
     } catch {
       reason = cancellation.signal.aborted ? 'authority_read_timeout' : 'authority_read_failed';
     } finally {
-      if (timeout !== undefined) clearTimeout(timeout);
+      try {
+        cancelDeadline?.();
+      } catch {
+        reason = 'clock_invalid';
+        snapshot = undefined;
+      }
     }
-    const actual = clock.now();
-    const observedAt = timestamp(clock.wallNow());
+    let actual: number;
+    let observedAt: string;
+    try {
+      actual = clock.now();
+      observedAt = timestamp(clock.wallNow());
+    } catch {
+      return fail('clock_invalid');
+    }
+    if (!Number.isFinite(actual) || actual < current) return fail('clock_invalid');
     const observedWall = Date.parse(observedAt);
     const valid =
-      Number.isFinite(actual) &&
-      actual >= current &&
+      reason === undefined &&
       actual < deadline + 15_000 &&
       observedWall >= priorWall &&
       Math.abs(observedWall - Date.parse(startedAt) - (actual - origin)) < 15_000 &&
@@ -122,7 +170,7 @@ export async function observeDrain(
       ...(snapshot === undefined ? {} : { snapshot }),
       ...(reason ? { reason } : !valid ? { reason: 'invalid_or_missed_observation' } : {}),
     });
-    if (!valid) return { status: 'FAIL', startedAt, samples };
+    if (!valid) return fail(reason ?? 'invalid_or_missed_observation');
     prior = actual;
     priorWall = observedWall;
   }

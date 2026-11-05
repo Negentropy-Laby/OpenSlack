@@ -28,9 +28,13 @@ bun scripts/r-ext-go-qualification/preflight.ts --candidate <full-current-commit
 ```
 
 The preflight command is read-only and intentionally exits **2** for the known
-BLOCKED live gate, or **1** for invalid inputs/source inspection. It reports the
-working-tree source hash separately from HEAD and never calls GitHub or a model.
-Uncommitted preparation bytes are not a frozen execution candidate.
+BLOCKED live gate, or **1** for invalid inputs/source inspection. It requires
+tracked-clean candidate inputs and compares the real file-loader source and
+lock bytes with regular files committed in the exact HEAD. HEAD/tree and tracked
+status are rechecked after inspection. Untracked target inputs, staged or
+unstaged changes and mid-inspection drift are rejected without emitting a
+candidate report. Unrelated untracked files are not candidate content.
+The command never calls GitHub or a model.
 
 ## Prepared pieces and explicit missing pieces
 
@@ -43,6 +47,10 @@ Uncommitted preparation bytes are not a frozen execution candidate.
   results freeze further attempts; no retry or reset is provided. **A live
   durable per-attempt send ledger is not yet implemented.** These pure helpers
   do not admit a send and must not be mistaken for such a gate.
+  Persisted prefixes must preserve the same main-chain slots as transitions.
+  A not-sent settlement has zero usage and no usage-receipt hash. Invalid old
+  evidence is refused, never rewritten into a fresh allowance. The workflow's
+  campaignId is only an evidence correlation value, not verified registration.
 - `approval.ts`: read the actual pending approval through the production store;
   no decision authority, binding minting, TTY answer or status write is exposed.
   After the code blocker is repaired, use the existing human-attested MCP
@@ -53,9 +61,16 @@ Uncommitted preparation bytes are not a frozen execution candidate.
 - `observe.ts`: a read-only observer abstraction using the supplied monotonic
   clock and actual read completion time; exactly `t0 + 15k` seconds, k=1…40.
   A missing/invalid read or a completion that misses the next slot fails the
-  window; no catch-up rows are fabricated. No Go metric source is wired yet.
+  window; no catch-up rows are fabricated. The clock supplies now, wallNow,
+  sleep and schedule(absoluteDeadlineMs, callback), returning a cancellation.
+  Waiting and read deadlines use that same monotonic domain; a resolved wait
+  without time progress fails immediately. Fixed reasons distinguish clock,
+  transport, timeout and invalid-snapshot failures without archiving raw errors.
+  No Go metric source is wired yet.
 - `evidence.ts`: hashes, strict evidence primitives and honest NOT_RUN/BLOCKED
   layers. It does not publish or promote any result.
+  UTC evidence uses the existing four-digit-year wire predicate; wider ISO
+  predicates used elsewhere are unchanged.
 
 ## Before any live run
 

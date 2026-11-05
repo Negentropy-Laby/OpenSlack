@@ -11,6 +11,8 @@ export interface ClosedRecordFailures {
 }
 
 export interface ClosedRecordOptions {
+  /** Allowed data fields which need not be present. */
+  readonly optionalFields?: readonly string[];
   /** Select a deterministic ECMAScript UTF-16 order for string-key diagnostics. */
   readonly keyOrder?: 'reflection' | 'utf16';
   /** Null-prototype objects are inert and accepted by default. */
@@ -48,7 +50,11 @@ export function closedDataRecord(
         ]
       : reflectedKeys;
   for (const key of keys) {
-    if (typeof key !== 'string' || !fields.includes(key)) failures.unknown(path, key);
+    if (
+      typeof key !== 'string' ||
+      (!fields.includes(key) && !options.optionalFields?.includes(key))
+    )
+      failures.unknown(path, key);
     const descriptor = Object.getOwnPropertyDescriptor(value, key);
     if (!descriptor?.enumerable || !Object.hasOwn(descriptor, 'value')) {
       failures.dataField(path, key);

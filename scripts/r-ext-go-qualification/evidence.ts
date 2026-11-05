@@ -1,23 +1,21 @@
-import { createHash } from 'node:crypto';
+import {
+  isCanonicalUtcTimestamp,
+  WORKFLOW_BINDING_HASH_REGEX,
+} from '../../packages/workflows/src/internal/workflow-binding-field-rules.js';
+import { closedDataRecord } from '../../packages/workflows/src/internal/contract-validation.js';
+export { hashWorkflowSource as digest } from '../../packages/workflows/src/internal/workflow-identity.js';
 
 export type QualificationStatus = 'PASS' | 'FAIL' | 'BLOCKED' | 'NOT_RUN';
 export const CANDIDATE_SHA = /^[0-9a-f]{40}$/u;
-export const SHA256 = /^[0-9a-f]{64}$/u;
+export const SHA256 = WORKFLOW_BINDING_HASH_REGEX;
+/** Campaign correlation IDs are deliberately narrower than neutral wire IDs. */
 export const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,159}$/u;
 
 export function timestamp(value: unknown): string {
-  if (
-    typeof value !== 'string' ||
-    !Number.isFinite(Date.parse(value)) ||
-    new Date(value).toISOString() !== value
-  ) {
+  if (!isCanonicalUtcTimestamp(value)) {
     throw new Error('Expected an exact canonical UTC timestamp.');
   }
   return value;
-}
-
-export function digest(bytes: Uint8Array | string): string {
-  return createHash('sha256').update(bytes).digest('hex');
 }
 
 export function exactKeys(
@@ -25,15 +23,16 @@ export function exactKeys(
   required: readonly string[],
   optional: readonly string[] = [],
 ): asserts value is Record<string, unknown> {
-  if (
-    value === null ||
-    typeof value !== 'object' ||
-    Array.isArray(value) ||
-    required.some((key) => !Object.hasOwn(value, key)) ||
-    Object.keys(value).some((key) => !required.includes(key) && !optional.includes(key))
-  ) {
+  const invalid = (): never => {
     throw new Error('Unexpected or missing qualification evidence fields.');
-  }
+  };
+  closedDataRecord(
+    value,
+    required,
+    'Qualification evidence',
+    { inert: invalid, missing: invalid, unknown: invalid, dataField: invalid },
+    { optionalFields: optional },
+  );
 }
 
 /** Preparation status is deliberately not an execution or qualification grant. */

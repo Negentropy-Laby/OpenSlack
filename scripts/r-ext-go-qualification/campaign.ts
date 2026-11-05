@@ -3,7 +3,12 @@ import { open, lstat } from 'node:fs/promises';
 import { CANDIDATE_SHA, SAFE_ID, SHA256, exactKeys, timestamp } from './evidence.js';
 import { parseWorkflowEffectJson } from '../../packages/workflows/src/workflow-effect-json.js';
 
-const LIMITS = Object.freeze({ attempts: 4, tokensPerAttempt: 8192, totalTokens: 32768 });
+export const CAMPAIGN_LIMITS = Object.freeze({
+  attempts: 4,
+  tokensPerAttempt: 8192,
+  totalTokens: 32768,
+} as const);
+export const MAIN_CHAIN_PURPOSES = Object.freeze(['initial', 'resume'] as const);
 type Purpose = 'initial' | 'resume' | 'preflight' | 'replacement';
 type Outcome = 'reported' | 'failed' | 'not_sent' | 'unknown';
 interface Settlement {
@@ -24,7 +29,7 @@ export interface Campaign {
   candidate: string;
   runId: string;
   createdAt: string;
-  limits: typeof LIMITS;
+  limits: typeof CAMPAIGN_LIMITS;
   attempts: Attempt[];
 }
 
@@ -36,13 +41,17 @@ export function newCampaign(input: {
   return validateCampaign({
     schema: 'openslack.r_ext_campaign.v1',
     ...input,
-    limits: LIMITS,
+    limits: CAMPAIGN_LIMITS,
     attempts: [],
   });
 }
 
 /** Validate persisted bytes on every transition. Never reset an existing campaign. */
 export function validateCampaign(value: unknown): Campaign {
+  return inspectCampaign(value).campaign;
+}
+
+function inspectCampaign(value: unknown): { campaign: Campaign; frozen: boolean } {
   exactKeys(value, ['schema', 'candidate', 'runId', 'createdAt', 'limits', 'attempts']);
   if (
     value.schema !== 'openslack.r_ext_campaign.v1' ||
@@ -56,11 +65,11 @@ export function validateCampaign(value: unknown): Campaign {
   timestamp(value.createdAt);
   exactKeys(value.limits, ['attempts', 'tokensPerAttempt', 'totalTokens']);
   if (
-    value.limits.attempts !== 4 ||
-    value.limits.tokensPerAttempt !== 8192 ||
-    value.limits.totalTokens !== 32768 ||
+    value.limits.attempts !== CAMPAIGN_LIMITS.attempts ||
+    value.limits.tokensPerAttempt !== CAMPAIGN_LIMITS.tokensPerAttempt ||
+    value.limits.totalTokens !== CAMPAIGN_LIMITS.totalTokens ||
     !Array.isArray(value.attempts) ||
-    value.attempts.length > 4
+    value.attempts.length > CAMPAIGN_LIMITS.attempts
   )
     throw new Error('Campaign limit drift.');
   const ids = new Set<string>();
@@ -82,7 +91,7 @@ export function validateCampaign(value: unknown): Campaign {
       ids.has(attempt.id) ||
       typeof attempt.purpose !== 'string' ||
       !['initial', 'resume', 'preflight', 'replacement'].includes(attempt.purpose) ||
-      attempt.reservedTokens !== 8192
+      attempt.reservedTokens !== CAMPAIGN_LIMITS.tokensPerAttempt
     ) {
       throw new Error('Invalid or duplicate attempt.');
     }
@@ -100,6 +109,11 @@ export function validateCampaign(value: unknown): Campaign {
       }
     } else if (attempt.replacementOf !== undefined)
       throw new Error('Only replacements carry a predecessor.');
+    if (attempt.purpose === 'preflight' || attempt.purpose === 'replacement') {
+      const missingMain = MAIN_CHAIN_PURPOSES.filter((purpose) => !main.has(purpose)).length;
+      if (ids.size + 1 + missingMain > CAMPAIGN_LIMITS.attempts)
+        throw new Error('Preserve the main-chain attempt slots.');
+    }
     ids.add(attempt.id);
     timestamp(attempt.startedAt);
     const started = Date.parse(String(attempt.startedAt));
@@ -136,18 +150,23 @@ export function validateCampaign(value: unknown): Campaign {
       if (
         !Number.isSafeInteger(settlement.totalTokens) ||
         Number(settlement.totalTokens) < 0 ||
-        (settlement.outcome === 'not_sent' && settlement.totalTokens !== 0) ||
+        (settlement.outcome === 'not_sent' &&
+          (settlement.totalTokens !== 0 || settlement.receiptHash !== undefined)) ||
         (settlement.outcome !== 'not_sent' && settlement.receiptHash === undefined)
       )
         throw new Error('Invalid usage evidence; reconciliation required.');
       total += Number(settlement.totalTokens);
       // Preserve measured overage as evidence instead of relabeling it as an
       // in-budget result or discarding it. It freezes every subsequent attempt.
-      if (Number(settlement.totalTokens) > 8192 || total > 32768) unresolved = true;
+      if (
+        Number(settlement.totalTokens) > CAMPAIGN_LIMITS.tokensPerAttempt ||
+        total > CAMPAIGN_LIMITS.totalTokens
+      )
+        unresolved = true;
     }
   }
   if (!Number.isSafeInteger(total)) throw new Error('Campaign usage cannot be represented safely.');
-  return structuredClone(value) as unknown as Campaign;
+  return { campaign: structuredClone(value) as unknown as Campaign, frozen: unresolved };
 }
 
 export function beginAttempt(
@@ -157,29 +176,15 @@ export function beginAttempt(
   startedAt: string,
   replacementOf?: string,
 ): Campaign {
-  const campaign = validateCampaign(value);
-  if (
-    campaign.attempts.some(
-      (attempt) =>
-        !attempt.settlement ||
-        attempt.settlement.outcome === 'unknown' ||
-        Number(attempt.settlement.totalTokens) > 8192,
-    )
-  ) {
+  const { campaign, frozen } = inspectCampaign(value);
+  if (frozen) {
     throw new Error('Unresolved attempt requires reconciliation; no automatic retry.');
-  }
-  if (purpose === 'preflight' || purpose === 'replacement') {
-    const missingMain = ['initial', 'resume'].filter(
-      (kind) => !campaign.attempts.some((attempt) => attempt.purpose === kind),
-    ).length;
-    if (campaign.attempts.length + 1 + missingMain > 4)
-      throw new Error('Preserve the main-chain attempt slots.');
   }
   campaign.attempts.push({
     id,
     purpose,
     startedAt,
-    reservedTokens: 8192,
+    reservedTokens: CAMPAIGN_LIMITS.tokensPerAttempt,
     ...(replacementOf === undefined ? {} : { replacementOf }),
   });
   return validateCampaign(campaign);

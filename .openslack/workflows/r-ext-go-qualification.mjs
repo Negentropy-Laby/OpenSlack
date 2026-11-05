@@ -20,7 +20,8 @@ export const meta = {
   inputs: {
     campaignId: {
       type: 'string',
-      description: 'The independently registered R-EXT campaign identifier.',
+      description:
+        'Preparation evidence correlation ID; this fixture does not verify campaign registration or live send admission.',
     },
   },
   permissions: { github: [], git: [], filesystem: [], openslack: ['governance.audit'] },
@@ -82,7 +83,7 @@ export async function run(ctx) {
     throw new Error('R-EXT requires the installed host Web Crypto capability before any call.');
   const campaignId = ctx.args.campaignId;
   if (typeof campaignId !== 'string' || !SAFE_ID.test(campaignId))
-    throw new Error('R-EXT requires a registered campaignId.');
+    throw new Error('R-EXT requires a well-formed campaignId for evidence correlation.');
 
   ctx.phase('FirstCall');
   const first = await call(ctx, 'first', 'FirstCall');
