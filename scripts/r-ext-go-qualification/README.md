@@ -66,6 +66,13 @@ The command never calls GitHub or a model.
   Waiting and read deadlines use that same monotonic domain; a resolved wait
   without time progress fails immediately. Fixed reasons distinguish clock,
   transport, timeout and invalid-snapshot failures without archiving raw errors.
+  Clock entry failures return `clock_invalid`; absent valid wall time is omitted,
+  never fabricated. Cancellation failures retain validated snapshots and an
+  established primary reason; a secondary fixed `cleanupReason` records failed
+  cleanup. Early/synchronous scheduling is clock failure, not a read timeout.
+  `now` and deadlines share a monotonic domain; wall time must not go backwards
+  and elapsed time must differ by less than 15 seconds. A resolved sleep must
+  advance `now`. No filesystem or coarse-clock exception relaxes these bounds.
   No Go metric source is wired yet.
 - `evidence.ts`: hashes, strict evidence primitives and honest NOT_RUN/BLOCKED
   layers. It does not publish or promote any result.
@@ -179,3 +186,47 @@ regressions failed before the follow-up. Startup now refuses while a stop owns
 the lifecycle, concurrent stops share one cleanup, and cleanup captures its
 listener before awaiting. Restart is allowed after confirmed cleanup. The
 intermediate patch and failed regressions remain recorded.
+
+
+## PR #435 follow-up review: 23 records (2026-11-06)
+
+This is the same human-delegated source-maintenance delivery on the original
+Draft PR. No qualification identity, registration, credential, deployment,
+approval or merge authority is created. The current campaign has four attempts,
+8,192 tokens per attempt and 32,768 total; unknown and measured overage still
+freeze subsequent attempts. Unknown usage has neither a token count nor a usage
+receipt. Invalid retained evidence is refused without rewriting it.
+
+| Record | Disposition | Verification boundary |
+| --- | --- | --- |
+| 1 | Corrected attribution; coverage strengthened | The cited Windows failure belongs to `57d2952f`, not reviewed head `dadcb2e2`. Current-head Windows CI and three native rounds passed. Strict socket errors remain failures; the timeout regression verifies complete 408 framing, connection close, zero admission and bounded cleanup. The historical reset cause remains Unknown. |
+| 2 | Fixed | Cancellation cannot discard a validated snapshot or replace an established primary failure; secondary cleanup failure has a fixed code. |
+| 3 | Fixed | Synchronous/early schedulers report clock failure. Registration failure starts zero reads; an abort-aware read retains its actual first settlement. |
+| 4 | Fixed | Entry clock exceptions, non-finite readings and invalid UTC return bounded clock diagnostics without raw exception text or a fabricated timestamp. |
+| 5 | Safety boundary retained | The Clock interface documents the existing two-domain coherence bound; 14,999/15,000 ms regressions preserve strict rejection. |
+| 6 | Fixed | Stop owns cancelled startup; start rejects and no delivery/profile workers start. Cleanup finishes before restart. |
+| 7 | Fixed | Unknown usage with a receipt is refused by both transition and persisted-read validation. The open attempt and retained bytes are unchanged. |
+| 8 | Fixed | Cache lookup uses the actual resolved ID delivered to the launcher, tested with both resolution states. |
+| 9 | Fixed | Shared fixtures require a distinct explicit runner hash; independent authority/runner builds and stale runner rejection are exercised. |
+| 10 | Safety boundary retained | Campaign evidence still requires a single-link regular file at every observation; no speculative filesystem bypass is introduced. |
+| 11 | Safety boundary retained | A resolved wait without monotonic progress fails immediately; no stalled-clock loop or fabricated observation is allowed. |
+| 12 | Completed | A pure internal layout resolver serves writers, observation, attestation, Windows security repair and shadow/protected roots. Existing custom-root and path-security controls remain. |
+| 13 | Implemented with explicit authorization | `WatchDaemon.address()` returns a frozen independent OS-bound address or null. `start(): Promise<void>` and default bind semantics are unchanged. |
+| 14 | Simplified | All drained snapshot test data derives from the existing helper. |
+| 15 | Simplified | Preparation fixtures use the existing canonical temporary-directory helper. |
+| 16 | Partly simplified; attribution bounded | Tests use the existing executable resolver. Production preflight retains its correct platform selection and imports no test helper. |
+| 17 | Simplified | Obsolete candidate cleanup and private server reflection are removed; lifecycle assertions use the public read-only address. |
+| 18 | Simplified and fixed | Ordinary scheduler try/catch and one first-settlement latch handle scheduling, read, abort and late results without an orphan rejection catch. |
+| 19 | Simplified | A run-local commit helper retains all four checkpoint artifact bytes, optional hashes and ordering. This does not repair or bypass #433. |
+| 20 | Simplified | One single-link predicate is applied independently before opening, on the FD and after reading. |
+| 21 | Simplified | Each failed sample and returned result use the same derived primary failure. |
+| 22 | Simplified | Validated timestamps and numeric usage are bound once; redundant String/Number coercions are removed. |
+| 23 | Simplified | One exact multi-path tree query and one bounded binary batch read replace four input Git commands. Missing, malformed, oversized and trailing batch output are refused; candidate bookends remain. |
+
+The first implementation-stage regressions, review feedback and unsuccessful
+checks remain in the external evidence batch; they are not retrospectively
+reported as passing. Final results must name their actual commit/platform.
+Previous cohort, CI and artifact results remain historical, and skipped checks
+are not passes. The observer still has no Go metrics adapter or live driver;
+#433, durable live-send admission, actual provider qualification, human Workflow
+Trust and human PR approval remain separate BLOCKED/NOT_RUN gates.
