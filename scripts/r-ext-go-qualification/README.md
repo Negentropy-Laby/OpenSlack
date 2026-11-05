@@ -145,3 +145,30 @@ not to this static disposition table.
 | G25   | SIM-4        | Repeated overage assertions   | Separate measured-overage preservation from the four-slot and duplicate-settlement regression.                                                   |
 | G26   | SIM-5        | Temporary directory roots     | Use tmpdir consistently; keep test artifacts in owned temporary directories.                                                                     |
 | G27   | EFF-1        | Windows security cost         | Retain real ACL hardening and native-process cost intentionally; add no production security-injection switch.                                    |
+
+## Separately authorized #438 maintenance on this PR
+
+The requesting human expanded this repair on 2026-11-05 to the existing
+`watch-daemon.ts` and its test file. This remains source maintenance through the
+configured bot; it does not extend the qualification identity or authorize live
+execution. No new PR or public daemon API is introduced.
+
+At preparation repair head `57d2952f`, Windows job `127114787647` in workflow run
+`41988480492` failed in the slow-chunked timeout test with `ECONNRESET`, after
+logging port 3389: 3,338 passed, 1 failed, 12 skipped. That failure is retained,
+not retried away. It is a different case from the earlier #438 unknown-action
+failure. Both mention port 3389, but the exact old reset cause remains unknown.
+An isolated native Windows probe demonstrated that an IPv4 listener and a
+wildcard IPv6 listener can both bind the same port while IPv4 requests reach
+only the former. This is an endpoint-ownership counterexample, not a historical
+root-cause claim.
+
+The tests now retain OS-assigned port-0 listeners and inspect their actual bound
+ports. Concurrent requests prove that each endpoint mutates only its own store.
+The existing public `start(port): Promise<void>` and default bind behavior remain;
+listen failures reject, release startup state and start no delivery/profile
+worker. Invalid and occupied endpoints are covered, including successful reuse
+after rejection. Request, response, abort, close and JSON failures settle once;
+premature responses and disconnects reject. The slow-request helper does not
+suppress resets, and no retry, longer timeout or skipped Windows case is added.
+Required current-head checks and human governance remain independent gates.

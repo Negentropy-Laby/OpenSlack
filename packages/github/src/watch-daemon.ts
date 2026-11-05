@@ -144,6 +144,7 @@ export class WatchDaemon {
   private recordEventFn: RecordEventFn | null;
   private webhookBodyReadOptions: WebhookBodyReadOptions;
   private server: Server | null = null;
+  private starting: Promise<void> | null = null;
   private pollTimer: ReturnType<typeof setInterval> | null = null;
   private pollInFlight = false;
   private profileSyncWorker: ProfileSyncWorker | null = null;
@@ -224,64 +225,137 @@ export class WatchDaemon {
   }
 
   async start(port: number): Promise<void> {
-    this.prepareV2Runtime();
-    if (!this.legacyMigrationFinalized) this.deliveryRouter.start();
-    this.deliveryRouterV2?.start();
-    // Start profile-sync worker if auto-pr mode may be used
+    if (this.server || this.starting) throw new Error('WATCH_DAEMON_ALREADY_STARTED');
+    const starting = this.startServer(port);
+    this.starting = starting;
     try {
-      const { ProfileSyncWorker } = await import('./profile-sync-worker.js');
-      this.profileSyncWorker = new ProfileSyncWorker({
-        intervalMs: 5000,
-        recordEvent: this.recordEventFn
-          ? async (event) => {
-              this.recordEventFn!(event);
-            }
-          : undefined,
-      });
-      this.profileSyncWorker.start();
-    } catch {
-      // Worker start is best-effort
+      await starting;
+    } finally {
+      if (this.starting === starting) this.starting = null;
     }
+  }
 
-    return new Promise((resolve) => {
-      this.server = createServer((req, res) => {
-        void this.handleRequest(req, res).catch((error) => {
-          if (res.headersSent) {
-            if (!req.destroyed) req.destroy();
-            return;
-          }
-          const code =
-            error instanceof WatchDeliveryQueueError || error instanceof WatchDeliveryQueueV2Error
-              ? error.code
-              : 'WATCH_DELIVERY_FAILED';
-          jsonResponse(res, 503, {
-            error: 'Repository event could not be durably accepted.',
-            code,
-          });
+  private async startServer(port: number): Promise<void> {
+    const server = createServer((req, res) => {
+      void this.handleRequest(req, res).catch((error) => {
+        if (res.headersSent) {
+          if (!req.destroyed) req.destroy();
+          return;
+        }
+        const code =
+          error instanceof WatchDeliveryQueueError || error instanceof WatchDeliveryQueueV2Error
+            ? error.code
+            : 'WATCH_DELIVERY_FAILED';
+        jsonResponse(res, 503, {
+          error: 'Repository event could not be durably accepted.',
+          code,
         });
       });
-      this.server.listen(port, () => {
-        console.log(`GitHub Watch Daemon listening on port ${port}`);
-        resolve();
-      });
     });
+    this.server = server;
+    try {
+      this.prepareV2Runtime();
+      // Load optional code before binding, but start no worker until listen
+      // succeeds. A rejected start must not drain queues or retain timers.
+      let ProfileWorker: typeof ProfileSyncWorker | undefined;
+      try {
+        ProfileWorker = (await import('./profile-sync-worker.js')).ProfileSyncWorker;
+      } catch {
+        // Profile-sync remains optional.
+      }
+      await new Promise<void>((resolve, reject) => {
+        const cleanup = () => {
+          server.off('error', failed);
+          server.off('listening', listening);
+        };
+        const failed = (error: Error) => {
+          cleanup();
+          reject(error);
+        };
+        const listening = () => {
+          cleanup();
+          resolve();
+        };
+        server.once('error', failed);
+        server.once('listening', listening);
+        try {
+          server.listen(port);
+        } catch (error) {
+          cleanup();
+          reject(error);
+        }
+      });
+      if (!this.legacyMigrationFinalized) this.deliveryRouter.start();
+      this.deliveryRouterV2?.start();
+      if (ProfileWorker) {
+        try {
+          this.profileSyncWorker = new ProfileWorker({
+            intervalMs: 5000,
+            recordEvent: this.recordEventFn
+              ? async (event) => {
+                  this.recordEventFn!(event);
+                }
+              : undefined,
+          });
+          this.profileSyncWorker.start();
+        } catch {
+          this.profileSyncWorker?.stop();
+          this.profileSyncWorker = null;
+        }
+      }
+      const address = server.address();
+      const actualPort = address && typeof address !== 'string' ? address.port : port;
+      console.log(`GitHub Watch Daemon listening on port ${actualPort}`);
+    } catch (error) {
+      try {
+        await this.stopResources();
+      } catch (cleanupError) {
+        throw new AggregateError(
+          [error, cleanupError],
+          'Watch daemon startup failed and cleanup could not be confirmed.',
+          { cause: error },
+        );
+      }
+      throw error;
+    }
   }
 
   async stop(): Promise<void> {
-    this.stopPolling();
-    await this.deliveryRouter.stop();
-    await this.deliveryRouterV2?.stop();
-    if (this.profileSyncWorker) {
-      this.profileSyncWorker.stop();
-      this.profileSyncWorker = null;
-    }
-    return new Promise((resolve) => {
-      if (this.server) {
-        this.server.close(() => resolve());
-      } else {
-        resolve();
+    // A concurrent stop waits for owned startup, including its failure cleanup.
+    // The internal failure path never awaits its own startup promise.
+    if (this.starting) {
+      try {
+        await this.starting;
+      } catch {
+        // The start caller receives the original error.
       }
-    });
+    }
+    await this.stopResources();
+  }
+
+  private async stopResources(): Promise<void> {
+    this.stopPolling();
+    const errors: unknown[] = [];
+    for (const stop of [
+      () => this.deliveryRouter.stop(),
+      () => this.deliveryRouterV2?.stop(),
+      () => {
+        this.profileSyncWorker?.stop();
+        this.profileSyncWorker = null;
+      },
+    ]) {
+      try {
+        await stop();
+      } catch (error) {
+        errors.push(error);
+      }
+    }
+    const server = this.server;
+    if (server?.listening) {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+    if (this.server === server) this.server = null;
+    if (errors.length > 0) throw new AggregateError(errors, 'Watch daemon worker cleanup failed.');
   }
 
   async drainDeliveryOnce(): Promise<{
