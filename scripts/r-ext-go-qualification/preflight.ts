@@ -41,7 +41,7 @@ function committedInputs(root: string, candidate: string, paths: readonly string
     const headerEnd = batch.indexOf(10, offset);
     if (headerEnd < 0) return invalid();
     const header = /^([0-9a-f]{40}) blob (0|[1-9][0-9]*)$/u.exec(
-      batch.toString('ascii', offset, headerEnd),
+      batch.toString('latin1', offset, headerEnd),
     );
     if (!header || header[1] !== id) return invalid();
     const size = Number(header[2]);

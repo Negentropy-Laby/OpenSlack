@@ -362,29 +362,37 @@ describe('R-EXT credential-free preparation', () => {
     expect(commands.filter((args) => args[0] === 'show')).toHaveLength(0);
   });
 
-  it.each(['truncated', 'wrong-id', 'wrong-type', 'oversized', 'extra-output'] as const)(
-    'rejects a malformed committed input batch: %s',
-    async (fault) => {
-      const { inspectPreparation } = await preparation('preflight');
-      const checkout = await preparationCheckout();
-      const candidate = checkout.head();
-      gitProbe.transform = (args, output) => {
-        if (args[0] !== 'cat-file') return output;
-        const bytes = Buffer.from(output);
-        if (fault === 'truncated') return bytes.subarray(0, -1);
-        if (fault === 'extra-output') return Buffer.concat([bytes, Buffer.from('unexpected')]);
-        const end = bytes.indexOf(10);
-        const header = bytes.toString('ascii', 0, end).split(' ');
-        if (fault === 'wrong-id') header[0] = '0'.repeat(40);
-        if (fault === 'wrong-type') header[1] = 'tree';
-        if (fault === 'oversized') header[2] = String(2 * 1024 * 1024 + 1);
-        return Buffer.concat([Buffer.from(header.join(' ') + '\n'), bytes.subarray(end + 1)]);
-      };
-      await expect(inspectPreparation(checkout.directory, candidate)).rejects.toThrow(
-        /committed blobs/,
-      );
-    },
-  );
+  it.each([
+    'truncated',
+    'wrong-id',
+    'wrong-type',
+    'oversized',
+    'extra-output',
+    'non-ascii',
+  ] as const)('rejects a malformed committed input batch: %s', async (fault) => {
+    const { inspectPreparation } = await preparation('preflight');
+    const checkout = await preparationCheckout();
+    const candidate = checkout.head();
+    gitProbe.transform = (args, output) => {
+      if (args[0] !== 'cat-file') return output;
+      const bytes = Buffer.from(output);
+      if (fault === 'truncated') return bytes.subarray(0, -1);
+      if (fault === 'non-ascii') {
+        bytes[0] = bytes[0]! + 128;
+        return bytes;
+      }
+      if (fault === 'extra-output') return Buffer.concat([bytes, Buffer.from('unexpected')]);
+      const end = bytes.indexOf(10);
+      const header = bytes.toString('ascii', 0, end).split(' ');
+      if (fault === 'wrong-id') header[0] = '0'.repeat(40);
+      if (fault === 'wrong-type') header[1] = 'tree';
+      if (fault === 'oversized') header[2] = String(2 * 1024 * 1024 + 1);
+      return Buffer.concat([Buffer.from(header.join(' ') + '\n'), bytes.subarray(end + 1)]);
+    };
+    await expect(inspectPreparation(checkout.directory, candidate)).rejects.toThrow(
+      /committed blobs/,
+    );
+  });
 
   it.each(['HEAD', 'lock', 'workflow'])(
     'refuses candidate drift during the real loader boundary: %s',
