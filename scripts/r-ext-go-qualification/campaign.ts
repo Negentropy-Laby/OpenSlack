@@ -4,12 +4,12 @@ import { readWorkflowEvidenceText } from '../../packages/workflows/src/internal/
 import { CANDIDATE_SHA, SAFE_ID, SHA256, exactKeys, timestamp } from './evidence.js';
 import { parseWorkflowEffectJson } from '../../packages/workflows/src/workflow-effect-json.js';
 
-export const CAMPAIGN_LIMITS = Object.freeze({
-  attempts: 4,
-  tokensPerAttempt: 8192,
-  totalTokens: 32768,
-} as const);
-export const MAIN_CHAIN_PURPOSES = Object.freeze(['initial', 'resume'] as const);
+import {
+  WORKFLOW_SEND_LIMITS,
+  WORKFLOW_SEND_MAIN_CHAIN,
+} from '../../packages/workflows/src/internal/workflow-send-policy.js';
+export const CAMPAIGN_LIMITS = WORKFLOW_SEND_LIMITS;
+export const MAIN_CHAIN_PURPOSES = WORKFLOW_SEND_MAIN_CHAIN;
 type Purpose = 'initial' | 'resume' | 'preflight' | 'replacement';
 type Outcome = 'reported' | 'failed' | 'not_sent' | 'unknown';
 interface Settlement {
@@ -229,6 +229,7 @@ export async function readCampaignFile(path: string): Promise<Campaign> {
   return validateCampaign(parseWorkflowEffectJson(Buffer.from(text, 'utf8')));
 }
 
-// Deliberately no live send/update entrypoint: #433 blocks this preparation.
+// Legacy preparation evidence is not the private runtime send journal and
+// cannot initialize or restore a worker's allowance.
 // A future live driver must durably persist each reservation before sending;
 // these pure transitions and exclusive initial evidence do not implement that gate.

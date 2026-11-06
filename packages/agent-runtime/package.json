@@ -14,6 +14,10 @@
       "types": "./dist/harness.d.ts",
       "import": "./dist/harness.js"
     },
+    "./internal/provider-send-admission": {
+      "types": "./dist/internal/provider-send-admission.d.ts",
+      "import": "./dist/internal/provider-send-admission.js"
+    },
     "./internal/bridge-wire": {
       "types": "./dist/bridge-wire.d.ts",
       "import": "./dist/bridge-wire.js"

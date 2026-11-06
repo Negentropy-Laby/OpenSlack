@@ -5,19 +5,27 @@ execution, create credentials, approve effects, start services, or call a provid
 The existing `codex_qualification_rext` identity and real task claim remain
 independent gates; this script does not mint either one.
 
-## Current code blocker
+## Runtime closure and remaining live gates
 
-**#433 blocks the complete sealed initial → pause → approve → canonical resume
-composition.** The sealed worker reconstructs old checkpoint evidence using the
-new control revision/generation. Current strict TS/Go validators correctly reject
-that shape. Do not weaken those validators, seed a paused run, use a test writer,
-skip a checkpoint using budget heuristics, or label a deterministic test as real
-qualification. Runtime repair is a separate task and scope.
+The current implementation recovers repeated checkpoints from their original
+Go commit/receipt evidence. It does not repackage an old commit with a new
+revision or generation. The offline qualification fixture exercises the sealed
+worker, real PostgreSQL, natural approval pause and canonical resume; the
+separate provider-cache regression checks that the first logical call is not
+repeated. Neither is a real provider or human Workflow Trust qualification.
+Historical #433 failures remain evidence of their original candidates.
 
-The fixture deliberately retains normal checkpoint re-entry so that this defect
-is exposed rather than bypassed. Its exact agent is `codex_qualification_rext`;
-bootstrap/principal resolution alone does not prove a provider binding. The
-Workflow resolver and the installed provider must be verified independently.
+The private send journal and authenticated current-gauge adapter are implemented
+under this PR's human-delegated source-maintenance scope. No reviewed
+provider/model currently supplies a verifiable 8,192 input-plus-output token
+hard bound. `SEND_TOTAL_TOKEN_UNVERIFIED` therefore refuses physical sending;
+`max_tokens` is only an output cap. There is no test flag, capability assertion,
+provider fallback or runtime approval that relaxes this refusal.
+
+Preparation readiness is derived from explicitly matched candidate evidence.
+Without that evidence it remains NOT_RUN/BLOCKED; fixing #433 never enables
+live execution. Identity, claim, provider, human decision, Workflow Trust and
+an actual 600-second drain window remain independent gates.
 
 ## Safe preparation commands
 
@@ -28,7 +36,7 @@ bun scripts/r-ext-go-qualification/preflight.ts --candidate <full-current-commit
 ```
 
 The preflight command is read-only and intentionally exits **2** for the known
-BLOCKED live gate, or **1** for invalid inputs/source inspection. It requires
+unverified live gate, or **1** for invalid inputs/source inspection. It requires
 tracked-clean candidate inputs and compares the real file-loader source and
 lock bytes with regular files committed in the exact HEAD. HEAD/tree and tracked
 status are rechecked after inspection. Untracked target inputs, staged or
@@ -41,19 +49,32 @@ The command never calls GitHub or a model.
 - `preflight.ts`: candidate/tree, clean status, real file-loader source bytes and
   lock identity. Claim, actual provider, bundle and image qualification remain
   independently unverified.
-- `campaign.ts`: strict immutable-copy budget transitions and exclusive initial
-  evidence creation/readback. All attempts, including failures and not-sent
-  attempts, consume campaign slots. Two main-chain slots remain reserved. Unknown
-  results freeze further attempts; no retry or reset is provided. **A live
-  durable per-attempt send ledger is not yet implemented.** These pure helpers
-  do not admit a send and must not be mistaken for such a gate.
-  Persisted prefixes must preserve the same main-chain slots as transitions.
-  A not-sent settlement has zero usage and no usage-receipt hash. Invalid old
-  evidence is refused, never rewritten into a fresh allowance. The workflow's
-  campaignId is only an evidence correlation value, not verified registration.
+- `campaign.ts`: historical preparation transitions and exclusive evidence
+  creation/readback. These files cannot initialize or reset execution allowance.
+  Runtime registration is a separate explicit host operation:
+  `registerWorkflowSendCampaign` binds the candidate, source, worker,
+  workspace/run, route, provider/model and fixed ceilings. The worker opens an
+  existing registration by `campaignBindingHash`, sealed in the workflow input.
+  It never creates one. Registration refuses an existing Go run or directory.
+- The private runtime journal adds four attempt slots and the two main-chain
+  reservations to Go's existing budget authority. Its nonblocking owner lock,
+  append/fsync/readback and immutable fact members preserve uncertainty rather
+  than retrying it. An unconfirmed write keeps the lock; truncated, missing,
+  linked or changed evidence is refused. Complete journal-prefix rollback is
+  checked against immutable members and Go's canonical cumulative frontier.
+  These checks do not provide anti-rollback authority for an administrator
+  restoring the entire registration and every immutable member, particularly
+  for not-sent attempts that never reserved Go budget. Restoring both canonical
+  authorities is likewise outside the supported model. Such restoration must
+  never be used to regain allowance; no worker recovery path performs it.
+  Measured overage and unknown results freeze successors. Not-sent requires a
+  definitive Go rejection, a host pre-transport observation and a fresh proof
+  of no open reservation. No zero-usage receipt is invented to free a slot.
+  Matching run/candidate cache evidence uses no new slot; cache gaps refuse
+  re-sending. Go remains the reserve/settle authority, including stricter caps.
 - `approval.ts`: read the actual pending approval through the production store;
   no decision authority, binding minting, TTY answer or status write is exposed.
-  After the code blocker is repaired, use the existing human-attested MCP
+  For independently authorized live work, use the existing human-attested MCP
   composition and exact `openslack_decide_workflow_approval` operation. The human
   reviews run/approval/context and answers the controlling TTY. A script or agent
   must never supply the answer. Resume promptly: current v2 execution authority
@@ -73,7 +94,15 @@ The command never calls GitHub or a model.
   `now` and deadlines share a monotonic domain; wall time must not go backwards
   and elapsed time must differ by less than 15 seconds. A resolved sleep must
   advance `now`. No filesystem or coarse-clock exception relaxes these bounds.
-  No Go metric source is wired yet.
+  `createDrainAuthorityObserver` composes authenticated loopback reads of the
+  current workspace/epoch gauges, canonical D2 and v2 effect-sibling authority.
+  Missing, duplicate, invalid or foreign metrics fail. It never substitutes
+  total runs, cumulative counters, effect shadow or local RunStore state.
+  `runnerDrained` includes current jobs, leases and unfinished bindings;
+  `outboxDrained` requires the real durable outbox to be empty. Exact historical
+  settlements/recovery pauses do not become permanently active work. Each
+  sample checks binding bookends and records only counts and evidence digests.
+  Readers neither initialize missing authority roots nor perform recovery.
 - `evidence.ts`: hashes, strict evidence primitives and honest NOT_RUN/BLOCKED
   layers. It does not publish or promote any result.
   UTC evidence uses the existing four-digit-year wire predicate; wider ISO
@@ -81,14 +110,14 @@ The command never calls GitHub or a model.
 
 ## Before any live run
 
-1. Repair #433 in its own reviewed runtime scope. Prove the full normal-path
-   deterministic composition, then merge preparation and refreeze a clean SHA,
-   sealed bundle, allowlist and pinned PostgreSQL image digest.
+1. Verify the current candidate's full normal-path offline evidence, required
+   CI and review. Freeze its clean SHA, sealed bundle, allowlist and pinned
+   PostgreSQL image digest; old green heads do not prove this candidate.
 2. Revalidate the actual principal, permission snapshot, valid claim and exact
    provider binding. No Aby identity substitution. No public fallback or TS writer.
-3. Complete the durable attempt/send gate and read-only Go metrics adapter under
-   reviewed scope. No current helper is a live runner. Do not run the fixture
-   simply because it loads successfully.
+3. Independently verify a supported provider's total-token guarantee before
+   explicit campaign registration. The present guard refuses all unverified
+   providers. Do not run the fixture simply because it loads successfully.
 4. Preserve independent worktree/database/container/evidence/run/job/epoch state.
    Test approval wait and completion restarts without overwriting failed evidence.
 5. Keep the existing limit: at most **4 provider attempts**, **8,192 total tokens
@@ -187,7 +216,6 @@ the lifecycle, concurrent stops share one cleanup, and cleanup captures its
 listener before awaiting. Restart is allowed after confirmed cleanup. The
 intermediate patch and failed regressions remain recorded.
 
-
 ## PR #435 follow-up review: 23 records (2026-11-06)
 
 This is the same human-delegated source-maintenance delivery on the original
@@ -197,36 +225,62 @@ approval or merge authority is created. The current campaign has four attempts,
 freeze subsequent attempts. Unknown usage has neither a token count nor a usage
 receipt. Invalid retained evidence is refused without rewriting it.
 
-| Record | Disposition | Verification boundary |
-| --- | --- | --- |
-| 1 | Corrected attribution; coverage strengthened | The cited Windows failure belongs to `57d2952f`, not reviewed head `dadcb2e2`. Current-head Windows CI and three native rounds passed. Strict socket errors remain failures; the timeout regression verifies complete 408 framing, connection close, zero admission and bounded cleanup. The historical reset cause remains Unknown. |
-| 2 | Fixed | Cancellation cannot discard a validated snapshot or replace an established primary failure; secondary cleanup failure has a fixed code. |
-| 3 | Fixed | Synchronous/early schedulers report clock failure. Registration failure starts zero reads; an abort-aware read retains its actual first settlement. |
-| 4 | Fixed | Entry clock exceptions, non-finite readings and invalid UTC return bounded clock diagnostics without raw exception text or a fabricated timestamp. |
-| 5 | Safety boundary retained | The Clock interface documents the existing two-domain coherence bound; 14,999/15,000 ms regressions preserve strict rejection. |
-| 6 | Fixed | Stop owns cancelled startup; start rejects and no delivery/profile workers start. Cleanup finishes before restart. |
-| 7 | Fixed | Unknown usage with a receipt is refused by both transition and persisted-read validation. The open attempt and retained bytes are unchanged. |
-| 8 | Fixed | Cache lookup uses the actual resolved ID delivered to the launcher, tested with both resolution states. |
-| 9 | Fixed | Shared fixtures require a distinct explicit runner hash; independent authority/runner builds and stale runner rejection are exercised. |
-| 10 | Safety boundary retained | Campaign evidence still requires a single-link regular file at every observation; no speculative filesystem bypass is introduced. |
-| 11 | Safety boundary retained | A resolved wait without monotonic progress fails immediately; no stalled-clock loop or fabricated observation is allowed. |
-| 12 | Completed | A pure internal layout resolver serves writers, observation, attestation, Windows security repair and shadow/protected roots. Existing custom-root and path-security controls remain. |
-| 13 | Implemented with explicit authorization | `WatchDaemon.address()` returns a frozen independent OS-bound address or null. `start(): Promise<void>` and default bind semantics are unchanged. |
-| 14 | Simplified | All drained snapshot test data derives from the existing helper. |
-| 15 | Simplified | Preparation fixtures use the existing canonical temporary-directory helper. |
-| 16 | Partly simplified; attribution bounded | Tests use the existing executable resolver. Production preflight retains its correct platform selection and imports no test helper. |
-| 17 | Simplified | Obsolete candidate cleanup and private server reflection are removed; lifecycle assertions use the public read-only address. |
-| 18 | Simplified and fixed | Ordinary scheduler try/catch and one first-settlement latch handle scheduling, read, abort and late results without an orphan rejection catch. |
-| 19 | Simplified | A run-local commit helper retains all four checkpoint artifact bytes, optional hashes and ordering. This does not repair or bypass #433. |
-| 20 | Simplified | One single-link predicate is applied independently before opening, on the FD and after reading. |
-| 21 | Simplified | Each failed sample and returned result use the same derived primary failure. |
-| 22 | Simplified | Validated timestamps and numeric usage are bound once; redundant String/Number coercions are removed. |
-| 23 | Simplified | One exact multi-path tree query and one bounded binary batch read replace four input Git commands. Missing, malformed, oversized and trailing batch output are refused; candidate bookends remain. |
+| Record | Disposition                                  | Verification boundary                                                                                                                                                                                                                                                                                                                |
+| ------ | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1      | Corrected attribution; coverage strengthened | The cited Windows failure belongs to `57d2952f`, not reviewed head `dadcb2e2`. Current-head Windows CI and three native rounds passed. Strict socket errors remain failures; the timeout regression verifies complete 408 framing, connection close, zero admission and bounded cleanup. The historical reset cause remains Unknown. |
+| 2      | Fixed                                        | Cancellation cannot discard a validated snapshot or replace an established primary failure; secondary cleanup failure has a fixed code.                                                                                                                                                                                              |
+| 3      | Fixed                                        | Synchronous/early schedulers report clock failure. Registration failure starts zero reads; an abort-aware read retains its actual first settlement.                                                                                                                                                                                  |
+| 4      | Fixed                                        | Entry clock exceptions, non-finite readings and invalid UTC return bounded clock diagnostics without raw exception text or a fabricated timestamp.                                                                                                                                                                                   |
+| 5      | Safety boundary retained                     | The Clock interface documents the existing two-domain coherence bound; 14,999/15,000 ms regressions preserve strict rejection.                                                                                                                                                                                                       |
+| 6      | Fixed                                        | Stop owns cancelled startup; start rejects and no delivery/profile workers start. Cleanup finishes before restart.                                                                                                                                                                                                                   |
+| 7      | Fixed                                        | Unknown usage with a receipt is refused by both transition and persisted-read validation. The open attempt and retained bytes are unchanged.                                                                                                                                                                                         |
+| 8      | Fixed                                        | Cache lookup uses the actual resolved ID delivered to the launcher, tested with both resolution states.                                                                                                                                                                                                                              |
+| 9      | Fixed                                        | Shared fixtures require a distinct explicit runner hash; independent authority/runner builds and stale runner rejection are exercised.                                                                                                                                                                                               |
+| 10     | Safety boundary retained                     | Campaign evidence still requires a single-link regular file at every observation; no speculative filesystem bypass is introduced.                                                                                                                                                                                                    |
+| 11     | Safety boundary retained                     | A resolved wait without monotonic progress fails immediately; no stalled-clock loop or fabricated observation is allowed.                                                                                                                                                                                                            |
+| 12     | Completed                                    | A pure internal layout resolver serves writers, observation, attestation, Windows security repair and shadow/protected roots. Existing custom-root and path-security controls remain.                                                                                                                                                |
+| 13     | Implemented with explicit authorization      | `WatchDaemon.address()` returns a frozen independent OS-bound address or null. `start(): Promise<void>` and default bind semantics are unchanged.                                                                                                                                                                                    |
+| 14     | Simplified                                   | All drained snapshot test data derives from the existing helper.                                                                                                                                                                                                                                                                     |
+| 15     | Simplified                                   | Preparation fixtures use the existing canonical temporary-directory helper.                                                                                                                                                                                                                                                          |
+| 16     | Partly simplified; attribution bounded       | Tests use the existing executable resolver. Production preflight retains its correct platform selection and imports no test helper.                                                                                                                                                                                                  |
+| 17     | Simplified                                   | Obsolete candidate cleanup and private server reflection are removed; lifecycle assertions use the public read-only address.                                                                                                                                                                                                         |
+| 18     | Simplified and fixed                         | Ordinary scheduler try/catch and one first-settlement latch handle scheduling, read, abort and late results without an orphan rejection catch.                                                                                                                                                                                       |
+| 19     | Simplified                                   | A run-local commit helper retains all four checkpoint artifact bytes, optional hashes and ordering. This does not repair or bypass #433.                                                                                                                                                                                             |
+| 20     | Simplified                                   | One single-link predicate is applied independently before opening, on the FD and after reading.                                                                                                                                                                                                                                      |
+| 21     | Simplified                                   | Each failed sample and returned result use the same derived primary failure.                                                                                                                                                                                                                                                         |
+| 22     | Simplified                                   | Validated timestamps and numeric usage are bound once; redundant String/Number coercions are removed.                                                                                                                                                                                                                                |
+| 23     | Simplified                                   | One exact multi-path tree query and one bounded binary batch read replace four input Git commands. Missing, malformed, oversized and trailing batch output are refused; candidate bookends remain.                                                                                                                                   |
 
 The first implementation-stage regressions, review feedback and unsuccessful
 checks remain in the external evidence batch; they are not retrospectively
 reported as passing. Final results must name their actual commit/platform.
 Previous cohort, CI and artifact results remain historical, and skipped checks
-are not passes. The observer still has no Go metrics adapter or live driver;
-#433, durable live-send admission, actual provider qualification, human Workflow
-Trust and human PR approval remain separate BLOCKED/NOT_RUN gates.
+are not passes. That cohort preceded the runtime closure follow-up below;
+it did not establish real provider qualification, human Workflow Trust or
+human PR approval.
+
+## Runtime closure follow-up (2026-11-06)
+
+All changes remain on Draft PR #435. Source maintenance does not use or expand
+the qualification principal, register its identity, renew a claim, approve a
+real effect, merge, deploy, or close #411. No model call or production history
+repair is included.
+
+| Work                      | Required evidence                                                                                                                                                                        | Boundary                                                                    |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| #433 anchored replay      | Real initial run, committed checkpoint, natural pause, fixture-human decision and canonical resume through the sealed worker and isolated PostgreSQL; exact original checkpoint retained | Offline fixture decision only; no production human approval                 |
+| Private send admission    | Exclusive registration, independent-process winner, Go frontier binding, durable fact members, refusal before fetch, missing/partial history and cache negatives                         | No reviewed provider total-token contract; physical sending remains refused |
+| Current drain observation | Authenticated actual Go services, pending approval before resume, completed effect after resume, real unpublished outbox remaining nonzero, and exact reconciled history excluded        | Real 40-sample/600-second qualification remains NOT_RUN                     |
+
+The result summary names the final source SHA, worker/package digests, actual
+Linux/native-Windows rounds, current-head CI, independent source review and
+PRMS. Intermediate setup failures, behavior REDs and old Unknown records are
+retained separately. No skipped check is reported as passing.
+
+The real sealed fixture also exposed pre-admission heartbeats and exact receipt
+repeats from the existing transport retry while a durable ACK was in flight.
+The session now waits for accepted admission, retains cancellation heartbeat
+semantics, and recognizes only a bounded history of fully validated, durably
+acknowledged receipt hashes. A repeat does not advance authority state or resend
+an effect; changed frames still fail. These failures and their deterministic
+regressions are retained. No retry, timeout or worker-count setting was increased.

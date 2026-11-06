@@ -36,10 +36,18 @@ export function exactKeys(
 }
 
 /** Preparation status is deliberately not an execution or qualification grant. */
-export function preparationStatus() {
+export function preparationStatus(evidence?: {
+  candidate: string;
+  observedCandidate: string;
+  fullSealedResume: 'PASS' | 'FAIL' | 'NOT_RUN';
+}) {
+  const matched =
+    evidence &&
+    CANDIDATE_SHA.test(evidence.candidate) &&
+    evidence.candidate === evidence.observedCandidate;
   return Object.freeze({
-    fullSealedResume: 'BLOCKED' as const,
-    blocker: '#433' as const,
+    fullSealedResume: matched ? evidence.fullSealedResume : ('NOT_RUN' as const),
+    blocker: 'readiness_evidence_required' as const,
     realProvider: 'NOT_RUN' as const,
     humanApproval: 'NOT_RUN' as const,
     databaseRestart: 'NOT_RUN' as const,

@@ -56,6 +56,8 @@ function drainedSnapshot() {
     openReservations: 0,
     reconciliationRequired: 0,
     authorityConsistent: true,
+    runnerDrained: true,
+    outboxDrained: true,
   };
 }
 
@@ -443,7 +445,7 @@ describe('R-EXT credential-free preparation', () => {
     expect(await workflow.preview!({ phase() {} } as never, {})).toMatchObject({
       preparationBlocker: preparationStatus().blocker,
     });
-    expect(workflow.meta.whenToUse).toContain(preparationStatus().blocker);
+    expect(workflow.meta.whenToUse).toContain('readiness evidence');
     expect(workflow.meta.budgetPolicy?.maxAgents).toBe(MAIN_CHAIN_PURPOSES.length);
     expect(workflow.meta.budgetPolicy?.tokenBudget).toBe(
       CAMPAIGN_LIMITS.tokensPerAttempt * MAIN_CHAIN_PURPOSES.length,
@@ -461,7 +463,15 @@ describe('R-EXT credential-free preparation', () => {
         throw new Error('correlation reached the deterministic launcher');
       });
       await expect(
-        workflow.run!({ args: { campaignId }, phase() {}, checkpoint: {}, agent } as never, {}),
+        workflow.run!(
+          {
+            args: { campaignId, campaignBindingHash: 'e'.repeat(64) },
+            phase() {},
+            checkpoint: {},
+            agent,
+          } as never,
+          {},
+        ),
       ).rejects.toThrow(
         SAFE_ID.test(campaignId) ? /deterministic launcher/ : /well-formed campaignId/,
       );
@@ -741,7 +751,7 @@ describe('R-EXT credential-free preparation', () => {
     await workflow.run!(
       {
         runId: 'run.artifact',
-        args: { campaignId: 'campaign.artifact' },
+        args: { campaignId: 'campaign.artifact', campaignBindingHash: 'e'.repeat(64) },
         phase: (phase: string) => order.push(phase),
         agent,
         openslack: { governance: { audit } },
@@ -767,6 +777,7 @@ describe('R-EXT credential-free preparation', () => {
           JSON.stringify({
             schema: 'openslack.r_ext_checkpoint.v1',
             campaignId: 'campaign.artifact',
+            campaignBindingHash: 'e'.repeat(64),
             runId: 'run.artifact',
             stage: stages[index],
             ...extra[index],
@@ -986,7 +997,7 @@ describe('R-EXT credential-free preparation', () => {
       const descriptor = workflowRunnerV2DescriptorFixture({
         workflowSourceBytes: sourceBytes,
         manifest: workflow.meta,
-        input: { campaignId: 'campaign.local.normal' },
+        input: { campaignId: 'campaign.local.normal', campaignBindingHash: 'e'.repeat(64) },
         budgetPolicy: {
           accountId: 'budget.rext.local',
           policyHash: 'b'.repeat(64),
@@ -1042,7 +1053,7 @@ describe('R-EXT credential-free preparation', () => {
             runId: descriptor.workflowRunId,
             manifest: workflow.meta,
             rootDir: directory,
-            args: { campaignId: 'campaign.local.normal' },
+            args: { campaignId: 'campaign.local.normal', campaignBindingHash: 'e'.repeat(64) },
             // Deterministic fixture rate, not a real provider pricing claim.
             budget: { tokens: 16_384, costUsd: 0.00016384 },
             allowUnattended: true,
@@ -1100,7 +1111,7 @@ describe('R-EXT credential-free preparation', () => {
         approvalId: pending!.approvalId,
         humanDecisionRequired: true,
         executionAllowed: false,
-        blocker: '#433',
+        blocker: 'readiness_evidence_required',
       });
       // Deliberately stop here: no test decision, seeded status or fake resume
       // obscures the separately reproduced sealed-worker checkpoint replay defect.
@@ -1191,7 +1202,7 @@ describe('R-EXT credential-free preparation', () => {
     );
   });
 
-  it('retains #433 as a reproduced runtime blocker rather than claiming resume passed', async () => {
+  it('requires original recovery evidence and does not infer readiness without candidate evidence', async () => {
     const golden = JSON.parse(
       await readFile(
         join(
@@ -1221,8 +1232,8 @@ describe('R-EXT credential-free preparation', () => {
     );
     const { preparationStatus } = await preparation('evidence');
     expect(preparationStatus()).toMatchObject({
-      fullSealedResume: 'BLOCKED',
-      blocker: '#433',
+      fullSealedResume: 'NOT_RUN',
+      blocker: 'readiness_evidence_required',
       realProvider: 'NOT_RUN',
     });
   });

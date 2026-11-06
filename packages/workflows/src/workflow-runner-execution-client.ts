@@ -1,4 +1,5 @@
 import { compareWorkflowBinding } from './internal/workflow-identity.js';
+import { cloneWorkflowArguments } from './internal/workflow-arguments.js';
 import {
   createWorkflowSourceSnapshot,
   verifyWorkflowSourceSnapshot,
@@ -42,6 +43,7 @@ import {
   createWorkflowRunnerV2ExecutionDescriptor,
   hashWorkflowRunnerV2Input,
   hashWorkflowRunnerV2Result,
+  hashWorkflowRunnerV2Source,
   WORKFLOW_RUNNER_V2_DESCRIPTOR_CODEC,
 } from './workflow-runner-v2-descriptor.js';
 
@@ -476,6 +478,7 @@ export async function executeWorkflowThroughRunnerWithRuntime(
         ? input.workflowSourceBytes
         : Buffer.from(input.workflowSourceBytes),
     manifest: structuredClone(input.manifest),
+    args: input.args === undefined ? undefined : cloneWorkflowArguments(input.args),
   };
   const wholeTimeoutMs = input.wholeTimeoutMs ?? 60 * 60_000;
   const descriptorLifetimeMs = input.descriptorLifetimeMs ?? wholeTimeoutMs;
@@ -578,6 +581,31 @@ export async function executeWorkflowThroughRunnerWithRuntime(
     );
   }
   const args = input.args ?? {};
+  if (input.manifest.name === 'r-ext-go-qualification') {
+    const { readWorkflowSendCampaign } = await import('./internal/workflow-send-admission.js');
+    if (
+      typeof args.campaignBindingHash !== 'string' ||
+      !/^[a-f0-9]{64}$/u.test(args.campaignBindingHash)
+    )
+      throw new WorkflowRunnerControlError(
+        'WORKFLOW_RUNNER_CONTROL_INPUT_INVALID',
+        'R-EXT requires a registered campaignBindingHash before Go run admission.',
+      );
+    const campaign = await readWorkflowSendCampaign(
+      input.workspaceRoot,
+      workflowRunId,
+      args.campaignBindingHash,
+    );
+    if (
+      campaign.binding.workspaceId !== config.workspaceId ||
+      campaign.binding.campaignId !== args.campaignId ||
+      campaign.binding.workflowSourceHash !== hashWorkflowRunnerV2Source(input.workflowSourceBytes)
+    )
+      throw new WorkflowRunnerControlError(
+        'WORKFLOW_RUNNER_CONTROL_INPUT_INVALID',
+        'R-EXT registration differs from the submitted run and source.',
+      );
+  }
   const authority = goAuthority!;
   const budgetPolicy = goBudgetPolicy!;
   const v2Client = goV2Client!;

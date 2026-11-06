@@ -1,4 +1,5 @@
 import { exactKeys, timestamp, type QualificationStatus } from './evidence.js';
+export { createWorkflowDrainObserver as createDrainAuthorityObserver } from '../../packages/workflows/src/internal/workflow-drain-observation.js';
 
 export interface DrainSnapshot {
   admissionClosed: boolean;
@@ -7,6 +8,8 @@ export interface DrainSnapshot {
   openReservations: number;
   reconciliationRequired: number;
   authorityConsistent: boolean;
+  runnerDrained: boolean;
+  outboxDrained: boolean;
 }
 /**
  * now/schedule share one monotonic domain. wallNow must not move backwards,
@@ -48,10 +51,14 @@ function validateSnapshot(value: unknown): DrainSnapshot {
     'openReservations',
     'reconciliationRequired',
     'authorityConsistent',
+    'runnerDrained',
+    'outboxDrained',
   ]);
   if (
     typeof value.admissionClosed !== 'boolean' ||
     typeof value.authorityConsistent !== 'boolean' ||
+    typeof value.runnerDrained !== 'boolean' ||
+    typeof value.outboxDrained !== 'boolean' ||
     [
       value.activeRuns,
       value.pendingEffects,
@@ -67,6 +74,8 @@ function drained(value: DrainSnapshot): boolean {
   return (
     value.admissionClosed &&
     value.authorityConsistent === true &&
+    value.runnerDrained === true &&
+    value.outboxDrained === true &&
     value.activeRuns === 0 &&
     value.pendingEffects === 0 &&
     value.openReservations === 0 &&

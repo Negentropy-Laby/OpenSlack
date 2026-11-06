@@ -53,16 +53,21 @@ afterEach(async () => {
   await Promise.all(roots.splice(0).map((p) => rm(p, { recursive: true, force: true })));
 });
 
-it.each(['complete', 'missing-artifact', 'cancelled-head'] as const)(
+it.each(['complete', 'missing-artifact', 'cancelled-head', 'missing-registration'] as const)(
   'runs the real worker canonical-resume path: %s',
   async (scenario) => {
     const root = testTemporaryDirectory('checkpoint-worker-resume-');
     roots.push(root);
-    const source = `export const meta={name:'checkpoint-resume-test',version:'1.0.0',description:'Checkpoint resume regression',phases:[{title:'First',detail:'First'},{title:'Approval',detail:'Approval'},{title:'Second',detail:'Second'},{title:'Done',detail:'Done'}],permissions:{openslack:['governance.audit']},sideEffects:['openslack.governance.audit'],risk:'medium'};
+    const source = `export const meta={name:'${scenario === 'missing-registration' ? 'r-ext-go-qualification' : 'checkpoint-resume-test'}',version:'1.0.0',description:'Checkpoint resume regression',phases:[{title:'First',detail:'First'},{title:'Approval',detail:'Approval'},{title:'Second',detail:'Second'},{title:'Done',detail:'Done'}],permissions:{openslack:['governance.audit']},sideEffects:['openslack.governance.audit'],risk:'medium'};
 export async function run(ctx){ctx.phase('First');const first=await ctx.agent('first',{agentType:'unresolved-fixture',label:'first',phase:'First',budget:{tokens:100}});const replay=await ctx.checkpoint.commit({artifact:new TextEncoder().encode(JSON.stringify(first))});ctx.phase('Approval');await ctx.openslack.governance.audit('checkpoint-resume-marker');await ctx.checkpoint.commit({artifact:new TextEncoder().encode('approved')});ctx.phase('Second');await ctx.agent('second',{agentType:'unresolved-fixture',label:'second',phase:'Second',budget:{tokens:100}});await ctx.checkpoint.commit({artifact:new TextEncoder().encode('second')});ctx.phase('Done');await ctx.checkpoint.commit({artifact:new TextEncoder().encode('done')});return {status:'completed',replay};}`;
     const sourceDirectory = join(root, '.openslack', 'workflows');
     await mkdir(sourceDirectory, { recursive: true });
-    const sourcePath = join(sourceDirectory, 'checkpoint-resume-test.mjs');
+    const sourcePath = join(
+      sourceDirectory,
+      scenario === 'missing-registration'
+        ? 'r-ext-go-qualification.mjs'
+        : 'checkpoint-resume-test.mjs',
+    );
     await writeFile(sourcePath, source);
     const loaded = await loadWorkflowFile(sourcePath);
     const now = new Date().toISOString();
@@ -271,6 +276,26 @@ export async function run(ctx){ctx.phase('First');const first=await ctx.agent('f
         data: { value: prompt },
         tokenUsage: 1,
       }));
+      if (scenario === 'missing-registration') {
+        await expect(
+          executeWorkflowRunnerV2AuthorityJob(
+            workflow,
+            descriptor,
+            context(binding, 0),
+            root,
+            { callerId: 'workflow-runner-v2', client: {} as never },
+            authority,
+            recovery,
+          ),
+        ).rejects.toThrow(/registered send-campaign/);
+        expect(calls.launcher).not.toHaveBeenCalled();
+        expect(checkpointEvents).toBe(0);
+        expect(auditEffects).toBe(0);
+        expect(record.state).toBe('created');
+        expect(record.revision).toBe(1);
+        expect(failures).toEqual([]);
+        return;
+      }
       let approvalId = '';
       try {
         await executeWorkflowRunnerV2AuthorityJob(

@@ -4,7 +4,7 @@ export const meta = {
   description:
     'Bounded Go-owned Workflow qualification; external execution requires separate qualification readiness.',
   whenToUse:
-    'Issue #411 only, after the checkpoint replay blocker #433 is repaired and the candidate is frozen.',
+    'Issue #411 only, after the candidate, private send admission and real readiness evidence are reviewed.',
   phases: [
     {
       title: 'FirstCall',
@@ -20,8 +20,11 @@ export const meta = {
   inputs: {
     campaignId: {
       type: 'string',
-      description:
-        'Preparation evidence correlation ID; this fixture does not verify campaign registration or live send admission.',
+      description: 'Correlation ID matching the host registered private send campaign.',
+    },
+    campaignBindingHash: {
+      type: 'string',
+      description: 'SHA-256 of the exact host registration, sealed with the workflow input hash.',
     },
   },
   permissions: { github: [], git: [], filesystem: [], openslack: ['governance.audit'] },
@@ -47,7 +50,12 @@ const bytes = (value) => new TextEncoder().encode(JSON.stringify(value));
 
 export async function preview(ctx) {
   ctx.phase('FirstCall');
-  return { preview: true, agentId: AGENT_ID, providerCalls: 0, preparationBlocker: '#433' };
+  return {
+    preview: true,
+    agentId: AGENT_ID,
+    providerCalls: 0,
+    preparationBlocker: 'readiness_evidence_required',
+  };
 }
 
 async function call(ctx, stage, phase) {
@@ -84,12 +92,16 @@ export async function run(ctx) {
   const campaignId = ctx.args.campaignId;
   if (typeof campaignId !== 'string' || !SAFE_ID.test(campaignId))
     throw new Error('R-EXT requires a well-formed campaignId for evidence correlation.');
+  const campaignBindingHash = ctx.args.campaignBindingHash;
+  if (typeof campaignBindingHash !== 'string' || !/^[a-f0-9]{64}$/u.test(campaignBindingHash))
+    throw new Error('R-EXT requires the host registered campaignBindingHash before any call.');
 
   const commit = (stage, extra = {}, resultHash) =>
     ctx.checkpoint.commit({
       artifact: bytes({
         schema: 'openslack.r_ext_checkpoint.v1',
         campaignId,
+        campaignBindingHash,
         runId: ctx.runId,
         stage,
         ...extra,
@@ -101,13 +113,14 @@ export async function run(ctx) {
   const first = await call(ctx, 'first', 'FirstCall');
   const firstHash = await sha256(bytes(first));
   // Stable across function re-entry: never add timestamps, random values or
-  // resume generation. The pending #433 defect must be fixed, not worked around.
+  // resume generation. Recovery must verify the original committed evidence.
   await commit('first', { resultHash: firstHash }, firstHash);
 
   ctx.phase('Approval');
   await ctx.openslack.governance.audit('r-ext-go-qualification-approved', {
     schema: 'openslack.r_ext_audit_marker.v1',
     campaignId,
+    campaignBindingHash,
     runId: ctx.runId,
     marker: 'r-ext-go-qualification-approved',
   });

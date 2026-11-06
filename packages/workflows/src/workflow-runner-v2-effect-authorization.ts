@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { readdir } from 'node:fs/promises';
+import { readdir, lstat } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 
 import {
@@ -41,6 +41,9 @@ import {
 } from './workflow-runner-descriptor.js';
 import type { WorkflowRunnerV2ExecutionDescriptor } from './workflow-runner-v2-descriptor.js';
 import type { WorkflowRunnerV2ExecutionContext } from './workflow-runner-v2-session.js';
+import { validateWorkflowEffectApproval } from './workflow-effect-approval.js';
+import { parseWorkflowEffectJson } from './workflow-effect-json.js';
+import type { WorkflowControlAuthorityRunRead } from './workflow-control-authority-client.js';
 import {
   registerWorkflowEffectAuthorizationPort,
   WorkflowEffectApprovalPendingError,
@@ -157,6 +160,17 @@ class WorkflowRunnerV2EffectSiblingJournal {
     }
     this.#records = await ensureOwnerDirectory(join(root, 'records'), this.#security, root);
     this.#locks = await ensureOwnerDirectory(join(root, 'locks'), this.#security, root);
+  }
+
+  async openReadOnly(): Promise<void> {
+    const root = await assertOwnerDirectory(this.#root, this.#security);
+    if ((await readdir(root)).sort().join(',') !== 'locks,records')
+      throw new WorkflowEffectReconciliationRequiredError(
+        'Sibling authority layout is incomplete.',
+      );
+    this.#root = root;
+    this.#records = await assertOwnerDirectory(join(root, 'records'), this.#security, root);
+    this.#locks = await assertOwnerDirectory(join(root, 'locks'), this.#security, root);
   }
 
   async runExclusive<T>(identityHash: string, operation: () => Promise<T>): Promise<T> {
@@ -324,7 +338,189 @@ class WorkflowRunnerV2EffectSiblingJournal {
   }
 }
 
-function identityHash(descriptor: WorkflowRunnerV2ExecutionDescriptor, evaluationIndex: number) {
+/** Authenticated read composition only; pending approvals precede any sibling claim. */
+export async function readWorkflowRunnerV2EffectDrain(input: {
+  workspaceRoot: string;
+  workspaceId: string;
+  authorityBuildHash: string;
+  signal: AbortSignal;
+  readRun: (runId: string) => Promise<WorkflowControlAuthorityRunRead>;
+  assertCommitted: (
+    runId: string,
+    evidence: WorkflowRunnerEffectAuthorityEvidence | WorkflowRunnerEffectCompletionEvidence,
+    operation: 'effect_authorize' | 'effect_complete',
+  ) => Promise<void>;
+  legacyApprovalScopes?: readonly string[];
+}): Promise<{ pendingEffects: number; reconciliationRequired: number; evidenceHash: string }> {
+  const invalid = (): never => {
+    throw new WorkflowEffectReconciliationRequiredError(
+      'Read-only v2 effect evidence is incomplete or changed.',
+    );
+  };
+  const root = join(input.workspaceRoot, '.openslack.local/workflows/effect-authority-v2-siblings');
+  const approvalRoot = resolveWorkflowEffectApprovalRoot(input.workspaceRoot);
+  const security = productionJournalSecurity();
+  const journal = new WorkflowRunnerV2EffectSiblingJournal(root);
+  await journal.openReadOnly();
+  await assertOwnerDirectory(approvalRoot, security);
+  for (const name of ['records', 'locks'])
+    await assertOwnerDirectory(join(approvalRoot, name), security, approvalRoot);
+  if ((await readdir(approvalRoot)).sort().join(',') !== 'locks,records') return invalid();
+  const capture = async () => {
+    const result = new Map<string, string>();
+    let total = 0;
+    for (const base of [root, approvalRoot]) {
+      input.signal.throwIfAborted();
+      if ((await readdir(join(base, 'locks'))).length) return invalid();
+      for (const name of (await readdir(join(base, 'records'))).sort()) {
+        if (!/^[a-f0-9]{64}\.json$/u.test(name) || result.size >= 4096) return invalid();
+        const path = join(base, 'records', name);
+        const stat = await lstat(path, { bigint: true });
+        if (stat.nlink !== 1n) return invalid();
+        const text = await readOwnerFile(path, security, MAX_RECORD_BYTES);
+        total += Buffer.byteLength(text);
+        if (total > 64 * 1024 * 1024) return invalid();
+        result.set(path, text);
+      }
+    }
+    return result;
+  };
+  const before = await capture();
+  const siblings = new Map<string, EffectSiblingRecord>();
+  for (const [path] of before) {
+    if (
+      !path.startsWith(join(root, 'records') + '/') &&
+      !path.startsWith(join(root, 'records') + '\\')
+    )
+      continue;
+    const name = path.slice(path.lastIndexOf(process.platform === 'win32' ? '\\' : '/') + 1);
+    const record = await journal.read(name.slice(0, -5));
+    if (!record) return invalid();
+    const head = await input.readRun(record.runId);
+    const descriptor = {
+      workspaceId: input.workspaceId,
+      workflowRunId: head.runId,
+      workflowId: head.workflowId,
+      workflowVersion: head.workflowVersion,
+      workflowSourceHash: head.workflowSourceHash,
+      manifestHash: head.manifestHash,
+      inputHash: head.inputHash,
+    };
+    if (
+      identityHash(descriptor, record.evaluationIndex) !== record.identityHash ||
+      record.authorization.sourceAuthority.authorityBuildHash !== input.authorityBuildHash
+    )
+      return invalid();
+    const approvalKey = sha256(record.runId + '\0' + record.authorization.approvalId);
+    if (siblings.has(approvalKey)) return invalid();
+    siblings.set(approvalKey, record);
+  }
+  let pendingEffects = 0,
+    reconciliationRequired = 0;
+  const referenced = new Set<string>();
+  for (const [path, text] of before) {
+    if (
+      !path.startsWith(join(approvalRoot, 'records') + '/') &&
+      !path.startsWith(join(approvalRoot, 'records') + '\\')
+    )
+      continue;
+    const approval = validateWorkflowEffectApproval(parseWorkflowEffectJson(Buffer.from(text)));
+    const scope = sha256(approval.runId + '\0' + approval.approvalId);
+    if (path !== join(approvalRoot, 'records', scope + '.json')) return invalid();
+    if (input.legacyApprovalScopes?.includes(scope)) continue;
+    const head = await input.readRun(approval.runId);
+    if (
+      head.workflowId !== approval.workflowId ||
+      head.workflowVersion !== approval.workflowVersion ||
+      head.workflowSourceHash !== approval.workflowHash ||
+      head.inputHash !== approval.inputHash
+    )
+      return invalid();
+    const sibling = siblings.get(scope);
+    if (!sibling) {
+      if (approval.status === 'pending' || approval.status === 'approved') pendingEffects++;
+      continue;
+    }
+    referenced.add(scope);
+    const auth = sibling.authorization;
+    if (
+      auth.approvalId !== approval.approvalId ||
+      auth.effectId !== approval.effectId ||
+      auth.effectHash !== approval.effectHash ||
+      (auth.approvalRecordHash !== null &&
+        auth.approvalRecordHash !== hashWorkflowEffectApprovalRecord(approval))
+    )
+      return invalid();
+    const generation = auth.sourceAuthority.acceptedResumeGeneration;
+    if (generation === null || generation > head.resumeGeneration) return invalid();
+    const occurrenceId = deriveWorkflowEffectOccurrenceId(sibling.runId, sibling.evaluationIndex);
+    const prepared: Omit<PreparedState, 'port' | 'effectKind'> = {
+      evaluationIndex: sibling.evaluationIndex,
+      effectId: auth.effectId,
+      effectHash: auth.effectHash,
+      capabilityHash: auth.capabilityHash,
+      occurrenceId,
+      intentBindingHash: hashWorkflowEffectControlDomain('runner-v2-intent-binding', {
+        workspaceId: input.workspaceId,
+        runId: approval.runId,
+        correlationId: approval.correlationId,
+        workflowId: head.workflowId,
+        workflowVersion: head.workflowVersion,
+        workflowSourceHash: head.workflowSourceHash,
+        manifestHash: head.manifestHash,
+        inputHash: head.inputHash,
+        evaluationIndex: sibling.evaluationIndex,
+        occurrenceId,
+        effectId: auth.effectId,
+        effectHash: auth.effectHash,
+        capabilityHash: auth.capabilityHash,
+      }),
+      approvalId: deriveWorkflowEffectApprovalId(occurrenceId, auth.intentBindingHash),
+    };
+    assertSiblingForPrepared(
+      sibling,
+      prepared,
+      { workflowRunId: head.runId, authorityRoute: head.route },
+      generation,
+    );
+    await input.assertCommitted(head.runId, auth, 'effect_authorize');
+    if (sibling.completion) {
+      await input.assertCommitted(head.runId, sibling.completion, 'effect_complete');
+      if (sibling.completion.status === 'reconciliation_required') reconciliationRequired++;
+    } else if (auth.approvalStatus === 'approved') pendingEffects++;
+  }
+  if ([...siblings.keys()].some((k) => !referenced.has(k))) return invalid();
+  const after = await capture();
+  if (after.size !== before.size || [...before].some(([p, v]) => after.get(p) !== v))
+    return invalid();
+  input.signal.throwIfAborted();
+  return {
+    pendingEffects,
+    reconciliationRequired,
+    evidenceHash: sha256(
+      canonical(
+        [...after].map(([p, v]) => ({
+          name: p.slice(input.workspaceRoot.length),
+          sha256: sha256(v),
+        })),
+      ),
+    ),
+  };
+}
+
+function identityHash(
+  descriptor: Pick<
+    WorkflowRunnerV2ExecutionDescriptor,
+    | 'workspaceId'
+    | 'workflowRunId'
+    | 'workflowId'
+    | 'workflowVersion'
+    | 'workflowSourceHash'
+    | 'manifestHash'
+    | 'inputHash'
+  >,
+  evaluationIndex: number,
+) {
   return sha256(
     `openslack.workflow-runner-v2-effect-sibling.identity.v1\0${canonicalWorkflowControlAuthorityJson(
       {
@@ -351,8 +547,8 @@ function sourceReceiptHash(schema: string, recordHash: string, acceptedRevision:
 
 function assertSiblingForPrepared(
   record: EffectSiblingRecord,
-  prepared: PreparedState,
-  descriptor: WorkflowRunnerV2ExecutionDescriptor,
+  prepared: Omit<PreparedState, 'port' | 'effectKind'>,
+  descriptor: Pick<WorkflowRunnerV2ExecutionDescriptor, 'workflowRunId' | 'authorityRoute'>,
   resumeGeneration: number,
 ): EffectSiblingRecord {
   const authorization = record.authorization;

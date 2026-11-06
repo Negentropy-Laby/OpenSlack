@@ -15,6 +15,8 @@ import { resolveWorkflowRunProjectionRoot } from '../../packages/workflows/src/w
 import { resolveWorkflowEffectApprovalRoot } from '../../packages/workflows/src/internal/workflow-effect-approval-layout.js';
 import { createWorkflowEffectDecisionAuthority } from '../../packages/workflows/src/workflow-effect-approval.js';
 import { LocalWorkflowEffectApprovalStore } from '../../packages/workflows/src/workflow-effect-approval-store.js';
+import { createWorkflowDrainObserver } from '../../packages/workflows/src/internal/workflow-drain-observation.js';
+import { WorkflowControlAuthorityHttpClient } from '../../packages/workflows/src/workflow-control-authority-client.js';
 
 const config = JSON.parse(await readFile(process.argv[2]!, 'utf8')) as {
   root: string;
@@ -24,6 +26,8 @@ const config = JSON.parse(await readFile(process.argv[2]!, 'utf8')) as {
   workspaceId: string;
   runnerToken: string;
   authorityToken: string;
+  budgetOrigin: string;
+  budgetToken: string;
   runnerBuild: string;
   authorityBuild: string;
 };
@@ -100,6 +104,37 @@ const execute = () =>
   });
 const initial = await execute();
 assert.equal(initial.status, 'paused_waiting_approval');
+const connection = (origin: string, bearerToken: string) => ({
+  origin,
+  bearerToken,
+  callerId: 'workflow-runner-v2',
+  buildHash: config.authorityBuild,
+});
+const drain = createWorkflowDrainObserver({
+  workspaceRoot: config.root,
+  workspaceId: config.workspaceId,
+  route: {
+    backend: 'go',
+    authority: 'workflow-control',
+    routingEpoch: 1,
+    authorityBuildHash: config.authorityBuild,
+  },
+  authority: connection(config.authorityOrigin, config.authorityToken),
+  runner: connection(config.runnerOrigin, config.runnerToken),
+  budget: connection(config.budgetOrigin, config.budgetToken),
+  authorityClient: new WorkflowControlAuthorityHttpClient({
+    origin: config.authorityOrigin,
+    workspaceId: config.workspaceId,
+    callerId: 'workflow-runner-v2',
+    bearerToken: config.authorityToken,
+    expectedBuildHash: config.authorityBuild,
+  }),
+});
+const pausedDrain = await drain.read(new AbortController().signal);
+assert.equal(pausedDrain.activeRuns, 1);
+assert.equal(pausedDrain.pendingEffects, 1);
+assert.equal(pausedDrain.outboxDrained, false);
+assert.equal(pausedDrain.admissionClosed, false);
 const reader = new RunStore({
   baseDir: resolveWorkflowRunProjectionRoot(config.root, 'go'),
   access: 'read-only',
@@ -149,6 +184,12 @@ assert.equal(final.resumeGeneration, 1);
 assert.equal(final.checkpoints.length, 3);
 assert.deepEqual(final.checkpoints[0], original!.checkpoints[0]);
 assert.equal((await reader.readAuditRecords(runId)).length, 1);
+const completedDrain = await drain.read(new AbortController().signal);
+assert.equal(completedDrain.activeRuns, 0);
+assert.equal(completedDrain.pendingEffects, 0);
+assert.equal(completedDrain.runnerDrained, true);
+assert.equal(completedDrain.openReservations, 0);
+assert.equal(completedDrain.outboxDrained, false); // Real durable outbox remains unpublished.
 process.stdout.write(
   JSON.stringify({
     status: 'PASS',
@@ -157,5 +198,8 @@ process.stdout.write(
     checkpointCount: final.checkpoints.length,
     originalCheckpoint: final.checkpoints[0],
     auditEffects: 1,
+    pausedDrain,
+    completedDrain,
+    drainEvidence: drain.evidence(),
   }) + '\n',
 );

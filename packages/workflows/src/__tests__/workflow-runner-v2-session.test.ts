@@ -338,6 +338,120 @@ async function handshake(harnessValue: ReturnType<typeof harness>): Promise<void
 }
 
 describe('WorkflowRunnerV2Session', () => {
+  it('keeps heartbeats available after receipts and checkpoint completion', async () => {
+    const value = harness(0);
+    await handshake(value);
+    const offer = value.session.receive(leaseOffer(value.sealed));
+    await turn();
+    await value.session.receive(receipt(value.sent.at(-1)!, 2));
+    await offer;
+    await turn();
+    let sequence = 3;
+    for (let n = 0; n < 2; n++) {
+      const pending = value.session.heartbeat();
+      await turn();
+      expect(value.sent.at(-1)!.kind).toBe('heartbeat');
+      await value.session.receive(receipt(value.sent.at(-1)!, sequence++));
+      expect(await pending).toBe(true);
+    }
+    const checkpoint = value
+      .context()!
+      .checkpointCommit(checkpointPayload(value.sealed, 'checkpoint.heartbeat'));
+    await turn();
+    await value.session.receive(receipt(value.sent.at(-1)!, sequence++));
+    await checkpoint;
+    const pending = value.session.heartbeat();
+    await turn();
+    expect(value.sent.at(-1)!.kind).toBe('heartbeat');
+    await value.session.receive(receipt(value.sent.at(-1)!, sequence++));
+    expect(await pending).toBe(true);
+    await value.session.receive({} as never);
+  });
+  it('keeps cancellation heartbeats available while accepted work is cleaning up', async () => {
+    const value = harness(0);
+    await handshake(value);
+    const offer = value.session.receive(leaseOffer(value.sealed));
+    await turn();
+    await value.session.receive(receipt(value.sent.at(-1)!, 2));
+    await offer;
+    await turn();
+    const cancelling = value.session.receive(cancelRequest(value.sealed, 3, 1));
+    await turn();
+    expect(value.sent.at(-1)!.kind).toBe('cancel_ack');
+    await value.session.receive(receipt(value.sent.at(-1)!, 4));
+    await cancelling;
+    const beating = value.session.heartbeat();
+    await turn();
+    expect(value.sent.at(-1)).toMatchObject({
+      kind: 'heartbeat',
+      payload: { state: 'cancelling' },
+    });
+    await value.session.receive(receipt(value.sent.at(-1)!, 5));
+    expect(await beating).toBe(true);
+    await value.session.receive({} as never);
+  });
+  it('recognizes an exact receipt repeated by the existing transport retry', async () => {
+    const value = harness(0);
+    await handshake(value);
+    const offer = value.session.receive(leaseOffer(value.sealed));
+    await turn();
+    const accepted = receipt(value.sent.at(-1)!, 2);
+    await value.session.receive(accepted);
+    await offer;
+    await turn();
+    await value.session.receive(accepted);
+    expect(value.closed).toEqual([]);
+    const pending = value.session.heartbeat();
+    await turn();
+    const acknowledged = receipt(value.sent.at(-1)!, 3);
+    await value.session.receive(acknowledged);
+    expect(await pending).toBe(true);
+    await value.session.receive(acknowledged);
+    await value.session.receive(accepted);
+    expect(value.closed).toEqual([]);
+    await value.session.receive({ ...acknowledged, eventId: 'changed-receipt' });
+    expect(value.closed).toEqual([2]);
+  });
+  it('does not emit heartbeat before Go admission has an accepted receipt', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const value = harness(
+      0,
+      { backend: 'go', authority: 'workflow-control', routingEpoch: 1, authorityBuildHash: HASH_A },
+      {
+        runtimeDelivery: {
+          async isResume() {
+            await gate;
+            return false;
+          },
+          async commit() {
+            throw new Error('unexpected source mutation');
+          },
+          async acknowledgeControl() {},
+        },
+      },
+    );
+    await handshake(value);
+    const offering = value.session.receive(leaseOffer(value.sealed));
+    await turn();
+    const beating = value.session.heartbeat();
+    await turn();
+    const emitted = value.sent.at(-1)!.kind === 'heartbeat';
+    try {
+      if (emitted) await value.session.receive(receipt(value.sent.at(-1)!, 2));
+      expect(await beating).toBe(false);
+      expect(value.sent.filter((m) => m.kind === 'heartbeat')).toHaveLength(0);
+    } finally {
+      release();
+      await turn();
+      await value.session.receive(receipt(value.sent.at(-1)!, emitted ? 3 : 2));
+      await offering;
+      await value.session.receive({} as never);
+    }
+  });
+
   it.each(['descriptor', 'prepare', 'resume', 'load', 'send', 'ack'] as const)(
     'releases a pending %s call on fatal and ignores its late completion',
     async (stage) => {
