@@ -247,6 +247,14 @@ func reconciliationRequest(t *testing.T, v runnerstore.V2AuthorityBindingView, o
 func TestBindingReconciliationClosesHistoryAndPausesWithoutReplaying(t *testing.T) {
 	repo, source, v, _ := reconciliationFixture(t, runnerbindingcontract.OperationCheckpointCommit, "resolved")
 	ctx := context.Background()
+	var drainEpoch int64
+	if err := repo.pool.QueryRow(ctx, `SELECT routing_epoch FROM workflow_runner_jobs WHERE workspace_id=$1 AND job_id=$2`, v.WorkspaceID, v.JobID).Scan(&drainEpoch); err != nil {
+		t.Fatal(err)
+	}
+	beforeDrain, drainErr := repo.DrainStatistics(ctx, v.WorkspaceID, drainEpoch)
+	if drainErr != nil || beforeDrain["runner_work"] == 0 {
+		t.Fatalf("unsettled work disappeared: %+v %v", beforeDrain, drainErr)
+	}
 	request := reconciliationRequest(t, v, "committed")
 	if _, err := repo.ApplyBindingReconciliation(ctx, request); !runnerstore.IsCode(err, runnerstore.ErrorConflict) {
 		t.Fatalf("active lease: %v", err)
@@ -306,6 +314,10 @@ func TestBindingReconciliationClosesHistoryAndPausesWithoutReplaying(t *testing.
 	after, err := source.Read(ctx, v.WorkspaceID, v.RunID)
 	if err != nil || after.State != "paused" || after.Revision != head.Revision+1 || after.ResumeGeneration != head.ResumeGeneration {
 		t.Fatalf("pause head: %+v %v", after, err)
+	}
+	afterDrain, drainErr := repo.DrainStatistics(ctx, v.WorkspaceID, drainEpoch)
+	if drainErr != nil || afterDrain["runner_work"] != 0 || afterDrain["runner_jobs"] != 0 || afterDrain["runner_leases"] != 0 || afterDrain["reconciliation_required"] != 0 {
+		t.Fatalf("exactly reconciled history still counted as current: %+v %v", afterDrain, drainErr)
 	}
 	if writerCalls != 0 {
 		t.Fatalf("historical replay accessed the unavailable source: %d", writerCalls)

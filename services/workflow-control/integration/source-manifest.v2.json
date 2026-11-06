@@ -150,7 +150,7 @@
     },
     "runnerV2RuntimeDeliveryHTTPHandlersSource": {
       "path": "services/workflow-control/internal/runnerapp/handlers.go",
-      "sha256": "fdd8bec3336f3e523dfc35f6f7f036b40e87d48787692f44b7a83324764e074e"
+      "sha256": "f5f8d24aecc6e7374fa784e8a3e08936dc291698b121bb42d7215e59c20ef934"
     },
     "runnerV2RuntimeDeliveryHTTPServerSource": {
       "path": "services/workflow-control/internal/runnerapp/server.go",
@@ -338,7 +338,7 @@
     },
     "workflowControlAuthorityHTTPHandlersSource": {
       "path": "services/workflow-control/internal/authorityapp/handlers.go",
-      "sha256": "2d941d669a85ae70526ae68cb375e57efa91cc136ef831aae8fe41091ad33cde"
+      "sha256": "ea05916b8b6c91e1d83f8d428e884e271ab0dd5e29bfaaaade06a40f61ad328b"
     },
     "workflowControlAuthorityHTTPServerTest": {
       "path": "services/workflow-control/internal/authorityapp/server_test.go",
@@ -622,7 +622,7 @@
     },
     "runnerBindingReconciliationPostgresTests": {
       "path": "services/workflow-control/internal/runnerstore/postgres/binding_reconciliation_integration_test.go",
-      "sha256": "5868529fdf4aca6ead1f917256c6f45257e8b874221ebdc0c4fd6999cff236ca"
+      "sha256": "64c0a2179d1641280a3730615c53b1ed4659d55ea061626bc539038ed4bf515c"
     },
     "runnerReconciliationRestartTests": {
       "path": "services/workflow-control/internal/runnerstore/postgres/reconciliation_restart_integration_test.go",

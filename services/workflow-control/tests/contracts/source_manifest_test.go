@@ -313,7 +313,7 @@ func TestSourceManifestBindsOnlyUnreleasedGS9IInputs(t *testing.T) {
 		},
 		"runnerV2RuntimeDeliveryHTTPHandlersSource": {
 			Path:   "services/workflow-control/internal/runnerapp/handlers.go",
-			SHA256: "fdd8bec3336f3e523dfc35f6f7f036b40e87d48787692f44b7a83324764e074e",
+			SHA256: "f5f8d24aecc6e7374fa784e8a3e08936dc291698b121bb42d7215e59c20ef934",
 		},
 		"runnerV2RuntimeDeliveryHTTPServerSource": {
 			Path:   "services/workflow-control/internal/runnerapp/server.go",
@@ -485,7 +485,7 @@ func TestSourceManifestBindsOnlyUnreleasedGS9IInputs(t *testing.T) {
 		},
 		"workflowControlAuthorityHTTPHandlersSource": {
 			Path:   "services/workflow-control/internal/authorityapp/handlers.go",
-			SHA256: "2d941d669a85ae70526ae68cb375e57efa91cc136ef831aae8fe41091ad33cde",
+			SHA256: "ea05916b8b6c91e1d83f8d428e884e271ab0dd5e29bfaaaade06a40f61ad328b",
 		},
 		"workflowControlAuthorityHTTPServerTest": {
 			Path:   "services/workflow-control/internal/authorityapp/server_test.go",
@@ -827,7 +827,7 @@ func TestSourceManifestBindsOnlyUnreleasedGS9IInputs(t *testing.T) {
 		},
 		"runnerBindingReconciliationPostgresTests": {
 			Path:   "services/workflow-control/internal/runnerstore/postgres/binding_reconciliation_integration_test.go",
-			SHA256: "5868529fdf4aca6ead1f917256c6f45257e8b874221ebdc0c4fd6999cff236ca",
+			SHA256: "64c0a2179d1641280a3730615c53b1ed4659d55ea061626bc539038ed4bf515c",
 		},
 		"runnerReconciliationRestartTests": {
 			Path:   "services/workflow-control/internal/runnerstore/postgres/reconciliation_restart_integration_test.go",

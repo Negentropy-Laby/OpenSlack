@@ -17,6 +17,8 @@ import (
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/authorityapp"
 	authoritypostgres "github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/authoritystore/postgres"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/budgetapp"
+	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/budgetstore"
+	budgetpostgres "github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/budgetstore/postgres"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/config"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/databaseready"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/processsupervisor"
@@ -98,7 +100,10 @@ func qualifySealedCheckpointResume(t *testing.T) {
 	}
 	runnerHTTP := httptest.NewServer(runner.Handler())
 	defer runnerHTTP.Close()
-	budget, err := budgetapp.New(budgetapp.Options{BuildSHA: strings.Repeat("3", 64)})
+	budgetToken := strings.Repeat("b", 48)
+	budget, err := budgetapp.New(budgetapp.Options{Repository: budgetpostgres.New(pool), QualificationMode: true, BuildSHA: authorityBuild,
+		WorkspaceID: workspace, CallerID: caller, RoutingEpoch: 1, BearerTokenSHA256: hash(budgetToken),
+		Seed: budgetstore.QualificationSeed{PolicyHash: strings.Repeat("b", 64), Limit: budgetstore.Quantities{Tokens: "1000", NanoUSD: "1000", Calls: "2"}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -106,11 +111,12 @@ func qualifySealedCheckpointResume(t *testing.T) {
 	defer budgetHTTP.Close()
 	registry, err := workerregistry.Load(bundleRoot, hash(string(raw)), workerregistry.Runtime{
 		WorkspaceID: workspace, WorkspaceRoot: workspaceRoot, DescriptorRoot: descriptorRoot,
-		V2RuntimeDelivery: &runnerconfig.V2RuntimeDeliveryRuntime{Origin: runnerHTTP.URL, BearerToken: runnerToken, BearerSHA256: hash(runnerToken), JournalRoot: journalRoot, BudgetOrigin: budgetHTTP.URL, BudgetToken: strings.Repeat("b", 48), BudgetCallerID: caller},
+		V2RuntimeDelivery: &runnerconfig.V2RuntimeDeliveryRuntime{Origin: runnerHTTP.URL, BearerToken: runnerToken, BearerSHA256: hash(runnerToken), JournalRoot: journalRoot, BudgetOrigin: budgetHTTP.URL, BudgetToken: budgetToken, BudgetCallerID: caller},
 		V2RunAuthority:    &runnerconfig.V2RunAuthorityRuntime{Origin: authorityHTTP.URL, BearerToken: authorityToken, BearerSHA256: hash(authorityToken), CallerID: caller, ExpectedBuild: authorityBuild}})
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Logf("sealed worker build=%s manifest_sha256=%s", registry.RunnerBuildHash(), hash(string(raw)))
 	supervisor, err := registry.NewSupervisor()
 	if err != nil {
 		t.Fatal(err)
@@ -119,7 +125,7 @@ func qualifySealedCheckpointResume(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	scheduler, err := runnerscheduler.New(runnerscheduler.Config{Store: store, V2Session: session, AuthorityRecovery: store,
+	scheduler, err := runnerscheduler.New(runnerscheduler.Config{Store: store, V2Session: checkpointFixtureSession{session, t}, AuthorityRecovery: store,
 		WorkspaceID: workspace, SupervisorInstanceID: "runner.checkpoint.fixture", MaxProcesses: 1, LeaseOfferTimeout: 10 * time.Second, LeaseDuration: time.Minute, PollInterval: 100 * time.Millisecond, RecoveryInterval: time.Second})
 	if err != nil {
 		t.Fatal(err)
@@ -133,7 +139,7 @@ func qualifySealedCheckpointResume(t *testing.T) {
 			t.Errorf("sealed scheduler: %v", err)
 		}
 	}()
-	driverConfig := map[string]string{"root": workspaceRoot, "descriptorRoot": descriptorRoot, "runnerOrigin": runnerHTTP.URL, "authorityOrigin": authorityHTTP.URL, "workspaceId": workspace, "runnerToken": runnerToken, "authorityToken": authorityToken, "runnerBuild": runnerBuild, "authorityBuild": authorityBuild}
+	driverConfig := map[string]string{"root": workspaceRoot, "descriptorRoot": descriptorRoot, "runnerOrigin": runnerHTTP.URL, "authorityOrigin": authorityHTTP.URL, "budgetOrigin": budgetHTTP.URL, "budgetToken": budgetToken, "workspaceId": workspace, "runnerToken": runnerToken, "authorityToken": authorityToken, "runnerBuild": runnerBuild, "authorityBuild": authorityBuild}
 	encoded, err := json.Marshal(driverConfig)
 	if err != nil {
 		t.Fatal(err)
@@ -189,4 +195,19 @@ func (p checkpointFixtureProcess) Wait(ctx context.Context) (processsupervisor.R
 		p.t.Logf("sealed worker stderr: %s", r.Stderr.Bytes)
 	}
 	return r, err
+}
+
+// Preserve the exact protocol failure in this isolated fixture; the scheduler
+// correctly keeps failed admission separate from source execution.
+type checkpointFixtureSession struct {
+	session *runnerscheduler.V2Session
+	t       *testing.T
+}
+
+func (s checkpointFixtureSession) Run(ctx context.Context, lease runnerstore.AttemptLease) error {
+	err := s.session.Run(ctx, lease)
+	if err != nil {
+		s.t.Logf("sealed fixture session: %v", err)
+	}
+	return err
 }
