@@ -1,4 +1,4 @@
-/** Offline fixture driven by TestGS9F2Qualification; no provider or external effect. */
+/** Offline fixture driven by TestGS9F2SealedCheckpointResume; no provider or external effect. */
 import assert from 'node:assert/strict';
 import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';

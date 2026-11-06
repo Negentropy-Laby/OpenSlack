@@ -96,7 +96,6 @@ func TestGS9F2Qualification(t *testing.T) {
 		t.Fatalf("runtime admission HTTP exact replay drifted: first=%d %s replay=%d %s", first.Code, first.Body.String(), replay.Code, replay.Body.String())
 	}
 	qualifyGS9F2CheckpointHTTP(t, repository, service.Handler(), lease, token)
-	t.Run("sealed_checkpoint_resume", qualifySealedCheckpointResume)
 }
 
 func qualifyGS9F2CheckpointHTTP(t *testing.T, repository *runnerpostgres.Repository, handler http.Handler, lease runnerstore.AttemptLease, token string) {

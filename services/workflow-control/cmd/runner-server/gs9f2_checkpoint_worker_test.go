@@ -1,3 +1,5 @@
+//go:build sealed_worker_integration
+
 package main
 
 import (
@@ -33,8 +35,13 @@ import (
 )
 
 // Uses the actual sealed Node worker, HTTP services and isolated PostgreSQL schema.
+// The existing host PostgreSQL gate runs this cross-language integration explicitly;
+// the Go-only container gate continues to require only its pinned Go toolchain.
 // The workflow has one fixture-human D2 audit decision and no provider request.
-func qualifySealedCheckpointResume(t *testing.T) {
+func TestGS9F2SealedCheckpointResume(t *testing.T) {
+	if strings.TrimSpace(os.Getenv("DATABASE_URL")) == "" {
+		t.Fatal("sealed checkpoint qualification requires DATABASE_URL")
+	}
 	pool := testsupport.OpenPostgres(t)
 	version := databaseready.CurrentSchemaVersion
 	if _, err := pool.Exec(t.Context(), "CREATE TABLE schema_migrations(version BIGINT PRIMARY KEY,dirty BOOLEAN NOT NULL); INSERT INTO schema_migrations VALUES($1,false)", version); err != nil {

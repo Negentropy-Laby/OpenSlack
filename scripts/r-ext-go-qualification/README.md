@@ -293,3 +293,12 @@ facts to isolate settlement behavior. They never relax physical-send admission.
 The intermediate 08cf8ced Linux broad cohort had two 5-second timeouts; its native
 cohort was interrupted when confirmed contract repairs superseded that candidate.
 Those records are retained and are not passing final-candidate rounds.
+
+The sealed PostgreSQL composition is mandatory in the existing host
+`workflow-control-postgres-gate.sh gs9e-budget` gate, with the explicit
+`sealed_worker_integration` build tag and exact `TestGS9F2SealedCheckpointResume`
+test name. It requires the installed Bun/Node toolchains; it is not part of the
+Go-only container profile. No test skips or required-check changes replace it.
+The 438854bd container failure exposed the former dependency mismatch and is
+retained. Its full local Linux cohort also recorded three unchanged-suite
+timeouts; separate hosted results and diagnostic runs do not erase those failures.
