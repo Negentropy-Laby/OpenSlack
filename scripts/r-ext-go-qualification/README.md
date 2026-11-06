@@ -281,6 +281,15 @@ The real sealed fixture also exposed pre-admission heartbeats and exact receipt
 repeats from the existing transport retry while a durable ACK was in flight.
 The session now waits for accepted admission, retains cancellation heartbeat
 semantics, and recognizes only a bounded history of fully validated, durably
-acknowledged receipt hashes. A repeat does not advance authority state or resend
+acknowledged receipt and decision hashes. A repeat does not advance authority state or resend
 an effect; changed frames still fail. These failures and their deterministic
 regressions are retained. No retry, timeout or worker-count setting was increased.
+
+Settlement keeps both the raw request-byte digest and the provider receipt's
+existing domain-separated request digest. The two producers share the internal
+hash primitive; this changes neither the Go protocol nor the public Agent Runtime
+barrel. Positive and interrupted-settlement tests use synthetic already-admitted
+facts to isolate settlement behavior. They never relax physical-send admission.
+The intermediate 08cf8ced Linux broad cohort had two 5-second timeouts; its native
+cohort was interrupted when confirmed contract repairs superseded that candidate.
+Those records are retained and are not passing final-candidate rounds.

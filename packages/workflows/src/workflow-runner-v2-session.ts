@@ -40,7 +40,7 @@ import {
   type WorkflowRunnerV2ExecutionDescriptor,
 } from './workflow-runner-v2-descriptor.js';
 
-const ACCEPTED_RECEIPT_HISTORY_LIMIT = 64;
+const ACCEPTED_CONTROL_HISTORY_LIMIT = 64;
 
 export type WorkflowRunnerV2SessionState =
   | 'created'
@@ -289,7 +289,7 @@ export class WorkflowRunnerV2Session<TPrepared, TWorkflow = WorkflowModule> {
   #workerSequence = 0;
   #lastControlSequence = 0;
   #lastReceiptSequence = 0;
-  readonly #acceptedReceipts = new Map<string, string>();
+  readonly #acceptedControls = new Map<string, string>();
   #resumeOffer: WorkflowControlAuthorityMessage | null = null;
   #resumeRequired = false;
   #queuedCancel?: WorkflowControlAuthorityMessage;
@@ -1012,7 +1012,7 @@ export class WorkflowRunnerV2Session<TPrepared, TWorkflow = WorkflowModule> {
     const exact = createHash('sha256')
       .update(canonicalWorkflowControlAuthorityJson(message))
       .digest('hex');
-    if (this.#acceptedReceipts.get(message.eventId) === exact) return;
+    if (this.#acceptedControls.get(message.eventId) === exact) return;
     const outstanding = this.#outstanding;
     if (!outstanding || outstanding.receiptAccepted || !this.#controlBuildHash) {
       throw new WorkflowRunnerV2SessionError(
@@ -1096,10 +1096,10 @@ export class WorkflowRunnerV2Session<TPrepared, TWorkflow = WorkflowModule> {
       await this.#fatal(error);
       return;
     }
-    this.#acceptedReceipts.set(message.eventId, exact);
+    this.#acceptedControls.set(message.eventId, exact);
     // This only recognizes recent transport duplicates, never supplies a lease.
-    if (this.#acceptedReceipts.size > ACCEPTED_RECEIPT_HISTORY_LIMIT)
-      this.#acceptedReceipts.delete(this.#acceptedReceipts.keys().next().value!);
+    if (this.#acceptedControls.size > ACCEPTED_CONTROL_HISTORY_LIMIT)
+      this.#acceptedControls.delete(this.#acceptedControls.keys().next().value!);
     outstanding.receiptAccepted = true;
     this.#lastReceiptSequence = outstanding.message.sequence ?? 0;
     if (message.runRevision !== null) this.#requireLease().runRevision = message.runRevision;
@@ -1110,6 +1110,10 @@ export class WorkflowRunnerV2Session<TPrepared, TWorkflow = WorkflowModule> {
   }
 
   async #handleDecision(message: WorkflowControlAuthorityMessage): Promise<void> {
+    const exact = createHash('sha256')
+      .update(canonicalWorkflowControlAuthorityJson(message))
+      .digest('hex');
+    if (this.#acceptedControls.get(message.eventId) === exact) return;
     const outstanding = this.#outstanding;
     if (!outstanding?.receiptAccepted || !outstanding.expectedDecision) {
       throw new WorkflowRunnerV2SessionError(
@@ -1163,6 +1167,9 @@ export class WorkflowRunnerV2Session<TPrepared, TWorkflow = WorkflowModule> {
         ),
       );
     }
+    this.#acceptedControls.set(message.eventId, exact);
+    if (this.#acceptedControls.size > ACCEPTED_CONTROL_HISTORY_LIMIT)
+      this.#acceptedControls.delete(this.#acceptedControls.keys().next().value!);
     this.#outstanding = undefined;
     outstanding.resolveDecision?.(message);
   }
@@ -1539,7 +1546,7 @@ export class WorkflowRunnerV2Session<TPrepared, TWorkflow = WorkflowModule> {
     this.#resumeRequired = false;
     this.#workerSequence = 0;
     this.#lastReceiptSequence = 0;
-    this.#acceptedReceipts.clear();
+    this.#acceptedControls.clear();
     this.#queuedCancel = undefined;
     this.#terminal = false;
     this.#terminalReceiptAccepted = false;

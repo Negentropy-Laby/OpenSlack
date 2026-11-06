@@ -31,3 +31,5 @@ export async function admitProviderSend(
 ): Promise<void> {
   await hooks.get(port)?.(reservation, Object.freeze({ ...request }));
 }
+
+export { providerUsageRequestHash } from '../provider-usage-evidence.js';

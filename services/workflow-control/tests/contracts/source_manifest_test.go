@@ -719,7 +719,7 @@ func TestSourceManifestBindsOnlyUnreleasedGS9IInputs(t *testing.T) {
 		},
 		"workflowRunnerV2Session": {
 			Path:   "packages/workflows/src/workflow-runner-v2-session.ts",
-			SHA256: "54fdf169149d6b0c4262bf4fb12ed66fde93e524b83a115114cbfe77592b899b",
+			SHA256: "ca83ee2f1885af6e5d1caaaccb8ab3c34f198442ac60959578283599e6c517e8",
 		},
 		"workflowRecoveryEvidenceTests": {
 			Path:   "packages/workflows/src/__tests__/workflow-run-recovery-evidence.test.ts",

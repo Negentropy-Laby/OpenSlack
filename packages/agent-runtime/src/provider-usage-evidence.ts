@@ -99,6 +99,12 @@ export function buildProviderUsageIdentityHashes(
   });
 }
 
+/** Internal content digest shared with the host's pre-transport evidence. */
+export function providerUsageRequestHash(requestBytes: string): string {
+  if (typeof requestBytes !== 'string') throw new TypeError('Provider request bytes must be text.');
+  return hashDomainValue(REQUEST_DOMAIN, requestBytes);
+}
+
 export function buildProviderUsageReceipt(
   input: BuildProviderUsageReceiptInput,
 ): ProviderUsageReceipt {
@@ -130,7 +136,7 @@ export function buildProviderUsageReceipt(
     totalTokens:
       input.usage === null ? null : canonicalNonNegativeInt(input.usage.totalTokens, 'totalTokens'),
     outcome: input.outcome,
-    requestHash: hashDomainValue(REQUEST_DOMAIN, input.requestBytes),
+    requestHash: providerUsageRequestHash(input.requestBytes),
     outcomeHash: hashDomainValue(OUTCOME_DOMAIN, input.outcomeBytes),
   };
   const receipt: ProviderUsageReceipt = {

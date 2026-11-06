@@ -18,8 +18,10 @@ import {
   createWorkflowSendAdmissionPort,
   SEND_LIMITS,
   checkWorkflowSendCache,
+  workflowSendRequestEvidence,
   type SendCampaignBinding,
 } from '../internal/workflow-send-admission.js';
+import { buildProviderUsageReceipt } from '@openslack/agent-runtime';
 import { admitProviderSend } from '@openslack/agent-runtime/internal/provider-send-admission';
 import { canonicalWorkflowControlAuthorityJson as canonical } from '../workflow-control-authority-contract.js';
 import { createWorkflowRunnerDescriptorPathSecurity } from '../workflow-runner-descriptor-store.js';
@@ -40,8 +42,7 @@ it(
   'preserves an unconfirmed append lock and does not enter Go or repeat the transaction',
   async () => {
     const { port, go } = await fixture();
-    const original = (await vi.importActual<typeof fsPromises>('node:fs/promises'))
-      .open;
+    const original = (await vi.importActual<typeof fsPromises>('node:fs/promises')).open;
     let forced = false;
     vi.mocked(fsPromises.open).mockImplementation(async (...args) => {
       const handle = await original(...args);
@@ -92,7 +93,9 @@ function campaign(root: string): SendCampaignBinding {
     limits: SEND_LIMITS,
   };
 }
-async function fixture() {
+async function fixture(
+  proof: () => Promise<{ receiptHash: string; requestHash: string } | null> = async () => null,
+) {
   const root = testTemporaryDirectory('send-admission-');
   roots.push(root);
   const b = campaign(root);
@@ -122,7 +125,7 @@ async function fixture() {
       settledCalls: '0',
       settledTokens: '0',
     }),
-    readGoSettlement: async () => null,
+    readGoSettlement: proof,
     noOpenGoReservations: async () => true,
     isDefiniteGoRejection: () => false,
   });
@@ -178,7 +181,15 @@ async function seed(
       'facts',
       `${String(value.sequence).padStart(3, '0')}.${value.hash}.json`,
     );
-    await writeFile(path, canonical(value) + '\n', { flag: 'wx', mode: 0o600 });
+    try {
+      await writeFile(path, canonical(value) + '\n', { flag: 'wx', mode: 0o600 });
+    } catch (error) {
+      if (
+        (error as NodeJS.ErrnoException).code !== 'EEXIST' ||
+        (await readFile(path, 'utf8')) !== canonical(value) + '\n'
+      )
+        throw error;
+    }
     await security.harden(path, false);
   }
   await writeFile(
@@ -198,7 +209,13 @@ function settledFacts(id: string, purpose: string, tokens: number) {
         authorizedTokens: '8192',
       },
     },
-    { kind: 'admitted', id, requestHash: '5'.repeat(64), constraintHash: '6'.repeat(64) },
+    {
+      kind: 'admitted',
+      id,
+      requestHash: '5'.repeat(64),
+      providerRequestHash: 'a'.repeat(64),
+      constraintHash: '6'.repeat(64),
+    },
     { kind: 'response', id, receiptHash: '7'.repeat(64), totalTokens: String(tokens) },
     {
       kind: 'settled',
@@ -439,6 +456,122 @@ it(
         requestedTokens: '8192',
       }),
     ).rejects.toThrow('SEND_ADMISSION_FROZEN');
+  },
+  platformTestTimeout(5_000),
+);
+
+it(
+  'settles an observed response once against the exact provider request and Go receipt',
+  async () => {
+    const { root, b, digest, port, go } = await fixture(async () => ({
+      receiptHash: 'b'.repeat(64),
+      requestHash: 'c'.repeat(64),
+    }));
+    const reservation = await port.reserve({
+      providerId: b.providerId,
+      modelId: b.modelId,
+      providerRunId: 'RUN-PHYSICAL',
+      providerAttempt: '1',
+      requestedTokens: '8192',
+    });
+    const requestBytes = JSON.stringify({
+      messages: [{ role: 'user', content: 'fixture' }],
+      max_tokens: 8,
+    });
+    const prior = await readWorkflowSendCampaign(root, b.runId, digest);
+    // Fault fixture supplies already admitted evidence only. It grants no
+    // production total-token capability and never invokes a transport.
+    await seed(root, b, digest, [
+      ...prior.entries.map((e) => e.fact),
+      {
+        kind: 'admitted',
+        id: 'attempt-1',
+        ...workflowSendRequestEvidence(requestBytes),
+        constraintHash: 'a'.repeat(64),
+      },
+    ]);
+    const usage = buildProviderUsageReceipt({
+      providerId: b.providerId,
+      modelId: b.modelId,
+      runId: 'RUN-PHYSICAL',
+      attempt: 1,
+      status: 'reported',
+      usage: { inputTokens: 3, outputTokens: 5, totalTokens: 8 },
+      outcome: 'provider_response_accepted',
+      requestBytes,
+      outcomeBytes: 'fixture response',
+    });
+    await expect(port.settle(reservation, usage)).resolves.toBeUndefined();
+    await expect(port.settle(reservation, usage)).resolves.toBeUndefined();
+    expect(go.settle).toHaveBeenCalledTimes(1);
+    expect(
+      (await readWorkflowSendCampaign(root, b.runId, digest)).entries.at(-1)?.fact,
+    ).toMatchObject({
+      kind: 'settled',
+      totalTokens: 8,
+      goReceiptHash: 'b'.repeat(64),
+      goRequestHash: 'c'.repeat(64),
+    });
+  },
+  platformTestTimeout(5_000),
+);
+
+it.each(['unknown-go-response', 'missing-go-proof', 'unknown-usage', 'overage'] as const)(
+  'preserves %s settlement evidence without retrying Go or regaining allowance',
+  async (mode) => {
+    const { root, b, digest, port, go } = await fixture(async () =>
+      mode === 'missing-go-proof'
+        ? null
+        : { receiptHash: 'b'.repeat(64), requestHash: 'c'.repeat(64) },
+    );
+    const request = {
+      providerId: b.providerId,
+      modelId: b.modelId,
+      providerRunId: 'RUN-PHYSICAL',
+      providerAttempt: '1',
+      requestedTokens: '8192',
+    };
+    const reservation = await port.reserve(request);
+    const requestBytes = JSON.stringify({ max_tokens: 8 });
+    const prior = await readWorkflowSendCampaign(root, b.runId, digest);
+    await seed(root, b, digest, [
+      ...prior.entries.map((e) => e.fact),
+      {
+        kind: 'admitted',
+        id: 'attempt-1',
+        ...workflowSendRequestEvidence(requestBytes),
+        constraintHash: 'a'.repeat(64),
+      },
+    ]);
+    const tokens = mode === 'overage' ? 8193 : 8;
+    const usage = buildProviderUsageReceipt({
+      providerId: b.providerId,
+      modelId: b.modelId,
+      runId: 'RUN-PHYSICAL',
+      attempt: 1,
+      status: mode === 'unknown-usage' ? 'unreported' : 'reported',
+      usage:
+        mode === 'unknown-usage'
+          ? null
+          : { inputTokens: 3, outputTokens: tokens - 3, totalTokens: tokens },
+      outcome: 'provider_response_accepted',
+      requestBytes,
+      outcomeBytes: 'fixture response',
+    });
+    if (mode === 'unknown-go-response')
+      go.settle.mockRejectedValueOnce(new Error('fixture Go result unknown'));
+    if (mode === 'overage') await expect(port.settle(reservation, usage)).resolves.toBeUndefined();
+    else await expect(port.settle(reservation, usage)).rejects.toThrow();
+    const again = port.settle(reservation, usage);
+    if (mode === 'overage') await expect(again).resolves.toBeUndefined();
+    else await expect(again).rejects.toThrow();
+    expect(go.settle).toHaveBeenCalledTimes(1);
+    const observed = await readWorkflowSendCampaign(root, b.runId, digest);
+    expect(observed.entries.some((e) => e.fact.kind === 'response')).toBe(true);
+    if (mode === 'overage')
+      expect(observed.entries.at(-1)?.fact).toMatchObject({ kind: 'settled', totalTokens: 8193 });
+    await expect(port.reserve(request)).rejects.toThrow('SEND_ADMISSION_FROZEN');
+    expect(go.reserve).toHaveBeenCalledTimes(1);
   },
   platformTestTimeout(5_000),
 );

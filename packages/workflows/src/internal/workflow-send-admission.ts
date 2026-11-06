@@ -13,6 +13,7 @@ import {
 } from '@openslack/agent-runtime';
 import {
   bindProviderSendAdmission,
+  providerUsageRequestHash,
   type ProviderSendRequest,
 } from '@openslack/agent-runtime/internal/provider-send-admission';
 import { readWorkflowEvidenceText, assertWorkflowEvidencePath } from './workflow-evidence-file.js';
@@ -58,7 +59,13 @@ type Fact =
       replacementOf?: string;
     }
   | { kind: 'reserved'; id: string; reservation: ProviderAttemptReservation }
-  | { kind: 'admitted'; id: string; requestHash: string; constraintHash: string }
+  | {
+      kind: 'admitted';
+      id: string;
+      requestHash: string;
+      providerRequestHash: string;
+      constraintHash: string;
+    }
   | { kind: 'refused'; id: string; reason: 'total_token_unverified' }
   | { kind: 'response'; id: string; receiptHash: string; totalTokens: string | null }
   | {
@@ -279,7 +286,7 @@ function inspect(state: State): Map<string, Fact[]> {
     const fields: Record<Fact['kind'], string[]> = {
       slot: ['kind', 'id', 'purpose', 'providerRunId', 'providerAttempt'],
       reserved: ['kind', 'id', 'reservation'],
-      admitted: ['kind', 'id', 'requestHash', 'constraintHash'],
+      admitted: ['kind', 'id', 'requestHash', 'providerRequestHash', 'constraintHash'],
       refused: ['kind', 'id', 'reason'],
       response: ['kind', 'id', 'receiptHash', 'totalTokens'],
       settled: [
@@ -355,7 +362,12 @@ function inspect(state: State): Map<string, Fact[]> {
         if (last.kind !== 'reserved' || f.reason !== 'total_token_unverified')
           return deny('SEND_ADMISSION_INVALID');
       } else if (f.kind === 'admitted') {
-        if (last.kind !== 'reserved' || !HASH.test(f.requestHash) || !HASH.test(f.constraintHash))
+        if (
+          last.kind !== 'reserved' ||
+          !HASH.test(f.requestHash) ||
+          !HASH.test(f.providerRequestHash) ||
+          !HASH.test(f.constraintHash)
+        )
           return deny('SEND_ADMISSION_INVALID');
       } else if (f.kind === 'response') {
         if (
@@ -574,6 +586,17 @@ async function append(root: string, runId: string, expected: string, fact: Fact)
 /** No reviewed provider/model currently offers a verified <=8192 total-token cap.
  * Output-only max_tokens and caller-provided assertions never satisfy this check.
  * Adding a production contract requires a source-reviewed, provider-specific implementation. */
+/** Content-only evidence; this function never admits a send. */
+export function workflowSendRequestEvidence(requestBytes: string): {
+  requestHash: string;
+  providerRequestHash: string;
+} {
+  return {
+    requestHash: createHash('sha256').update(requestBytes).digest('hex'),
+    providerRequestHash: providerUsageRequestHash(requestBytes).slice('sha256:'.length),
+  };
+}
+
 function totalConstraint(
   _request: ProviderSendRequest,
   _reservation: ProviderAttemptReservation,
@@ -701,7 +724,7 @@ export async function createWorkflowSendAdmissionPort(input: {
           usage.providerHash !== identities.providerHash ||
           usage.modelHash !== identities.modelHash ||
           usage.runHash !== identities.runHash ||
-          usage.requestHash !== 'sha256:' + prior.requestHash
+          usage.requestHash !== 'sha256:' + prior.providerRequestHash
         )
           return deny('SEND_ADMISSION_INVALID');
         await append(input.root, input.runId, input.bindingHash, {
@@ -766,7 +789,7 @@ export async function createWorkflowSendAdmissionPort(input: {
     await append(input.root, input.runId, input.bindingHash, {
       kind: 'admitted',
       id: owned.get(reservation)!,
-      requestHash: createHash('sha256').update(request.requestBytes).digest('hex'),
+      ...workflowSendRequestEvidence(request.requestBytes),
       constraintHash: constraint.constraintHash,
     });
   });

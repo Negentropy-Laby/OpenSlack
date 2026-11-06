@@ -651,28 +651,27 @@ describe('WorkflowRunnerV2Session', () => {
     await value.session.receive(receipt(accept, 2, 2, 1));
     await turn();
     expect(value.session.state).toBe('waiting_control_decision');
-    await value.session.receive(
-      controlMessage({
-        kind: 'resume_offer',
-        workflowRunId: value.sealed.workflowRunId,
-        sequence: 3,
-        runRevision: 1,
-        resumeGeneration: 0,
-        authorityBackend: 'go',
-        authority: 'workflow-control',
-        correlationId: value.sealed.correlationId,
-        payload: {
-          checkpointId: 'checkpoint.v2.first-resume',
-          checkpointHash: HASH_B,
-          nextPhaseId: 'phase-1',
-          nextPhaseIndex: 0,
-          newResumeGeneration: 1,
-          newAttemptId: 'attempt.v2.resume.1',
-          authorityReceiptHash: HASH_C,
-          expiresAt: LATER,
-        },
-      }),
-    );
+    const decision = controlMessage({
+      kind: 'resume_offer',
+      workflowRunId: value.sealed.workflowRunId,
+      sequence: 3,
+      runRevision: 1,
+      resumeGeneration: 0,
+      authorityBackend: 'go',
+      authority: 'workflow-control',
+      correlationId: value.sealed.correlationId,
+      payload: {
+        checkpointId: 'checkpoint.v2.first-resume',
+        checkpointHash: HASH_B,
+        nextPhaseId: 'phase-1',
+        nextPhaseIndex: 0,
+        newResumeGeneration: 1,
+        newAttemptId: 'attempt.v2.resume.1',
+        authorityReceiptHash: HASH_C,
+        expiresAt: LATER,
+      },
+    });
+    await value.session.receive(decision);
     await offerTask;
     await turn();
     expect(value.counts()).toEqual({ prepared: 1, loaded: 1, executed: 1 });
@@ -683,6 +682,9 @@ describe('WorkflowRunnerV2Session', () => {
     expect(value.context()?.resumeGeneration).toBe(1);
     expect(activity).toContain('ack:event_receipt');
     expect(activity).toContain('ack:resume_offer');
+    await value.session.receive(decision);
+    expect(value.closed).toEqual([]);
+    expect(activity.filter((item) => item === 'ack:resume_offer')).toHaveLength(1);
   });
 
   it('hands the exact reserve source result to accepted and rejected budget decision ACKs', async () => {
