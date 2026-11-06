@@ -330,6 +330,16 @@ incomplete coverage. Unknown selectors reject before execution.
 Native unsupported-platform tests still exercise real refusal and zero target I/O.
 No production code, timeout, worker count, retry or skip policy is changed.
 
+The 05afcf34 standalone Linux run passed 9,314 cases with one failure and 25
+skips: the existing full Go-verifier matrix exceeded its unchanged 90-second
+limit. The preceding overlapping native/Linux run (9,297 passed, 18 failed,
+25 skipped) is also retained; that scheduling deviation does not establish the
+cause of every failure. The fake Docker fixture now uses equivalent Bash
+built-ins for argument concatenation and its owned-file read, removing repeated
+utility/subshell launches. Regression checks cover empty and quoted owner data,
+argument escaping and exact fake responses. The real verifier invocation, full
+positive/failure/skip-selector matrix and its 90-second budget remain unchanged.
+
 New candidate regression, full-suite, CI and package evidence belongs to its new
 commit. Earlier failures remain historical; real provider qualification, human
 Workflow Trust/approval and the actual 600-second window remain separate gates.
