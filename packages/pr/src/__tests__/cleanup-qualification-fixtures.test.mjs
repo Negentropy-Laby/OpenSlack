@@ -167,7 +167,7 @@ afterEach(async () => {
 describe('terminal merge bookkeeping', () => {
   let f;
   let batch;
-  // Build the real nine-PR disk fixture as setup, separately from the terminal
+  // Build the real nine-PR disk fixture as setup, separately from the lifecycle
   // transition being tested. Each case retains its own directory and state;
   // the merge operation, real persistence and five-second assertion budget stay.
   beforeEach(async () => {
@@ -200,6 +200,56 @@ describe('terminal merge bookkeeping', () => {
     assert.equal(load(batch).fork.concurrentObservation, true);
     assert.equal(f.state.mutations.filter((x) => x.args?.[1] === 'merge').length, 5);
     assert.equal(fs.existsSync(path.join(batch, 'mutation.lock')), true);
+  });
+
+  test('a declined later merge preserves earlier confirmed work for a later explicit continuation', async () => {
+    const original = f.dependencies.confirm;
+    let merges = 0;
+    f.dependencies.confirm = async (phrase, explanation) =>
+      /^MERGE/.test(phrase) && ++merges === 2 ? false : original(phrase, explanation);
+    await assert.rejects(
+      f.run('merge-targets', batch),
+      (error) => error.code === 'FIXTURE_CONFIRMATION_DECLINED',
+    );
+    assert.equal(load(batch).phase, 'MERGE_TARGETS_PARTIAL');
+    f.dependencies.confirm = original;
+    await f.run('merge-targets', batch);
+    assert.equal(load(batch).phase, 'MERGED_TARGETS');
+    assert.equal(f.state.mutations.filter((x) => x.args?.[1] === 'merge').length, 5);
+  });
+
+  describe('drift after confirmed fixture merges', () => {
+    // Establish the real merged precondition; keep its original five-second bound.
+    beforeEach(async () => {
+      await f.run('merge-targets', batch);
+    }, 5_000);
+
+    test('later drift refuses an invented approval snapshot before any mutation', async () => {
+      const count = f.state.mutations.length;
+      await assert.rejects(
+        f.run('advance-drift', batch, ['--permit-id', 'cleanup-drift-1', '--approved-sha', sha(999)]),
+        (error) => error.code === 'FIXTURE_APPROVED_SHA_MISMATCH',
+      );
+      assert.equal(f.state.mutations.length, count);
+    });
+    test('later human-authorised drift is forward-only and preserves its initial Permit snapshot separately', async () => {
+      const initial = load(batch).fixtures.find((x) => x.id === 'drift').publishedSha;
+      await f.run('advance-drift', batch, [
+        '--permit-id',
+        'cleanup-drift-1',
+        '--approved-sha',
+        initial,
+      ]);
+      const record = load(batch).fixtures.find((x) => x.id === 'drift');
+      assert.equal(record.publishedSha, initial);
+      assert.equal(record.drift.originalSnapshotSha, initial);
+      assert.notEqual(record.drift.observedSha, initial);
+      assert.equal(record.drift.permitReference, 'cleanup-drift-1');
+      assert.equal(f.state.mutations.filter((x) => x.method === 'PATCH').length, 1);
+      assert.equal(f.state.mutations.find((x) => x.method === 'PATCH').payload.force, false);
+      assert.equal(load(batch).permitIssued, false);
+      assert.equal(load(batch).qualificationRun, false);
+    });
   });
 });
 
@@ -894,61 +944,6 @@ test('an interrupted exclusive phase lock is preserved and blocks creation witho
   await assert.rejects(f.run('create', batch), (error) => error.code === 'EEXIST');
   assert.equal(fs.readFileSync(lock, 'utf8'), 'preserved interrupted owner');
   assert.equal(f.state.mutations.length, 0);
-});
-test('a declined later merge preserves earlier confirmed work for a later explicit continuation', async (t) => {
-  const f = fixture(t);
-  const batch = await f.plan();
-  await f.run('create', batch);
-  await f.run('close-case', batch);
-  const original = f.dependencies.confirm;
-  let merges = 0;
-  f.dependencies.confirm = async (phrase, explanation) =>
-    /^MERGE/.test(phrase) && ++merges === 2 ? false : original(phrase, explanation);
-  await assert.rejects(
-    f.run('merge-targets', batch),
-    (error) => error.code === 'FIXTURE_CONFIRMATION_DECLINED',
-  );
-  assert.equal(load(batch).phase, 'MERGE_TARGETS_PARTIAL');
-  f.dependencies.confirm = original;
-  await f.run('merge-targets', batch);
-  assert.equal(load(batch).phase, 'MERGED_TARGETS');
-  assert.equal(f.state.mutations.filter((x) => x.args?.[1] === 'merge').length, 5);
-});
-test('later drift refuses an invented approval snapshot before any mutation', async (t) => {
-  const f = fixture(t);
-  const batch = await f.plan();
-  await f.run('create', batch);
-  await f.run('close-case', batch);
-  await f.run('merge-targets', batch);
-  const count = f.state.mutations.length;
-  await assert.rejects(
-    f.run('advance-drift', batch, ['--permit-id', 'cleanup-drift-1', '--approved-sha', sha(999)]),
-    (error) => error.code === 'FIXTURE_APPROVED_SHA_MISMATCH',
-  );
-  assert.equal(f.state.mutations.length, count);
-});
-test('later human-authorised drift is forward-only and preserves its initial Permit snapshot separately', async (t) => {
-  const f = fixture(t);
-  const batch = await f.plan();
-  await f.run('create', batch);
-  await f.run('close-case', batch);
-  await f.run('merge-targets', batch);
-  const initial = load(batch).fixtures.find((x) => x.id === 'drift').publishedSha;
-  await f.run('advance-drift', batch, [
-    '--permit-id',
-    'cleanup-drift-1',
-    '--approved-sha',
-    initial,
-  ]);
-  const record = load(batch).fixtures.find((x) => x.id === 'drift');
-  assert.equal(record.publishedSha, initial);
-  assert.equal(record.drift.originalSnapshotSha, initial);
-  assert.notEqual(record.drift.observedSha, initial);
-  assert.equal(record.drift.permitReference, 'cleanup-drift-1');
-  assert.equal(f.state.mutations.filter((x) => x.method === 'PATCH').length, 1);
-  assert.equal(f.state.mutations.find((x) => x.method === 'PATCH').payload.force, false);
-  assert.equal(load(batch).permitIssued, false);
-  assert.equal(load(batch).qualificationRun, false);
 });
 test.each(['operator', 'repository', 'target'])(
   'fork registration revalidates %s after confirmation before recording evidence',

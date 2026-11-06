@@ -344,6 +344,16 @@ and corresponding Go expectation are refreshed together; the 233 binding keys,
 paths and authority scope stay unchanged. The stale-pin contract failure is
 retained separately from implementation and platform results.
 
+The 9d6ec457 complete Linux result (9,313 passed, three failed, 25 skipped)
+is retained. Its Go-verifier matrix passed in 61.3 seconds; three Cleanup merge
+and drift cases exceeded five seconds while also creating their nine-PR disk
+precondition. Those cases now reuse the existing terminal-fixture setup hook.
+Drift setup performs real confirmed merges with a five-second bound; the actual
+decline/continuation and drift assertions keep their original five-second cases.
+The existing setup limit, real persistence, isolated directories, mutation counts,
+snapshot checks and cancellation/drain cleanup remain. No campaign state is
+fabricated and no real qualification PR is created.
+
 New candidate regression, full-suite, CI and package evidence belongs to its new
 commit. Earlier failures remain historical; real provider qualification, human
 Workflow Trust/approval and the actual 600-second window remain separate gates.
