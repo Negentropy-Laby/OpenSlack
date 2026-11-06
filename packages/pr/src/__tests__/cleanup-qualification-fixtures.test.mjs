@@ -203,6 +203,46 @@ describe('terminal merge bookkeeping', () => {
     assert.equal(fs.existsSync(path.join(batch, 'mutation.lock')), true);
   });
 
+  test('normal fixture merge failure is not bypassed or re-tried', async () => {
+    f.state.mutationFailure = (args) => args[0] === 'pr' && args[1] === 'merge';
+    await assert.rejects(
+      f.run('merge-targets', batch),
+      (error) => error.code === 'FIXTURE_GH_FAILED',
+    );
+    assert.equal(load(batch).phase, 'FAILED_RECONCILE_REQUIRED');
+    assert.equal(f.state.mutations.filter((x) => x.args?.[1] === 'merge').length, 1);
+    assert.equal(f.state.refs.size, 10);
+  });
+  test('a changed repository setting during human merge confirmation blocks the normal merge call', async () => {
+    const confirm = f.dependencies.confirm;
+    f.dependencies.confirm = async (phrase, explanation) => {
+      const decision = await confirm(phrase, explanation);
+      if (/^MERGE/.test(phrase)) f.state.repository.delete_branch_on_merge = true;
+      return decision;
+    };
+    await assert.rejects(
+      f.run('merge-targets', batch),
+      (error) => error.code === 'FIXTURE_AUTO_DELETION_ENABLED',
+    );
+    assert.equal(f.state.mutations.filter((x) => x.args?.[1] === 'merge').length, 0);
+  });
+  test('a missing source ref after an observed merge stops later merges and preserves the partial actual PR state', async () => {
+    const original = f.dependencies.runCommand;
+    f.dependencies.runCommand = async (args, input) => {
+      const result = await original(args, input);
+      if (args[0] === 'pr' && args[1] === 'merge')
+        f.state.refs.delete(f.state.prs.get(Number(args[2])).head.ref);
+      return result;
+    };
+    await assert.rejects(
+      f.run('merge-targets', batch),
+      (error) => error.code === 'FIXTURE_GH_FAILED',
+    );
+    assert.equal(f.state.mutations.filter((x) => x.args?.[1] === 'merge').length, 1);
+    assert.equal(load(batch).phase, 'FAILED_RECONCILE_REQUIRED');
+    assert.equal(load(batch).fixtures.find((x) => x.id === 'success').pr.merged, true);
+  });
+
   test('a declined later merge preserves earlier confirmed work for a later explicit continuation', async () => {
     const original = f.dependencies.confirm;
     let merges = 0;
@@ -917,57 +957,6 @@ describe('close and merge transitions', () => {
       false,
     );
   });
-});
-test('normal fixture merge failure is not bypassed or re-tried', async (t) => {
-  const f = fixture(t);
-  const batch = await f.plan();
-  await f.run('create', batch);
-  await f.run('close-case', batch);
-  f.state.mutationFailure = (args) => args[0] === 'pr' && args[1] === 'merge';
-  await assert.rejects(
-    f.run('merge-targets', batch),
-    (error) => error.code === 'FIXTURE_GH_FAILED',
-  );
-  assert.equal(load(batch).phase, 'FAILED_RECONCILE_REQUIRED');
-  assert.equal(f.state.mutations.filter((x) => x.args?.[1] === 'merge').length, 1);
-  assert.equal(f.state.refs.size, 10);
-});
-test('a changed repository setting during human merge confirmation blocks the normal merge call', async (t) => {
-  const f = fixture(t);
-  const batch = await f.plan();
-  await f.run('create', batch);
-  await f.run('close-case', batch);
-  const confirm = f.dependencies.confirm;
-  f.dependencies.confirm = async (phrase, explanation) => {
-    const decision = await confirm(phrase, explanation);
-    if (/^MERGE/.test(phrase)) f.state.repository.delete_branch_on_merge = true;
-    return decision;
-  };
-  await assert.rejects(
-    f.run('merge-targets', batch),
-    (error) => error.code === 'FIXTURE_AUTO_DELETION_ENABLED',
-  );
-  assert.equal(f.state.mutations.filter((x) => x.args?.[1] === 'merge').length, 0);
-});
-test('a missing source ref after an observed merge stops later merges and preserves the partial actual PR state', async (t) => {
-  const f = fixture(t);
-  const batch = await f.plan();
-  await f.run('create', batch);
-  await f.run('close-case', batch);
-  const original = f.dependencies.runCommand;
-  f.dependencies.runCommand = async (args, input) => {
-    const result = await original(args, input);
-    if (args[0] === 'pr' && args[1] === 'merge')
-      f.state.refs.delete(f.state.prs.get(Number(args[2])).head.ref);
-    return result;
-  };
-  await assert.rejects(
-    f.run('merge-targets', batch),
-    (error) => error.code === 'FIXTURE_GH_FAILED',
-  );
-  assert.equal(f.state.mutations.filter((x) => x.args?.[1] === 'merge').length, 1);
-  assert.equal(load(batch).phase, 'FAILED_RECONCILE_REQUIRED');
-  assert.equal(load(batch).fixtures.find((x) => x.id === 'success').pr.merged, true);
 });
 test('an interrupted exclusive phase lock is preserved and blocks creation without deleting or publishing refs', async (t) => {
   const f = fixture(t);

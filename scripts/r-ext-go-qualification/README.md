@@ -367,6 +367,14 @@ all historical failures. The observer test keeps the full eight-commit sequence
 and moves its already-independent failed store/port into a separate case; both
 retain their existing platform deadlines and all prior assertions.
 
+The 23808383 full result (9,317 passed, one failed, 25 skipped) remains
+historical FAIL. Its only failure was another merge-refusal case combining
+creation/close setup with its five-second behavior check. All remaining merge
+cases that start from a closed fixture now use the same existing bounded setup
+hook, including repository-setting drift and missing-ref refusal. Their original
+assertions and five-second behavior limits remain; actual creation itself stays
+in the creation tests. No setup state is shared across cases or fabricated.
+
 New candidate regression, full-suite, CI and package evidence belongs to its new
 commit. Earlier failures remain historical; real provider qualification, human
 Workflow Trust/approval and the actual 600-second window remain separate gates.
