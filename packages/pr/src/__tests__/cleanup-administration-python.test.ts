@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it } from 'vitest';
 import {
   createTestProcessResolver,
   testProcessEnvironment,
@@ -22,6 +22,17 @@ const entries = [
 
 let resolver: ReturnType<typeof createTestProcessResolver> | undefined;
 let preferredCommand: string | undefined;
+
+const linuxFixtureGroups = [
+  'AdministrationBehaviorTests',
+  'ProcessObservationTests',
+  'BackupFixtureTests',
+  'SafetyFixtureTests',
+  'IsolationFixtureTests',
+  'InstanceFixtureTests',
+  'MoreBoundaryTests',
+] as const;
+const linuxGroupReports = new Map<string, { inventory: string[]; executed: string[] }>();
 
 function python() {
   resolver ??= createTestProcessResolver(testProcessEnvironment(), repositoryRoot);
@@ -67,19 +78,28 @@ function run(args: string[]) {
   });
 }
 
-function expectPythonReport(stdout: string, portableOnly: boolean, selection = portableOnly ? 'portable' : 'all'): void {
+function expectPythonReport(stdout: string, portableOnly: boolean, selection = portableOnly ? 'portable' : 'all', group?: string) {
   const report = JSON.parse(stdout.trim().split(/\r?\n/).at(-1)!);
   expect(report.schema).toBe('openslack.cleanup_python_test_run.v1');
   expect(report.portableOnly).toBe(portableOnly);
   expect(report.selection).toBe(selection);
   expect(Object.keys(report.portability).sort()).toEqual(['linux', 'portable']);
   expect(report.portability.linux + report.portability.portable).toBe(report.discovered);
-  expect(report.selected).toBe(selection === 'all' ? report.discovered : report.portability[selection]);
+  const inventory: string[] = selection === 'all'
+    ? [...report.inventory.portable, ...report.inventory.linux]
+    : report.inventory[selection];
+  expect(report.inventory.portable).toHaveLength(report.portability.portable);
+  expect(report.inventory.linux).toHaveLength(report.portability.linux);
+  const selected = group ? inventory.filter(id => id.split('.').at(-2) === group) : inventory;
+  expect(report.selected).toBe(selected.length);
   expect(report.selected).toBeGreaterThan(0);
   expect(report.discovered).toBeGreaterThanOrEqual(report.selected);
   expect(report.executed).toBe(report.selected);
   expect(report.failures + report.errors + report.skipped).toBe(0);
   expect(report.successful).toBe(true);
+  expect(new Set(report.executedTestIds).size).toBe(report.executed);
+  expect([...report.executedTestIds].sort()).toEqual([...selected].sort());
+  return report;
 }
 
 // Load host pathlib before simulating another platform: Python 3.14 imports
@@ -96,6 +116,21 @@ const unsupportedPlatformAudit = [
 ].join('\n');
 
 describe('cleanup administrator Python tools', () => {
+  afterAll(() => {
+    if (process.platform !== 'linux' || linuxGroupReports.size === 0) return;
+    const reports = [...linuxGroupReports.values()];
+    const inventory = reports[0]!.inventory;
+    for (const report of reports) expect(report.inventory).toEqual(inventory);
+    const executed = reports.flatMap(report => report.executed);
+    expect(new Set(executed).size).toBe(executed.length);
+    const selected = inventory.filter(id => linuxGroupReports.has(id.split('.').at(-2)!));
+    expect([...executed].sort()).toEqual([...selected].sort());
+    const complete = linuxGroupReports.size === linuxFixtureGroups.length;
+    if (complete) expect([...executed].sort()).toEqual([...inventory].sort());
+    console.info(JSON.stringify({ scope: 'cleanup Linux Python fixture coverage', complete,
+      discovered: inventory.length, executed: executed.length, groups: [...linuxGroupReports.keys()],
+      executedTestIds: executed }));
+  });
   it('keeps generated Python and TS contracts synchronized on every platform without regeneration', () => {
     const result = run([
       join(repositoryRoot, 'scripts/cleanup-broker/generate-administration-contract.py'),
@@ -165,16 +200,40 @@ describe('cleanup administrator Python tools', () => {
     expect(result.stderr).toContain('OK');
   });
 
-  it('runs real Linux owned-FD fixtures, or native zero-IO refusal outside Linux', () => {
+  it('rejects an unknown Python selector before executing a known selected test', () => {
+    const result = run([
+      join(tools, 'administration_test.py'),
+      '--portable',
+      'PortableLogicTests.test_strict_json_duplicate_escaped_keys_and_non_json_numbers',
+      'MissingFixtureTests',
+    ]);
+    expect(result.error).toBeUndefined();
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('TEST_SELECTION_UNKNOWN');
+    expect(result.stdout).toBe('');
+  });
+
+  // Each Python class is an independent fixture boundary under the unchanged
+  // per-test timeout. The hook above requires the full discovered Linux union,
+  // so a new class, omitted group or duplicate execution cannot silently pass.
+  it.each(linuxFixtureGroups)('runs real owned-FD group %s, or native refusal outside Linux', (group) => {
     if (process.platform === 'linux') {
-      // Portable cases ran in their own invocation above. Run the disjoint
-      // Linux group, preserving the full discovered union without duplicates.
-      const result = run([join(tools, 'administration_test.py'), '--linux-only']);
+      const result = run([join(tools, 'administration_test.py'), '--linux-only', group]);
       expect(result.error).toBeUndefined();
       expect(result.status, result.stderr).toBe(0);
-      expectPythonReport(result.stdout, false, 'linux');
+      const report = expectPythonReport(result.stdout, false, 'linux', group);
+      expect([...new Set<string>(report.inventory.linux.map((id: string) => id.split('.').at(-2)!))].sort())
+        .toEqual([...linuxFixtureGroups].sort());
+      expect(linuxGroupReports.has(group)).toBe(false);
+      linuxGroupReports.set(group, { inventory: report.inventory.linux, executed: report.executedTestIds });
       expect(result.stderr).toContain('OK');
     } else {
+      const result = run([join(tools, 'administration_test.py'), '--linux-only', group]);
+      expect(result.error).toBeUndefined();
+      expect(result.status).toBe(1);
+      expect(result.stdout).toBe('');
+      expect(result.stderr).toContain('TEST_LINUX_REQUIRED');
+      if (group !== linuxFixtureGroups[0]) return;
       const owned = mkdtempSync(join(tmpdir(), 'cleanup-python-native-'));
       try {
         for (const entry of entries) {

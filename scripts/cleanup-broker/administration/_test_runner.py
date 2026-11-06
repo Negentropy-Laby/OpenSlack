@@ -12,6 +12,16 @@ class LinuxTests(unittest.TestCase):
     cleanup_portability = 'linux'
 
 
+class RecordedResult(unittest.TextTestResult):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.executed_test_ids = []
+
+    def startTest(self, test):
+        self.executed_test_ids.append(test.id())
+        super().startTest(test)
+
+
 def flatten(suite):
     for item in suite:
         if isinstance(item, unittest.TestSuite):
@@ -40,15 +50,20 @@ def run(module):
     selected = [test for test in discovered if selection == 'all' or test.cleanup_portability == selection]
     if len(sys.argv) > 1:
         requested = set(sys.argv[1:])
-        selected = [test for test in selected if any(test.id().endswith(name) for name in requested)]
-        if not selected:
-            raise SystemExit('TEST_SELECTION_EMPTY')
+        def matches(test, name):
+            return type(test).__name__ == name or test.id().endswith(name)
+        if any(not any(matches(test, name) for test in selected) for name in requested):
+            raise SystemExit('TEST_SELECTION_UNKNOWN')
+        selected = [test for test in selected if any(matches(test, name) for name in requested)]
     if not selected:
         raise SystemExit('TEST_SELECTION_EMPTY')
-    result = unittest.TextTestRunner(verbosity=2).run(unittest.TestSuite(selected))
+    result = unittest.TextTestRunner(verbosity=2, resultclass=RecordedResult).run(unittest.TestSuite(selected))
     print(json.dumps(dict(schema='openslack.cleanup_python_test_run.v1', discovered=len(discovered),
         selected=len(selected), executed=result.testsRun, portableOnly=portable,
         selection=selection, portability=portability,
+        inventory={kind: [test.id() for test in discovered if test.cleanup_portability == kind]
+                   for kind in ('portable', 'linux')},
+        executedTestIds=result.executed_test_ids,
         failures=len(result.failures), errors=len(result.errors), skipped=len(result.skipped),
         successful=result.wasSuccessful()), sort_keys=True))
     raise SystemExit(0 if result.wasSuccessful() and result.testsRun == len(selected) and not result.skipped else 1)

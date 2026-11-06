@@ -302,3 +302,29 @@ Go-only container profile. No test skips or required-check changes replace it.
 The 438854bd container failure exposed the former dependency mismatch and is
 retained. Its full local Linux cohort also recorded three unchanged-suite
 timeouts; separate hosted results and diagnostic runs do not erase those failures.
+
+## Remaining local validation follow-up (2026-11-06)
+
+The 303e2305 local full result (9,271 passed, two failed, 25 skipped) remains a
+failed historical run. Its missing timing observations cannot be reconstructed.
+A new real-pipe regression reproduces the missing-stall assertion when real
+final diagnostic persistence spends the original cleanup allowance. Cancellation
+fixtures now begin the actual public close operation before synchronously
+stalling the parent; they do not depend on a 50ms timer running first. The 600ms
+return assertion samples the captured return boundary, excluding later witness
+reads and assertion work. Real process exit, the original 100ms cleanup budget,
+the independent 500ms close observation and zero-effect assertions remain.
+
+The Linux administrator wrapper previously placed 41 independent Python tests,
+including real file and directory synchronization, inside one default five-second
+Vitest case. It now runs the seven existing fixture classes as separate cases,
+each under that same default limit. The existing Python runner records test IDs
+at the actual execution callback. Discovery, exact class selection, duplicate-free
+execution and the full 41-case union are checked; partial name-filtered diagnostics
+explicitly report incomplete coverage. Unknown selectors reject before execution.
+Native unsupported-platform tests still exercise real refusal and zero target I/O.
+No production code, timeout, worker count, retry or skip policy is changed.
+
+New candidate regression, full-suite, CI and package evidence belongs to its new
+commit. Earlier failures remain historical; real provider qualification, human
+Workflow Trust/approval and the actual 600-second window remain separate gates.

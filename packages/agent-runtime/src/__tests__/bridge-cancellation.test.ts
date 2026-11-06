@@ -174,7 +174,6 @@ async function exerciseSendCancellation(
     const reason = kind === 'deadline' ? new DOMException('Controlled deadline', 'TimeoutError') : new Error('Controlled cancellation');
     if (kind === 'deadline') vi.spyOn(AbortSignal, 'timeout').mockReturnValue(controller.signal);
     let abortedAt: number | undefined, abortedWallTime: number | undefined;
-    let stallTimer: ReturnType<typeof setTimeout> | undefined;
     let stallStartedAt: number | undefined, stallEndedAt: number | undefined;
     let stallOutcome: ReturnType<typeof Atomics.wait> | undefined;
     const args = ['--input-type=module', '-e', child];
@@ -184,13 +183,20 @@ async function exerciseSendCancellation(
         await super.sendEnvelope(sessionId, envelope);
         if (envelope.kind === boundary) {
           abortedAt = performance.now(); abortedWallTime = Date.now();
-          if (stallParent) stallTimer = setTimeout(() => {
-            stallStartedAt = performance.now();
-            stallOutcome = Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 120);
-            stallEndedAt = performance.now();
-          }, 50);
           controller.abort(reason);
         }
+      }
+      override closeSession(sessionId: string) {
+        const closing = super.closeSession(sessionId);
+        // The real close has begun with its original absolute cutoff. A
+        // delayed recorder must not let execute return before a test timer
+        // intended to stall that close has even run.
+        if (stallParent && stallOutcome === undefined) {
+          stallStartedAt = performance.now();
+          stallOutcome = Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 120);
+          stallEndedAt = performance.now();
+        }
+        return closing;
       }
     }
     const adapter = new PublicSendBoundary({ command: process.execPath, args,
@@ -256,7 +262,6 @@ async function exerciseSendCancellation(
         toolEvents: 0, completedEvents: 0 }));
     } catch (error) { assertionFailure = error; throw error; }
     finally {
-      if (stallTimer) clearTimeout(stallTimer);
       try { await observation.release(); }
       catch (error) { throw new AggregateError([...(assertionFailure ? [assertionFailure] : []), error], 'Cancellation fixture process shutdown remains unconfirmed'); }
     }
@@ -350,12 +355,25 @@ describe('real Bridge pipe backpressure cancellation', () => {
     ['readable-large-after-send', false, 700 * 1024, true],
     ['paused-large-during-send', true, 700 * 1024, false],
     ['paused-large-parent-stall', true, 700 * 1024, false, true],
-  ] as const)('settles a real pending write before the original cleanup cutoff: %s', async (_name, paused, promptBytes, afterSend, stallParent: boolean = false) => {
+    ['paused-large-parent-stall-after-slow-diagnostic', true, 700 * 1024, false, true, true],
+  ] as const)('settles real-pipe cancellation without renewing its cleanup deadline: %s', async (_name, paused, promptBytes, afterSend, stallParent: boolean = false, slowFinalDiagnostic: boolean = false) => {
     const root = mkdtempSync(join(tmpdir(), 'bridge-real-backpressure-'));
     roots.push(root);
     const witness = join(root, 'child-witness.json');
     const store = createRunStore(root);
     const recorder = createRunRecorder(store, root);
+    let diagnosticStall: ReturnType<typeof Atomics.wait> | undefined;
+    const progressSpans: { step: string; durationMs: number }[] = [];
+    const progress = recorder.progress.bind(recorder);
+    vi.spyOn(recorder, 'progress').mockImplementation((id, data) => {
+      const startedAt = performance.now();
+      try {
+        if (slowFinalDiagnostic && data.step === 'bridge_session_failed') {
+          diagnosticStall = Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 120);
+        }
+        return progress(id, data);
+      } finally { progressSpans.push({ step: typeof data.step === 'string' ? data.step : 'unrecognized', durationMs: performance.now() - startedAt }); }
+    });
     const runId = 'RUN-REAL-BACKPRESSURE';
     const resolvedConfig = { agentId: 'fixture', source: 'unit-test', tools: ['Read'] };
     const permissionProfile = buildPermissionProfile(resolvedConfig);
@@ -366,10 +384,11 @@ describe('real Bridge pipe backpressure cancellation', () => {
     const reason = new Error('Real pipe caller cancellation');
     let abortedAt: number | undefined, sendBytes: number | undefined;
     let sendSettled = false, abortedWithWritePending: boolean | undefined;
-    let stallTimer: ReturnType<typeof setTimeout> | undefined, stallOutcome: ReturnType<typeof Atomics.wait> | undefined;
+    let stallOutcome: ReturnType<typeof Atomics.wait> | undefined;
+    let stallStartedAt: number | undefined, stallEndedAt: number | undefined;
+    let closeEnteredAt: number | undefined;
     const abort = () => {
       abortedAt = performance.now(); abortedWithWritePending = !sendSettled;
-      if (stallParent) stallTimer = setTimeout(() => { stallOutcome = Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 120); }, 50);
       controller.abort(reason);
     };
     class PublicSendObserver extends BridgeProcessAdapter {
@@ -380,6 +399,18 @@ describe('real Bridge pipe backpressure cancellation', () => {
         try { await super.sendEnvelope(sessionId, envelope); }
         finally { sendSettled = true; }
         if (afterSend) setTimeout(abort, 20);
+      }
+      override closeSession(sessionId: string) {
+        closeEnteredAt = performance.now();
+        const closing = super.closeSession(sessionId);
+        // Exercise a stall inside actual cleanup, after its deadline was set,
+        // including when final diagnostic persistence already spent the budget.
+        if (stallParent && stallOutcome === undefined) {
+          stallStartedAt = performance.now();
+          stallOutcome = Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 120);
+          stallEndedAt = performance.now();
+        }
+        return closing;
       }
     }
     const args = ['--input-type=module', '-e', pausedReaderChild, witness, paused ? 'paused' : 'readable'];
@@ -395,17 +426,25 @@ describe('real Bridge pipe backpressure cancellation', () => {
       const returnedAt = performance.now(), receiptAtReturn = adapter.processExitReceipt;
       const observedAtReturn = observation.snapshot();
       const shutdownAtReturn = structuredClone(error.shutdownEvidence);
+      console.info(JSON.stringify({ scope: 'real Bridge return boundary', scenario: _name,
+        abortedAt, returnedAt, elapsedMs: returnedAt - abortedAt!, closeEnteredAt,
+        progressSpans, receiptAtReturn, observedAtReturn }));
       expect(sendBytes).toBeLessThanOrEqual(1024 * 1024);
       expect(abortedAt).toBeDefined();
       if (paused && promptBytes > 32) expect(abortedWithWritePending).toBe(true);
       expect(JSON.parse(readFileSync(witness, 'utf8'))).toMatchObject(paused
         ? { paused: true, flowing: false, dataListeners: 0 } : { paused: false, flowing: true });
-      expect(performance.now() - abortedAt!).toBeLessThan(600);
+      expect(returnedAt - abortedAt!).toBeLessThan(600);
       expect(error).toMatchObject({ kind: 'session_unavailable', cause: reason });
       expect(error.cause).toBe(reason);
       expect(observedAtReturn.matches).toBe(1);
       expect(observedAtReturn.failure).toBeUndefined();
-      if (stallParent) { expect(stallOutcome).toBe('timed-out'); expect(receiptAtReturn).toBeNull(); }
+      if (slowFinalDiagnostic) expect(diagnosticStall).toBe('timed-out');
+      if (stallParent) {
+        expect(stallOutcome).toBe('timed-out');
+        expect(stallEndedAt! - stallStartedAt!).toBeGreaterThanOrEqual(100);
+        expect(receiptAtReturn).toBeNull();
+      }
       if (receiptAtReturn) {
         expect(observedAtReturn.close).toBeDefined();
         expect(observedAtReturn.exit).toBeDefined();
@@ -432,9 +471,12 @@ describe('real Bridge pipe backpressure cancellation', () => {
       expect(transcript.filter(event => ['tool_call', 'tool_result', 'complete'].includes(event.type))).toEqual([]);
       expect(transcript.some(event => event.type === 'progress' && event.data.step === 'bridge_session_completed')).toBe(false);
       expect(store.getRun(runId)?.toolCalls).toBe(0);
+      if (stallParent) console.info(JSON.stringify({ scope: 'real Bridge backpressure cancellation',
+        scenario: _name, abortedAt, returnedAt, stallStartedAt, stallEndedAt,
+        diagnosticStall, receiptAtReturn, actualExit: observation.snapshot().exit,
+        actualClose: closed, shutdownAtReturn, toolEvents: 0, completedEvents: 0 }));
     } catch (error) { assertionFailure = error; throw error; }
     finally {
-      if (stallTimer) clearTimeout(stallTimer);
       try { await observation.release(); }
       catch (error) { throw new AggregateError([...(assertionFailure ? [assertionFailure] : []), error], 'Backpressure fixture process shutdown remains unconfirmed'); }
     }
