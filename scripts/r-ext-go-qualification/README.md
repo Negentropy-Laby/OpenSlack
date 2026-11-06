@@ -339,6 +339,10 @@ built-ins for argument concatenation and its owned-file read, removing repeated
 utility/subshell launches. Regression checks cover empty and quoted owner data,
 argument escaping and exact fake responses. The real verifier invocation, full
 positive/failure/skip-selector matrix and its 90-second budget remain unchanged.
+The verifier regression is already a reviewed source input. Its existing digest
+and corresponding Go expectation are refreshed together; the 233 binding keys,
+paths and authority scope stay unchanged. The stale-pin contract failure is
+retained separately from implementation and platform results.
 
 New candidate regression, full-suite, CI and package evidence belongs to its new
 commit. Earlier failures remain historical; real provider qualification, human

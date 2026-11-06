@@ -735,7 +735,7 @@ func TestSourceManifestBindsOnlyUnreleasedGS9IInputs(t *testing.T) {
 		},
 		"goCheckVerifierRegression": {
 			Path:   "packages/workspace/src/__tests__/go-check-script.test.ts",
-			SHA256: "cd99b6474ba9c414879e11a91824731a958ff5237da0ddefd18578192b1b4aa1",
+			SHA256: "5e109d086e0b8629085a4158037b4bfd7b07193571033c7110894841a4dc04be",
 		},
 		"workflowEvidenceFileSource": {
 			Path:   "packages/workflows/src/internal/workflow-evidence-file.ts",
