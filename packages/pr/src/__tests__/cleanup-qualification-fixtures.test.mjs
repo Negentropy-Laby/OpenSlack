@@ -20,6 +20,7 @@ import {
 } from '../internal/cleanup-qualification-fixtures.mjs';
 
 const NOW = '2026-10-11T12:34:56.000Z';
+const FAKE_GH_REQUESTS_PER_YIELD = 8;
 const API = `repos/${BINDINGS.repository}`;
 test('pins the current public campaign independently of derived fixtures', () => {
   assert.equal(BINDINGS.repository, 'Negentropy-Laby/openslack-cleanup-qualification-public');
@@ -363,6 +364,7 @@ function fixture(t, changes = {}) {
     return task;
   };
   let counter = 10;
+  let fakeRequests = 0;
   const state = {
     calls: [],
     mutations: [],
@@ -399,11 +401,10 @@ function fixture(t, changes = {}) {
       return !state.denied;
     },
     runCommand: async (args, input) => {
-      // Deliver the fake process result on an I/O turn. A fully synchronous
-      // promise chain of real fsync calls otherwise starves Vitest's reporter
-      // RPC and cancellation timers during a complete fixture lifecycle.
+      // Keep cooperative I/O turns without scheduling one for every synthetic
+      // response. Real persistence remains synchronous; this is no latency SLA.
       active();
-      await setImmediate();
+      if (fakeRequests++ % FAKE_GH_REQUESTS_PER_YIELD === 0) await setImmediate();
       active();
       state.calls.push({ args, input });
       const API = `repos/${state.apiRepository}`;
@@ -549,6 +550,38 @@ test('fixture cancellation drains a yielded command before directory cleanup or 
   assert.equal(fs.existsSync(f.root), false);
   assert.deepEqual(f.state.calls, []);
   assert.deepEqual(f.state.mutations, []);
+});
+
+test('fixture transport yields in bounded batches and drains cancellation at the ninth request', async () => {
+  const f = fixture();
+  const original = f.dependencies.runCommand;
+  const deferred = [];
+  let started;
+  const inFlight = new Promise((resolve) => { started = resolve; });
+  f.dependencies.runCommand = (...args) => {
+    const before = f.state.calls.length;
+    const result = original(...args);
+    deferred.push(f.state.calls.length === before);
+    if (deferred.length === 9) started();
+    return result;
+  };
+  const operation = f.plan().then((batch) => f.run('create', batch));
+  const refusal = assert.rejects(operation, { code: 'FIXTURE_TEST_CANCELLED' });
+  await inFlight;
+  assert.equal(f.state.calls.length, 8);
+  const calls = JSON.stringify(f.state.calls);
+  const mutations = JSON.stringify(f.state.mutations);
+  await f.stop();
+  await refusal;
+  assert.equal(JSON.stringify(f.state.calls), calls);
+  assert.equal(JSON.stringify(f.state.mutations), mutations);
+  fs.rmSync(f.root, { recursive: true, force: true });
+  await setImmediate();
+  await assert.rejects(f.plan(), { code: 'FIXTURE_TEST_CANCELLED' });
+  assert.equal(fs.existsSync(f.root), false);
+  assert.equal(JSON.stringify(f.state.calls), calls);
+  assert.equal(JSON.stringify(f.state.mutations), mutations);
+  assert.deepEqual(deferred.slice(0, 9), [true, false, false, false, false, false, false, false, true]);
 });
 
 async function createdFixture() {

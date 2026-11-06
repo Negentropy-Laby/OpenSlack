@@ -354,6 +354,19 @@ The existing setup limit, real persistence, isolated directories, mutation count
 snapshot checks and cancellation/drain cleanup remain. No campaign state is
 fabricated and no real qualification PR is created.
 
+The 7ea68e49 full result (9,311 passed, five failed, 25 skipped) is also
+retained: four other Cleanup cases and the combined observation-inventory /
+failed-write case exceeded five seconds. The Cleanup fake transport now yields
+on its first request and every eight requests rather than on every synthetic
+response. Each request retains both cancellation checks and real persistence;
+the original first-request cancellation case remains. A ninth-request regression
+checks the actual yield cadence, cancellation cause, drain, preserved prefix and
+absence of late calls or replay after directory cleanup. This is fixture
+scheduling, not a production RPC latency guarantee or a reconstructed cause for
+all historical failures. The observer test keeps the full eight-commit sequence
+and moves its already-independent failed store/port into a separate case; both
+retain their existing platform deadlines and all prior assertions.
+
 New candidate regression, full-suite, CI and package evidence belongs to its new
 commit. Earlier failures remain historical; real provider qualification, human
 Workflow Trust/approval and the actual 600-second window remain separate gates.
