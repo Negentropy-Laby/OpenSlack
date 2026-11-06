@@ -66,6 +66,10 @@ import { isWorkflowControlBearerToken } from './workflow-control-routing-identit
 import { resolveWorkflowRunProjectionRoot } from './workflow-run-projection.js';
 import { assertWorkflowRunPathId } from './workflow-run-read-errors.js';
 import { createWorkflowRunnerAuthorityBindingClient } from './workflow-runner-authority-binding-client.js';
+import {
+  recoveryConflict,
+  type WorkflowRunRecoveryEvidencePort,
+} from './workflow-run-recovery-evidence.js';
 import type {} from './workflow-runner-authority-binding-contract.js';
 import { WorkflowRunnerAuthorityBindingJournal } from './workflow-runner-authority-binding-journal.js';
 import { WorkflowRunnerAuthorityBindingRuntime } from './workflow-runner-authority-binding-runtime.js';
@@ -1163,12 +1167,15 @@ function createWorkflowRunnerV2DefaultAuthoritySourceFactories(
 class WorkflowRunnerV2CheckpointRunStore extends WorkflowRunnerV2GoProjectionRunStore {
   readonly #context: WorkflowRunnerV2ExecutionContext;
   readonly #descriptor: WorkflowRunnerV2ExecutionDescriptor;
+  readonly #runAuthority: WorkflowControlAuthorityPort;
+  readonly #recovery?: WorkflowRunRecoveryEvidencePort;
 
   constructor(
     baseDir: string,
     context: WorkflowRunnerV2ExecutionContext,
     descriptor: WorkflowRunnerV2ExecutionDescriptor,
     runAuthority: WorkflowControlAuthorityPort,
+    recovery?: WorkflowRunRecoveryEvidencePort,
   ) {
     super({
       baseDir,
@@ -1177,6 +1184,8 @@ class WorkflowRunnerV2CheckpointRunStore extends WorkflowRunnerV2GoProjectionRun
     });
     this.#context = context;
     this.#descriptor = descriptor;
+    this.#runAuthority = runAuthority;
+    this.#recovery = recovery;
   }
 
   override async commitWorkflowCheckpoint(
@@ -1210,6 +1219,53 @@ class WorkflowRunnerV2CheckpointRunStore extends WorkflowRunnerV2GoProjectionRun
         ? state
         : null;
     };
+    const prior = await this.loadCheckpointControl(runId);
+    if (prior?.checkpoints[phaseIndex]) {
+      if (!matches(prior) || !this.#recovery)
+        return recoveryConflict(
+          'Checkpoint replay requires its exact original Go recovery evidence.',
+        );
+      this.#context.signal.throwIfAborted();
+      const head = await this.#runAuthority.read(
+        runId,
+        this.#descriptor.authorityRoute,
+        this.#context.signal,
+      );
+      if (
+        head.workflowId !== this.#descriptor.workflowId ||
+        head.workflowVersion !== this.#descriptor.workflowVersion
+      )
+        return recoveryConflict('Checkpoint replay has another Workflow identity.');
+      const view = await this.#recovery.readRecoveryEvidence(
+        runId,
+        undefined,
+        this.#context.signal,
+      );
+      checkpointEvidence(prior, this.#descriptor.authorityRoute.authorityBuildHash, phaseIndex, {
+        view,
+        head,
+        binding: bindingValue,
+      });
+      await this.verifyCheckpointArtifact(runId, prior.checkpoints[phaseIndex]!);
+      const [after, afterHead] = await Promise.all([
+        this.loadCheckpointControl(runId),
+        this.#runAuthority.read(runId, this.#descriptor.authorityRoute, this.#context.signal),
+      ]);
+      this.#context.signal.throwIfAborted();
+      if (
+        canonicalWorkflowControlAuthorityJson(after) !==
+          canonicalWorkflowControlAuthorityJson(prior) ||
+        afterHead.recordHash !== head.recordHash
+      )
+        return recoveryConflict('Checkpoint replay evidence changed during observation.');
+      const checkpoint = prior.checkpoints[phaseIndex]!;
+      return Object.freeze({
+        checkpointId: checkpoint.checkpointId,
+        revision: checkpoint.committedRevision,
+        resumeGeneration: checkpoint.resumeGeneration,
+        duplicate: true,
+      });
+    }
     const source = createWorkflowRunnerCheckpointSourceAdapter({
       pointRead: async () => {
         const state = matches(await this.loadCheckpointControl(runId));
@@ -1278,6 +1334,7 @@ export async function executeWorkflowRunnerV2AuthorityJob(
   workspaceRoot: string,
   budgetAuthority: WorkflowRunnerV2BudgetAuthorityBoundary,
   runAuthority: WorkflowControlAuthorityPort,
+  recovery?: WorkflowRunRecoveryEvidencePort,
 ): Promise<RunResult> {
   if (
     descriptor.authorityRoute.backend !== 'go' ||
@@ -1287,7 +1344,13 @@ export async function executeWorkflowRunnerV2AuthorityJob(
   }
   assertWorkflowRunPathId(descriptor.workflowRunId, { scope: 'run', backend: 'go' });
   const baseDir = resolveWorkflowRunProjectionRoot(workspaceRoot, 'go');
-  const store = new WorkflowRunnerV2CheckpointRunStore(baseDir, context, descriptor, runAuthority);
+  const store = new WorkflowRunnerV2CheckpointRunStore(
+    baseDir,
+    context,
+    descriptor,
+    runAuthority,
+    recovery,
+  );
   const exists = await store.runExists(descriptor.workflowRunId);
   const status = exists ? await store.loadStatus(descriptor.workflowRunId) : null;
   const disposition = classifyWorkflowRunnerRunState(
@@ -1467,6 +1530,11 @@ export async function runWorkflowRunnerV2Worker(
         config.workspaceRoot,
         budgetAuthority,
         runAuthority,
+        createWorkflowRunnerAuthorityBindingClient({
+          origin: config.runtimeDelivery.companionOrigin,
+          workspaceId: config.workspaceId,
+          bearerToken: config.runtimeDelivery.companionBearerToken,
+        }),
       ),
     runtimeDelivery,
   });

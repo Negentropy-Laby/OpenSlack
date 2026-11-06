@@ -329,7 +329,7 @@ func TestSourceManifestBindsOnlyUnreleasedGS9IInputs(t *testing.T) {
 		},
 		"workflowRunStoreSource": {
 			Path:   "packages/workflows/src/run-store.ts",
-			SHA256: "5454780aa357dae99dbdcf35cd1bc93b6360b549fff901e6f23cf7dd04822fe0",
+			SHA256: "782342eabd86217e686246af45bca38b630671b4507151d21a61ef4706d86b4e",
 		},
 		"workflowRunStoreRecoveryAccessSource": {
 			Path:   "packages/workflows/src/internal/workflow-run-store-recovery-access.ts",
@@ -453,7 +453,7 @@ func TestSourceManifestBindsOnlyUnreleasedGS9IInputs(t *testing.T) {
 		},
 		"workflowRunnerWorkerSource": {
 			Path:   "packages/workflows/src/workflow-runner-worker.ts",
-			SHA256: "ea48d2e00b78a411d124b8f5339c077b5ffc535aea5b0bcc4d3311113bd556d2",
+			SHA256: "2ace8fd681ca76dd5da974ca0d4db62738d17f3d94783342fbae2c75eee3a352",
 		},
 		"workflowRunRoutingTest": {
 			Path:   "packages/workflows/src/__tests__/workflow-run-routing.test.ts",
@@ -691,7 +691,7 @@ func TestSourceManifestBindsOnlyUnreleasedGS9IInputs(t *testing.T) {
 		},
 		"workflowCheckpointEvidence": {
 			Path:   "packages/workflows/src/internal/workflow-runner-checkpoint-evidence.ts",
-			SHA256: "63c4a5701ed8371f514d6e03d73197f118241178491e46238959d050e6eb3381",
+			SHA256: "37ce2d47cc4f569ff3a7b34973eb2611b3cdf569451c12d40f0f07022e6ddf2c",
 		},
 		"workflowAuthorityFailure": {
 			Path:   "packages/workflows/src/internal/workflow-authority-failure.ts",

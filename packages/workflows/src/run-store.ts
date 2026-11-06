@@ -59,6 +59,7 @@ import type {
   WorkflowRunControlTarget,
   WorkflowCheckpointCommitInput,
   WorkflowCheckpointCommitResult,
+  WorkflowIdentity,
 } from './types.js';
 import {
   WORKFLOW_CHECKPOINT_CONTROL_SCHEMA,
@@ -160,7 +161,7 @@ export interface RunMeta {
   workflowName: string;
   mode: ExecutionMode;
   manifestHash: string;
-  manifestHashDomain?: import('./types.js').WorkflowIdentity['domain'];
+  manifestHashDomain?: WorkflowIdentity['domain'];
   argsEncoding?: typeof WORKFLOW_ARGUMENTS_SCHEMA;
   args: Record<string, unknown> | WorkflowArgumentsEnvelope;
   startedAt: string;
@@ -1429,7 +1430,7 @@ export class RunStore {
     }
   }
 
-  private async verifyCheckpointArtifact(
+  protected async verifyCheckpointArtifact(
     runId: string,
     checkpoint: WorkflowCheckpointRecord,
   ): Promise<void> {

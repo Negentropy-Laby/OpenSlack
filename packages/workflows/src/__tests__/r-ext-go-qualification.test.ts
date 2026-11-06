@@ -9,7 +9,6 @@ import * as workflowLoader from '../internal/workflow-file-loader.js';
 import * as agentResolver from '../agent-resolver.js';
 import { assertWorkflowRunnerSourceIsSelfContained } from '../workflow-runner-source-policy.js';
 import { checkpointEvidence } from '../internal/workflow-runner-checkpoint-evidence.js';
-import { validateWorkflowCheckpointShadowEnvelope } from '../workflow-checkpoint-shadow-contract.js';
 import { executeGoAuthorityRun } from '../execute.js';
 import { createWorkflowCheckpointLeaseAuthority } from '../internal/workflow-checkpoint-lease-authority.js';
 import { bindGoWorkflowResumeIdentity, validateGoWorkflowResumeContext } from '../resume.js';
@@ -1217,9 +1216,8 @@ describe('R-EXT credential-free preparation', () => {
       },
       checkpoints: [initial.checkpoint],
     };
-    const evidence = checkpointEvidence(state as never, resumed.runner.runnerBuildHash, 0);
-    expect(() => validateWorkflowCheckpointShadowEnvelope(evidence.envelope)).toThrow(
-      'Observation variant is invalid',
+    expect(() => checkpointEvidence(state as never, resumed.runner.runnerBuildHash, 0)).toThrow(
+      /original Go recovery evidence/,
     );
     const { preparationStatus } = await preparation('evidence');
     expect(preparationStatus()).toMatchObject({

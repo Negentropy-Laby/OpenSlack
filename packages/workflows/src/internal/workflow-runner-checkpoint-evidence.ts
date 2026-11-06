@@ -9,7 +9,15 @@ import {
   workflowCheckpointHash,
   type WorkflowCheckpointControlState,
   type WorkflowCheckpointShadowEnvelope,
+  type WorkflowCheckpointExecutionBinding,
 } from '../workflow-checkpoint-shadow-contract.js';
+import {
+  assertRecoveryFrontier,
+  readRecoveryBinding,
+  recoveryConflict,
+  type WorkflowRunRecoveryEvidence,
+} from '../workflow-run-recovery-evidence.js';
+import type { WorkflowControlAuthorityRunRead } from '../workflow-control-authority-client.js';
 import type {
   WorkflowRunnerCheckpointAuthorityEvidence,
   WorkflowRunnerResumeAuthorityEvidence,
@@ -64,7 +72,56 @@ export function checkpointEvidence(
   state: WorkflowCheckpointControlState,
   authorityBuildHash: string,
   phaseIndex: number,
+  replay?: {
+    readonly view: WorkflowRunRecoveryEvidence;
+    readonly head: WorkflowControlAuthorityRunRead;
+    readonly binding: WorkflowCheckpointExecutionBinding;
+  },
 ): WorkflowRunnerCheckpointAuthorityEvidence {
+  const checkpoint = state.checkpoints[phaseIndex];
+  if (!checkpoint) return recoveryConflict('Checkpoint replay has no committed phase.');
+  if (replay) {
+    assertRecoveryFrontier(replay.view, replay.head, state);
+    const canonical = canonicalWorkflowControlAuthorityJson;
+    if (
+      canonical(state.activeBinding) !== canonical(replay.binding) ||
+      replay.head.state !== 'running' ||
+      replay.view.route.authorityBuildHash !== authorityBuildHash ||
+      replay.view.activeAttempts.length !== 1 ||
+      replay.view.activeAttempts[0] !== replay.binding.attemptId
+    )
+      return recoveryConflict('Checkpoint replay requires the current accepted execution binding.');
+    const originals: WorkflowRunnerCheckpointAuthorityEvidence[] = [];
+    for (const entry of replay.view.bindings) {
+      const { stage, resolution } = readRecoveryBinding(replay.view, entry);
+      if (stage.operation !== 'checkpoint_commit' || !resolution) continue;
+      const evidence = resolution.evidence;
+      if (
+        evidence.schema === 'openslack.workflow_runner_checkpoint_authority_evidence.v1' &&
+        evidence.envelope.observation.checkpoint?.checkpointId === checkpoint.checkpointId
+      ) {
+        if (
+          entry.state !== 'completed' ||
+          canonical(evidence.envelope.observation.checkpoint) !== canonical(checkpoint) ||
+          evidence.sourceAuthority.authorityBuildHash !== authorityBuildHash
+        )
+          return recoveryConflict(
+            'Original checkpoint evidence differs from its committed anchor.',
+          );
+        originals.push(evidence);
+      }
+    }
+    if (originals.length !== 1)
+      return recoveryConflict(
+        'Checkpoint replay requires one exact original committed evidence record.',
+      );
+    return originals[0]!;
+  }
+  if (
+    checkpoint.committedRevision !== state.revision ||
+    checkpoint.resumeGeneration !== state.resumeGeneration
+  )
+    return recoveryConflict('An old checkpoint requires its original Go recovery evidence.');
   const envelope = checkpointEnvelope(state, 'checkpoint_commit', phaseIndex);
   const envelopeHash = createHash('sha256')
     .update(canonicalWorkflowControlAuthorityJson(envelope), 'utf8')
