@@ -17,6 +17,7 @@ esac
 readonly postgres_image='postgres:18.4@sha256:3a82e1f56c8f0f5616a11103ac3d47e632c3938698946a7ad26da0df1334744a'
 readonly profile_suffix="${profile%%-*}"
 readonly postgres_container="openslack-${profile_suffix}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+sealed_result_file=''
 
 cleanup() {
   docker rm --force "$postgres_container" >/dev/null 2>&1 || true
