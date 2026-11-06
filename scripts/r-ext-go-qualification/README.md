@@ -317,11 +317,16 @@ the independent 500ms close observation and zero-effect assertions remain.
 
 The Linux administrator wrapper previously placed 41 independent Python tests,
 including real file and directory synchronization, inside one default five-second
-Vitest case. It now runs the seven existing fixture classes as separate cases,
-each under that same default limit. The existing Python runner records test IDs
-at the actual execution callback. Discovery, exact class selection, duplicate-free
-execution and the full 41-case union are checked; partial name-filtered diagnostics
-explicitly report incomplete coverage. Unknown selectors reject before execution.
+Vitest case. The first repair at 9d519882 split those tests into seven classes;
+its full Linux run still failed when the 16-case backup class took 6,801ms
+(9,280 passed, one failed, 25 skipped). That failed cohort remains historical.
+The wrapper now maps each of the 41 existing independent unittest methods to
+its own Vitest case under that same default limit. This adds interpreter startups,
+not a production performance claim. The existing Python runner records test IDs
+at the actual execution callback. Independent discovery must match the explicit
+case matrix; exact method selection, duplicate-free execution and the full
+41-case union are checked. Partial name-filtered diagnostics explicitly report
+incomplete coverage. Unknown selectors reject before execution.
 Native unsupported-platform tests still exercise real refusal and zero target I/O.
 No production code, timeout, worker count, retry or skip policy is changed.
 

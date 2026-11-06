@@ -23,16 +23,50 @@ const entries = [
 let resolver: ReturnType<typeof createTestProcessResolver> | undefined;
 let preferredCommand: string | undefined;
 
-const linuxFixtureGroups = [
-  'AdministrationBehaviorTests',
-  'ProcessObservationTests',
-  'BackupFixtureTests',
-  'SafetyFixtureTests',
-  'IsolationFixtureTests',
-  'InstanceFixtureTests',
-  'MoreBoundaryTests',
+const linuxFixtureCases = [
+  'AdministrationBehaviorTests.test_backup_refuses_history_before_output_creation',
+  'AdministrationBehaviorTests.test_first_start_rejects_nonempty_generation',
+  'AdministrationBehaviorTests.test_post_start_cannot_pass_with_missing_runtime_objects',
+  'BackupFixtureTests.test_absent_optional_file_appearing_after_copy_refuses_and_preserves',
+  'BackupFixtureTests.test_absent_optional_link_directory_or_fifo_appearing_refuses_without_open',
+  'BackupFixtureTests.test_backup_subdirectory_replacement_after_copy_preserves_partial_and_refuses',
+  'BackupFixtureTests.test_changed_offline_state_after_copy_refuses_without_reset',
+  'BackupFixtureTests.test_complete_fixed_allowlist_dual_sync_and_backup_local_restore',
+  'BackupFixtureTests.test_dependency_cli_refuses_sensitive_inputs_before_helper_read',
+  'BackupFixtureTests.test_existing_output_never_overwritten',
+  'BackupFixtureTests.test_fifo_hardlink_oversize_and_mode_refuse_before_output',
+  'BackupFixtureTests.test_installed_binary_flock_blocks_backup_without_history',
+  'BackupFixtureTests.test_observer_rejects_nonprivate_output_parent_without_creation',
+  'BackupFixtureTests.test_optional_unreadable_or_unverified_parent_never_counts_as_missing',
+  'BackupFixtureTests.test_parent_directory_link_refuses_without_external_creation',
+  'BackupFixtureTests.test_partial_and_zero_writes_and_fsync_failure',
+  'BackupFixtureTests.test_runtime_or_process_or_locks_stop_before_creation',
+  'BackupFixtureTests.test_source_replacement_during_copy_refuses_and_preserves_partial',
+  'BackupFixtureTests.test_unlisted_and_sensitive_files_are_not_opened_or_backed_up',
+  'InstanceFixtureTests.test_actual_fixed_inode_hash_pid_and_empty_generation',
+  'InstanceFixtureTests.test_exact_schema_ids_nonce_generation_and_time',
+  'InstanceFixtureTests.test_fine_boot_clock_interval_and_clock_change_are_fail_closed',
+  'IsolationFixtureTests.test_changed_metadata_or_wrong_dropped_identity_block',
+  'IsolationFixtureTests.test_prestart_defers_only_runtime_poststart_requires_all',
+  'IsolationFixtureTests.test_privileged_or_unknown_groups_and_sudo_scope_block',
+  'IsolationFixtureTests.test_unexpected_prestart_history_and_missing_credential_block',
+  'MoreBoundaryTests.test_bad_result_after_child_reap_never_signals_reused_numeric_pid',
+  'MoreBoundaryTests.test_container_daemon_unknown_endpoint_blocks_even_if_fixed_paths_absent',
+  'MoreBoundaryTests.test_live_access_function_uses_only_owned_nonsecret_fixture_permissions',
+  'MoreBoundaryTests.test_process_record_checks_every_uid_gid_and_exact_executable',
+  'MoreBoundaryTests.test_sudo_scope_no_daemon_no_interfaces_complete_fixture',
+  'MoreBoundaryTests.test_sudo_unknown_grant_or_command_failure_is_blocked',
+  'MoreBoundaryTests.test_untrusted_output_parent_and_directory_replacement_are_refused',
+  'ProcessObservationTests.test_ambiguous_status_is_unverified',
+  'ProcessObservationTests.test_disappeared_process_is_unverified_not_stopped',
+  'ProcessObservationTests.test_one_root_anchor_per_independent_scan_and_no_arguments_or_environment',
+  'SafetyFixtureTests.test_bounded_read_rejects_fifo_hardlink_and_invalid_json',
+  'SafetyFixtureTests.test_each_fstat_fault_closes_every_acquired_fd',
+  'SafetyFixtureTests.test_file_and_ancestor_close_failures_are_both_retained',
+  'SafetyFixtureTests.test_primary_and_cleanup_failure_both_retained',
+  'SafetyFixtureTests.test_sensitive_and_active_outputs_are_refused_before_writes',
 ] as const;
-const linuxGroupReports = new Map<string, { inventory: string[]; executed: string[] }>();
+const linuxCaseReports = new Map<string, { inventory: string[]; executed: string[] }>();
 
 function python() {
   resolver ??= createTestProcessResolver(testProcessEnvironment(), repositoryRoot);
@@ -78,7 +112,7 @@ function run(args: string[]) {
   });
 }
 
-function expectPythonReport(stdout: string, portableOnly: boolean, selection = portableOnly ? 'portable' : 'all', group?: string) {
+function expectPythonReport(stdout: string, portableOnly: boolean, selection = portableOnly ? 'portable' : 'all', testCase?: string) {
   const report = JSON.parse(stdout.trim().split(/\r?\n/).at(-1)!);
   expect(report.schema).toBe('openslack.cleanup_python_test_run.v1');
   expect(report.portableOnly).toBe(portableOnly);
@@ -90,7 +124,7 @@ function expectPythonReport(stdout: string, portableOnly: boolean, selection = p
     : report.inventory[selection];
   expect(report.inventory.portable).toHaveLength(report.portability.portable);
   expect(report.inventory.linux).toHaveLength(report.portability.linux);
-  const selected = group ? inventory.filter(id => id.split('.').at(-2) === group) : inventory;
+  const selected = testCase ? inventory.filter(id => id.endsWith(`.${testCase}`)) : inventory;
   expect(report.selected).toBe(selected.length);
   expect(report.selected).toBeGreaterThan(0);
   expect(report.discovered).toBeGreaterThanOrEqual(report.selected);
@@ -117,18 +151,18 @@ const unsupportedPlatformAudit = [
 
 describe('cleanup administrator Python tools', () => {
   afterAll(() => {
-    if (process.platform !== 'linux' || linuxGroupReports.size === 0) return;
-    const reports = [...linuxGroupReports.values()];
+    if (process.platform !== 'linux' || linuxCaseReports.size === 0) return;
+    const reports = [...linuxCaseReports.values()];
     const inventory = reports[0]!.inventory;
     for (const report of reports) expect(report.inventory).toEqual(inventory);
     const executed = reports.flatMap(report => report.executed);
     expect(new Set(executed).size).toBe(executed.length);
-    const selected = inventory.filter(id => linuxGroupReports.has(id.split('.').at(-2)!));
+    const selected = inventory.filter(id => linuxCaseReports.has(id.split('.').slice(-2).join('.')));
     expect([...executed].sort()).toEqual([...selected].sort());
-    const complete = linuxGroupReports.size === linuxFixtureGroups.length;
+    const complete = linuxCaseReports.size === linuxFixtureCases.length;
     if (complete) expect([...executed].sort()).toEqual([...inventory].sort());
     console.info(JSON.stringify({ scope: 'cleanup Linux Python fixture coverage', complete,
-      discovered: inventory.length, executed: executed.length, groups: [...linuxGroupReports.keys()],
+      discovered: inventory.length, executed: executed.length, cases: [...linuxCaseReports.keys()],
       executedTestIds: executed }));
   });
   it('keeps generated Python and TS contracts synchronized on every platform without regeneration', () => {
@@ -213,27 +247,27 @@ describe('cleanup administrator Python tools', () => {
     expect(result.stdout).toBe('');
   });
 
-  // Each Python class is an independent fixture boundary under the unchanged
-  // per-test timeout. The hook above requires the full discovered Linux union,
-  // so a new class, omitted group or duplicate execution cannot silently pass.
-  it.each(linuxFixtureGroups)('runs real owned-FD group %s, or native refusal outside Linux', (group) => {
+  // Map each existing independent unittest to the unchanged per-test timeout.
+  // Discovery checks the explicit matrix; the hook checks actual execution IDs,
+  // so added, omitted or duplicated Python tests cannot silently disappear.
+  it.each(linuxFixtureCases)('runs real owned-FD case %s, or native refusal outside Linux', (testCase) => {
     if (process.platform === 'linux') {
-      const result = run([join(tools, 'administration_test.py'), '--linux-only', group]);
+      const result = run([join(tools, 'administration_test.py'), '--linux-only', testCase]);
       expect(result.error).toBeUndefined();
       expect(result.status, result.stderr).toBe(0);
-      const report = expectPythonReport(result.stdout, false, 'linux', group);
-      expect([...new Set<string>(report.inventory.linux.map((id: string) => id.split('.').at(-2)!))].sort())
-        .toEqual([...linuxFixtureGroups].sort());
-      expect(linuxGroupReports.has(group)).toBe(false);
-      linuxGroupReports.set(group, { inventory: report.inventory.linux, executed: report.executedTestIds });
+      const report = expectPythonReport(result.stdout, false, 'linux', testCase);
+      expect(report.inventory.linux.map((id: string) => id.split('.').slice(-2).join('.')).sort())
+        .toEqual([...linuxFixtureCases].sort());
+      expect(linuxCaseReports.has(testCase)).toBe(false);
+      linuxCaseReports.set(testCase, { inventory: report.inventory.linux, executed: report.executedTestIds });
       expect(result.stderr).toContain('OK');
     } else {
-      const result = run([join(tools, 'administration_test.py'), '--linux-only', group]);
+      const result = run([join(tools, 'administration_test.py'), '--linux-only', testCase]);
       expect(result.error).toBeUndefined();
       expect(result.status).toBe(1);
       expect(result.stdout).toBe('');
       expect(result.stderr).toContain('TEST_LINUX_REQUIRED');
-      if (group !== linuxFixtureGroups[0]) return;
+      if (testCase !== linuxFixtureCases[0]) return;
       const owned = mkdtempSync(join(tmpdir(), 'cleanup-python-native-'));
       try {
         for (const entry of entries) {
