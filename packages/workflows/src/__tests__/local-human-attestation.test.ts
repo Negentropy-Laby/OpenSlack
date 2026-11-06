@@ -12,6 +12,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { resolveWorkflowEffectApprovalRoot } from '../internal/workflow-effect-approval-layout.js';
 import {
   bindLocalHumanSubjectForTest,
   createLocalHumanAttestationProviderForTest,
@@ -223,6 +224,7 @@ describe('credential-free local human attestation', () => {
         deps,
       );
       const input = request(decision);
+      expect(provider.approvalStoreRoot).toBe(resolveWorkflowEffectApprovalRoot(root));
       const binding = await provider.attest(input);
       expect(binding).toMatchObject({
         principalId: HUMAN,

@@ -20,6 +20,7 @@ import {
 } from '../internal/cleanup-qualification-fixtures.mjs';
 
 const NOW = '2026-10-11T12:34:56.000Z';
+const FAKE_GH_REQUESTS_PER_YIELD = 8;
 const API = `repos/${BINDINGS.repository}`;
 test('pins the current public campaign independently of derived fixtures', () => {
   assert.equal(BINDINGS.repository, 'Negentropy-Laby/openslack-cleanup-qualification-public');
@@ -167,7 +168,7 @@ afterEach(async () => {
 describe('terminal merge bookkeeping', () => {
   let f;
   let batch;
-  // Build the real nine-PR disk fixture as setup, separately from the terminal
+  // Build the real nine-PR disk fixture as setup, separately from the lifecycle
   // transition being tested. Each case retains its own directory and state;
   // the merge operation, real persistence and five-second assertion budget stay.
   beforeEach(async () => {
@@ -200,6 +201,96 @@ describe('terminal merge bookkeeping', () => {
     assert.equal(load(batch).fork.concurrentObservation, true);
     assert.equal(f.state.mutations.filter((x) => x.args?.[1] === 'merge').length, 5);
     assert.equal(fs.existsSync(path.join(batch, 'mutation.lock')), true);
+  });
+
+  test('normal fixture merge failure is not bypassed or re-tried', async () => {
+    f.state.mutationFailure = (args) => args[0] === 'pr' && args[1] === 'merge';
+    await assert.rejects(
+      f.run('merge-targets', batch),
+      (error) => error.code === 'FIXTURE_GH_FAILED',
+    );
+    assert.equal(load(batch).phase, 'FAILED_RECONCILE_REQUIRED');
+    assert.equal(f.state.mutations.filter((x) => x.args?.[1] === 'merge').length, 1);
+    assert.equal(f.state.refs.size, 10);
+  });
+  test('a changed repository setting during human merge confirmation blocks the normal merge call', async () => {
+    const confirm = f.dependencies.confirm;
+    f.dependencies.confirm = async (phrase, explanation) => {
+      const decision = await confirm(phrase, explanation);
+      if (/^MERGE/.test(phrase)) f.state.repository.delete_branch_on_merge = true;
+      return decision;
+    };
+    await assert.rejects(
+      f.run('merge-targets', batch),
+      (error) => error.code === 'FIXTURE_AUTO_DELETION_ENABLED',
+    );
+    assert.equal(f.state.mutations.filter((x) => x.args?.[1] === 'merge').length, 0);
+  });
+  test('a missing source ref after an observed merge stops later merges and preserves the partial actual PR state', async () => {
+    const original = f.dependencies.runCommand;
+    f.dependencies.runCommand = async (args, input) => {
+      const result = await original(args, input);
+      if (args[0] === 'pr' && args[1] === 'merge')
+        f.state.refs.delete(f.state.prs.get(Number(args[2])).head.ref);
+      return result;
+    };
+    await assert.rejects(
+      f.run('merge-targets', batch),
+      (error) => error.code === 'FIXTURE_GH_FAILED',
+    );
+    assert.equal(f.state.mutations.filter((x) => x.args?.[1] === 'merge').length, 1);
+    assert.equal(load(batch).phase, 'FAILED_RECONCILE_REQUIRED');
+    assert.equal(load(batch).fixtures.find((x) => x.id === 'success').pr.merged, true);
+  });
+
+  test('a declined later merge preserves earlier confirmed work for a later explicit continuation', async () => {
+    const original = f.dependencies.confirm;
+    let merges = 0;
+    f.dependencies.confirm = async (phrase, explanation) =>
+      /^MERGE/.test(phrase) && ++merges === 2 ? false : original(phrase, explanation);
+    await assert.rejects(
+      f.run('merge-targets', batch),
+      (error) => error.code === 'FIXTURE_CONFIRMATION_DECLINED',
+    );
+    assert.equal(load(batch).phase, 'MERGE_TARGETS_PARTIAL');
+    f.dependencies.confirm = original;
+    await f.run('merge-targets', batch);
+    assert.equal(load(batch).phase, 'MERGED_TARGETS');
+    assert.equal(f.state.mutations.filter((x) => x.args?.[1] === 'merge').length, 5);
+  });
+
+  describe('drift after confirmed fixture merges', () => {
+    // Establish the real merged precondition; keep its original five-second bound.
+    beforeEach(async () => {
+      await f.run('merge-targets', batch);
+    }, 5_000);
+
+    test('later drift refuses an invented approval snapshot before any mutation', async () => {
+      const count = f.state.mutations.length;
+      await assert.rejects(
+        f.run('advance-drift', batch, ['--permit-id', 'cleanup-drift-1', '--approved-sha', sha(999)]),
+        (error) => error.code === 'FIXTURE_APPROVED_SHA_MISMATCH',
+      );
+      assert.equal(f.state.mutations.length, count);
+    });
+    test('later human-authorised drift is forward-only and preserves its initial Permit snapshot separately', async () => {
+      const initial = load(batch).fixtures.find((x) => x.id === 'drift').publishedSha;
+      await f.run('advance-drift', batch, [
+        '--permit-id',
+        'cleanup-drift-1',
+        '--approved-sha',
+        initial,
+      ]);
+      const record = load(batch).fixtures.find((x) => x.id === 'drift');
+      assert.equal(record.publishedSha, initial);
+      assert.equal(record.drift.originalSnapshotSha, initial);
+      assert.notEqual(record.drift.observedSha, initial);
+      assert.equal(record.drift.permitReference, 'cleanup-drift-1');
+      assert.equal(f.state.mutations.filter((x) => x.method === 'PATCH').length, 1);
+      assert.equal(f.state.mutations.find((x) => x.method === 'PATCH').payload.force, false);
+      assert.equal(load(batch).permitIssued, false);
+      assert.equal(load(batch).qualificationRun, false);
+    });
   });
 });
 
@@ -313,6 +404,7 @@ function fixture(t, changes = {}) {
     return task;
   };
   let counter = 10;
+  let fakeRequests = 0;
   const state = {
     calls: [],
     mutations: [],
@@ -349,11 +441,10 @@ function fixture(t, changes = {}) {
       return !state.denied;
     },
     runCommand: async (args, input) => {
-      // Deliver the fake process result on an I/O turn. A fully synchronous
-      // promise chain of real fsync calls otherwise starves Vitest's reporter
-      // RPC and cancellation timers during a complete fixture lifecycle.
+      // Keep cooperative I/O turns without scheduling one for every synthetic
+      // response. Real persistence remains synchronous; this is no latency SLA.
       active();
-      await setImmediate();
+      if (fakeRequests++ % FAKE_GH_REQUESTS_PER_YIELD === 0) await setImmediate();
       active();
       state.calls.push({ args, input });
       const API = `repos/${state.apiRepository}`;
@@ -499,6 +590,38 @@ test('fixture cancellation drains a yielded command before directory cleanup or 
   assert.equal(fs.existsSync(f.root), false);
   assert.deepEqual(f.state.calls, []);
   assert.deepEqual(f.state.mutations, []);
+});
+
+test('fixture transport yields in bounded batches and drains cancellation at the ninth request', async () => {
+  const f = fixture();
+  const original = f.dependencies.runCommand;
+  const deferred = [];
+  let started;
+  const inFlight = new Promise((resolve) => { started = resolve; });
+  f.dependencies.runCommand = (...args) => {
+    const before = f.state.calls.length;
+    const result = original(...args);
+    deferred.push(f.state.calls.length === before);
+    if (deferred.length === 9) started();
+    return result;
+  };
+  const operation = f.plan().then((batch) => f.run('create', batch));
+  const refusal = assert.rejects(operation, { code: 'FIXTURE_TEST_CANCELLED' });
+  await inFlight;
+  assert.equal(f.state.calls.length, 8);
+  const calls = JSON.stringify(f.state.calls);
+  const mutations = JSON.stringify(f.state.mutations);
+  await f.stop();
+  await refusal;
+  assert.equal(JSON.stringify(f.state.calls), calls);
+  assert.equal(JSON.stringify(f.state.mutations), mutations);
+  fs.rmSync(f.root, { recursive: true, force: true });
+  await setImmediate();
+  await assert.rejects(f.plan(), { code: 'FIXTURE_TEST_CANCELLED' });
+  assert.equal(fs.existsSync(f.root), false);
+  assert.equal(JSON.stringify(f.state.calls), calls);
+  assert.equal(JSON.stringify(f.state.mutations), mutations);
+  assert.deepEqual(deferred.slice(0, 9), [true, false, false, false, false, false, false, false, true]);
 });
 
 async function createdFixture() {
@@ -835,57 +958,6 @@ describe('close and merge transitions', () => {
     );
   });
 });
-test('normal fixture merge failure is not bypassed or re-tried', async (t) => {
-  const f = fixture(t);
-  const batch = await f.plan();
-  await f.run('create', batch);
-  await f.run('close-case', batch);
-  f.state.mutationFailure = (args) => args[0] === 'pr' && args[1] === 'merge';
-  await assert.rejects(
-    f.run('merge-targets', batch),
-    (error) => error.code === 'FIXTURE_GH_FAILED',
-  );
-  assert.equal(load(batch).phase, 'FAILED_RECONCILE_REQUIRED');
-  assert.equal(f.state.mutations.filter((x) => x.args?.[1] === 'merge').length, 1);
-  assert.equal(f.state.refs.size, 10);
-});
-test('a changed repository setting during human merge confirmation blocks the normal merge call', async (t) => {
-  const f = fixture(t);
-  const batch = await f.plan();
-  await f.run('create', batch);
-  await f.run('close-case', batch);
-  const confirm = f.dependencies.confirm;
-  f.dependencies.confirm = async (phrase, explanation) => {
-    const decision = await confirm(phrase, explanation);
-    if (/^MERGE/.test(phrase)) f.state.repository.delete_branch_on_merge = true;
-    return decision;
-  };
-  await assert.rejects(
-    f.run('merge-targets', batch),
-    (error) => error.code === 'FIXTURE_AUTO_DELETION_ENABLED',
-  );
-  assert.equal(f.state.mutations.filter((x) => x.args?.[1] === 'merge').length, 0);
-});
-test('a missing source ref after an observed merge stops later merges and preserves the partial actual PR state', async (t) => {
-  const f = fixture(t);
-  const batch = await f.plan();
-  await f.run('create', batch);
-  await f.run('close-case', batch);
-  const original = f.dependencies.runCommand;
-  f.dependencies.runCommand = async (args, input) => {
-    const result = await original(args, input);
-    if (args[0] === 'pr' && args[1] === 'merge')
-      f.state.refs.delete(f.state.prs.get(Number(args[2])).head.ref);
-    return result;
-  };
-  await assert.rejects(
-    f.run('merge-targets', batch),
-    (error) => error.code === 'FIXTURE_GH_FAILED',
-  );
-  assert.equal(f.state.mutations.filter((x) => x.args?.[1] === 'merge').length, 1);
-  assert.equal(load(batch).phase, 'FAILED_RECONCILE_REQUIRED');
-  assert.equal(load(batch).fixtures.find((x) => x.id === 'success').pr.merged, true);
-});
 test('an interrupted exclusive phase lock is preserved and blocks creation without deleting or publishing refs', async (t) => {
   const f = fixture(t);
   const batch = await f.plan();
@@ -894,61 +966,6 @@ test('an interrupted exclusive phase lock is preserved and blocks creation witho
   await assert.rejects(f.run('create', batch), (error) => error.code === 'EEXIST');
   assert.equal(fs.readFileSync(lock, 'utf8'), 'preserved interrupted owner');
   assert.equal(f.state.mutations.length, 0);
-});
-test('a declined later merge preserves earlier confirmed work for a later explicit continuation', async (t) => {
-  const f = fixture(t);
-  const batch = await f.plan();
-  await f.run('create', batch);
-  await f.run('close-case', batch);
-  const original = f.dependencies.confirm;
-  let merges = 0;
-  f.dependencies.confirm = async (phrase, explanation) =>
-    /^MERGE/.test(phrase) && ++merges === 2 ? false : original(phrase, explanation);
-  await assert.rejects(
-    f.run('merge-targets', batch),
-    (error) => error.code === 'FIXTURE_CONFIRMATION_DECLINED',
-  );
-  assert.equal(load(batch).phase, 'MERGE_TARGETS_PARTIAL');
-  f.dependencies.confirm = original;
-  await f.run('merge-targets', batch);
-  assert.equal(load(batch).phase, 'MERGED_TARGETS');
-  assert.equal(f.state.mutations.filter((x) => x.args?.[1] === 'merge').length, 5);
-});
-test('later drift refuses an invented approval snapshot before any mutation', async (t) => {
-  const f = fixture(t);
-  const batch = await f.plan();
-  await f.run('create', batch);
-  await f.run('close-case', batch);
-  await f.run('merge-targets', batch);
-  const count = f.state.mutations.length;
-  await assert.rejects(
-    f.run('advance-drift', batch, ['--permit-id', 'cleanup-drift-1', '--approved-sha', sha(999)]),
-    (error) => error.code === 'FIXTURE_APPROVED_SHA_MISMATCH',
-  );
-  assert.equal(f.state.mutations.length, count);
-});
-test('later human-authorised drift is forward-only and preserves its initial Permit snapshot separately', async (t) => {
-  const f = fixture(t);
-  const batch = await f.plan();
-  await f.run('create', batch);
-  await f.run('close-case', batch);
-  await f.run('merge-targets', batch);
-  const initial = load(batch).fixtures.find((x) => x.id === 'drift').publishedSha;
-  await f.run('advance-drift', batch, [
-    '--permit-id',
-    'cleanup-drift-1',
-    '--approved-sha',
-    initial,
-  ]);
-  const record = load(batch).fixtures.find((x) => x.id === 'drift');
-  assert.equal(record.publishedSha, initial);
-  assert.equal(record.drift.originalSnapshotSha, initial);
-  assert.notEqual(record.drift.observedSha, initial);
-  assert.equal(record.drift.permitReference, 'cleanup-drift-1');
-  assert.equal(f.state.mutations.filter((x) => x.method === 'PATCH').length, 1);
-  assert.equal(f.state.mutations.find((x) => x.method === 'PATCH').payload.force, false);
-  assert.equal(load(batch).permitIssued, false);
-  assert.equal(load(batch).qualificationRun, false);
 });
 test.each(['operator', 'repository', 'target'])(
   'fork registration revalidates %s after confirmation before recording evidence',

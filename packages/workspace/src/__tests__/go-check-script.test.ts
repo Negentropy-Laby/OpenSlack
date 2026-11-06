@@ -569,6 +569,43 @@ describeOnBashHosts('reviewed Go module verifier', () => {
     },
   );
 
+  it('keeps fake Docker argument matching and owner reads inside its fixture shell', () => {
+    const fixture = createFixture();
+    // The fake command already runs in Bash. Reading its owned fixture must not
+    // start another utility for every invocation in the full verifier matrix.
+    writeExecutable(join(fixture.bin, 'cat'), '#!/bin/sh\nexit 97\n');
+    const cases = [
+      { owner: '', args: ['inspect', '--format', 'com.openslack.go-check.run'], output: '\n' },
+      { owner: "owned ' $literal \\ value\n\n", args: ['inspect', '--format', 'com.openslack.go-check.run'], output: "owned ' $literal \\ value\n" },
+      { owner: 'owned\n', args: ['run', 'image', 'go', 'test', './...', '-list', '^TestFixture$'], output: 'TestFake\n' },
+      { owner: 'owned\n', args: ['run', '--env', 'OPENSLACK_GO_CHECK_EXPECT_TEST=TestFixture', 'image', 'go', 'test', '-json', '-race', './...'], output: '{"Action":"pass","Test":"TestFixture"}\n' },
+      { owner: 'owned\n', args: ['run', '-d', 'image', 'arg with spaces', '$(literal)'], output: 'fake-container\n' },
+    ];
+    for (const testCase of cases) {
+      writeFileSync(fixture.ownerFile, testCase.owner, 'utf8');
+      const result = spawnSync(join(fixture.bin, 'docker'), testCase.args, {
+        cwd: fixture.root, env: goCheckEnvironment(fixture), encoding: 'utf8',
+      });
+      expect(result.error).toBeUndefined();
+      expect(result.status, result.stderr).toBe(0);
+      expect(result.stdout).toBe(testCase.output);
+    }
+    const log = readFileSync(fixture.dockerLog, 'utf8');
+    expect(log.trim().split('\n')).toHaveLength(cases.length);
+    expect(log).toContain('arg\\ with\\ spaces');
+    expect(log).toContain('\\$\\(literal\\)');
+    for (const invalidOwner of ['missing', 'directory']) {
+      rmSync(fixture.ownerFile, { recursive: true, force: true });
+      if (invalidOwner === 'directory') mkdirSync(fixture.ownerFile);
+      const result = spawnSync(join(fixture.bin, 'docker'), cases[0]!.args, {
+        cwd: fixture.root, env: goCheckEnvironment(fixture), encoding: 'utf8',
+      });
+      expect(result.error).toBeUndefined();
+      expect(result.status, invalidOwner).toBe(1);
+      expect(result.stdout).toBe('');
+    }
+  });
+
   it(
     'runs the Workflow Control GS9-F2b runtime-delivery profile as a real F1 superset',
     async () => {
@@ -2259,7 +2296,7 @@ function writeFakeExecutables(bin: string): void {
       '  printf " %q" "$@"',
       '  printf "\\n"',
       '} >> "$FAKE_DOCKER_LOG"',
-      'joined="$(printf "%s " "$@")"',
+      'printf -v joined "%s " "$@"',
       'for ((index = 1; index <= $#; index++)); do',
       '  if [ "${!index}" = "--label" ]; then',
       '    next=$((index + 1))',
@@ -2269,7 +2306,8 @@ function writeFakeExecutables(bin: string): void {
       '    esac',
       '  fi',
       'done',
-      'owner="$(cat "$FAKE_OWNER_FILE")"',
+      '[[ -f "$FAKE_OWNER_FILE" ]]',
+      'owner="$(< "$FAKE_OWNER_FILE")"',
       '[ "${FAKE_OWNERSHIP_MISMATCH:-0}" = "0" ] || owner=forged-owner',
       'case "${1:-}" in',
       '  info)',

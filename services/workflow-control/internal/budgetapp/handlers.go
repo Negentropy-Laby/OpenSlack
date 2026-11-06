@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/drainmetrics"
 	"io"
 	"net/http"
 	"strconv"
@@ -356,6 +357,9 @@ func (service *Service) handleVersion(w http.ResponseWriter, request *http.Reque
 }
 
 func (service *Service) handleMetrics(w http.ResponseWriter, request *http.Request) {
+	if drainmetrics.Handle(w, request, service.repository, service.workspaceID, service.buildSHA, "budget", func(epoch int64) bool { return service.qualificationMode && epoch == service.routingEpoch }) {
+		return
+	}
 	if !requireReadEnvelope(w, request) {
 		return
 	}

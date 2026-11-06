@@ -102,7 +102,7 @@ function meta(): RunMeta {
 }
 
 describe('Workflow Control GS7-B authoritative post-commit hooks', () => {
-  it('covers the RunStore observation inventory and never observes a failed authority write', async () => {
+  it('covers the RunStore observation inventory after committed authority writes', async () => {
     const journal = join(await root('workflow-shadow-hook'), 'journal');
     const published: number[] = [];
     const port = await observationPort(journal, published);
@@ -147,7 +147,9 @@ describe('Workflow Control GS7-B authoritative post-commit hooks', () => {
     await store.resolvePendingApproval('run-shadow-test', approval!.id, 'approved');
     await port.flush();
     expect(published).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+  });
 
+  it('never observes a failed authority write', async () => {
     const failedPublished: number[] = [];
     const failedPort = await observationPort(
       join(await root('workflow-shadow-hook-failed'), 'journal'),

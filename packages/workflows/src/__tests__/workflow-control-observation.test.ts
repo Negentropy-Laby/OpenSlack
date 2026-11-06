@@ -1,10 +1,11 @@
-import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, rename, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { buildWorkflowControlObservation } from '../workflow-control-observation.js';
 import type { WorkflowControlObservationError } from '../workflow-control-observation.js';
 import { hashWorkflowControlValue } from '../workflow-control-contract.js';
+import { resolveWorkflowEffectApprovalRoot } from '../internal/workflow-effect-approval-layout.js';
 
 const roots: string[] = [];
 
@@ -86,6 +87,26 @@ async function authorityFixture(manifestHash = 'a'.repeat(64)) {
 }
 
 describe('Workflow Control GS7-B authoritative observation builder', () => {
+  it('shares the default approval layout and preserves an explicit observation root', async () => {
+    const fixture = await authorityFixture();
+    expect(resolveWorkflowEffectApprovalRoot(fixture.root)).toBe(fixture.effectRoot);
+    const before = await buildWorkflowControlObservation({
+      rootDir: fixture.root,
+      runId: fixture.runId,
+    });
+    const customRoot = join(fixture.root, 'explicit-approvals');
+    await rename(fixture.effectRoot, customRoot);
+    const after = await buildWorkflowControlObservation({
+      rootDir: fixture.root,
+      runId: fixture.runId,
+      effectApprovalRoot: customRoot,
+    });
+    expect(after.approvals).toEqual(before.approvals);
+    await expect(
+      buildWorkflowControlObservation({ rootDir: fixture.root, runId: fixture.runId }),
+    ).rejects.toMatchObject({ code: 'WORKFLOW_CONTROL_OBSERVATION_NOT_FOUND' });
+  });
+
   it('derives only hashes, counts, and durable budget evidence', async () => {
     const fixture = await authorityFixture();
     const observation = await buildWorkflowControlObservation({

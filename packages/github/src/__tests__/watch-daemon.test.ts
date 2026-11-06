@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createHmac } from 'node:crypto';
-import { request } from 'node:http';
+import { request, createServer, Server, type RequestListener } from 'node:http';
 import { connect } from 'node:net';
 import {
   WatchDaemon,
@@ -20,6 +20,8 @@ import { githubWebhookEventKey } from '../repository-event.js';
 import { RepositoryAuthorityResolver } from '../repository-authority.js';
 import { WatchDedupeStore } from '../watch-dedupe.js';
 import { WatchCursorStore } from '../watch-cursor.js';
+import { WatchDeliveryRouter } from '../watch-delivery-router.js';
+import { ProfileSyncWorker } from '../profile-sync-worker.js';
 
 function mockRecordEvent(event: unknown) {
   return {
@@ -241,6 +243,32 @@ function makeRepositoryEventPayload(eventName: string, action: string): string {
   });
 }
 
+// Inspect the owned test listener; do not add a product-only test hook or
+// mistake a requested random port for the IPv4 endpoint actually under test.
+async function startTestDaemon(daemon: WatchDaemon): Promise<number> {
+  await daemon.start(0);
+  const address = daemon.address();
+  if (!address || typeof address === 'string' || address.port <= 0) {
+    await daemon.stop();
+    throw new Error('WATCH_TEST_LISTENER_UNAVAILABLE');
+  }
+  return address.port;
+}
+
+async function testHttpServer(listener: RequestListener) {
+  const server = createServer(listener);
+  await new Promise<void>((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', resolve);
+  });
+  const address = server.address();
+  if (!address || typeof address === 'string') throw new Error('TEST_LISTENER_UNAVAILABLE');
+  return {
+    port: address.port,
+    close: () => new Promise<void>((resolve) => server.close(() => resolve())),
+  };
+}
+
 function sendRequest(
   port: number,
   body: string | Buffer,
@@ -248,6 +276,14 @@ function sendRequest(
   signal?: AbortSignal,
 ): Promise<{ status: number; body: Record<string, unknown> }> {
   return new Promise((resolve, reject) => {
+    let settled = false;
+    let receivedResponse = false;
+    const fail = (error: Error) => {
+      if (settled) return;
+      settled = true;
+      req.destroy();
+      reject(error);
+    };
     const req = request(
       {
         hostname: '127.0.0.1',
@@ -263,16 +299,35 @@ function sendRequest(
         },
       },
       (res) => {
+        receivedResponse = true;
         let data = '';
         res.on('data', (chunk) => {
           data += chunk;
         });
-        res.on('end', () => {
-          resolve({ status: res.statusCode ?? 0, body: JSON.parse(data) });
+        res.once('error', fail);
+        res.once('aborted', () => fail(new Error('WEBHOOK_TEST_RESPONSE_ABORTED')));
+        res.once('close', () => {
+          if (!res.complete) fail(new Error('WEBHOOK_TEST_RESPONSE_INCOMPLETE'));
+        });
+        res.once('end', () => {
+          if (settled) return;
+          try {
+            if (!res.complete) throw new Error('WEBHOOK_TEST_RESPONSE_INCOMPLETE');
+            const parsed: unknown = JSON.parse(data);
+            if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed))
+              throw new Error('WEBHOOK_TEST_RESPONSE_INVALID');
+            settled = true;
+            resolve({ status: res.statusCode ?? 0, body: parsed as Record<string, unknown> });
+          } catch (error) {
+            fail(error instanceof Error ? error : new Error('WEBHOOK_TEST_RESPONSE_INVALID'));
+          }
         });
       },
     );
-    req.on('error', reject);
+    req.once('error', fail);
+    req.once('close', () => {
+      if (!receivedResponse) fail(new Error('WEBHOOK_TEST_RESPONSE_MISSING'));
+    });
     req.write(body);
     req.end();
   });
@@ -314,10 +369,7 @@ function sendSlowChunkedRequest(port: number): Promise<string> {
     socket.on('data', (chunk: string) => {
       response += chunk;
     });
-    socket.once('error', (error) => {
-      if (response.includes('HTTP/1.1 408')) finish();
-      else finish(error);
-    });
+    socket.once('error', (error) => finish(error));
     socket.once('close', () => finish());
   });
 }
@@ -352,11 +404,233 @@ describe('notification-service admission policy', () => {
 });
 
 describe('WatchDaemon', () => {
+  it('returns a frozen independent address only while its own listener is bound', async () => {
+    const daemon = new WatchDaemon(config, secret, new WatchDedupeStore(tempDir));
+    expect(daemon.address()).toBeNull();
+    try {
+      const port = await startTestDaemon(daemon);
+      const address = daemon.address()!;
+      expect(address).toMatchObject({ port });
+      expect(Object.isFrozen(address)).toBe(true);
+      expect(daemon.address()).not.toBe(address);
+      expect(Reflect.set(address, 'port', 0)).toBe(false);
+      expect(daemon.address()?.port).toBe(port);
+      await daemon.stop();
+      expect(daemon.address()).toBeNull();
+      await startTestDaemon(daemon);
+      expect(daemon.address()?.port).toBeGreaterThan(0);
+      expect(daemon.address()).not.toBe(address);
+    } finally {
+      await daemon.stop();
+    }
+  });
+
+  it('keeps concurrent ephemeral endpoints tied to their own delivery state', async () => {
+    const firstStore = new WatchDedupeStore(join(tempDir, 'first'));
+    const secondStore = new WatchDedupeStore(join(tempDir, 'second'));
+    const first = new WatchDaemon(
+      config,
+      secret,
+      firstStore,
+      undefined,
+      undefined,
+      mockRecordEvent,
+    );
+    const second = new WatchDaemon(
+      config,
+      secret,
+      secondStore,
+      undefined,
+      undefined,
+      mockRecordEvent,
+    );
+    try {
+      const [firstPort, secondPort] = await Promise.all([
+        startTestDaemon(first),
+        startTestDaemon(second),
+      ]);
+      expect(firstPort).not.toBe(secondPort);
+      const body = makeIssuePayload();
+      const headers = {
+        'x-hub-signature-256': signPayload(body),
+        'x-github-event': 'issues',
+        'x-github-delivery': 'owned-endpoint',
+      };
+      expect((await sendRequest(firstPort, body, headers)).status).toBe(200);
+      expect(firstStore.getStats().count).toBe(1);
+      expect(secondStore.getStats().count).toBe(0);
+      expect((await sendRequest(secondPort, body, headers)).status).toBe(200);
+      expect(firstStore.getStats().count).toBe(1);
+      expect(secondStore.getStats().count).toBe(1);
+    } finally {
+      await Promise.all([first.stop(), second.stop()]);
+    }
+  });
+
+  it('does not let an idle stop consume a concurrently starting listener', async () => {
+    const daemon = new WatchDaemon(config, secret, new WatchDedupeStore(tempDir));
+    const stopping = daemon.stop();
+    const starting = daemon.start(0);
+    try {
+      await expect(starting).rejects.toThrow('WATCH_DAEMON_STOPPING');
+      await stopping;
+      await startTestDaemon(daemon);
+      expect(daemon.address()?.port).toBeGreaterThan(0);
+      await daemon.stop();
+      expect(daemon.address()).toBeNull();
+    } finally {
+      await stopping;
+      await daemon.stop();
+    }
+  });
+
+  it('shares concurrent stops and allows restart only after cleanup completes', async () => {
+    const daemon = new WatchDaemon(config, secret, new WatchDedupeStore(tempDir));
+    await startTestDaemon(daemon);
+    const router = Reflect.get(daemon, 'deliveryRouter') as WatchDeliveryRouter;
+    const originalStop = router.stop.bind(router);
+    let release = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const stop = vi.spyOn(router, 'stop').mockImplementationOnce(async () => {
+      await gate;
+      await originalStop();
+    });
+    const first = daemon.stop();
+    const second = daemon.stop();
+    try {
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(stop).toHaveBeenCalledTimes(1);
+      await expect(daemon.start(0)).rejects.toThrow('WATCH_DAEMON_STOPPING');
+      release();
+      await Promise.all([first, second]);
+      stop.mockRestore();
+      await startTestDaemon(daemon);
+      await daemon.stop();
+      expect(daemon.address()).toBeNull();
+    } finally {
+      release();
+      await Promise.all([first, second]);
+      stop.mockRestore();
+      await daemon.stop();
+    }
+  });
+
+  it('rejects an in-flight start when stop takes lifecycle ownership', async () => {
+    const deliveryStart = vi.spyOn(WatchDeliveryRouter.prototype, 'start');
+    const profileStart = vi.spyOn(ProfileSyncWorker.prototype, 'start');
+    const daemon = new WatchDaemon(config, secret, new WatchDedupeStore(tempDir));
+    const startup = daemon.start(0).then(
+      () => ({ started: true as const }),
+      (error: unknown) => ({ error }),
+    );
+    const stopping = daemon.stop();
+    try {
+      const [outcome] = await Promise.all([startup, stopping]);
+      expect(outcome).toMatchObject({ error: new Error('WATCH_DAEMON_STOPPING') });
+      expect(deliveryStart).not.toHaveBeenCalled();
+      expect(profileStart).not.toHaveBeenCalled();
+      expect(await startTestDaemon(daemon)).toBeGreaterThan(0);
+    } finally {
+      await stopping;
+      await daemon.stop();
+    }
+  });
+
+  it('rejects an invalid listen input without starting or retaining workers', async () => {
+    const deliveryStart = vi.spyOn(WatchDeliveryRouter.prototype, 'start');
+    const profileStart = vi.spyOn(ProfileSyncWorker.prototype, 'start');
+    const daemon = new WatchDaemon(config, secret, new WatchDedupeStore(tempDir));
+    try {
+      await expect(daemon.start(-1)).rejects.toMatchObject({ code: 'ERR_SOCKET_BAD_PORT' });
+      expect(deliveryStart).not.toHaveBeenCalled();
+      expect(profileStart).not.toHaveBeenCalled();
+      expect(daemon.address()).toBeNull();
+      expect(await startTestDaemon(daemon)).toBeGreaterThan(0);
+    } finally {
+      await daemon.stop();
+      deliveryStart.mockRestore();
+      profileStart.mockRestore();
+    }
+  });
+
+  it('rejects an owned occupied endpoint and releases startup state', async () => {
+    const blocker = createServer();
+    await new Promise<void>((resolve) => blocker.listen(0, resolve));
+    const address = blocker.address();
+    if (!address || typeof address === 'string') throw new Error('TEST_LISTENER_UNAVAILABLE');
+    const daemon = new WatchDaemon(config, secret, new WatchDedupeStore(tempDir));
+    const originalListen = Server.prototype.listen;
+    // A test observer prevents the old missing rejection handler from becoming
+    // an unhandled process error. It does not replace or suppress the OS error.
+    const listen = vi.spyOn(Server.prototype, 'listen').mockImplementation(function (
+      this: Server,
+      ...args: unknown[]
+    ) {
+      this.once('error', () => {});
+      return Reflect.apply(originalListen, this, args) as Server;
+    });
+    let outcome: { code?: string; resolved?: boolean } | undefined;
+    const startup = daemon.start(address.port).then(
+      () => {
+        outcome = { resolved: true };
+      },
+      (error: NodeJS.ErrnoException) => {
+        outcome = { code: error.code };
+      },
+    );
+    try {
+      await waitFor(() => outcome !== undefined);
+      await startup;
+      expect(outcome).toEqual({ code: 'EADDRINUSE' });
+      expect(daemon.address()).toBeNull();
+      expect(await startTestDaemon(daemon)).toBeGreaterThan(0);
+    } finally {
+      listen.mockRestore();
+      await daemon.stop();
+      await new Promise<void>((resolve) => blocker.close(() => resolve()));
+    }
+  });
+
+  it.each(['disconnect', 'partial-response', 'invalid-json'] as const)(
+    'rejects %s exactly once instead of hanging or accepting incomplete evidence',
+    async (fault) => {
+      const server = await testHttpServer((req, res) => {
+        if (fault === 'disconnect') {
+          req.socket.destroy();
+        } else if (fault === 'partial-response') {
+          res.writeHead(200, { 'Content-Type': 'application/json', 'Content-Length': 100 });
+          res.flushHeaders();
+          res.write('{"ok":');
+          setImmediate(() => res.destroy());
+        } else {
+          res.end('{');
+        }
+      });
+      let outcome: { resolved?: boolean; rejected?: boolean } | undefined;
+      const response = sendRequest(server.port, '{}').then(
+        () => {
+          outcome = { resolved: true };
+        },
+        () => {
+          outcome = { rejected: true };
+        },
+      );
+      try {
+        await waitFor(() => outcome !== undefined);
+        await response;
+        expect(outcome).toEqual({ rejected: true });
+      } finally {
+        await server.close();
+      }
+    },
+  );
+
   it('handles a valid webhook and returns event_id', async () => {
     const dedupe = new WatchDedupeStore(tempDir);
     const daemon = new WatchDaemon(config, secret, dedupe, undefined, undefined, mockRecordEvent);
-    const port = 3101 + Math.floor(Math.random() * 1000);
-    await daemon.start(port);
+    const port = await startTestDaemon(daemon);
 
     try {
       const body = makeIssuePayload();
@@ -386,8 +660,7 @@ describe('WatchDaemon', () => {
       ],
     };
     const daemon = new WatchDaemon(pushConfig, secret, new WatchDedupeStore(tempDir));
-    const port = 3101 + Math.floor(Math.random() * 1000);
-    await daemon.start(port);
+    const port = await startTestDaemon(daemon);
 
     try {
       const body = makePushPayload();
@@ -417,8 +690,7 @@ describe('WatchDaemon', () => {
       undefined,
       mockRecordEvent,
     );
-    const port = 3101 + Math.floor(Math.random() * 1000);
-    await daemon.start(port);
+    const port = await startTestDaemon(daemon);
 
     try {
       const body = makeIssuePayload();
@@ -442,8 +714,7 @@ describe('WatchDaemon', () => {
       mockRecordEvent,
       { maxBytes: 64, timeoutMs: 100 },
     );
-    const port = 3101 + Math.floor(Math.random() * 1000);
-    await daemon.start(port);
+    const port = await startTestDaemon(daemon);
 
     try {
       const body = makeIssuePayload();
@@ -459,32 +730,62 @@ describe('WatchDaemon', () => {
   });
 
   it('closes a slow chunked request after the bounded body-read timeout', async () => {
-    const daemon = new WatchDaemon(
-      config,
-      secret,
-      new WatchDedupeStore(tempDir),
-      undefined,
-      undefined,
-      mockRecordEvent,
-      { maxBytes: 64, timeoutMs: 30 },
-    );
-    const port = 3101 + Math.floor(Math.random() * 1000);
-    await daemon.start(port);
+    const store = new WatchDedupeStore(tempDir);
+    const event = vi.fn(mockRecordEvent);
+    const daemon = new WatchDaemon(config, secret, store, undefined, undefined, event, {
+      maxBytes: 64,
+      timeoutMs: 30,
+    });
+    const port = await startTestDaemon(daemon);
 
     try {
       const response = await sendSlowChunkedRequest(port);
       expect(response).toContain('HTTP/1.1 408 Request Timeout');
       expect(response.toLowerCase()).toContain('connection: close');
       expect(response).toContain('BODY_READ_TIMEOUT');
+      expect(response).toMatch(/\r\n0\r\n\r\n$/u);
+      expect(store.getStats().count).toBe(0);
+      expect(event).not.toHaveBeenCalled();
     } finally {
+      await daemon.stop();
+    }
+  });
+
+  it('releases a disconnected incomplete upload without admitting an event', async () => {
+    const store = new WatchDedupeStore(tempDir);
+    const event = vi.fn(mockRecordEvent);
+    const daemon = new WatchDaemon(config, secret, store, undefined, undefined, event, {
+      maxBytes: 64,
+      timeoutMs: 30,
+    });
+    const port = await startTestDaemon(daemon);
+    const socket = connect({ host: '127.0.0.1', port });
+    try {
+      await new Promise<void>((resolve, reject) => {
+        socket.once('error', reject);
+        socket.once('connect', () => {
+          socket.write(
+            'POST /github/webhook HTTP/1.1\r\nHost: localhost\r\nTransfer-Encoding: chunked\r\n\r\n1\r\n{\r\n',
+            () => {
+              socket.destroy();
+            },
+          );
+        });
+        socket.once('close', () => resolve());
+      });
+      await daemon.stop();
+      expect(daemon.address()).toBeNull();
+      expect(store.getStats().count).toBe(0);
+      expect(event).not.toHaveBeenCalled();
+    } finally {
+      socket.destroy();
       await daemon.stop();
     }
   });
 
   it('rejects malformed signed JSON with 400', async () => {
     const daemon = new WatchDaemon(config, secret, new WatchDedupeStore(tempDir));
-    const port = 3101 + Math.floor(Math.random() * 1000);
-    await daemon.start(port);
+    const port = await startTestDaemon(daemon);
 
     try {
       const body = '{';
@@ -501,8 +802,7 @@ describe('WatchDaemon', () => {
 
   it('rejects invalid UTF-8 even when the exact bytes are signed', async () => {
     const daemon = new WatchDaemon(config, secret, new WatchDedupeStore(tempDir));
-    const port = 3101 + Math.floor(Math.random() * 1000);
-    await daemon.start(port);
+    const port = await startTestDaemon(daemon);
 
     try {
       const body = Buffer.from([0x7b, 0xff, 0x7d]);
@@ -521,8 +821,7 @@ describe('WatchDaemon', () => {
   it('ignores an unknown signed event with 202', async () => {
     const dedupe = new WatchDedupeStore(tempDir);
     const daemon = new WatchDaemon(config, secret, dedupe);
-    const port = 3101 + Math.floor(Math.random() * 1000);
-    await daemon.start(port);
+    const port = await startTestDaemon(daemon);
 
     try {
       const body = makeIssuePayload();
@@ -574,8 +873,7 @@ describe('WatchDaemon', () => {
         {},
         liveStateDependencies,
       );
-      const port = 3101 + Math.floor(Math.random() * 1000);
-      await daemon.start(port);
+      const port = await startTestDaemon(daemon);
       try {
         const body = makeRepositoryEventPayload(eventName, action);
         const result = await sendRequest(port, body, {
@@ -608,8 +906,7 @@ describe('WatchDaemon', () => {
       ],
     };
     const daemon = new WatchDaemon(eventConfig, secret, dedupe);
-    const port = 3101 + Math.floor(Math.random() * 1000);
-    await daemon.start(port);
+    const port = await startTestDaemon(daemon);
     try {
       const body = makeRepositoryEventPayload('pull_request', 'edited');
       const result = await sendRequest(port, body, {
@@ -649,8 +946,7 @@ describe('WatchDaemon', () => {
       {},
       liveStateDependencies,
     );
-    const port = 3101 + Math.floor(Math.random() * 1000);
-    await daemon.start(port);
+    const port = await startTestDaemon(daemon);
     try {
       const body = makeRepositoryEventPayload('pull_request_review', 'submitted');
       const result = await sendRequest(port, body, {
@@ -687,8 +983,7 @@ describe('WatchDaemon', () => {
       ],
     };
     const daemon = new WatchDaemon(eventConfig, secret, dedupe);
-    const port = 3101 + Math.floor(Math.random() * 1000);
-    await daemon.start(port);
+    const port = await startTestDaemon(daemon);
     try {
       const body = JSON.stringify({ action: 'opened', repository: {} });
       const result = await sendRequest(port, body, {
@@ -716,8 +1011,7 @@ describe('WatchDaemon', () => {
       ],
     };
     const daemon = new WatchDaemon(eventConfig, secret, dedupe);
-    const port = 3101 + Math.floor(Math.random() * 1000);
-    await daemon.start(port);
+    const port = await startTestDaemon(daemon);
     try {
       const parsed = JSON.parse(makeRepositoryEventPayload('pull_request', 'opened')) as Record<
         string,
@@ -751,8 +1045,7 @@ describe('WatchDaemon', () => {
       undefined,
       mockRecordEvent,
     );
-    const port = 3101 + Math.floor(Math.random() * 1000);
-    await daemon.start(port);
+    const port = await startTestDaemon(daemon);
 
     try {
       const body = makeIssuePayload();
@@ -770,8 +1063,7 @@ describe('WatchDaemon', () => {
   it('ignores repos not in allowlist with 202', async () => {
     const dedupe = new WatchDedupeStore(tempDir);
     const daemon = new WatchDaemon(config, secret, dedupe, undefined, undefined, mockRecordEvent);
-    const port = 3101 + Math.floor(Math.random() * 1000);
-    await daemon.start(port);
+    const port = await startTestDaemon(daemon);
 
     try {
       const body = makeIssuePayload({
@@ -794,8 +1086,7 @@ describe('WatchDaemon', () => {
   it('suppresses duplicate deliveries', async () => {
     const dedupe = new WatchDedupeStore(tempDir);
     const daemon = new WatchDaemon(config, secret, dedupe, undefined, undefined, mockRecordEvent);
-    const port = 3101 + Math.floor(Math.random() * 1000);
-    await daemon.start(port);
+    const port = await startTestDaemon(daemon);
 
     try {
       const body = makeIssuePayload();
@@ -858,8 +1149,7 @@ describe('WatchDaemon', () => {
           ]),
         },
       );
-      const port = 3101 + Math.floor(Math.random() * 1000);
-      await daemon.start(port);
+      const port = await startTestDaemon(daemon);
       try {
         const body = makeIssuePayload();
         const headers = {
@@ -994,8 +1284,7 @@ describe('WatchDaemon', () => {
       undefined,
       mockRecordEvent,
     );
-    const port = 3101 + Math.floor(Math.random() * 1000);
-    await daemon.start(port);
+    const port = await startTestDaemon(daemon);
 
     try {
       // Send a labeled event for OpenSlack (which only watches opened)
@@ -1298,14 +1587,7 @@ describe('WatchDaemon polling', () => {
     const dedupe = new WatchDedupeStore(tempDir);
     // Construction is kept for its setup effects; this case asserts on the
     // event-key mapping below rather than on the daemon handle.
-    void new WatchDaemon(
-      labeledOnlyConfig,
-      '',
-      dedupe,
-      undefined,
-      undefined,
-      mockRecordEvent,
-    );
+    void new WatchDaemon(labeledOnlyConfig, '', dedupe, undefined, undefined, mockRecordEvent);
     const event: NormalizedIssueEvent = {
       action: 'opened',
       owner: 'Negentropy-Laby',

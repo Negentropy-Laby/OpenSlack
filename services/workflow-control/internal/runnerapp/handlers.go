@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/drainmetrics"
 	"io"
 	"net/http"
 	"strconv"
@@ -452,6 +453,9 @@ func (service *Service) handleBinding(w http.ResponseWriter, request *http.Reque
 }
 
 func (service *Service) handleMetrics(w http.ResponseWriter, request *http.Request) {
+	if drainmetrics.Handle(w, request, service.store, service.workspaceID, service.buildSHA, "runner", func(epoch int64) bool { return epoch > 0 }) {
+		return
+	}
 	if !requireNoQuery(w, request) {
 		return
 	}

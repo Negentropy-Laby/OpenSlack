@@ -17,9 +17,13 @@ esac
 readonly postgres_image='postgres:18.4@sha256:3a82e1f56c8f0f5616a11103ac3d47e632c3938698946a7ad26da0df1334744a'
 readonly profile_suffix="${profile%%-*}"
 readonly postgres_container="openslack-${profile_suffix}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+sealed_result_file=''
 
 cleanup() {
   docker rm --force "$postgres_container" >/dev/null 2>&1 || true
+  if [[ -n "${sealed_result_file:-}" ]]; then
+    rm -f -- "$sealed_result_file"
+  fi
 }
 
 wait_for_postgres() {
@@ -137,6 +141,21 @@ case "$profile" in
     export WORKFLOW_CONTROL_BUDGET_AUTHORITY_HTTP_BIND=127.0.0.1:8085
     go test -race ./internal/budgetapp ./internal/budgetstore/... ./internal/config ./tests/contracts ./tests/integration -count=1
     WORKFLOW_CONTROL_GS9E_QUALIFICATION=1 go test -race ./cmd/budget-authority-server -run '^TestGS9EQualification$' -count=1
+    # This mandatory host gate has Bun/Node and the actual PostgreSQL fixture.
+    # Keep the sealed worker composition out of the pinned Go-only containers.
+    sealed_result_file="$(mktemp -t openslack-sealed-checkpoint-results.XXXXXX)"
+    if ! go test -json -race -tags sealed_worker_integration ./cmd/runner-server -run '^TestGS9F2SealedCheckpointResume$' -count=1 >"$sealed_result_file"; then
+      cat "$sealed_result_file"
+      exit 1
+    fi
+    cat "$sealed_result_file"
+    if grep -Fq '"Action":"skip"' "$sealed_result_file" ||
+      ! grep -F '"Action":"pass"' "$sealed_result_file" | grep -Fq '"Test":"TestGS9F2SealedCheckpointResume"'; then
+      echo 'sealed checkpoint qualification did not report an exact pass without skips' >&2
+      exit 1
+    fi
+    rm -f -- "$sealed_result_file"
+    sealed_result_file=''
     restart_schema="workflow_control_gs9e_restart_${GITHUB_RUN_ID}_${GITHUB_RUN_ATTEMPT}"
     WORKFLOW_CONTROL_GS9E_RESTART_PHASE=seed WORKFLOW_CONTROL_GS9E_RESTART_SCHEMA="$restart_schema" \
       go test -race ./cmd/budget-authority-server -run '^TestGS9ERestartQualification$' -count=1

@@ -313,7 +313,7 @@ func TestSourceManifestBindsOnlyUnreleasedGS9IInputs(t *testing.T) {
 		},
 		"runnerV2RuntimeDeliveryHTTPHandlersSource": {
 			Path:   "services/workflow-control/internal/runnerapp/handlers.go",
-			SHA256: "fdd8bec3336f3e523dfc35f6f7f036b40e87d48787692f44b7a83324764e074e",
+			SHA256: "f5f8d24aecc6e7374fa784e8a3e08936dc291698b121bb42d7215e59c20ef934",
 		},
 		"runnerV2RuntimeDeliveryHTTPServerSource": {
 			Path:   "services/workflow-control/internal/runnerapp/server.go",
@@ -329,7 +329,7 @@ func TestSourceManifestBindsOnlyUnreleasedGS9IInputs(t *testing.T) {
 		},
 		"workflowRunStoreSource": {
 			Path:   "packages/workflows/src/run-store.ts",
-			SHA256: "5454780aa357dae99dbdcf35cd1bc93b6360b549fff901e6f23cf7dd04822fe0",
+			SHA256: "782342eabd86217e686246af45bca38b630671b4507151d21a61ef4706d86b4e",
 		},
 		"workflowRunStoreRecoveryAccessSource": {
 			Path:   "packages/workflows/src/internal/workflow-run-store-recovery-access.ts",
@@ -437,7 +437,7 @@ func TestSourceManifestBindsOnlyUnreleasedGS9IInputs(t *testing.T) {
 		},
 		"workflowRunnerExecutionClientSource": {
 			Path:   "packages/workflows/src/workflow-runner-execution-client.ts",
-			SHA256: "c1a81d12dc496c26154d20bb124a3033122739c41e098690a485953422ee99f8",
+			SHA256: "4394a0aac043c6259a0102c649741c71ba87142bf800fc5e37f0ceeeed01b73e",
 		},
 		"workflowRunnerV2ControlClientSource": {
 			Path:   "packages/workflows/src/workflow-runner-v2-control-client.ts",
@@ -453,7 +453,7 @@ func TestSourceManifestBindsOnlyUnreleasedGS9IInputs(t *testing.T) {
 		},
 		"workflowRunnerWorkerSource": {
 			Path:   "packages/workflows/src/workflow-runner-worker.ts",
-			SHA256: "ea48d2e00b78a411d124b8f5339c077b5ffc535aea5b0bcc4d3311113bd556d2",
+			SHA256: "4b323d7ca4700d6ad751031c47afbe061441e8d4713c605cd87df5d1844d57a7",
 		},
 		"workflowRunRoutingTest": {
 			Path:   "packages/workflows/src/__tests__/workflow-run-routing.test.ts",
@@ -485,7 +485,7 @@ func TestSourceManifestBindsOnlyUnreleasedGS9IInputs(t *testing.T) {
 		},
 		"workflowControlAuthorityHTTPHandlersSource": {
 			Path:   "services/workflow-control/internal/authorityapp/handlers.go",
-			SHA256: "2d941d669a85ae70526ae68cb375e57efa91cc136ef831aae8fe41091ad33cde",
+			SHA256: "ea05916b8b6c91e1d83f8d428e884e271ab0dd5e29bfaaaade06a40f61ad328b",
 		},
 		"workflowControlAuthorityHTTPServerTest": {
 			Path:   "services/workflow-control/internal/authorityapp/server_test.go",
@@ -517,7 +517,7 @@ func TestSourceManifestBindsOnlyUnreleasedGS9IInputs(t *testing.T) {
 		},
 		"workflowGoExecutionRecoveryTest": {
 			Path:   "packages/workflows/src/__tests__/execute-go-authority.test.ts",
-			SHA256: "34a9a558db95a851467d3b54611dde0cf0a15db58cbcbfc9b577fe5a7812ae4c",
+			SHA256: "387b445b270b58bdb68be1c4b99ed87a9a029badc8de8adc7b4e3b7206054c5c",
 		},
 		"runnerMixedOrphanRestartTest": {
 			Path:   "services/workflow-control/internal/runnerstore/postgres/runner_recovery_restart_integration_test.go",
@@ -691,7 +691,7 @@ func TestSourceManifestBindsOnlyUnreleasedGS9IInputs(t *testing.T) {
 		},
 		"workflowCheckpointEvidence": {
 			Path:   "packages/workflows/src/internal/workflow-runner-checkpoint-evidence.ts",
-			SHA256: "63c4a5701ed8371f514d6e03d73197f118241178491e46238959d050e6eb3381",
+			SHA256: "37ce2d47cc4f569ff3a7b34973eb2611b3cdf569451c12d40f0f07022e6ddf2c",
 		},
 		"workflowAuthorityFailure": {
 			Path:   "packages/workflows/src/internal/workflow-authority-failure.ts",
@@ -719,7 +719,7 @@ func TestSourceManifestBindsOnlyUnreleasedGS9IInputs(t *testing.T) {
 		},
 		"workflowRunnerV2Session": {
 			Path:   "packages/workflows/src/workflow-runner-v2-session.ts",
-			SHA256: "a2df661912f10f043b054e7e4598f3d7abd2e2656a084c8aabff6bf94bcfb285",
+			SHA256: "ca83ee2f1885af6e5d1caaaccb8ab3c34f198442ac60959578283599e6c517e8",
 		},
 		"workflowRecoveryEvidenceTests": {
 			Path:   "packages/workflows/src/__tests__/workflow-run-recovery-evidence.test.ts",
@@ -735,15 +735,15 @@ func TestSourceManifestBindsOnlyUnreleasedGS9IInputs(t *testing.T) {
 		},
 		"goCheckVerifierRegression": {
 			Path:   "packages/workspace/src/__tests__/go-check-script.test.ts",
-			SHA256: "cd99b6474ba9c414879e11a91824731a958ff5237da0ddefd18578192b1b4aa1",
+			SHA256: "5e109d086e0b8629085a4158037b4bfd7b07193571033c7110894841a4dc04be",
 		},
 		"workflowEvidenceFileSource": {
 			Path:   "packages/workflows/src/internal/workflow-evidence-file.ts",
-			SHA256: "333d2204f6bdd3b69f33fb1399ed2b53b83f2d9157c73b6c851f38090e17c57c",
+			SHA256: "5fe6234db853fb6867f1027a770dba471f90e714378c72a3cc613210fd55c968",
 		},
 		"workflowReadCorrectnessTest": {
 			Path:   "packages/workflows/src/__tests__/workflow-read-correctness.test.ts",
-			SHA256: "f9dd6754364993dc6d16be4de30ec0346e9196a2921a3ffa6a61830190ab79c2",
+			SHA256: "d29afe1172fb685b60ef6481012b580d717fc00c2905fbba0f26b305fb1351d2",
 		},
 		"workflowMcpReadMetadataSource": {
 			Path:   "apps/mcp/src/workflow-read-metadata.ts",
@@ -827,7 +827,7 @@ func TestSourceManifestBindsOnlyUnreleasedGS9IInputs(t *testing.T) {
 		},
 		"runnerBindingReconciliationPostgresTests": {
 			Path:   "services/workflow-control/internal/runnerstore/postgres/binding_reconciliation_integration_test.go",
-			SHA256: "5868529fdf4aca6ead1f917256c6f45257e8b874221ebdc0c4fd6999cff236ca",
+			SHA256: "64c0a2179d1641280a3730615c53b1ed4659d55ea061626bc539038ed4bf515c",
 		},
 		"runnerReconciliationRestartTests": {
 			Path:   "services/workflow-control/internal/runnerstore/postgres/reconciliation_restart_integration_test.go",

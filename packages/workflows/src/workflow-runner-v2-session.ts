@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { isWorkflowAuthorityRetryable } from './internal/workflow-authority-failure.js';
 import {
   WORKFLOW_BINDING_HASH_REGEX,
@@ -10,6 +10,7 @@ import {
 } from './internal/workflow-checkpoint-lease-authority.js';
 import type { RunResult, WorkflowModule } from './types.js';
 import {
+  canonicalWorkflowControlAuthorityJson,
   prepareWorkflowControlAuthorityMessage,
   validateWorkflowControlAuthorityMessage,
   workflowControlAuthorityDirectionForKind,
@@ -38,6 +39,8 @@ import {
   hashWorkflowRunnerV2Result,
   type WorkflowRunnerV2ExecutionDescriptor,
 } from './workflow-runner-v2-descriptor.js';
+
+const ACCEPTED_CONTROL_HISTORY_LIMIT = 64;
 
 export type WorkflowRunnerV2SessionState =
   | 'created'
@@ -278,6 +281,7 @@ export class WorkflowRunnerV2Session<TPrepared, TWorkflow = WorkflowModule> {
   #controlBuildHash?: string;
   #heartbeatIntervalMs?: number;
   #lease?: LeaseBinding;
+  #admissionAccepted = false;
   #descriptor?: WorkflowRunnerV2ExecutionDescriptor;
   #preparedSource?: TPrepared;
   #abortController?: AbortController;
@@ -285,6 +289,7 @@ export class WorkflowRunnerV2Session<TPrepared, TWorkflow = WorkflowModule> {
   #workerSequence = 0;
   #lastControlSequence = 0;
   #lastReceiptSequence = 0;
+  readonly #acceptedControls = new Map<string, string>();
   #resumeOffer: WorkflowControlAuthorityMessage | null = null;
   #resumeRequired = false;
   #queuedCancel?: WorkflowControlAuthorityMessage;
@@ -616,6 +621,7 @@ export class WorkflowRunnerV2Session<TPrepared, TWorkflow = WorkflowModule> {
       this.#lease.resumeGeneration = nextGeneration as number;
       this.#resumeOffer = resumeOffer;
     }
+    this.#admissionAccepted = true;
     await this.#afterDecisionLane();
     this.#assertLive();
     if (this.#abortController.signal.aborted) return;
@@ -782,6 +788,9 @@ export class WorkflowRunnerV2Session<TPrepared, TWorkflow = WorkflowModule> {
       this.#terminal ||
       this.#outstanding ||
       this.#eventLanePending > 0 ||
+      // A lease is captured before the asynchronous Go resume/admission probe.
+      // It does not permit a heartbeat until lease_accept has been receipted.
+      !this.#admissionAccepted ||
       this.#state === 'closed'
     )
       return false;
@@ -789,7 +798,7 @@ export class WorkflowRunnerV2Session<TPrepared, TWorkflow = WorkflowModule> {
     await this.#emitReceiptable('heartbeat', {
       observedAt,
       leaseExpiresAt: this.#lease.leaseExpiresAt,
-      state: this.#state === 'cancelling' ? 'cancelling' : 'running',
+      state: this.#abortController?.signal.aborted ? 'cancelling' : 'running',
       lastReceiptSequence: this.#lastReceiptSequence,
     });
     return true;
@@ -997,6 +1006,13 @@ export class WorkflowRunnerV2Session<TPrepared, TWorkflow = WorkflowModule> {
   }
 
   async #handleReceipt(message: WorkflowControlAuthorityMessage): Promise<void> {
+    // The existing transport retries exact event bytes while a durable ACK is
+    // in flight. Keep a bounded window of fully validated, durably acknowledged
+    // receipt identities; changed bytes still pass the strict matching checks.
+    const exact = createHash('sha256')
+      .update(canonicalWorkflowControlAuthorityJson(message))
+      .digest('hex');
+    if (this.#acceptedControls.get(message.eventId) === exact) return;
     const outstanding = this.#outstanding;
     if (!outstanding || outstanding.receiptAccepted || !this.#controlBuildHash) {
       throw new WorkflowRunnerV2SessionError(
@@ -1080,6 +1096,10 @@ export class WorkflowRunnerV2Session<TPrepared, TWorkflow = WorkflowModule> {
       await this.#fatal(error);
       return;
     }
+    this.#acceptedControls.set(message.eventId, exact);
+    // This only recognizes recent transport duplicates, never supplies a lease.
+    if (this.#acceptedControls.size > ACCEPTED_CONTROL_HISTORY_LIMIT)
+      this.#acceptedControls.delete(this.#acceptedControls.keys().next().value!);
     outstanding.receiptAccepted = true;
     this.#lastReceiptSequence = outstanding.message.sequence ?? 0;
     if (message.runRevision !== null) this.#requireLease().runRevision = message.runRevision;
@@ -1090,6 +1110,10 @@ export class WorkflowRunnerV2Session<TPrepared, TWorkflow = WorkflowModule> {
   }
 
   async #handleDecision(message: WorkflowControlAuthorityMessage): Promise<void> {
+    const exact = createHash('sha256')
+      .update(canonicalWorkflowControlAuthorityJson(message))
+      .digest('hex');
+    if (this.#acceptedControls.get(message.eventId) === exact) return;
     const outstanding = this.#outstanding;
     if (!outstanding?.receiptAccepted || !outstanding.expectedDecision) {
       throw new WorkflowRunnerV2SessionError(
@@ -1143,6 +1167,9 @@ export class WorkflowRunnerV2Session<TPrepared, TWorkflow = WorkflowModule> {
         ),
       );
     }
+    this.#acceptedControls.set(message.eventId, exact);
+    if (this.#acceptedControls.size > ACCEPTED_CONTROL_HISTORY_LIMIT)
+      this.#acceptedControls.delete(this.#acceptedControls.keys().next().value!);
     this.#outstanding = undefined;
     outstanding.resolveDecision?.(message);
   }
@@ -1510,6 +1537,7 @@ export class WorkflowRunnerV2Session<TPrepared, TWorkflow = WorkflowModule> {
   }
 
   #clearLease(): void {
+    this.#admissionAccepted = false;
     this.#lease = undefined;
     this.#descriptor = undefined;
     this.#preparedSource = undefined;
@@ -1518,6 +1546,7 @@ export class WorkflowRunnerV2Session<TPrepared, TWorkflow = WorkflowModule> {
     this.#resumeRequired = false;
     this.#workerSequence = 0;
     this.#lastReceiptSequence = 0;
+    this.#acceptedControls.clear();
     this.#queuedCancel = undefined;
     this.#terminal = false;
     this.#terminalReceiptAccepted = false;

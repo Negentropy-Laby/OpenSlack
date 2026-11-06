@@ -28,6 +28,7 @@ import {
   type ProviderAttemptPort,
 } from '../index.js';
 import { createProviderAttemptBoundary } from '../internal/provider-attempt-boundary.js';
+import { bindProviderSendAdmission } from '../internal/provider-send-admission.js';
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -208,6 +209,57 @@ describe('OpenAI-compatible agent runtime', () => {
   });
 
   afterEach(() => rmSync(root, { recursive: true, force: true }));
+
+  it('applies the host send veto after reservation and exact encoding, before physical fetch', async () => {
+    const { context } = createContext(root);
+    const port: ProviderAttemptPort = {
+      reserve: vi.fn(async () => ({
+        reservationId: 'reservation.one',
+        callId: 'call.one',
+        authorizedTokens: '100',
+      })),
+      settle: vi.fn(async () => {}),
+    };
+    const veto = vi.fn(async (_reservation, request) => {
+      expect(JSON.parse(request.requestBytes)).toMatchObject({
+        model: 'test-model',
+        max_tokens: 50,
+      });
+      throw new RuntimeMisconfiguredError('SEND_TOTAL_TOKEN_UNVERIFIED');
+    });
+    bindProviderSendAdmission(port, veto);
+    const transport = vi.fn(async () => jsonResponse({}));
+    await expect(
+      adapter(transport as typeof fetch, {
+        providerAttemptBoundary: createProviderAttemptBoundary(port),
+      }).execute(context),
+    ).rejects.toThrow();
+    expect(port.reserve).toHaveBeenCalledTimes(1);
+    expect(veto).toHaveBeenCalledTimes(1);
+    expect(transport).not.toHaveBeenCalled();
+    expect(port.settle).not.toHaveBeenCalled();
+  });
+
+  it.each(['adapter', 'providerRegistry'] as const)(
+    'refuses governed %s overrides before their execution',
+    (kind) => {
+      const execute = vi.fn();
+      const port: ProviderAttemptPort = { reserve: vi.fn(), settle: vi.fn() };
+      bindProviderSendAdmission(port, async () => {
+        throw new Error('SEND_TOTAL_TOKEN_UNVERIFIED');
+      });
+      expect(() =>
+        createOpenSlackAgentLauncher({
+          runStore: createRunStore(root),
+          rootDir: root,
+          providerAttemptPort: port,
+          [kind]: { execute } as never,
+        }),
+      ).toThrow(/without adapter overrides/);
+      expect(execute).not.toHaveBeenCalled();
+      expect(port.reserve).not.toHaveBeenCalled();
+    },
+  );
 
   it('runs a governed multi-turn tool loop with wire-name mapping and usage charging', async () => {
     const requests: Array<Record<string, unknown>> = [];

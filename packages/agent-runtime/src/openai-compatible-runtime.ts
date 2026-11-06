@@ -30,6 +30,7 @@ import {
 import type { ProviderAttemptReservation } from './provider-attempt-port.js';
 import {
   reserveProviderAttempt,
+  admitProviderAttemptSend,
   settleProviderAttempt,
   type ProviderAttemptBoundary,
 } from './internal/provider-attempt-boundary.js';
@@ -215,6 +216,7 @@ export class OpenAICompatibleExecutionAdapter implements AgentExecutionAdapter {
       let receiptRecorded = false;
       let reportedUsage: ProviderTokenUsage | null = null;
       let reservation: ProviderAttemptReservation | undefined;
+      let sendAdmissionFailed = false;
       try {
         throwIfAborted(context.signal);
         if (Date.now() - startedAt >= this.options.timeoutMs) {
@@ -274,6 +276,20 @@ export class OpenAICompatibleExecutionAdapter implements AgentExecutionAdapter {
           tool_choice: definitions.length > 0 ? 'auto' : undefined,
           max_tokens: maxTokens,
         });
+        if (this.options.providerAttemptBoundary && reservation) {
+          try {
+            await admitProviderAttemptSend(this.options.providerAttemptBoundary, reservation, {
+              providerId: this.options.providerId,
+              modelId,
+              requestBytes: requestBody,
+              signal: context.signal,
+            });
+          } catch (error) {
+            sendAdmissionFailed = true;
+            throw error;
+          }
+        }
+        throwIfAborted(context.signal);
         attemptStarted = true;
         const response = await fetchWithTimeout(
           fetchImpl,
@@ -440,7 +456,13 @@ export class OpenAICompatibleExecutionAdapter implements AgentExecutionAdapter {
         // Reserve is durable before the transport begins. Once it succeeds,
         // local framing/authorization failures must settle as unreported
         // instead of leaving an open reservation behind.
-        if ((attemptStarted || reservation !== undefined) && !receiptRecorded) {
+        // A host send veto is not a provider outcome. Keep the Go reservation
+        // open for reconciliation, without manufacturing a usage receipt.
+        if (
+          (attemptStarted || reservation !== undefined) &&
+          !receiptRecorded &&
+          !sendAdmissionFailed
+        ) {
           const failedReceipt = buildProviderUsageReceipt({
             providerId: this.options.providerId,
             modelId: context.resolvedConfig.model ?? this.options.model,

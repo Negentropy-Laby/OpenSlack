@@ -25,6 +25,7 @@ import {
   writeExclusive,
 } from './workflow-control-shadow.js';
 import { readWorkflowEffectApprovalRecordExact } from './workflow-effect-approval-store.js';
+import { resolveWorkflowEffectApprovalRoot } from './internal/workflow-effect-approval-layout.js';
 import {
   createPendingWorkflowEffectApproval,
   validateWorkflowEffectApproval,
@@ -3183,7 +3184,7 @@ export async function repairWorkflowEffectAuthoritySecurity(
     });
   }
   const localRoot = join(workspaceRoot, '.openslack.local', 'workflows');
-  const approvalRoot = join(localRoot, 'effect-approvals');
+  const approvalRoot = resolveWorkflowEffectApprovalRoot(workspaceRoot);
   const authorityRoot = join(localRoot, AUTHORITY_DIRECTORY);
   const roots = [approvalRoot, authorityRoot];
   const existingRoots: string[] = [];
@@ -3832,6 +3833,169 @@ export interface WorkflowEffectAuthorityObservationScan {
 export interface WorkflowEffectAuthorityObservationRecordIdentity {
   readonly identity: string;
   readonly approvalScope: string | null;
+}
+
+/** Current D2 authority only. Never initializes, locks, repairs, or publishes a shadow. */
+export async function readWorkflowEffectAuthorityDrain(input: {
+  approvalRoot: string;
+  workspaceId: string;
+  controlBuildHash: string;
+  signal: AbortSignal;
+  assertRunScope: (record: {
+    runId: string;
+    workflowSourceHash: string;
+    manifestHash: string;
+    inputHash: string;
+  }) => Promise<void>;
+}): Promise<{
+  pendingEffects: number;
+  reconciliationRequired: number;
+  evidenceHash: string;
+  approvalScopes: readonly string[];
+}> {
+  const invalid = (): never =>
+    fail(
+      'WORKFLOW_EFFECT_RECONCILIATION_REQUIRED',
+      'Read-only D2 drain evidence is unavailable or changed.',
+    );
+  const root = authorityRoot(input.approvalRoot);
+  if (!root) return invalid();
+  const canonicalRoot = await assertOwnerDirectory(root, JOURNAL_SECURITY);
+  const paths: StorePaths = {
+    root,
+    records: join(canonicalRoot, 'records'),
+    claims: join(canonicalRoot, 'claims'),
+    anchors: join(canonicalRoot, 'claims'),
+    replays: join(canonicalRoot, 'claims'),
+    locks: join(canonicalRoot, 'locks'),
+  };
+  for (const path of [paths.records, paths.claims, paths.locks])
+    await assertOwnerDirectory(path, JOURNAL_SECURITY, canonicalRoot);
+  if ((await readdir(root)).sort().join(',') !== 'claims,locks,records') return invalid();
+  await validateAuthorityTree(paths);
+  const capture = async () => {
+    input.signal.throwIfAborted();
+    if ((await readdir(paths.locks)).length !== 0) return invalid();
+    const values = new Map<string, Buffer>();
+    let bytes = 0;
+    for (const directory of [paths.records, paths.claims]) {
+      for (const name of (await readdir(directory)).sort()) {
+        input.signal.throwIfAborted();
+        if (!AUTHORITY_FILE.test(name) || values.size >= MAX_ENTRIES) return invalid();
+        const path = join(directory, name);
+        const data = await readBounded(path, directory, MAX_EXECUTION_BYTES);
+        if (!data) return invalid();
+        bytes += data.length;
+        if (bytes > MAX_TOTAL_BYTES) return invalid();
+        values.set(path, data);
+      }
+    }
+    return values;
+  };
+  const before = await capture();
+  const referenced = new Set<string>();
+  const approvalScopes: string[] = [];
+  let pendingEffects = 0,
+    reconciliationRequired = 0;
+  for (const [path, bytes] of before) {
+    if (dirname(path) !== paths.records) continue;
+    const record = parseAuthorityRecord(bytes);
+    if (
+      recordPath(paths, record.runId, record.evaluationIndex) !== path ||
+      record.workspaceId !== input.workspaceId ||
+      record.validationContext.expectedControlBuildHash !== input.controlBuildHash
+    )
+      return invalid();
+    await input.assertRunScope(record);
+    await assertOccurrenceAnchor(paths, record);
+    referenced.add(anchorPath(paths, record.runId, record.evaluationIndex));
+    await assertApprovalGenerationAnchor(paths, record);
+    const artifact = record.artifact;
+    if (artifact && artifact.kind !== 'effect_intent') {
+      const approval = await readWorkflowEffectApprovalRecordExact(
+        input.approvalRoot,
+        record.runId,
+        artifact.approval.approvalId,
+      );
+      if (
+        canonicalWorkflowEffectControlJson(approval) !==
+        canonicalWorkflowEffectControlJson(artifact.approval)
+      )
+        return invalid();
+      referenced.add(
+        join(
+          paths.claims,
+          `${key('approval-generation', record.runId, record.evaluationIndex)}.json`,
+        ),
+      );
+    }
+    if (record.executionState === 'reconciliation_required') reconciliationRequired++;
+    const executed = record.executionState === 'executed';
+    const denied =
+      artifact &&
+      artifact.kind !== 'effect_intent' &&
+      ['rejected', 'expired'].includes(artifact.approval.status);
+    if (!executed && !denied) pendingEffects++;
+    if (artifact) {
+      const claim = claimPath(paths, record.runId, artifact.occurrenceId);
+      const raw = before.get(claim);
+      if (raw) {
+        if (
+          artifact.kind !== 'effect_decision_committed' &&
+          artifact.kind !== 'effect_audit_recorded'
+        )
+          return invalid();
+        const execution = validateExecutionRecord(
+          parseWorkflowEffectJson(raw),
+          record.validationContext,
+          artifact,
+        );
+        if (
+          execution.artifact.claimStatus !== record.executionState ||
+          execution.artifact.executionId !== record.executionId
+        )
+          return invalid();
+        referenced.add(claim);
+        if (execution.replay?.kind === 'artifact') {
+          const replay = await loadReplayArtifact(
+            paths,
+            record.runId,
+            execution.artifact.executionId,
+            execution.replay,
+          );
+          if (replay.resultHash !== execution.replay.resultHash) return invalid();
+          referenced.add(replayPath(paths, record.runId, execution.artifact.executionId));
+        }
+      } else if (record.executionState !== 'unclaimed') return invalid();
+    }
+    if (record.artifact && record.artifact.kind !== 'effect_intent')
+      approvalScopes.push(
+        createHash('sha256')
+          .update(record.runId + '\0' + record.artifact.approval.approvalId)
+          .digest('hex'),
+      );
+  }
+  // Orphan/unknown claims, temporaries and partial authority cannot prove zero.
+  for (const path of before.keys())
+    if (dirname(path) === paths.claims && !referenced.has(path)) return invalid();
+  const after = await capture();
+  if (after.size !== before.size || [...before].some(([p, b]) => !after.get(p)?.equals(b)))
+    return invalid();
+  for (const path of [paths.records, paths.claims, paths.locks])
+    await assertOwnerDirectory(path, JOURNAL_SECURITY, canonicalRoot);
+  input.signal.throwIfAborted();
+  return {
+    pendingEffects,
+    reconciliationRequired,
+    approvalScopes,
+    evidenceHash: hashWorkflowEffectControlDomain(
+      'drain-current-authority',
+      [...after].map(([p, b]) => ({
+        name: relative(root, p),
+        sha256: createHash('sha256').update(b).digest('hex'),
+      })),
+    ),
+  };
 }
 
 function observerFailure(

@@ -1,7 +1,6 @@
 import { createWorkflowSourceSnapshot } from '../internal/workflow-source-snapshot.js';
 import { createWorkflowRunStoreRecoveryAccess } from '../internal/workflow-run-store-recovery-access.js';
 import { bindGoWorkflowResumeIdentity, validateGoWorkflowResumeContext } from '../resume.js';
-import { resolveWorkflowRunProjectionRoot } from '../workflow-run-projection.js';
 import { mkdtemp, rm, writeFile, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -17,15 +16,13 @@ import {
 import { RunStore, type RunMeta } from '../run-store.js';
 import type { WorkflowMeta, WorkflowModule } from '../types.js';
 import {
-  workflowControlAuthorityInitialRecord,
-  type WorkflowControlAuthorityPort,
-} from '../workflow-control-authority-client.js';
-import { WorkflowRunRouter } from '../workflow-run-routing.js';
-import {
   WorkflowRunnerGoProjectionError,
   WorkflowRunnerV2GoProjectionRunStore,
 } from '../workflow-runner-v2-go-projection-store.js';
-import { workflowRunnerV2DescriptorFixture } from './workflow-runner-v2-test-fixture.js';
+import {
+  workflowRunnerV2DescriptorFixture,
+  workflowRunnerGoAuthorityFixture,
+} from './workflow-runner-v2-test-fixture.js';
 
 const roots: string[] = [];
 const manifest: WorkflowMeta = {
@@ -42,7 +39,12 @@ afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
 
-async function execution(mode: 'run' | 'resume', meta = manifest, historicalRunId?: string) {
+async function execution(
+  mode: 'run' | 'resume',
+  meta = manifest,
+  historicalRunId?: string,
+  resumeRunnerHash?: string,
+) {
   const rootDir = await mkdtemp(join(tmpdir(), 'openslack-go-execute-'));
   roots.push(rootDir);
   const sourceBytes = Buffer.from('export const workflow = true;', 'utf8');
@@ -58,66 +60,18 @@ async function execution(mode: 'run' | 'resume', meta = manifest, historicalRunI
       authorityBuildHash: 'a'.repeat(64),
     },
   });
-  const runId = descriptor.workflowRunId;
-  const route = new WorkflowRunRouter({
-    schema: 'openslack.workflow_run_routing_policy.v1',
-    workspaceId: descriptor.workspaceId,
-    backend: 'go',
-    routingEpoch: 9,
-    authorityBuildHash: 'a'.repeat(64),
+  const { runId, route, authority, baseDir, store, binding } = workflowRunnerGoAuthorityFixture({
+    rootDir,
+    descriptor,
     qualificationEnvironmentId: 'execution.test',
-    workflowAllowlist: [meta.name],
-    runAllowlist: [],
-    expiresAt: descriptor.expiresAt,
-  }).select({
-    workspaceId: descriptor.workspaceId,
-    runId,
-    workflowId: meta.name,
-    workflowVersion: meta.version!,
-    workflowSourceHash: descriptor.workflowSourceHash,
-    manifestHash: descriptor.manifestHash,
-    inputHash: descriptor.inputHash,
-    correlationId: descriptor.correlationId,
-    selectedAt: descriptor.createdAt,
+    runner: {
+      jobId: 'job.execution',
+      attemptId: 'attempt.first',
+      leaseId: 'lease.first',
+      fencingToken: 1,
+      runnerBuildHash: 'e'.repeat(64),
+    },
   });
-  let record = workflowControlAuthorityInitialRecord(route);
-  const authority: WorkflowControlAuthorityPort = {
-    inspectBinding: vi.fn(),
-    accept: vi.fn(),
-    async read() {
-      return {
-        ...record,
-        schema: 'openslack.workflow_control_authority_read.v2',
-        recordHash: 'f'.repeat(64),
-        record,
-        updatedAt: descriptor.createdAt,
-      };
-    },
-    async readIfExists() {
-      return this.read(runId, route.route);
-    },
-    async transition(next, expected) {
-      expect(expected).toMatchObject({ revision: record.revision, state: record.state });
-      expect(next.revision).toBe(record.revision + 1);
-      record = next;
-      return {} as never;
-    },
-  };
-  const baseDir = resolveWorkflowRunProjectionRoot(rootDir, 'go');
-  const store = new WorkflowRunnerV2GoProjectionRunStore({ baseDir, descriptor, authority });
-  const binding = {
-    workspaceId: descriptor.workspaceId,
-    jobId: 'job.execution',
-    workflowRunId: runId,
-    attemptId: 'attempt.first',
-    leaseId: 'lease.first',
-    fencingToken: 1,
-    correlationId: descriptor.correlationId,
-    runnerBuildHash: 'a'.repeat(64),
-    workflowSourceHash: descriptor.workflowSourceHash,
-    manifestHash: descriptor.manifestHash,
-    inputHash: descriptor.inputHash,
-  };
   if (mode === 'resume') {
     await store.initRun(runId, {
       runId,
@@ -141,7 +95,13 @@ async function execution(mode: 'run' | 'resume', meta = manifest, historicalRunI
   const checkpointAuthority = createWorkflowCheckpointLeaseAuthority(
     mode === 'run'
       ? binding
-      : { ...binding, attemptId: 'attempt.resume', leaseId: 'lease.resume', fencingToken: 2 },
+      : {
+          ...binding,
+          attemptId: 'attempt.resume',
+          leaseId: 'lease.resume',
+          fencingToken: 2,
+          runnerBuildHash: resumeRunnerHash ?? binding.runnerBuildHash,
+        },
   );
   // These workflows call providers but perform no governed effects. An attempted
   // effect is an error, not an authorization shortcut in the test composition.
@@ -162,6 +122,7 @@ async function execution(mode: 'run' | 'resume', meta = manifest, historicalRunI
     sourceSnapshot,
     descriptor,
     authority,
+    binding,
     runId,
     options,
     // Reopen the files to assert durable state independently of the writer object.
@@ -184,6 +145,26 @@ async function execution(mode: 'run' | 'resume', meta = manifest, historicalRunI
 
 // Real recovery files include Windows owner-only ACL checks on each write.
 describe('sealed Go execution recovery', { timeout: 30_000 }, () => {
+  it('keeps the runner build independent from the Go authority build', async () => {
+    const fixture = await execution('resume');
+    expect(fixture.descriptor.authorityRoute.authorityBuildHash).toBe('a'.repeat(64));
+    expect(fixture.binding.runnerBuildHash).toBe('e'.repeat(64));
+    expect(
+      (await fixture.reader.loadCheckpointControl(fixture.runId))?.activeBinding.runnerBuildHash,
+    ).toBe('e'.repeat(64));
+  });
+
+  it('rejects a changed runner build before entering resumed workflow code', async () => {
+    const fixture = await execution('resume', manifest, undefined, 'f'.repeat(64));
+    const run = vi.fn(async () => ({ status: 'completed' }));
+    const before = await fixture.reader.loadCheckpointControl(fixture.runId);
+    await expect(fixture.execute(run)).rejects.toMatchObject({
+      code: 'WORKFLOW_CHECKPOINT_RESUME_INVALID',
+    });
+    expect(run).not.toHaveBeenCalled();
+    expect(await fixture.reader.loadCheckpointControl(fixture.runId)).toEqual(before);
+  });
+
   it.each(['v2', 'raw', 'different'] as const)(
     'recovers only an anchored historical partial initialization with %s metadata',
     async (identity) => {

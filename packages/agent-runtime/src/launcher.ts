@@ -1,4 +1,5 @@
 import type { AgentRunRequest, AgentRunState, ResolvedAgentConfig, WorktreeHandoff } from './types.js';
+import { admitProviderSend, hasProviderSendAdmission } from './internal/provider-send-admission.js';
 import {
   PermissionDeniedError,
   AgentUnavailableError,
@@ -132,6 +133,9 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
   const { runStore, model, rootDir, availableMcpServers = [], bridgeMode } = options;
   const providerAttemptPort =
     options.providerAttemptPort ?? options.openAICompatible?.providerAttemptPort;
+  if (providerAttemptPort && hasProviderSendAdmission(providerAttemptPort) && (options.adapter || options.providerRegistry)) {
+    throw new RuntimeMisconfiguredError('Governed sending requires the configured host transport without adapter overrides.');
+  }
   const bridgeRuntimeResolver =
     options.bridgeRuntimeResolver ?? createBridgeRuntimeResolver({ rootDir });
 
@@ -216,6 +220,10 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
     let executionPolicy: ReturnType<typeof providerExecutionPolicy>;
     try {
       providerResolution = resolveProvider(resolvedConfig);
+      if (providerAttemptPort && hasProviderSendAdmission(providerAttemptPort) &&
+          !['openai-compatible', 'aby'].includes(providerResolution.providerId)) {
+        throw new RuntimeMisconfiguredError('The selected provider has no governed send boundary.');
+      }
       executionPolicy = providerExecutionPolicy(providerResolution);
       if (executionPolicy.requiresHostAcceptance && !options.harnessResultAcceptance) {
         throw new RuntimeMisconfiguredError('DeepSeek Harness requires host-owned acceptance before execution.');
@@ -697,9 +705,13 @@ async function executeAbyBridgeWithProviderAttempt<T>(options: {
     prompt: options.context.prompt,
   });
   let settlementAttempted = false;
+  let sendAdmissionFailed = false;
 
   try {
     assertProviderAttemptReservation(reservation, requestedTokens);
+    try { await admitProviderSend(options.port, reservation, {
+      providerId: options.providerId, modelId: options.modelId, requestBytes, signal: options.context.signal,
+    }); } catch(error) { sendAdmissionFailed = true; throw error; }
     const result = await options.adapter.execute<T>(options.context);
     const tokenUsage = result.tokenUsage;
     if (typeof tokenUsage !== 'number' || !Number.isSafeInteger(tokenUsage) || tokenUsage < 0) {
@@ -735,7 +747,7 @@ async function executeAbyBridgeWithProviderAttempt<T>(options: {
     }
     return result;
   } catch (error) {
-    if (!settlementAttempted) {
+    if (!settlementAttempted && !sendAdmissionFailed) {
       const receipt = buildProviderUsageReceipt({
         providerId: options.providerId,
         modelId: options.modelId,

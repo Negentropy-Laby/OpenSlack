@@ -12,6 +12,10 @@ import {
 /** Local projection bytes, independent of the 256 KiB authority-observation/argument contracts. */
 export const WORKFLOW_LOCAL_EVIDENCE_MAX_BYTES = 2 * 1024 * 1024;
 type ReadContext = Omit<WorkflowRunReadDiagnostic, 'code'>;
+export interface WorkflowEvidenceReadOptions {
+  /** Campaign evidence forbids additional aliases; historical readers retain their policy. */
+  readonly requireSingleLink?: boolean;
+}
 
 function failure(
   code: WorkflowRunReadCode,
@@ -66,11 +70,14 @@ export async function readWorkflowEvidenceText(
   path: string,
   maxBytes = WORKFLOW_LOCAL_EVIDENCE_MAX_BYTES,
   context: ReadContext = { scope: 'workspace' },
+  options: WorkflowEvidenceReadOptions = {},
 ): Promise<string> {
+  const linkAllowed = (entry: { nlink: bigint }): boolean =>
+    !options.requireSingleLink || entry.nlink === 1n;
   try {
     await assertWorkflowEvidencePath(path, context);
     const entry = await lstat(path, { bigint: true });
-    if (!entry.isFile() || entry.isSymbolicLink())
+    if (!entry.isFile() || entry.isSymbolicLink() || !linkAllowed(entry))
       throw failure('WORKFLOW_RUN_EVIDENCE_PATH_INVALID', context);
     if (entry.size > BigInt(maxBytes)) throw failure('WORKFLOW_RUN_EVIDENCE_TOO_LARGE', context);
     const handle = await open(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
@@ -78,6 +85,7 @@ export async function readWorkflowEvidenceText(
       const before = await handle.stat({ bigint: true });
       if (
         !before.isFile() ||
+        !linkAllowed(before) ||
         entry.dev !== before.dev ||
         entry.ino !== before.ino ||
         entry.mode !== before.mode
@@ -97,6 +105,8 @@ export async function readWorkflowEvidenceText(
       const current = await lstat(path, { bigint: true });
       await assertWorkflowEvidencePath(path, context);
       if (
+        !linkAllowed(after) ||
+        !linkAllowed(current) ||
         before.size !== BigInt(count) ||
         before.size !== after.size ||
         before.mtimeNs !== after.mtimeNs ||
