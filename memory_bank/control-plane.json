@@ -1373,7 +1373,7 @@
         ],
         "dependencies": [],
         "blockers": [
-          "r6_contract_verification_and_independent_review_pending",
+          "r6_document_delivery_and_human_github_review_pending",
           "exact_byte_adr_decision_acceptance_pending"
         ],
         "evidence": [
@@ -1382,6 +1382,8 @@
           "https://github.com/Negentropy-Laby/OpenSlack/pull/436",
           "human-delegated-source-maintenance:R6-review17-repair;no-registered-agent-claim",
           "historical-R5-recommendations:exact-bytes-at-5683d1a7-only",
+        "R6-source-review:0412996ddaf8d8c73c63c11a18d8d548cd070c8e:ADEQUATE;unchanged-four-file-inputs;not-ADR-acceptance",
+        "R6-local-schema-codec-verification:passed;C1-semantic-execution-NOT_RUN",
           "production/qa/qa-ledger-dual-qualification-2026-11-03.md"
         ],
         "last_verified_at": "2026-11-07T08:47:06Z"

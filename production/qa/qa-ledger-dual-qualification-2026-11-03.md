@@ -475,3 +475,8 @@ fields now use that actual sampling time. The portfolio's separately dated
 August configuration labels were not refreshed and are not a November endpoint
 diagnosis. The immutable R5 originals, first-run failure logs, missing R1/R2
 originals and historical Unknowns remain as previously recorded.
+
+The completed R6 local verification and independent source review are now
+recorded by `issue-428`; its remaining delivery blocker names the unmerged
+document/human-GitHub-review gate, alongside exact-byte ADR decision acceptance.
+Completed source review is not advertised as still pending.
