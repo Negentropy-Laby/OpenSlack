@@ -1,7 +1,7 @@
 {
   "$schema": "../docs/reference/schemas/documentation/control-plane.schema.json",
   "schema": "openslack.control_plane.v1",
-  "updated": "2026-11-03",
+  "updated": "2026-11-07",
   "authorities": [
     {
       "fact": "project.portfolio-state",
@@ -1149,7 +1149,7 @@
   },
   "release": {
     "schema": "openslack.release_state.v1",
-    "updated": "2026-11-03",
+    "updated": "2026-11-07",
     "train": "0.2.0",
     "status": "blocked",
     "human_approval": "not_requested",
@@ -1199,8 +1199,11 @@
       {
         "id": "model_endpoint",
         "status": "blocked",
-        "evidence": ["issue:244"],
-        "notes": "Historical 2026-07-29 report said model endpoint was not configured. Issue #244 remains blocked on 2026-11-03; no current release runtime/provider preflight was executed. Do not interpret the old observation as a fresh configuration diagnosis."
+        "evidence": [
+          "issue:244",
+          "assignment:issue-244"
+        ],
+        "notes": "The prior missing-configuration observation is historical. Current Issue and evidence scope are recorded by assignment issue-244. This source maintenance did not execute target-platform runtime/provider preflight, doctor or live smoke; it does not diagnose current configuration."
       },
       {
         "id": "onboarding",
@@ -1230,18 +1233,18 @@
   },
   "assignments": {
     "schema": "openslack.work_assignments.v1",
-    "updated": "2026-11-03",
+    "updated": "2026-11-07",
     "assignments": [
       {
         "id": "issue-411",
         "title": "Go Workflow R-EXT preparation and authenticated qualification",
-        "status": "running",
+        "status": "blocked",
         "planned_owner": "codex_qualification_rext",
         "module_or_workstream": "workflow-runtime",
         "execution": {
-          "agent_id": "codex_qualification_rext",
-          "claim_ref": "refs/heads/openslack/claims/issue-411",
-          "started_at": "2026-11-03T09:26:18.725Z"
+          "agent_id": null,
+          "claim_ref": null,
+          "started_at": null
         },
         "github_issue": {
           "number": 411,
@@ -1256,28 +1259,36 @@
           "Exact provider/effect/checkpoint resume without duplicate calls",
           "Restart and fixed 600-second/40-sample drain evidenced"
         ],
-        "dependencies": ["issue-433", "issue-438"],
+        "dependencies": [],
         "blockers": [
-          "full_sealed_resume_blocked_on_checkpoint_replay",
-          "live_provider_binding_and_human_effect_decision_pending",
-          "hosted_windows_watch_daemon_failure_requires_separate_maintenance"
+          "fresh_qualification_claim_and_current_runtime_binding_required",
+          "provider_input_plus_output_total_token_hard_bound_unverified",
+          "authenticated_external_run_resume_evidence_missing",
+          "restart_and_actual_600_second_drain_evidence_missing"
         ],
         "evidence": [
-          "https://github.com/Negentropy-Laby/OpenSlack/issues/411#issuecomment-6600248020",
-          "legacy-task-loop:heartbeat:2026-11-03T11:08:33.632Z:expiry:2026-11-03T13:08:33.632Z",
-          "preparation-local:87-pass:execution:2026-11-03T10:31:41.881Z/2026-11-03T10:31:47.410Z:full-resume-not-run",
-          "report-sha256:7a166b2a9c5569cce0254d25afa1acd8f2bb940801f84d2aed11208600c3c680",
-          "github:pr-435:draft:bot-authored:head:b8bf3fa5da19eefb33ddfbeb7aa386e7c0b03fd6:ci-pending",
-          "github:pr-435:later-windows-ci-fail:job-125864949850:baseline-watch-daemon:issue-438",
-          "github:workflow-governance-437:current-head-bound:no-human-trust-decision",
-          "metadata-readback:2026-11-03T10:30:00Z:not-a-new-test-execution"
+          "https://github.com/Negentropy-Laby/OpenSlack/issues/411",
+          "github:issue-411:open:observed:2026-11-07T08:12:34.674Z",
+          "https://github.com/Negentropy-Laby/OpenSlack/pull/435",
+          "github:pr-435:merged:7525f25ec9e23beb788c035cc213832147da0ce3:source-head:53362644a55db72ec7ac1f213e0a5e61d8b13ecf",
+          "github:pr-435:human-review:wsman:approved:2026-11-06T14:21:40Z",
+          "https://github.com/Negentropy-Laby/OpenSlack/actions/runs/42221044344",
+          "https://github.com/Negentropy-Laby/OpenSlack/actions/runs/42221044291",
+          "https://github.com/Negentropy-Laby/OpenSlack/actions/runs/42221044450",
+          "https://github.com/Negentropy-Laby/OpenSlack/actions/runs/42221044272",
+          "https://github.com/Negentropy-Laby/OpenSlack/actions/runs/42221044284",
+          "https://github.com/Negentropy-Laby/OpenSlack/issues/411#issuecomment-6602529066",
+          "legacy-v1-claim:ref-present:b8b11ed64238c3b622d110e5d2d11944a342609e:latest-expiry:2026-11-03T13:23:46.973Z:expired-not-active-execution",
+          "resolved-source-dependencies:issue-433-and-issue-438:merged-pr-435",
+          "historical-snapshot:https://github.com/Negentropy-Laby/OpenSlack/blob/5683d1a7843a8f3b0fbea1383d3054ff083f0058/memory_bank/control-plane.json",
+          "no-current-provider-preflight-or-qualification-performed-by-this-source-maintenance"
         ],
-        "last_verified_at": "2026-11-03T11:14:25Z"
+        "last_verified_at": "2026-11-07T08:12:34.674Z"
       },
       {
         "id": "issue-427",
         "title": "Cleanup: public-repository Permit-only qualification (2026-11)",
-        "status": "blocked",
+        "status": "reconciliation_required",
         "planned_owner": "unassigned",
         "module_or_workstream": "pr-review-merge",
         "execution": {
@@ -1296,16 +1307,28 @@
           "One actual deletion, original receipt replay, independent absent readback",
           "Restart does not resend; unknown outcomes only reconciled"
         ],
-        "dependencies": ["issue-432"],
+        "dependencies": [],
         "blockers": [
+          "github_issue_closed_without_qualification_acceptance_evidence",
           "administrator_public_scope_and_installation",
           "fresh_activation_and_one_use_permits"
         ],
         "evidence": [
-          "github:issue-427:open:blocked",
-          "production/qa/qa-ledger-dual-qualification-2026-11-03.md"
+          "https://github.com/Negentropy-Laby/OpenSlack/issues/427",
+          "github:issue-427:closed:observed:2026-11-07T08:12:34.674Z",
+          "https://github.com/Negentropy-Laby/OpenSlack/pull/434",
+          "github:pr-434:merged:c54833096435ff1d4af6d60f7c4ffea00707aa92:source-head:10602826296658520965b823acb859b537d60e08",
+          "github:pr-434:human-review:wsman:approved:2026-11-03T15:28:17Z",
+          "https://github.com/Negentropy-Laby/OpenSlack/actions/runs/41655524022",
+          "https://github.com/Negentropy-Laby/OpenSlack/actions/runs/41655524255",
+          "https://github.com/Negentropy-Laby/OpenSlack/actions/runs/41655524280",
+          "https://github.com/Negentropy-Laby/OpenSlack/actions/runs/41655523224",
+          "https://github.com/Negentropy-Laby/OpenSlack/actions/runs/41655523424",
+          "source-preparation-dependency:issue-432:delivered-by-merged-pr-434",
+          "github-closed-is-not-cleanup-qualification-pass",
+          "historical-snapshot:https://github.com/Negentropy-Laby/OpenSlack/blob/5683d1a7843a8f3b0fbea1383d3054ff083f0058/memory_bank/control-plane.json"
         ],
-        "last_verified_at": "2026-11-03T09:54:58Z"
+        "last_verified_at": "2026-11-07T08:12:34.674Z"
       },
       {
         "id": "issue-428",
@@ -1334,16 +1357,18 @@
         ],
         "dependencies": [],
         "blockers": [
-          "exact_scope_maintenance_identity_unassigned",
-          "c0_exact_r5_recommended_draft_ci_and_adr_acceptance_pending"
+          "r6_contract_verification_and_independent_review_pending",
+          "exact_byte_adr_decision_acceptance_pending"
         ],
         "evidence": [
-          "github:issue-428:open:blocked",
-          "github:pr-436:draft:bot-authored:ci-pending:adr-not-accepted",
-          "independent-full-td-product-security:exact-r5:favorable:adr-not-accepted",
+          "https://github.com/Negentropy-Laby/OpenSlack/issues/428",
+          "github:issue-428:open:observed:2026-11-07T08:12:34.674Z",
+          "https://github.com/Negentropy-Laby/OpenSlack/pull/436",
+          "human-delegated-source-maintenance:R6-review17-repair;no-registered-agent-claim",
+          "historical-R5-recommendations:exact-bytes-at-5683d1a7-only",
           "production/qa/qa-ledger-dual-qualification-2026-11-03.md"
         ],
-        "last_verified_at": "2026-11-03T10:38:42.346Z"
+        "last_verified_at": "2026-11-07T08:12:34.674Z"
       },
       {
         "id": "issue-429",
@@ -1435,7 +1460,7 @@
       {
         "id": "issue-432",
         "title": "Cleanup: prepare fixed public qualification target and current evidence",
-        "status": "blocked",
+        "status": "reconciliation_required",
         "planned_owner": "unassigned",
         "module_or_workstream": "pr-review-merge",
         "execution": {
@@ -1458,21 +1483,29 @@
           "Formal counts/docs and independent review complete"
         ],
         "dependencies": [],
-        "blockers": ["exact_scope_maintenance_identity_unassigned", "preparation_draft_ci_and_human_review_pending"],
-        "evidence": [
-          "github:issue-432:open:blocked",
-          "github:pr-434:draft:bot-authored:head:39a9d1a4b57c0f618f39eee7723a8893ef2d9a2c:ci-pending",
-          "github:pr-434:initial-windows-ci-fail:job-125864915503:path-derivation",
-          "github:pr-434:followup-head:242eb95b563ea268b10b49b86fceacab492272be:ci-pending",
-          "local-followup:149-pass:report-sha256:1919ed3df0e50af3367d634f2393237a54314d4f40d0cfd64ae2823ad1f518ff",
-          "production/qa/qa-ledger-dual-qualification-2026-11-03.md"
+        "blockers": [
+          "source_delivery_merged_github_task_lifecycle_reconciliation_pending"
         ],
-        "last_verified_at": "2026-11-03T11:13:46.357Z"
+        "evidence": [
+          "https://github.com/Negentropy-Laby/OpenSlack/issues/432",
+          "github:issue-432:open:observed:2026-11-07T08:12:34.674Z",
+          "https://github.com/Negentropy-Laby/OpenSlack/pull/434",
+          "github:pr-434:merged:c54833096435ff1d4af6d60f7c4ffea00707aa92:source-head:10602826296658520965b823acb859b537d60e08",
+          "github:pr-434:human-review:wsman:approved:2026-11-03T15:28:17Z",
+          "https://github.com/Negentropy-Laby/OpenSlack/actions/runs/41655524022",
+          "https://github.com/Negentropy-Laby/OpenSlack/actions/runs/41655524255",
+          "https://github.com/Negentropy-Laby/OpenSlack/actions/runs/41655524280",
+          "https://github.com/Negentropy-Laby/OpenSlack/actions/runs/41655523224",
+          "https://github.com/Negentropy-Laby/OpenSlack/actions/runs/41655523424",
+          "human-delegated-source-maintenance:delivered-without-registered-agent-claim",
+          "historical-snapshot:https://github.com/Negentropy-Laby/OpenSlack/blob/5683d1a7843a8f3b0fbea1383d3054ff083f0058/memory_bank/control-plane.json"
+        ],
+        "last_verified_at": "2026-11-07T08:12:34.674Z"
       },
       {
         "id": "issue-433",
         "title": "Workflow: reject-safe checkpoint replay after canonical Go resume",
-        "status": "blocked",
+        "status": "reconciliation_required",
         "planned_owner": "unassigned",
         "module_or_workstream": "workflow-runtime",
         "execution": {
@@ -1484,7 +1517,10 @@
           "number": 433,
           "url": "https://github.com/Negentropy-Laby/OpenSlack/issues/433"
         },
-        "pull_request": null,
+        "pull_request": {
+          "number": 435,
+          "url": "https://github.com/Negentropy-Laby/OpenSlack/pull/435"
+        },
         "acceptance_criteria": [
           "Real initial execute/pending approval/resume exposes replay defect",
           "Exact anchored duplicate returns original evidence without new cross-generation commit",
@@ -1492,17 +1528,29 @@
           "Separate reviewed repair and needed source-lock maintenance before external qualification"
         ],
         "dependencies": [],
-        "blockers": ["separate_runtime_repair_scope_and_review_pending"],
-        "evidence": [
-          "github:issue-433:open:blocked",
-          "production/qa/qa-ledger-dual-qualification-2026-11-03.md"
+        "blockers": [
+          "source_delivery_merged_github_task_lifecycle_reconciliation_pending"
         ],
-        "last_verified_at": "2026-11-03T09:54:58Z"
+        "evidence": [
+          "https://github.com/Negentropy-Laby/OpenSlack/issues/433",
+          "github:issue-433:open:observed:2026-11-07T08:12:34.674Z",
+          "https://github.com/Negentropy-Laby/OpenSlack/pull/435",
+          "github:pr-435:merged:7525f25ec9e23beb788c035cc213832147da0ce3:source-head:53362644a55db72ec7ac1f213e0a5e61d8b13ecf",
+          "github:pr-435:human-review:wsman:approved:2026-11-06T14:21:40Z",
+          "https://github.com/Negentropy-Laby/OpenSlack/actions/runs/42221044344",
+          "https://github.com/Negentropy-Laby/OpenSlack/actions/runs/42221044291",
+          "https://github.com/Negentropy-Laby/OpenSlack/actions/runs/42221044450",
+          "https://github.com/Negentropy-Laby/OpenSlack/actions/runs/42221044272",
+          "https://github.com/Negentropy-Laby/OpenSlack/actions/runs/42221044284",
+          "human-delegated-source-maintenance:delivered-without-registered-agent-claim",
+          "historical-snapshot:https://github.com/Negentropy-Laby/OpenSlack/blob/5683d1a7843a8f3b0fbea1383d3054ff083f0058/memory_bank/control-plane.json"
+        ],
+        "last_verified_at": "2026-11-07T08:12:34.674Z"
       },
       {
         "id": "issue-438",
         "title": "WatchDaemon: isolate test endpoints and reject startup failures",
-        "status": "blocked",
+        "status": "reconciliation_required",
         "planned_owner": "unassigned",
         "module_or_workstream": "github-task-loop",
         "execution": {
@@ -1514,7 +1562,10 @@
           "number": 438,
           "url": "https://github.com/Negentropy-Laby/OpenSlack/issues/438"
         },
-        "pull_request": null,
+        "pull_request": {
+          "number": 435,
+          "url": "https://github.com/Negentropy-Laby/OpenSlack/pull/435"
+        },
         "acceptance_criteria": [
           "Preserve original Windows reset failure and prove actual endpoint ownership",
           "Review ephemeral-port, startup-error and disconnect settlement design in separate scope",
@@ -1522,13 +1573,25 @@
           "Separate maintenance identity, regressions and current Linux/Windows evidence before merge"
         ],
         "dependencies": [],
-        "blockers": ["separate_maintenance_scope_identity_and_design_pending", "observed_reset_origin_unresolved"],
-        "evidence": [
-          "github:issue-438:open:blocked:task-TASK-2026-198109",
-          "github:actions:41620581191:job:125864949850:windows-fail",
-          "production/qa/qa-ledger-dual-qualification-2026-11-03.md"
+        "blockers": [
+          "source_delivery_merged_github_task_lifecycle_reconciliation_pending"
         ],
-        "last_verified_at": "2026-11-03T11:14:25Z"
+        "evidence": [
+          "https://github.com/Negentropy-Laby/OpenSlack/issues/438",
+          "github:issue-438:open:observed:2026-11-07T08:12:34.674Z",
+          "https://github.com/Negentropy-Laby/OpenSlack/pull/435",
+          "github:pr-435:merged:7525f25ec9e23beb788c035cc213832147da0ce3:source-head:53362644a55db72ec7ac1f213e0a5e61d8b13ecf",
+          "github:pr-435:human-review:wsman:approved:2026-11-06T14:21:40Z",
+          "https://github.com/Negentropy-Laby/OpenSlack/actions/runs/42221044344",
+          "https://github.com/Negentropy-Laby/OpenSlack/actions/runs/42221044291",
+          "https://github.com/Negentropy-Laby/OpenSlack/actions/runs/42221044450",
+          "https://github.com/Negentropy-Laby/OpenSlack/actions/runs/42221044272",
+          "https://github.com/Negentropy-Laby/OpenSlack/actions/runs/42221044284",
+          "human-delegated-source-maintenance:delivered-without-registered-agent-claim",
+          "historical-snapshot:https://github.com/Negentropy-Laby/OpenSlack/blob/5683d1a7843a8f3b0fbea1383d3054ff083f0058/memory_bank/control-plane.json",
+          "historical-original-tcp-reset-cause:unknown;new-source-and-regression-delivery-do-not-rewrite-old-failure"
+        ],
+        "last_verified_at": "2026-11-07T08:12:34.674Z"
       },
       {
         "id": "issue-239",
@@ -1667,12 +1730,21 @@
         },
         "pull_request": null,
         "acceptance_criteria": [
-          "A supported model endpoint is configured without committing credentials."
+          "Both designated platforms have supported preview/write configuration without committed credentials.",
+          "Redacted doctor evidence is ready and a governed read-only live smoke is recorded."
         ],
         "dependencies": [],
-        "blockers": ["model_endpoint_not_configured"],
-        "evidence": ["github:issue-244:open"],
-        "last_verified_at": "2026-08-08T19:31:50Z"
+        "blockers": [
+          "current_release_runtime_preflight_and_live_smoke_unverified"
+        ],
+        "evidence": [
+          "https://github.com/Negentropy-Laby/OpenSlack/issues/244",
+          "github:issue-244:open:observed:2026-11-07T08:12:34.674Z",
+          "observation-scope:GitHub-Issue-state-and-acceptance-requirements-only",
+          "release-runtime-provider-preflight:not-run-by-this-maintenance",
+          "historical-snapshot:https://github.com/Negentropy-Laby/OpenSlack/blob/5683d1a7843a8f3b0fbea1383d3054ff083f0058/memory_bank/control-plane.json"
+        ],
+        "last_verified_at": "2026-11-07T08:12:34.674Z"
       },
       {
         "id": "issue-245",

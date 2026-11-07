@@ -6,7 +6,7 @@ authority: projection
 audience:
   - contributors
 owner: project-governance
-updated: 2026-11-03
+updated: 2026-11-07
 sources:
   - memory_bank/control-plane.json#/assignments
 generated: true
@@ -23,21 +23,21 @@ generated: true
 <!-- prettier-ignore -->
 | Work item | Title | Status | Planned owner | Scope | Blockers |
 | --- | --- | --- | --- | --- | --- |
-| issue-411 | Go Workflow R-EXT preparation and authenticated qualification | running | codex_qualification_rext | workflow-runtime | full_sealed_resume_blocked_on_checkpoint_replay<br>live_provider_binding_and_human_effect_decision_pending<br>hosted_windows_watch_daemon_failure_requires_separate_maintenance |
-| issue-427 | Cleanup: public-repository Permit-only qualification (2026-11) | blocked | unassigned | pr-review-merge | administrator_public_scope_and_installation<br>fresh_activation_and_one_use_permits |
-| issue-428 | Task Claim v2: close C0 single-host contract and independent review | blocked | unassigned | github-task-loop | exact_scope_maintenance_identity_unassigned<br>c0_exact_r5_recommended_draft_ci_and_adr_acceptance_pending |
+| issue-411 | Go Workflow R-EXT preparation and authenticated qualification | blocked | codex_qualification_rext | workflow-runtime | fresh_qualification_claim_and_current_runtime_binding_required<br>provider_input_plus_output_total_token_hard_bound_unverified<br>authenticated_external_run_resume_evidence_missing<br>restart_and_actual_600_second_drain_evidence_missing |
+| issue-427 | Cleanup: public-repository Permit-only qualification (2026-11) | reconciliation_required | unassigned | pr-review-merge | github_issue_closed_without_qualification_acceptance_evidence<br>administrator_public_scope_and_installation<br>fresh_activation_and_one_use_permits |
+| issue-428 | Task Claim v2: close C0 single-host contract and independent review | blocked | unassigned | github-task-loop | r6_contract_verification_and_independent_review_pending<br>exact_byte_adr_decision_acceptance_pending |
 | issue-429 | Task Claim v2 C1: state kernel and TS/Go canonical conformance | blocked | unassigned | github-task-loop | c0_acceptance_pending<br>implementation_not_authorized_this_round |
 | issue-430 | Task Claim v2 C2: PostgreSQL authority and local authenticated sessions | blocked | unassigned | github-task-loop | c1_delivery_pending<br>implementation_not_authorized_this_round |
 | issue-431 | Task Claim v2 C3: independently governed claimed cleanup admission | blocked | unassigned | pr-review-merge | c2_qualification_and_separate_action_grants_pending |
-| issue-432 | Cleanup: prepare fixed public qualification target and current evidence | blocked | unassigned | pr-review-merge | exact_scope_maintenance_identity_unassigned<br>preparation_draft_ci_and_human_review_pending |
-| issue-433 | Workflow: reject-safe checkpoint replay after canonical Go resume | blocked | unassigned | workflow-runtime | separate_runtime_repair_scope_and_review_pending |
-| issue-438 | WatchDaemon: isolate test endpoints and reject startup failures | blocked | unassigned | github-task-loop | separate_maintenance_scope_identity_and_design_pending<br>observed_reset_origin_unresolved |
+| issue-432 | Cleanup: prepare fixed public qualification target and current evidence | reconciliation_required | unassigned | pr-review-merge | source_delivery_merged_github_task_lifecycle_reconciliation_pending |
+| issue-433 | Workflow: reject-safe checkpoint replay after canonical Go resume | reconciliation_required | unassigned | workflow-runtime | source_delivery_merged_github_task_lifecycle_reconciliation_pending |
+| issue-438 | WatchDaemon: isolate test endpoints and reject startup failures | reconciliation_required | unassigned | github-task-loop | source_delivery_merged_github_task_lifecycle_reconciliation_pending |
 | issue-239 | release: close OpenSlack 0.2.0 external gates | ready | unassigned | self-evolution | None |
 | issue-240 | release blocker: signed_v0_2_0_release_pending | blocked | unassigned | self-evolution | signed_v0_2_0_release_pending |
 | issue-241 | release blocker: clean_machine_release_capstone_pending | blocked | unassigned | self-evolution | clean_machine_release_capstone_pending |
 | issue-242 | release blocker: npm_publication_pending | blocked | unassigned | self-evolution | npm_publication_pending |
 | issue-243 | release blocker: clean_machine_bot_delivery_smoke_pending | blocked | unassigned | github-task-loop | clean_machine_bot_delivery_smoke_pending |
-| issue-244 | release blocker: model_endpoint_not_configured | blocked | unassigned | agent-runtime-and-aby | model_endpoint_not_configured |
+| issue-244 | release blocker: model_endpoint_not_configured | blocked | unassigned | agent-runtime-and-aby | current_release_runtime_preflight_and_live_smoke_unverified |
 | issue-245 | release blocker: clean_machine_onboarding_smoke_pending | blocked | unassigned | operator | clean_machine_onboarding_smoke_pending |
 | issue-246 | release blocker: clean_machine_end_to_end_merge_capstone_pending | blocked | unassigned | pr-review-merge | clean_machine_end_to_end_merge_capstone_pending |
 | issue-247 | release blocker: clean_machine_agent_task_capstone_pending | blocked | unassigned | collaboration | clean_machine_agent_task_capstone_pending |

@@ -7,7 +7,7 @@ audience:
   - contributors
   - reviewers
 owner: qa
-updated: 2026-11-03
+updated: 2026-11-07
 sources:
   - production/qa/qa-ledger-cleanup-post420-2026-10-11.md
   - docs/architecture/contracts/task-claim-v2-c0.md
@@ -18,6 +18,11 @@ sources:
 # Cleanup / Go R-EXT / Claim C0 execution ledger
 
 ## Scope and source identity
+
+The original observations below are a dated 2026-11-03 record. Current work and
+execution state comes from `memory_bank/control-plane.json#/assignments`; later
+appendices identify their own observation times. A source delivery, a closed
+Issue and real qualification are separate evidence classes.
 
 Implementation started from merged main
 `b8b11ed64238c3b622d110e5d2d11944a342609e`, verified against origin and GitHub.
@@ -62,7 +67,7 @@ outside the selected delivery; a separate clean detached checkout published
 the exact Cleanup commit without deleting those drafts. No qualification or
 runtime task was closed, no approval was submitted and nothing was merged.
 
-| Issue                                                           | Purpose                                              | Current gate                                                                                       |
+| Issue                                                           | Purpose                                              | Observed 2026-11-03 gate                                                                                       |
 | --------------------------------------------------------------- | ---------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
 | [#427](https://github.com/Negentropy-Laby/OpenSlack/issues/427) | Cleanup public-repository real qualification         | Administrator installation, registry, App scope, activation and one-use Permits                    |
 | [#428](https://github.com/Negentropy-Laby/OpenSlack/issues/428) | Claim v2 C0 contract and review                      | Exact R5 recommendations favorable; maintenance assignment, delivery and separate decision acceptance pending |
@@ -357,3 +362,34 @@ head/base and `sha256:9b7908755e427b887ff45ff14f3a4c21bd06111dd7fdc76404e5a33c30
 Readback/doctor shows that governance-Issue gate PASS, but no human Workflow-Trust
 decision or approval exists. No live run, effect decision, activation, Permit
 consumption, GitHub deletion or merge occurred.
+
+
+## 2026-11-07 source-delivery and lifecycle reconciliation
+
+This read-only GitHub observation refreshes the canonical assignment mirror;
+it did not close/reopen Issues, renew/delete a Claim or run provider, effect,
+installation or qualification operations. The original November 3 state remains
+retrievable at the immutable [R5 control-plane snapshot](https://github.com/Negentropy-Laby/OpenSlack/blob/5683d1a7843a8f3b0fbea1383d3054ff083f0058/memory_bank/control-plane.json).
+
+Merged preparation/repair delivery is independently recorded by
+[PR #434](https://github.com/Negentropy-Laby/OpenSlack/pull/434) at
+`c54833096435ff1d4af6d60f7c4ffea00707aa92` and
+[PR #435](https://github.com/Negentropy-Laby/OpenSlack/pull/435) at
+`7525f25ec9e23beb788c035cc213832147da0ce3`. Their final source-head checks and
+recorded human reviews belong to those deliveries, not to this new candidate.
+
+The latest observed legacy [heartbeat](https://github.com/Negentropy-Laby/OpenSlack/issues/411#issuecomment-6602529066)
+expires at `2026-11-03T13:23:46.973Z`. Its ref remains present at
+`b8b11ed64238c3b622d110e5d2d11944a342609e`; neither fact proves a current
+execution. Assignment `issue-411` is blocked on actual qualification evidence.
+
+Merged human-delegated source work without a registered Agent Claim is recorded
+as `reconciliation_required` rather than fabricated `done` execution. This
+applies to the still-open maintenance Issues #432/#433/#438. Issue #427 is
+closed while independent Cleanup acceptance evidence remains absent; that
+lifecycle mismatch is also reconciliation work. No completed source work is
+re-advertised as Draft CI or source review pending.
+
+Assignment `issue-244` records the actual verification time and its limited
+Issue/evidence scope. No current endpoint configuration conclusion is inferred.
+The R6 contract repair and exact decision acceptance remain separate for #428.
