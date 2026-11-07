@@ -1,0 +1,1291 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openslack.dev/schemas/task-claim-v2-c0.candidate.json",
+  "title": "Proposed Task Claim v2 C0 data contracts (not a deployed API)",
+  "$comment": "C0 Proposed only. Validate lexical bytes/duplicates/Unicode/size before JSON Schema. Semantic FSM, authentication, set ordering and field equalities are required separately; schema validity is not execution authority.",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/definition"
+    },
+    {
+      "$ref": "#/$defs/claim"
+    },
+    {
+      "$ref": "#/$defs/mutationRequest"
+    },
+    {
+      "$ref": "#/$defs/readRequest"
+    },
+    {
+      "$ref": "#/$defs/receipt"
+    },
+    {
+      "$ref": "#/$defs/observation"
+    },
+    {
+      "$ref": "#/$defs/errorReply"
+    }
+  ],
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9:._/-]{0,127}$"
+    },
+    "positiveDecimal": {
+      "type": "string",
+      "pattern": "^[1-9][0-9]*$",
+      "maxLength": 78
+    },
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "sha": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{40}$"
+    },
+    "timestamp": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{6}Z$",
+      "format": "date-time"
+    },
+    "state": {
+      "enum": ["active", "closing", "completed", "released", "expired", "revoked"]
+    },
+    "phase": {
+      "enum": ["executing", "awaiting_review", "awaiting_dependency"]
+    },
+    "error": {
+      "enum": [
+        "REQUEST_INVALID",
+        "UNSUPPORTED_VERSION",
+        "UNAUTHENTICATED",
+        "SUBJECT_MISMATCH",
+        "OPERATION_CONFLICT",
+        "REVISION_CONFLICT",
+        "TASK_INELIGIBLE",
+        "DEFINITION_CHANGED",
+        "CLAIM_NOT_CURRENT",
+        "LEASE_EXPIRED",
+        "CLAIM_REVOKED",
+        "AUTHORITY_NOT_ACTIVE",
+        "UNSETTLED_OPERATION",
+        "PHASE_TRANSITION_INVALID",
+        "EVIDENCE_UNAVAILABLE",
+        "COUNTER_EXHAUSTED",
+        "RECONCILIATION_REQUIRED",
+        "PERMISSION_DENIED"
+      ]
+    },
+    "taskIdentity": {
+      "type": "object",
+      "$ref": "#/$defs/taskIdentityFields",
+      "unevaluatedProperties": false
+    },
+    "holder": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["principalId", "runtimeUid", "runId", "sessionId", "sessionGeneration"],
+      "properties": {
+        "principalId": {
+          "$ref": "#/$defs/id"
+        },
+        "runtimeUid": {
+          "$ref": "#/$defs/id"
+        },
+        "runId": {
+          "$ref": "#/$defs/id"
+        },
+        "sessionId": {
+          "$ref": "#/$defs/id"
+        },
+        "sessionGeneration": {
+          "$ref": "#/$defs/positiveDecimal"
+        }
+      }
+    },
+    "authority": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["backend", "generation", "routingEpoch"],
+      "properties": {
+        "backend": {
+          "const": "go"
+        },
+        "generation": {
+          "$ref": "#/$defs/id"
+        },
+        "routingEpoch": {
+          "$ref": "#/$defs/positiveDecimal"
+        }
+      }
+    },
+    "requestAuthority": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["generation", "routingEpoch"],
+      "properties": {
+        "generation": {
+          "$ref": "#/$defs/id"
+        },
+        "routingEpoch": {
+          "$ref": "#/$defs/positiveDecimal"
+        }
+      }
+    },
+    "expected": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["claimId", "claimEpoch", "revision", "state"],
+      "properties": {
+        "claimId": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/id"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "claimEpoch": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/positiveDecimal"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "revision": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/positiveDecimal"
+            },
+            {
+              "const": "absent"
+            }
+          ]
+        },
+        "state": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/state"
+            },
+            {
+              "const": "absent"
+            }
+          ]
+        }
+      }
+    },
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "uri", "digest", "headSHA", "baseSHA"],
+      "properties": {
+        "kind": {
+          "enum": ["pull_request", "evidence", "no_change"]
+        },
+        "uri": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        },
+        "digest": {
+          "$ref": "#/$defs/digest"
+        },
+        "headSHA": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/sha"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "baseSHA": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/sha"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "lease": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ttl_minutes", "heartbeat_minutes"],
+      "properties": {
+        "ttl_minutes": {
+          "type": "string",
+          "pattern": "^(?:[1-9]|[1-9][0-9]|[1-3][0-9]{2}|4[0-7][0-9]|480)$"
+        },
+        "heartbeat_minutes": {
+          "type": "string",
+          "pattern": "^(?:[1-9]|[1-9][0-9]|1[01][0-9]|120)$"
+        }
+      }
+    },
+    "boundTask": {
+      "type": "object",
+      "allOf": [
+        {
+          "$ref": "#/$defs/taskIdentityFields"
+        },
+        {
+          "type": "object",
+          "required": ["definitionSchema", "definitionDigest"],
+          "properties": {
+            "definitionSchema": {
+              "const": "openslack.task_definition.v1"
+            },
+            "definitionDigest": {
+              "$ref": "#/$defs/digest"
+            }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "manifest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "task_id", "title", "agent_type", "risk_level"],
+      "properties": {
+        "schema": {
+          "$ref": "https://openslack.dev/schemas/github-issue-task.schema.json#/properties/schema"
+        },
+        "task_id": {
+          "$ref": "https://openslack.dev/schemas/github-issue-task.schema.json#/properties/task_id"
+        },
+        "title": {
+          "$ref": "https://openslack.dev/schemas/github-issue-task.schema.json#/properties/title"
+        },
+        "task_type": {
+          "$ref": "https://openslack.dev/schemas/github-issue-task.schema.json#/properties/task_type"
+        },
+        "agent_type": {
+          "$ref": "https://openslack.dev/schemas/github-issue-task.schema.json#/properties/agent_type"
+        },
+        "risk_level": {
+          "$ref": "https://openslack.dev/schemas/github-issue-task.schema.json#/properties/risk_level"
+        },
+        "priority": {
+          "$ref": "https://openslack.dev/schemas/github-issue-task.schema.json#/properties/priority"
+        },
+        "required_capabilities": {
+          "$ref": "https://openslack.dev/schemas/github-issue-task.schema.json#/properties/required_capabilities"
+        },
+        "allowed_paths": {
+          "$ref": "https://openslack.dev/schemas/github-issue-task.schema.json#/properties/allowed_paths"
+        },
+        "forbidden_paths": {
+          "$ref": "https://openslack.dev/schemas/github-issue-task.schema.json#/properties/forbidden_paths"
+        },
+        "output_contract": {
+          "$ref": "https://openslack.dev/schemas/github-issue-task.schema.json#/properties/output_contract"
+        },
+        "success_criteria": {
+          "$ref": "https://openslack.dev/schemas/github-issue-task.schema.json#/properties/success_criteria"
+        },
+        "human_approval_required_for": {
+          "$ref": "https://openslack.dev/schemas/github-issue-task.schema.json#/properties/human_approval_required_for",
+          "type": "array",
+          "uniqueItems": true
+        },
+        "lease": {
+          "$ref": "#/$defs/lease"
+        },
+        "idempotency_key": {
+          "$ref": "https://openslack.dev/schemas/github-issue-task.schema.json#/properties/idempotency_key"
+        }
+      }
+    },
+    "definition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "task", "issueTitle", "prose", "manifest", "labels"],
+      "properties": {
+        "schema": {
+          "const": "openslack.task_definition.v1"
+        },
+        "task": {
+          "$ref": "#/$defs/taskIdentity"
+        },
+        "issueTitle": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "prose": {
+          "type": "string",
+          "maxLength": 1048576
+        },
+        "manifest": {
+          "$ref": "#/$defs/manifest"
+        },
+        "labels": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          }
+        }
+      }
+    },
+    "claim": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "claimId",
+        "task",
+        "holder",
+        "authority",
+        "claimEpoch",
+        "revision",
+        "state",
+        "phase",
+        "issuedAt",
+        "renewedAt",
+        "expiresAt",
+        "policyRevision",
+        "lastOperationId",
+        "closingReason"
+      ],
+      "properties": {
+        "schema": {
+          "const": "openslack.task_claim.v2"
+        },
+        "claimId": {
+          "$ref": "#/$defs/id"
+        },
+        "task": {
+          "$ref": "#/$defs/boundTask"
+        },
+        "holder": {
+          "$ref": "#/$defs/holder"
+        },
+        "authority": {
+          "$ref": "#/$defs/authority"
+        },
+        "claimEpoch": {
+          "$ref": "#/$defs/positiveDecimal"
+        },
+        "revision": {
+          "$ref": "#/$defs/positiveDecimal"
+        },
+        "state": {
+          "$ref": "#/$defs/state"
+        },
+        "phase": {
+          "$ref": "#/$defs/phase"
+        },
+        "issuedAt": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "renewedAt": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "expiresAt": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "policyRevision": {
+          "$ref": "#/$defs/digest"
+        },
+        "lastOperationId": {
+          "$ref": "#/$defs/id"
+        },
+        "closingReason": {
+          "anyOf": [
+            {
+              "enum": ["release", "complete"]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "const": "closing"
+              }
+            },
+            "required": ["state"]
+          },
+          "then": {
+            "properties": {
+              "closingReason": {
+                "enum": ["release", "complete"]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "const": "active"
+              }
+            },
+            "required": ["state"]
+          },
+          "then": {
+            "properties": {
+              "closingReason": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "mutationRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "operationId",
+        "operation",
+        "task",
+        "actor",
+        "holder",
+        "authority",
+        "expected",
+        "payload"
+      ],
+      "properties": {
+        "schema": {
+          "const": "openslack.task_claim_request.v2"
+        },
+        "operationId": {
+          "$ref": "#/$defs/id"
+        },
+        "operation": {
+          "$ref": "#/$defs/operation"
+        },
+        "task": {
+          "$ref": "#/$defs/boundTask"
+        },
+        "actor": {
+          "$ref": "#/$defs/holder"
+        },
+        "holder": {
+          "$ref": "#/$defs/holder"
+        },
+        "authority": {
+          "$ref": "#/$defs/requestAuthority"
+        },
+        "expected": {
+          "$ref": "#/$defs/expected"
+        },
+        "payload": {
+          "type": "object"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "const": "acquire"
+              }
+            },
+            "required": ["operation"]
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["leaseDurationMs", "observationSnapshotDigest"],
+                "properties": {
+                  "leaseDurationMs": {
+                    "$ref": "#/$defs/positiveDecimal"
+                  },
+                  "observationSnapshotDigest": {
+                    "$ref": "#/$defs/digest"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "const": "heartbeat"
+              }
+            },
+            "required": ["operation"]
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["leaseDurationMs"],
+                "properties": {
+                  "leaseDurationMs": {
+                    "$ref": "#/$defs/positiveDecimal"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "const": "set_phase"
+              }
+            },
+            "required": ["operation"]
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["phase"],
+                "properties": {
+                  "phase": {
+                    "$ref": "#/$defs/phase"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "const": "submit"
+              }
+            },
+            "required": ["operation"]
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["artifact"],
+                "properties": {
+                  "artifact": {
+                    "$ref": "#/$defs/artifact"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "const": "begin_close"
+              }
+            },
+            "required": ["operation"]
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["reason"],
+                "properties": {
+                  "reason": {
+                    "enum": ["release", "complete"]
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "const": "release"
+              }
+            },
+            "required": ["operation"]
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [],
+                "properties": {}
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "const": "complete"
+              }
+            },
+            "required": ["operation"]
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["completionEvidenceDigest"],
+                "properties": {
+                  "completionEvidenceDigest": {
+                    "$ref": "#/$defs/digest"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "const": "expire"
+              }
+            },
+            "required": ["operation"]
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [],
+                "properties": {}
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "const": "revoke"
+              }
+            },
+            "required": ["operation"]
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["reason"],
+                "properties": {
+                  "reason": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "const": "repair"
+              }
+            },
+            "required": ["operation"]
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["kind", "sourceOperationId", "inspectionDigest", "inspectionId"],
+                "properties": {
+                  "kind": {
+                    "enum": ["projection", "reconcile_operation"]
+                  },
+                  "sourceOperationId": {
+                    "$ref": "#/$defs/id"
+                  },
+                  "inspectionDigest": {
+                    "$ref": "#/$defs/digest"
+                  },
+                  "inspectionId": {
+                    "$ref": "#/$defs/id"
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "readRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "query", "task", "actor", "operationId"],
+      "properties": {
+        "schema": {
+          "const": "openslack.task_claim_query.v1"
+        },
+        "query": {
+          "enum": ["observe", "get_operation"]
+        },
+        "task": {
+          "$ref": "#/$defs/taskIdentity"
+        },
+        "actor": {
+          "$ref": "#/$defs/holder"
+        },
+        "operationId": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/id"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "query": {
+                "const": "observe"
+              }
+            },
+            "required": ["query"]
+          },
+          "then": {
+            "properties": {
+              "operationId": {
+                "type": "null"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "operationId": {
+                "$ref": "#/$defs/id"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "versionReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "claimId",
+        "claimEpoch",
+        "revision",
+        "state",
+        "phase",
+        "definitionDigest",
+        "versionDigest"
+      ],
+      "properties": {
+        "claimId": {
+          "$ref": "#/$defs/id"
+        },
+        "claimEpoch": {
+          "$ref": "#/$defs/positiveDecimal"
+        },
+        "revision": {
+          "$ref": "#/$defs/positiveDecimal"
+        },
+        "state": {
+          "$ref": "#/$defs/state"
+        },
+        "phase": {
+          "$ref": "#/$defs/phase"
+        },
+        "definitionDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "versionDigest": {
+          "$ref": "#/$defs/digest"
+        }
+      }
+    },
+    "receipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "operationId",
+        "requestDomain",
+        "requestDigest",
+        "actor",
+        "task",
+        "authority",
+        "operation",
+        "decision",
+        "error",
+        "before",
+        "after",
+        "authorityObservedAt",
+        "projectionOutboxId"
+      ],
+      "properties": {
+        "schema": {
+          "const": "openslack.task_claim_operation.v1"
+        },
+        "operationId": {
+          "$ref": "#/$defs/id"
+        },
+        "requestDomain": {
+          "const": "openslack.task_claim_request.v2"
+        },
+        "requestDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "actor": {
+          "$ref": "#/$defs/holder"
+        },
+        "task": {
+          "$ref": "#/$defs/boundTask"
+        },
+        "authority": {
+          "$ref": "#/$defs/authority"
+        },
+        "operation": {
+          "$ref": "#/$defs/operation"
+        },
+        "decision": {
+          "enum": ["accepted", "rejected", "reconciliation_required"]
+        },
+        "error": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/error"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "before": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/versionReference"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "after": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/versionReference"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "authorityObservedAt": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "projectionOutboxId": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/id"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "decision": {
+                "const": "accepted"
+              }
+            },
+            "required": ["decision"]
+          },
+          "then": {
+            "properties": {
+              "error": {
+                "type": "null"
+              },
+              "after": {
+                "$ref": "#/$defs/versionReference"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "error": {
+                "$ref": "#/$defs/error"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "observation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "task",
+        "authority",
+        "observedAt",
+        "status",
+        "claim",
+        "strongClaimProven",
+        "reason",
+        "definitionObservation"
+      ],
+      "properties": {
+        "schema": {
+          "const": "openslack.task_claim_observation.v1"
+        },
+        "task": {
+          "$ref": "#/$defs/taskIdentity"
+        },
+        "authority": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/authority"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "observedAt": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/timestamp"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "enum": ["current_valid", "not_current", "legacy_observed", "unavailable"]
+        },
+        "claim": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/claim"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "strongClaimProven": {
+          "type": "boolean"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/error"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "definitionObservation": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/definitionObservation"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "current_valid"
+              }
+            },
+            "required": ["status"]
+          },
+          "then": {
+            "properties": {
+              "authority": {
+                "$ref": "#/$defs/authority"
+              },
+              "observedAt": {
+                "$ref": "#/$defs/timestamp"
+              },
+              "claim": {
+                "allOf": [
+                  {
+                    "$ref": "#/$defs/claim"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "state": {
+                        "const": "active"
+                      }
+                    }
+                  }
+                ]
+              },
+              "definitionObservation": {
+                "$ref": "#/$defs/definitionObservation"
+              },
+              "strongClaimProven": {
+                "const": true
+              },
+              "reason": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "not_current"
+              }
+            },
+            "required": ["status"]
+          },
+          "then": {
+            "properties": {
+              "authority": {
+                "$ref": "#/$defs/authority"
+              },
+              "observedAt": {
+                "$ref": "#/$defs/timestamp"
+              },
+              "strongClaimProven": {
+                "const": false
+              },
+              "reason": {
+                "$ref": "#/$defs/error"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "legacy_observed"
+              }
+            },
+            "required": ["status"]
+          },
+          "then": {
+            "properties": {
+              "authority": {
+                "type": "null"
+              },
+              "claim": {
+                "type": "null"
+              },
+              "definitionObservation": {
+                "type": "null"
+              },
+              "observedAt": {
+                "type": "null"
+              },
+              "strongClaimProven": {
+                "const": false
+              },
+              "reason": {
+                "const": "CLAIM_NOT_CURRENT"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "unavailable"
+              }
+            },
+            "required": ["status"]
+          },
+          "then": {
+            "properties": {
+              "authority": {
+                "type": "null"
+              },
+              "claim": {
+                "type": "null"
+              },
+              "definitionObservation": {
+                "type": "null"
+              },
+              "observedAt": {
+                "type": "null"
+              },
+              "strongClaimProven": {
+                "const": false
+              },
+              "reason": {
+                "enum": ["EVIDENCE_UNAVAILABLE", "AUTHORITY_NOT_ACTIVE"]
+              }
+            }
+          }
+        }
+      ]
+    },
+    "errorReply": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "operationId", "error", "recorded", "codecReason"],
+      "properties": {
+        "schema": {
+          "const": "openslack.task_claim_error.v1"
+        },
+        "operationId": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/id"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "error": {
+          "$ref": "#/$defs/error"
+        },
+        "recorded": {
+          "const": false
+        },
+        "codecReason": {
+          "anyOf": [
+            {
+              "enum": [
+                "DUPLICATE_KEY",
+                "DECIMAL_INVALID",
+                "JSON_NUMBER_FORBIDDEN",
+                "UNICODE_INVALID",
+                "UNKNOWN_FIELD",
+                "MISSING_FIELD",
+                "OVERSIZED",
+                "INVALID_JSON",
+                "UNSUPPORTED_SCHEMA",
+                "MANIFEST_AMBIGUOUS"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "definitionObservation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "digest", "sourceSnapshotDigest", "observedAt"],
+      "properties": {
+        "schema": {
+          "const": "openslack.task_definition_observation.v1"
+        },
+        "digest": {
+          "$ref": "#/$defs/digest"
+        },
+        "sourceSnapshotDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "observedAt": {
+          "$ref": "#/$defs/timestamp"
+        }
+      }
+    },
+    "taskIdentityFields": {
+      "type": "object",
+      "required": [
+        "workspaceId",
+        "provider",
+        "host",
+        "repositoryId",
+        "issueNodeId",
+        "issueNumber",
+        "taskId"
+      ],
+      "properties": {
+        "workspaceId": {
+          "$ref": "#/$defs/id"
+        },
+        "provider": {
+          "const": "github"
+        },
+        "host": {
+          "const": "github.com"
+        },
+        "repositoryId": {
+          "$ref": "#/$defs/positiveDecimal"
+        },
+        "issueNodeId": {
+          "$ref": "#/$defs/id"
+        },
+        "issueNumber": {
+          "$ref": "#/$defs/positiveDecimal"
+        },
+        "taskId": {
+          "$ref": "#/$defs/id"
+        }
+      }
+    },
+    "operation": {
+      "enum": [
+        "acquire",
+        "heartbeat",
+        "set_phase",
+        "submit",
+        "begin_close",
+        "release",
+        "complete",
+        "expire",
+        "revoke",
+        "repair"
+      ]
+    }
+  }
+}

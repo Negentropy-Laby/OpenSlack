@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process';
 import {
   cpSync,
   mkdirSync,
@@ -11,7 +12,11 @@ import {
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
+import { Ajv2020 } from 'ajv/dist/2020.js';
+import addFormats from 'ajv-formats';
 import { afterEach, describe, expect, test } from 'vitest';
+
+import { testExecutable } from '../../testing/process-fixture.mjs';
 
 import {
   generateDocumentation,
@@ -24,6 +29,7 @@ import {
   verifyDocumentation,
   verifyMigration,
 } from '../lib.js';
+import { parseIssueTaskManifest } from '../../../packages/github/src/manifest.js';
 
 const project = {
   schema: 'openslack.project_state.v1',
@@ -110,6 +116,276 @@ const consolidationSources = [
 ] as const;
 
 const temporaryRoots: string[] = [];
+
+const claimContract = 'docs/architecture/contracts/task-claim-v2-c0.md';
+const claimSchema = 'docs/reference/schemas/task-claim/task-claim-v2-c0.schema.json';
+const claimVectors = 'docs/reference/vectors/task-claim/task-claim-v2-c0-vectors.json';
+const manifestSchema = 'packages/github/src/task-manifest.schema.json';
+
+function claimRepository(): string {
+  const root = temporaryRepository();
+  for (const path of [claimSchema, claimVectors, manifestSchema]) {
+    writeRepositoryFile(root, path, readFileSync(join(process.cwd(), path), 'utf8'));
+  }
+  writeRepositoryFile(root, claimContract, documentMetadata('architecture-task-claim-v2-c0'));
+  writeDocumentMap(
+    root,
+    documentMap({
+      authorities: [{ fact: 'claim-contract', canonical: claimContract }],
+      documents: [
+        { id: 'architecture-task-claim-v2-c0', path: claimContract, status: 'active' },
+        { id: 'legacy', path: 'docs/legacy.md', status: 'archived' },
+      ],
+    }),
+  );
+  return root;
+}
+
+function claimValidators() {
+  const ajv = new Ajv2020({ strict: true, allErrors: true });
+  addFormats(ajv);
+  const source = JSON.parse(readFileSync(join(process.cwd(), manifestSchema), 'utf8'));
+  const schema = JSON.parse(readFileSync(join(process.cwd(), claimSchema), 'utf8'));
+  ajv.addSchema(source);
+  ajv.addSchema(schema);
+  return {
+    manifest: ajv.getSchema(source.$id)!,
+    projected: ajv.getSchema(`${schema.$id}#/$defs/manifest`)!,
+    identity: ajv.getSchema(`${schema.$id}#/$defs/taskIdentity`)!,
+    bound: ajv.getSchema(`${schema.$id}#/$defs/boundTask`)!,
+  };
+}
+
+describe('Task Claim C0 candidate conformance', () => {
+  const base = {
+    schema: 'openslack.github_issue_task.v1',
+    task_id: 'TASK-2026-000042',
+    title: 'Example',
+    agent_type: 'codex',
+    risk_level: 'medium',
+  };
+
+  test.each([
+    ['custom type', { task_type: 'chore' }],
+    ['long title', { title: 't'.repeat(1025) }],
+    ['empty idempotency key', { idempotency_key: '' }],
+    ['long or empty criterion', { success_criteria: ['c'.repeat(8193), ''] }],
+    [
+      'v1 set member strings',
+      { required_capabilities: ['custom capability'], allowed_paths: [''] },
+    ],
+  ] as const)('preserves v1 manifest input range: %s', (_label, fields) => {
+    const validate = claimValidators();
+    expect(validate.manifest({ ...base, ...fields, status: 'ready' })).toBe(true);
+    expect(
+      parseIssueTaskManifest(
+        `\`\`\`openslack-task\n${JSON.stringify({ ...base, ...fields, status: 'ready' })}\n\`\`\``,
+      ).valid,
+    ).toBe(true);
+    expect(validate.projected({ ...base, ...fields })).toBe(true);
+  });
+
+  test('rejects an invalid task ID and lifecycle fields in the projected manifest', () => {
+    const validate = claimValidators();
+    expect(validate.projected({ ...base, task_id: 'generic-id' })).toBe(false);
+    expect(validate.projected({ ...base, status: 'ready' })).toBe(false);
+    expect(validate.projected({ ...base, linked_pr: 42 })).toBe(false);
+  });
+
+  test('keeps both task identity wrappers closed and independently required', () => {
+    const validate = claimValidators();
+    const task = {
+      workspaceId: 'fixture',
+      provider: 'github',
+      host: 'github.com',
+      repositoryId: '1381124543',
+      issueNodeId: 'I_fixture',
+      issueNumber: '42',
+      taskId: 'TASK-2026-000042',
+    };
+    const bound = {
+      ...task,
+      definitionSchema: 'openslack.task_definition.v1',
+      definitionDigest: `sha256:${'a'.repeat(64)}`,
+    };
+    for (const [check, value] of [
+      [validate.identity, task],
+      [validate.bound, bound],
+    ] as const) {
+      expect(check(value)).toBe(true);
+      expect(check({ ...value, unexpected: true })).toBe(false);
+      const missing = { ...value } as Record<string, unknown>;
+      delete missing.issueNodeId;
+      expect(check(missing)).toBe(false);
+    }
+  });
+
+  test('retains transformed lease decimal bounds without accepting raw JSON numbers', () => {
+    const validate = claimValidators();
+    expect(
+      validate.projected({ ...base, lease: { ttl_minutes: '480', heartbeat_minutes: '120' } }),
+    ).toBe(true);
+    for (const lease of [
+      { ttl_minutes: '481', heartbeat_minutes: '1' },
+      { ttl_minutes: '1', heartbeat_minutes: '121' },
+      { ttl_minutes: '0', heartbeat_minutes: '1' },
+      { ttl_minutes: '01', heartbeat_minutes: '1' },
+      { ttl_minutes: 1, heartbeat_minutes: 1 },
+    ])
+      expect(validate.projected({ ...base, lease })).toBe(false);
+  });
+
+  test.each(['digest', 'byteLength', 'canonicalUTF8Base64', 'inputUTF8Base64'])(
+    'docs:verify reads current vector %s bytes after an earlier pass',
+    (field) => {
+      const root = claimRepository();
+      expect(() => verifyDocumentation(root)).not.toThrow();
+      const vectors = JSON.parse(readFileSync(join(root, claimVectors), 'utf8'));
+      vectors.accept[0][field] =
+        field === 'byteLength' ? 1 : field === 'digest' ? `sha256:${'0'.repeat(64)}` : 'e30=';
+      writeJsonFile(root, claimVectors, vectors);
+      expect(() => verifyDocumentation(root)).toThrow(/Task Claim C0/);
+    },
+  );
+
+  test.each([
+    [
+      'v1 pin',
+      (root: string) => {
+        const vectors = JSON.parse(readFileSync(join(root, claimVectors), 'utf8'));
+        vectors.sourceSchema.sha256 = '0'.repeat(64);
+        writeJsonFile(root, claimVectors, vectors);
+      },
+    ],
+    [
+      'v1 bytes',
+      (root: string) =>
+        writeFileSync(
+          join(root, manifestSchema),
+          `${readFileSync(join(root, manifestSchema), 'utf8')} `,
+        ),
+    ],
+    [
+      'unresolved local reference',
+      (root: string) => {
+        const schema = JSON.parse(readFileSync(join(root, claimSchema), 'utf8'));
+        schema.oneOf[0].$ref = '#/$defs/nonexistent';
+        writeJsonFile(root, claimSchema, schema);
+      },
+    ],
+    ['missing vectors', (root: string) => unlinkSync(join(root, claimVectors))],
+    [
+      'duplicate JSON keys',
+      (root: string) => {
+        const raw = readFileSync(join(root, claimVectors), 'utf8');
+        writeFileSync(join(root, claimVectors), raw.replace('{', '{"schema":"duplicate",'));
+      },
+    ],
+    [
+      'unknown projection reference',
+      (root: string) => {
+        const vectors = JSON.parse(readFileSync(join(root, claimVectors), 'utf8'));
+        vectors.projectionCases[0].expectedProjection = 'missing-vector';
+        writeJsonFile(root, claimVectors, vectors);
+      },
+    ],
+    [
+      'unknown transition reference',
+      (root: string) => {
+        const vectors = JSON.parse(readFileSync(join(root, claimVectors), 'utf8'));
+        vectors.transitionCases[0].operationVector = 'missing-vector';
+        writeJsonFile(root, claimVectors, vectors);
+      },
+    ],
+    [
+      'unrelated failure in unknown-field negative',
+      (root: string) => {
+        const vectors = JSON.parse(readFileSync(join(root, claimVectors), 'utf8'));
+        const vector = vectors.reject.find(
+          (item: { id: string }) => item.id === 'unknown-definition-field',
+        );
+        const input = JSON.parse(Buffer.from(vector.inputUTF8Base64, 'base64').toString());
+        delete input.task;
+        vector.inputUTF8Base64 = Buffer.from(JSON.stringify(input)).toString('base64');
+        writeJsonFile(root, claimVectors, vectors);
+      },
+    ],
+    [
+      'schema-invalid semantic observation',
+      (root: string) => {
+        const vectors = JSON.parse(readFileSync(join(root, claimVectors), 'utf8'));
+        delete vectors.observationReject.find(
+          (item: { layer: string }) => item.layer === 'semantic',
+        ).input.task;
+        writeJsonFile(root, claimVectors, vectors);
+      },
+    ],
+  ] as const)('fails closed on changed %s in the same process', (_label, mutate) => {
+    const root = claimRepository();
+    expect(() => verifyDocumentation(root)).not.toThrow();
+    mutate(root);
+    expect(() => verifyDocumentation(root)).toThrow(/Task Claim C0/);
+  });
+
+  test.each([
+    ['malformed Base64', '%%%'],
+    ['invalid UTF-8', Buffer.from([0xff]).toString('base64')],
+    ['duplicate decoded key', Buffer.from('{"a":"x","\\u0061":"y"}').toString('base64')],
+    ['lone surrogate', Buffer.from('{"a":"\\ud800"}').toString('base64')],
+    ['numeric payload', Buffer.from('{"a":1}').toString('base64')],
+  ])('rejects %s before digest or schema checks', (_label, encoded) => {
+    const root = claimRepository();
+    const vectors = JSON.parse(readFileSync(join(root, claimVectors), 'utf8'));
+    vectors.accept[0].inputUTF8Base64 = encoded;
+    writeJsonFile(root, claimVectors, vectors);
+    expect(() => verifyDocumentation(root)).toThrow(/Task Claim C0/);
+  });
+
+  test('reports mechanically counted categories without claiming semantic execution', () => {
+    const result = verifyDocumentation(claimRepository()).taskClaimC0;
+    expect(result).toMatchObject({
+      canonicalDigests: 22,
+      schemaAccepted: 20,
+      codecOnly: 2,
+      rejected: 6,
+      projectionCases: 9,
+      transitionReferences: 6,
+      schemaObservationNegatives: 2,
+      semanticObservationCases: 4,
+      semanticExecution: 'NOT_RUN',
+    });
+  });
+
+  test('the actual docs:verify entrypoint rejects corrupted evidence', () => {
+    const root = claimRepository();
+    const vectors = JSON.parse(readFileSync(join(root, claimVectors), 'utf8'));
+    vectors.accept[0].digest = `sha256:${'0'.repeat(64)}`;
+    writeJsonFile(root, claimVectors, vectors);
+    const result = spawnSync(
+      testExecutable('bun'),
+      [join(process.cwd(), 'scripts/documentation/index.ts'), 'verify'],
+      { cwd: root, encoding: 'utf8', timeout: 10_000 },
+    );
+    expect(result.error).toBeUndefined();
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('Task Claim C0: domain-separated digest mismatch');
+    expect(result.stdout).not.toContain('Documentation verified');
+  });
+
+  test('a BOM-only codec failure cannot stand in for the duplicate-key negative', () => {
+    const root = claimRepository();
+    const vectors = JSON.parse(readFileSync(join(root, claimVectors), 'utf8'));
+    const duplicate = vectors.reject.find(
+      (item: { id: string }) => item.id === 'escaped-duplicate-key',
+    );
+    duplicate.inputUTF8Base64 = Buffer.concat([
+      Buffer.from([0xef, 0xbb, 0xbf]),
+      Buffer.from('{"a":"single key"}'),
+    ]).toString('base64');
+    writeJsonFile(root, claimVectors, vectors);
+    expect(() => verifyDocumentation(root)).toThrow(/Task Claim C0/);
+  });
+});
 
 afterEach(() => {
   for (const root of temporaryRoots.splice(0)) {

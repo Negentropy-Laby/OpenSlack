@@ -16,6 +16,9 @@ try {
       console.log(
         `Documentation verified: ${result.schemas} schemas, ${result.documents} active documents, ${result.generated} generated projections.`,
       );
+      if (result.taskClaimC0) {
+        console.log(`Task Claim C0 R6 evidence: ${JSON.stringify(result.taskClaimC0)}`);
+      }
       break;
     }
     case 'migration-check': {
