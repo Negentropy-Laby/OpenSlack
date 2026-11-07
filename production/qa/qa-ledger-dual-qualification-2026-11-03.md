@@ -444,9 +444,9 @@ after execution; the old head's green checks are not substituted.
 | [task-claim-v2-c0-vectors.json](../../docs/reference/vectors/task-claim/task-claim-v2-c0-vectors.json)     | 80329 | `93ecb8813f6ab35c6f2da21dbe63e978446eb6d2cbdec0c36e15b477659a0862` |
 | [adr-0005-task-claim-v2-single-host.md](../../docs/architecture/adr/adr-0005-task-claim-v2-single-host.md) | 13578 | `4f4a4b47d3f23285d450c2be0b17d17fc3eafd4f78654e74db11d5101e05a0d5` |
 
-### R6 local execution and evidence reconciliation
+### Initial R6 local execution and evidence reconciliation
 
-Final source/test validation used `0412996ddaf8d8c73c63c11a18d8d548cd070c8e`.
+Initial R6 source/test validation used `0412996ddaf8d8c73c63c11a18d8d548cd070c8e`.
 The later evidence amendment changes only this ledger and the selected
 assignments' readback times; it does not change the tested C0 machine inputs,
 verifier, v1 parser, worker or test code.
@@ -491,3 +491,29 @@ now preserve the BOM so invalid framing cannot be mistaken for duplicate-key
 coverage. The corpus, v1 schema, C0 contract/schema and R6 four-file digests are
 unchanged. The earlier source's results remain earlier-source evidence; new
 source/platform/count/current-head results are recorded separately below.
+
+### R6 BOM-follow-up execution evidence
+
+New code/count validation used `3c403f41ca7dda5369d6ffc70278823b56623137`;
+the native affected run used its code-equivalent parent `59724033`. The final
+evidence-only amendment does not alter that verifier/test code or the four
+reviewed C0 machine/narrative inputs.
+
+| Evidence class                                            | Actual follow-up result                                                                                                                                                                                                                                                          |
+| --------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Targeted RED                                              | The BOM single-key substitution falsely passed the old duplicate-key negative; the new assertion failed before the decoder fix.                                                                                                                                                  |
+| Linux affected documentation suite                        | PASS: 68 tests.                                                                                                                                                                                                                                                                  |
+| Native Windows affected suite                             | PASS: 66; 2 existing symlink-platform cases skipped; 0 failed.                                                                                                                                                                                                                   |
+| Node 22.23.4 affected suite                               | PASS: 68 tests.                                                                                                                                                                                                                                                                  |
+| Complete Linux suite, detached hosted-equivalent checkout | PASS: 9,347; 25 skipped; 0 failed, from 9,372 declared cases. No assertion, retry, worker or timeout reduction.                                                                                                                                                                  |
+| Full typecheck/build and affected ESLint                  | PASS; zero lint errors / zero lint warnings.                                                                                                                                                                                                                                     |
+| Inventory and second generation                           | 9,372 cases / 606 files; second production collection/status/document generation added no differences.                                                                                                                                                                           |
+| Compatibility and source bindings                         | Production capture verified original Harness inputs and actual worker/plugin outputs unchanged. No binding input changed, so no source lock refreshed; prior applicable Go source-contract evidence remains scoped as recorded above.                                            |
+| Independent read-only follow-up                           | ADEQUATE for the BOM fix. Actual duplicates still validate as negatives; BOM, invalid UTF-8, non-JSON whitespace, trailing garbage, comments, isolated Unicode and depth failures cannot stand in for duplicate-key coverage. Final SHA binding recorded by the delivery record. |
+| Final-head hosted CI / PRMS                               | Use the PR's current Checks and final delivery comment. This local record does not import earlier-head conclusions.                                                                                                                                                              |
+
+The readback at `2026-11-07T09:24:18Z` reconfirmed the seven Issue states and
+same expired heartbeat; structured verification times were refreshed. No Claim
+or Issue lifecycle was mutated. The named-branch failure, earlier platform
+results, Node 22.0 tooling startup failure and all older Unknowns remain
+separate historical observations, rather than being relabeled by this pass.
