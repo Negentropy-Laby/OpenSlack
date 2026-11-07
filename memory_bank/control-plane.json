@@ -1299,7 +1299,7 @@
           "historical-snapshot:https://github.com/Negentropy-Laby/OpenSlack/blob/5683d1a7843a8f3b0fbea1383d3054ff083f0058/memory_bank/control-plane.json",
           "no-current-provider-preflight-or-qualification-performed-by-this-source-maintenance"
         ],
-        "last_verified_at": "2026-11-07T08:12:34.674Z"
+        "last_verified_at": "2026-11-07T08:47:06Z"
       },
       {
         "id": "issue-427",
@@ -1344,7 +1344,7 @@
           "github-closed-is-not-cleanup-qualification-pass",
           "historical-snapshot:https://github.com/Negentropy-Laby/OpenSlack/blob/5683d1a7843a8f3b0fbea1383d3054ff083f0058/memory_bank/control-plane.json"
         ],
-        "last_verified_at": "2026-11-07T08:12:34.674Z"
+        "last_verified_at": "2026-11-07T08:47:06Z"
       },
       {
         "id": "issue-428",
@@ -1384,7 +1384,7 @@
           "historical-R5-recommendations:exact-bytes-at-5683d1a7-only",
           "production/qa/qa-ledger-dual-qualification-2026-11-03.md"
         ],
-        "last_verified_at": "2026-11-07T08:12:34.674Z"
+        "last_verified_at": "2026-11-07T08:47:06Z"
       },
       {
         "id": "issue-429",
@@ -1516,7 +1516,7 @@
           "human-delegated-source-maintenance:delivered-without-registered-agent-claim",
           "historical-snapshot:https://github.com/Negentropy-Laby/OpenSlack/blob/5683d1a7843a8f3b0fbea1383d3054ff083f0058/memory_bank/control-plane.json"
         ],
-        "last_verified_at": "2026-11-07T08:12:34.674Z"
+        "last_verified_at": "2026-11-07T08:47:06Z"
       },
       {
         "id": "issue-433",
@@ -1561,7 +1561,7 @@
           "human-delegated-source-maintenance:delivered-without-registered-agent-claim",
           "historical-snapshot:https://github.com/Negentropy-Laby/OpenSlack/blob/5683d1a7843a8f3b0fbea1383d3054ff083f0058/memory_bank/control-plane.json"
         ],
-        "last_verified_at": "2026-11-07T08:12:34.674Z"
+        "last_verified_at": "2026-11-07T08:47:06Z"
       },
       {
         "id": "issue-438",
@@ -1607,7 +1607,7 @@
           "historical-snapshot:https://github.com/Negentropy-Laby/OpenSlack/blob/5683d1a7843a8f3b0fbea1383d3054ff083f0058/memory_bank/control-plane.json",
           "historical-original-tcp-reset-cause:unknown;new-source-and-regression-delivery-do-not-rewrite-old-failure"
         ],
-        "last_verified_at": "2026-11-07T08:12:34.674Z"
+        "last_verified_at": "2026-11-07T08:47:06Z"
       },
       {
         "id": "issue-239",
@@ -1760,7 +1760,7 @@
           "release-runtime-provider-preflight:not-run-by-this-maintenance",
           "historical-snapshot:https://github.com/Negentropy-Laby/OpenSlack/blob/5683d1a7843a8f3b0fbea1383d3054ff083f0058/memory_bank/control-plane.json"
         ],
-        "last_verified_at": "2026-11-07T08:12:34.674Z"
+        "last_verified_at": "2026-11-07T08:47:06Z"
       },
       {
         "id": "issue-245",

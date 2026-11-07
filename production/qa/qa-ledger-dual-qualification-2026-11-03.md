@@ -437,9 +437,41 @@ after execution; the old head's green checks are not substituted.
 
 ### R6 exact review input
 
-| Input | Bytes | SHA-256 |
-| --- | --- | --- |
-| [task-claim-v2-c0.md](../../docs/architecture/contracts/task-claim-v2-c0.md) | 52759 | `7d51f33ed1fe8f0fd22297317a3d7085966b0d271562810149efabdc6aaf95e7` |
-| [task-claim-v2-c0.schema.json](../../docs/reference/schemas/task-claim/task-claim-v2-c0.schema.json) | 31539 | `6084ec0310e8750ad84164a3a755f295c50522b0c249cadf7759d80ca9d39290` |
-| [task-claim-v2-c0-vectors.json](../../docs/reference/vectors/task-claim/task-claim-v2-c0-vectors.json) | 80329 | `93ecb8813f6ab35c6f2da21dbe63e978446eb6d2cbdec0c36e15b477659a0862` |
+| Input                                                                                                      | Bytes | SHA-256                                                            |
+| ---------------------------------------------------------------------------------------------------------- | ----- | ------------------------------------------------------------------ |
+| [task-claim-v2-c0.md](../../docs/architecture/contracts/task-claim-v2-c0.md)                               | 52759 | `7d51f33ed1fe8f0fd22297317a3d7085966b0d271562810149efabdc6aaf95e7` |
+| [task-claim-v2-c0.schema.json](../../docs/reference/schemas/task-claim/task-claim-v2-c0.schema.json)       | 31539 | `6084ec0310e8750ad84164a3a755f295c50522b0c249cadf7759d80ca9d39290` |
+| [task-claim-v2-c0-vectors.json](../../docs/reference/vectors/task-claim/task-claim-v2-c0-vectors.json)     | 80329 | `93ecb8813f6ab35c6f2da21dbe63e978446eb6d2cbdec0c36e15b477659a0862` |
 | [adr-0005-task-claim-v2-single-host.md](../../docs/architecture/adr/adr-0005-task-claim-v2-single-host.md) | 13578 | `4f4a4b47d3f23285d450c2be0b17d17fc3eafd4f78654e74db11d5101e05a0d5` |
+
+### R6 local execution and evidence reconciliation
+
+Final source/test validation used `0412996ddaf8d8c73c63c11a18d8d548cd070c8e`.
+The later evidence amendment changes only this ledger and the selected
+assignments' readback times; it does not change the tested C0 machine inputs,
+verifier, v1 parser, worker or test code.
+
+| Evidence class                                            | Actual result                                                                                                                                                                                                                                  |
+| --------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Linux affected documentation regression                   | PASS: 67 tests.                                                                                                                                                                                                                                |
+| Native Windows affected regression                        | PASS: 65; 2 existing symlink-platform cases skipped; 0 failed. Node 24.18.1/Bun 1.4.0, fresh isolated checkout/build.                                                                                                                          |
+| Linux Node 22.23.4 affected regression                    | PASS: 67 tests.                                                                                                                                                                                                                                |
+| Minimum Node 22.0 actual docs entrypoint                  | PASS: `node --import tsx scripts/documentation/index.ts verify`.                                                                                                                                                                               |
+| Minimum Node 22.0 Vitest tooling                          | NOT_RUN: existing Vite dependency raises ERR_REQUIRE_ESM before collection. The startup failure is retained separately.                                                                                                                        |
+| First complete Linux run on named feature branch          | FAIL retained: 9,345 passed, 1 failed, 25 skipped. Existing Graph smoke uses the working branch as defaultBranch; the original branch name matches the unchanged credential filter. Both implicated files match the R5 baseline byte-for-byte. |
+| Same source in detached checkout, matching hosted context | PASS: isolated Graph target, then complete Vitest 9,346 passed, 25 skipped, 0 failed. No filter, assertion, retry, worker or timeout change; original branch restored.                                                                         |
+| Complete typecheck/build                                  | PASS; contract-family checks included.                                                                                                                                                                                                         |
+| Affected ESLint                                           | PASS: zero errors and zero lint warnings. Node's existing config-module-type advisory is separate from ESLint findings.                                                                                                                        |
+| Applicable Go source binding                              | PASS: source-manifest race regression and contract-package vet; no changed source-binding paths, so no source lock refreshed.                                                                                                                  |
+| Workspace / Genesis / golden                              | PASS; golden 7/7.                                                                                                                                                                                                                              |
+| Actual inventory / second generation                      | 9,371 declared cases in 606 files, including skips; second collection/status/document generation added no differences.                                                                                                                         |
+| Fresh external compatibility emission                     | PASS: original Harness pinned at `22ddee3792402c3e70ec5f86a63c3e3e895a2f60`; actual worker/plugin emission and fresh compatibility witness. Original Harness inputs were not modified.                                                         |
+| Independent read-only R6 review                           | ADEQUATE, no substantive blocker. Source pin/closure/lease boundaries, R5 rows and exact R6 digest table checked; actual docs:verify passed. Final evidence amendment receives a separate SHA binding.                                         |
+| Current final-head hosted CI / PRMS                       | Pending publication/readback; recorded by the existing PR's live checks and final delivery comment, not inherited from the old head.                                                                                                           |
+
+The readback at `2026-11-07T08:47:06Z` reconfirmed all seven selected Issue
+states and the same expired heartbeat. Their structured `last_verified_at`
+fields now use that actual sampling time. The portfolio's separately dated
+August configuration labels were not refreshed and are not a November endpoint
+diagnosis. The immutable R5 originals, first-run failure logs, missing R1/R2
+originals and historical Unknowns remain as previously recorded.
