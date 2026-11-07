@@ -6,8 +6,8 @@ authority: canonical
 audience:
   - contributors
   - reviewers
-owner: github-task-loop
-updated: 2026-11-03
+owner: architecture
+updated: 2026-11-07
 sources:
   - design/cdd/modules/github-task-loop.md
   - docs/architecture/contracts/task-claim-v2-c0.md
@@ -39,7 +39,7 @@ Do not invent an acceptance date or inherit acceptance from ADR-0003/0004.
 
 | Input               | Observation and limit                                                                                                                                                                                                               |
 | ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Baseline            | OpenSlack `b8b11ed64238c3b622d110e5d2d11944a342609e`; C0 changes uncommitted until separately delivered                                                                                                                             |
+| Baseline            | Drafting began at `b8b11ed64238c3b622d110e5d2d11944a342609e`; retained R5 and revised R6 evidence are indexed in the QA ledger.                                                                                                     |
 | Product domain      | Task orchestration, authorization, durable leases and external effects; not a game module                                                                                                                                           |
 | Source pins         | Node >=22, Bun/bun-types 1.4.0; existing Go services pin Go 1.26.5 and PostgreSQL 18.4                                                                                                                                              |
 | First server target | Linux/WSL2 single host, Unix pathname socket, PostgreSQL; no TCP, remote authentication or native Windows server                                                                                                                    |
@@ -90,12 +90,11 @@ Cleanup's correct refusal to delete a branch still needed by that task.
    generation remain distinct. Preserve terminal slot history. Idempotent
    operations return the original request-bound receipt; conflicts never
    automatically retry against a newly read revision.
-6. Judge lease time after acquiring the task-slot lock. PostgreSQL transaction-
-   start time is not sufficient after contention. Clock uncertainty or old-
-   backup restoration closes admission until independent fresh activation.
-7. Preserve `issue_task_snapshot.v1`. A new closed definition projection uses
-   the C0's restricted JCS profile and domain-separated SHA-256, with data-only
-   proposed vectors. No old record receives fabricated run/epoch evidence.
+6. Use the C0 [authority-time and recovery contract](../contracts/task-claim-v2-c0.md#authority-time-and-recovery)
+   as the single specification for lock-time admission and restored-authority fencing.
+7. Preserve `issue_task_snapshot.v1`; introduce a separate definition identity
+   under the C0 [definition and byte profile](../contracts/task-claim-v2-c0.md#definition-digest-and-execution-admission).
+   Historical ownership is never upgraded by inference.
 8. Keep high-privilege external credentials in the controlled effect Broker.
    Before cutover, disable every old producer and credential route for that
    scope and prove denial. New namespaces, version fields and UI warnings do
@@ -104,19 +103,16 @@ Cleanup's correct refusal to delete a branch still needed by that task.
 
 ### Key interfaces and limits
 
-The [C0 contract](../contracts/task-claim-v2-c0.md) defines acquire, heartbeat,
-phase/submit, release/complete, expire/revoke, repair, observations and operation
-receipts, plus the source producer/consumer inventory. The session and delegation
-are authenticated authority records, not caller-provided authorization objects.
-`active` plus `authorityTime < expiresAt` is necessary for new effect admission;
-`closing` admits no new effect. The final controlled sender revalidates Claim,
-Permit and resource scope before one reservation-bound send.
+The [C0 contract](../contracts/task-claim-v2-c0.md) owns request/receipt shapes,
+admission predicates, authority time, definition digests and the final controlled
+send boundary. Its [Reference schema](../../reference/schemas/task-claim/task-claim-v2-c0.schema.json)
+and [data vectors](../../reference/vectors/task-claim/task-claim-v2-c0-vectors.json)
+are the machine authorities. This ADR records why that authority split was
+selected; it does not define a second version of those mechanisms.
 
-This provides controlled-entry fencing, not a distributed transaction with
-GitHub. Revocation before sending can prevent a send; after an unknown send,
-freeze and reconcile. A historical successful receipt is not a fresh permission.
-Expected-SHA deletion compares ref values, not branch lifecycle identity (same-
-name/same-SHA ABA remains a documented limitation).
+External GitHub effects remain outside the PostgreSQL transaction. Unknown
+results require reconciliation. Expected-SHA deletion retains its documented
+same-name/same-SHA ABA limitation.
 
 ## Alternatives Considered
 
@@ -157,13 +153,11 @@ Source framework registry or implementation readiness is created by this ADR.
 
 ## Migration Plan
 
-Follow C1 → C2 → C3 → consumer migration → fault qualification → one-repository
-cutover → old-write retirement. Inventory in C0 includes exported helpers,
-both repair aliases, watch/tick, PR sync, local read-triggered expiry, Harness
-and Graph consumers. Close old admission, drain/reconcile, remove old direct
-write capabilities, test each denial, then activate bounded new admission.
-Rollback closes new admission, preserves the authority and unresolved records,
-and drains there. Legacy comments never reconstruct a v2 Claim.
+Use the C0 [implementation sequence](../contracts/task-claim-v2-c0.md#implementation-sequence-and-ownership)
+and [migration/writer-fence protocol](../contracts/task-claim-v2-c0.md#migration-and-writer-fence)
+for the complete consumer inventory, cutover conditions and rollback behavior.
+Acceptance of this architectural direction does not authorize those later
+implementation or deployment steps.
 
 ## Validation and Review Gates
 

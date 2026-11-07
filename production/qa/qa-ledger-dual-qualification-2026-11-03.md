@@ -19,23 +19,29 @@ sources:
 
 ## Scope and source identity
 
-The original observations below are a dated 2026-11-03 record. Current work and
-execution state comes from `memory_bank/control-plane.json#/assignments`; later
-appendices identify their own observation times. A source delivery, a closed
-Issue and real qualification are separate evidence classes.
+This ledger retains dated observations and exact-byte evidence. Current work,
+execution and release gates come only from
+`memory_bank/control-plane.json#/assignments` and its generated projections.
+Local regression, hosted CI, source delivery, human GitHub review, ADR decision
+acceptance, installation and real qualification are separate evidence classes;
+a result here establishes only the named class and candidate. R6 is source and
+documentation maintenance, not C1–C7 implementation or qualification acceptance.
+Original failures, Unknowns and unavailable originals remain historical facts.
+
+The sections through the hosted-failure record are November 3 observations;
+the November 7 appendices supersede their state mirrors without revising those
+old results.
 
 Implementation started from merged main
 `b8b11ed64238c3b622d110e5d2d11944a342609e`, verified against origin and GitHub.
 The canonical checkout and retained #415 worktree were preserved. New Cleanup,
-Claim C0 and formally claimed R-EXT worktrees are separate. These local draft
-changes are not yet a clean merged execution candidate or qualified artifact.
-No old CI, private-target Permit or deployment approval applies to new bytes.
+Claim C0 and formally claimed R-EXT worktrees are separate. Those local draft changes had not yet become a clean merged execution
+candidate. Old CI, private-target Permits and deployment approvals were bound
+to their original inputs.
 
 The CDD skills are local planning/review support. These are project-owned
 contracts/tests/evidence, not CDD framework copies. OpenSlack uses Issues; no
 Story/TR registry, Source mirror or new governance framework was manufactured.
-Proposed ADR writing, independent recommendation, acceptance, CI, human GitHub
-review, merge, installation, live qualification and release remain separate.
 
 ## Actual task and delivery records
 
@@ -43,7 +49,7 @@ All new Issues below were created through the package task preview/create path
 with `openslack-agent-operator[bot]`; manifests validated and start **blocked**.
 No blocked task was labeled ready to bypass a missing dependency or identity.
 
-New preparation deliveries (not qualification completion) were created through
+Initial preparation deliveries were created through
 the supported App-authenticated delivery service:
 
 - [#434](https://github.com/Negentropy-Laby/OpenSlack/pull/434), public-target
@@ -60,23 +66,25 @@ branch/PR head `827f4ab17083b6607cbb2256e909ccd0ff56e594` at
 It does not reuse the initial head's checks for a later metadata commit. The
 four exact normative R5 digests below remain unchanged.
 
-Both live readbacks were OPEN/Draft, base main, author
+At the initial November 3 readback both preparation PRs were OPEN/Draft, base main, author
 `app/openslack-agent-operator`, with PR and published branch heads equal.
 New-head checks had started, not completed. Local task drafts remain preserved
 outside the selected delivery; a separate clean detached checkout published
-the exact Cleanup commit without deleting those drafts. No qualification or
-runtime task was closed, no approval was submitted and nothing was merged.
+the exact Cleanup commit without deleting those drafts.
 
-| Issue                                                           | Purpose                                              | Observed 2026-11-03 gate                                                                                       |
-| --------------------------------------------------------------- | ---------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
-| [#427](https://github.com/Negentropy-Laby/OpenSlack/issues/427) | Cleanup public-repository real qualification         | Administrator installation, registry, App scope, activation and one-use Permits                    |
-| [#428](https://github.com/Negentropy-Laby/OpenSlack/issues/428) | Claim v2 C0 contract and review                      | Exact R5 recommendations favorable; maintenance assignment, delivery and separate decision acceptance pending |
-| [#429](https://github.com/Negentropy-Laby/OpenSlack/issues/429) | C1 state kernel and TS/Go conformance                | Accepted C0; not implemented or ready                                                              |
-| [#430](https://github.com/Negentropy-Laby/OpenSlack/issues/430) | C2 PostgreSQL/local sessions                         | Verified C1 and separate implementation scope                                                      |
-| [#431](https://github.com/Negentropy-Laby/OpenSlack/issues/431) | C3 separate claimed cleanup admission                | Qualified C2 and separate action/policy/grants                                                     |
-| [#432](https://github.com/Negentropy-Laby/OpenSlack/issues/432) | Public target source/tests/documentation preparation | Registered exact-scope maintenance remains unassigned; user-delegated draft is not a runtime Claim |
-| [#433](https://github.com/Negentropy-Laby/OpenSlack/issues/433) | Narrow checkpoint replay defect                      | Separate runtime repair scope/review, not #411 permission                                          |
-| [#438](https://github.com/Negentropy-Laby/OpenSlack/issues/438) | Baseline WatchDaemon endpoint/startup proposal        | Separate maintenance scope/identity/design; exact observed reset origin unresolved                 |
+| Canonical assignment | Evidence navigation                                                                                                                                  |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `issue-427`          | [Issue #427](https://github.com/Negentropy-Laby/OpenSlack/issues/427), [#434 source delivery](https://github.com/Negentropy-Laby/OpenSlack/pull/434) |
+| `issue-428`          | [Issue #428](https://github.com/Negentropy-Laby/OpenSlack/issues/428), [#436 contract review](https://github.com/Negentropy-Laby/OpenSlack/pull/436) |
+| `issue-429`          | [Issue #429](https://github.com/Negentropy-Laby/OpenSlack/issues/429)                                                                                |
+| `issue-430`          | [Issue #430](https://github.com/Negentropy-Laby/OpenSlack/issues/430)                                                                                |
+| `issue-431`          | [Issue #431](https://github.com/Negentropy-Laby/OpenSlack/issues/431)                                                                                |
+| `issue-432`          | [Issue #432](https://github.com/Negentropy-Laby/OpenSlack/issues/432), [#434 source delivery](https://github.com/Negentropy-Laby/OpenSlack/pull/434) |
+| `issue-433`          | [Issue #433](https://github.com/Negentropy-Laby/OpenSlack/issues/433), [#435 source delivery](https://github.com/Negentropy-Laby/OpenSlack/pull/435) |
+| `issue-438`          | [Issue #438](https://github.com/Negentropy-Laby/OpenSlack/issues/438), [#435 source delivery](https://github.com/Negentropy-Laby/OpenSlack/pull/435) |
+
+These IDs resolve to the sole current assignment authority; the table is an
+evidence index, not a second copy of live titles, statuses or blockers.
 
 [PR #425 final merged summary](https://github.com/Negentropy-Laby/OpenSlack/pull/425#issuecomment-6600245982)
 and [PR #426 final merged summary](https://github.com/Negentropy-Laby/OpenSlack/pull/426#issuecomment-6600246799)
@@ -197,18 +205,15 @@ R2 observation the independent recommendation was still pending. The later
 exact R5 recommendations below are favorable; separate exact-byte ADR
 acceptance remains pending.
 
-The first server is Linux/WSL2 single host. Future C3 uses independent
-pr.cleanup_branch_claimed.v1; it is not registered/enabled. Current Permit-only
-action, source-task blockers and legacy Task Loop writers remain unchanged.
-No C1–C7 implementation, database, rollout or migration occurred.
+Scope and implementation limits belong to the
+[Proposed ADR](../../docs/architecture/adr/adr-0005-task-claim-v2-single-host.md#status)
+and [In Review C0 contract](../../docs/architecture/contracts/task-claim-v2-c0.md#status-and-separation).
 
 ## Release mapping and unresolved documentation
 
 Issues #239–#248 were read, not executed. The parent remains open; child release
 gates remain blocked. Preserve July release observations as history: old
 model_endpoint-not-configured text is not a fresh provider/configuration check.
-No signed release, clean-machine/npm/bot/onboarding/merge/task capstone or extra
-Harness model qualification is promoted by this work.
 
 The two named Windows plan originals were not present at their exact paths
 under C:\Users\WSMAN\.claude\plans in this inspection. They were not recreated,
@@ -231,13 +236,10 @@ located. R-REC/R-DOC and historical failures remain unresolved, not checked off.
 5. Humans provide exact effect decision and later effective GitHub review; chat
    write authority, local tests and bot comments replace neither.
 
-Until all required rows close, the whole plan is **not complete**. No release,
-production, native Windows Broker or Claim v2 implementation claim is made.
+## Historical preparation closure (2026-11-03, later observation)
 
-## Current preparation closure (2026-11-03, later observation)
-
-This section supersedes the initial in-progress rows only for the exact scoped
-local work below; it does not promote a live or release gate.
+This later November 3 observation superseded the initial in-progress local rows
+for the exact scoped candidates below.
 
 - Cleanup: final four-file 148/148 and eight-file library/CLI 245/245 local
   regressions passed. The latter includes real temporary bare-Git/clone tests,
@@ -283,34 +285,34 @@ Agent. Administrator confirmation of the actual approved target remains required
 ### C0 exact R5 review input
 
 Full independent TD review, required Product technical consultation and security
-review recommend the proposal; they do not accept ADR-0005. The exact original
-set is retained at `/tmp/openslack-c0-r5-reviewed.z7Yew8ei`, with earlier R3/R4
-sets separately retained. R1/R2 have only recorded hashes/findings; their full
+review recommend the proposal; they do not accept ADR-0005. The original record named
+`/tmp/openslack-c0-r5-reviewed.z7Yew8ei`, with earlier R3/R4 sets separately
+recorded. The four R5 inputs below are independently recoverable at immutable
+commit `5683d1a7843a8f3b0fbea1383d3054ff083f0058`; this update does not
+assert that ephemeral evidence directories still exist. R1/R2 have only recorded hashes/findings; their full
 intermediate drafts were not preserved. This limitation is not retroactively
 reclassified as raw-byte retention. The original main C0 remains recoverable in
 Git. None of the old recommendations is reused as acceptance.
 
-| R5 input          | Bytes  | SHA-256                                                          |
-| ----------------- | ------ | ---------------------------------------------------------------- |
-| C0 Markdown       | 51,872 | 1600ede1a001dfa34a1fd7f44659e90270560fb0f36fc52c2cb862aa958c6699 |
-| C0 schema         | 32,076 | 65c2c63c7f85758f3276f5231bce9f9364fc31300d69077aaf72d71160b8f806 |
-| Data-only vectors | 80,089 | 380c3f7bfd0694401177712b707bee1ef76824bb11e287985217ad29a013e058 |
-| Proposed ADR-0005 | 13,960 | 38c8fd437c64ca78f6cc447f42ed4b63d3ed345f78b31e714718b79cfc11cd7c |
+| R5 input                                                                                                                                                                    | Bytes  | SHA-256                                                          |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ | ---------------------------------------------------------------- |
+| [C0 Markdown](https://github.com/Negentropy-Laby/OpenSlack/blob/5683d1a7843a8f3b0fbea1383d3054ff083f0058/docs/architecture/contracts/task-claim-v2-c0.md)                   | 51,872 | 1600ede1a001dfa34a1fd7f44659e90270560fb0f36fc52c2cb862aa958c6699 |
+| [C0 schema](https://github.com/Negentropy-Laby/OpenSlack/blob/5683d1a7843a8f3b0fbea1383d3054ff083f0058/docs/architecture/contracts/task-claim-v2-c0.schema.json)            | 32,076 | 65c2c63c7f85758f3276f5231bce9f9364fc31300d69077aaf72d71160b8f806 |
+| [Data-only vectors](https://github.com/Negentropy-Laby/OpenSlack/blob/5683d1a7843a8f3b0fbea1383d3054ff083f0058/docs/architecture/contracts/task-claim-v2-c0-vectors.json)   | 80,089 | 380c3f7bfd0694401177712b707bee1ef76824bb11e287985217ad29a013e058 |
+| [Proposed ADR-0005](https://github.com/Negentropy-Laby/OpenSlack/blob/5683d1a7843a8f3b0fbea1383d3054ff083f0058/docs/architecture/adr/adr-0005-task-claim-v2-single-host.md) | 13,960 | 38c8fd437c64ca78f6cc447f42ed4b63d3ed345f78b31e714718b79cfc11cd7c |
 
-Independent R5 data diagnostics confirmed 20 schema-bearing accepted objects,
-22 canonical digests, nine raw Issue projections, two structural/four semantic
-observation negatives and six selected transition invariants. These are data
-conformance diagnostics, **not** independently implemented C1 TS/Go kernels.
+R5 data diagnostics and their scope remain bound to those file digests. R6
+counts come from the verification command's data-derived report, not a manually
+maintained copy here. Neither set is a C1 TS/Go state-kernel execution result.
 Initial R1/R2/R3 concerns and their corrections are retained: exact schema/FSM,
 operation-specific guards, observer invariants, reachable epoch/revision,
 domain separation and generation/recovery semantics. No C1–C7 code was added.
 
-Current remaining code work is explicit: #433 runtime repair, complete sealed
+At that November 3 observation, remaining code work was: #433 runtime repair, complete sealed
 resume composition, a durable per-attempt live send gate and actual Go metrics
-connector. Current helpers intentionally expose no live send/approval path.
+connector. The helpers then exposed no live send/approval path.
 Provider binding/counting, actual approvals, restart, 600-second drain and all
-Cleanup live cases remain NOT_RUN/BLOCKED. Hosted checks must bind new delivery
-heads; this ledger contains no new-head CI PASS or merge/acceptance assertion.
+Cleanup live cases remain NOT_RUN/BLOCKED. Hosted checks in that record applied only to their named delivery heads.
 
 ## Later hosted failures and exact-scope follow-up
 
@@ -340,7 +342,7 @@ cleanup`. The failures are distinct and are not erased by local or later PASS.
   associated head `b8bf3fa5da19eefb33ddfbeb7aa386e7c0b03fd6`, actual synthetic
   merge checkout `e083213262fbbe4bfa84a877c636037fbd30233e`, Windows Server 2022,
   actual Node 24.18.1. `ignores an unknown action without mutating delivery
-  state` failed `read ECONNRESET` after logging port 3389. The two WatchDaemon
+state` failed `read ECONNRESET` after logging port 3389. The two WatchDaemon
   blobs are identical at main, PR head and actual checkout. Its request already
   disables pooling and awaits response end before stop; teardown is not a proven
   cause. Random 3101–4100 test endpoints, missing startup rejection and response
@@ -351,18 +353,14 @@ cleanup`. The failures are distinct and are not erased by local or later PASS.
 
 The supported task preview/create path published #438 / TASK-2026-198109 as
 blocked, with only the two WatchDaemon paths and explicit TypeScript/Node/test
-requirements. It is a separate repair proposal, not permission for the #411
-qualification principal and not an implemented fix. No new ready task or Claim
-was manufactured. Runtime #433, this baseline gate and live driver connectors
-remain distinct unfinished code work.
+requirements. It was then a separate repair proposal, outside the #411 qualification
+principal. Its later source delivery is indexed by the canonical assignments.
 
 Production `pr workflow-governance 435` created bot-owned
 [#437](https://github.com/Negentropy-Laby/OpenSlack/issues/437), bound to current
 head/base and `sha256:9b7908755e427b887ff45ff14f3a4c21bd06111dd7fdc76404e5a33c30a9cb46`.
 Readback/doctor shows that governance-Issue gate PASS, but no human Workflow-Trust
-decision or approval exists. No live run, effect decision, activation, Permit
-consumption, GitHub deletion or merge occurred.
-
+decision or approval existed at that observation.
 
 ## 2026-11-07 source-delivery and lifecycle reconciliation
 
@@ -393,3 +391,55 @@ re-advertised as Draft CI or source review pending.
 Assignment `issue-244` records the actual verification time and its limited
 Issue/evidence scope. No current endpoint configuration conclusion is inferred.
 The R6 contract repair and exact decision acceptance remain separate for #428.
+
+## R6 repair of the seventeen review findings
+
+R6 continues the original #436 through human-delegated source maintenance and
+configured bot delivery. It does not borrow a qualification identity or modify
+its registry. R5 review recommendations remain bound to the immutable four-file
+set above. R6 requires its own independent review; GitHub approval, document
+merge and exact-byte ADR decision acceptance are distinct gates.
+
+| Finding | R6 disposition                                                                                                           | Verification or authority                                                                                                            |
+| ------- | ------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
+| 1       | Corrected expired execution mirror; merged #435 source evidence replaces obsolete Draft/checkpoint/WatchDaemon blockers. | `issue-411`, dated GitHub/heartbeat observation; actual qualification blockers retained.                                             |
+| 2       | Recorded #434 source delivery; maintenance lifecycle awaits reconciliation rather than a fabricated Claim.               | `issue-432`; related `issue-427` closed-without-qualification mismatch retained.                                                     |
+| 3       | Manifest properties reference pinned v1 schema; C0 lifecycle, set and lease transformations remain explicit.             | v1 parser/schema compatibility, task ID, lifecycle and lease boundary regressions.                                                   |
+| 4       | `docs:verify` enforces strict current-byte codec/schema/vector checks.                                                   | Digest/length/Base64/Unicode/number/ref/pin corruption, targeted negatives, same-process mutation and actual-entrypoint regressions. |
+| 5       | Refreshed structured verification time and limited evidence scope.                                                       | `issue-244`; release gate refers to that assignment.                                                                                 |
+| 6       | Restored ADR series owner `architecture`.                                                                                | ADR frontmatter; Proposed acceptance status retained.                                                                                |
+| 7       | Shared operation vocabulary.                                                                                             | `$defs.operation` used by request and receipt.                                                                                       |
+| 8       | Shared task identity base with typed closed wrappers.                                                                    | Missing/extra field regressions for both identity objects.                                                                           |
+| 9       | Removed the unreferenced decimal definition.                                                                             | Strict compilation of every retained definition.                                                                                     |
+| 10      | Narrative links to schema-owned closed vocabularies.                                                                     | C0 keeps behavior and validation order.                                                                                              |
+| 11      | ADR links to C0-owned mechanisms.                                                                                        | Decision, motivation, alternatives and consequences retained.                                                                        |
+| 12      | Completed Contract and Reference navigation.                                                                             | Registered document/link verification.                                                                                               |
+| 13      | Replaced live-gate Issue table with assignment IDs and evidence navigation.                                              | Control plane remains current status authority.                                                                                      |
+| 14      | Consolidated evidence-class limits in the opening scope.                                                                 | Dated failures/Unknowns retained.                                                                                                    |
+| 15      | Removed hand-maintained R5 vector totals.                                                                                | Verification output derives category counts from current data.                                                                       |
+| 16      | Referenced ADR/C0 scope rather than maintaining a third mechanism summary.                                               | Historical review limits remain dated.                                                                                               |
+| 17      | Moved machine authorities into Reference and registered both canonical paths.                                            | Old active JSON locations removed; immutable R5 links retained.                                                                      |
+
+The verifier checks structural negatives at their intended rule. Semantic
+observation and transition examples receive structural/reference/static
+consistency checks only; independent C1 semantic execution remains NOT_RUN.
+All original R5 vector rows remain unchanged in R6; the new source-schema pin
+is explicit metadata, not a new recommendation for old reviewed bytes.
+
+### R6 validation record
+
+The regression-first run exposed eleven behavior failures in the old schema
+and missing gate, with one existing identity-closure check passing. The initial
+expanded documentation suite then passed, including the real v1 parser. Script
+typecheck and affected ESLint completed with zero errors and zero lint warnings.
+Final platform runs, current-head CI and independent review are recorded below
+after execution; the old head's green checks are not substituted.
+
+### R6 exact review input
+
+| Input | Bytes | SHA-256 |
+| --- | --- | --- |
+| [task-claim-v2-c0.md](../../docs/architecture/contracts/task-claim-v2-c0.md) | 52759 | `7d51f33ed1fe8f0fd22297317a3d7085966b0d271562810149efabdc6aaf95e7` |
+| [task-claim-v2-c0.schema.json](../../docs/reference/schemas/task-claim/task-claim-v2-c0.schema.json) | 31539 | `6084ec0310e8750ad84164a3a755f295c50522b0c249cadf7759d80ca9d39290` |
+| [task-claim-v2-c0-vectors.json](../../docs/reference/vectors/task-claim/task-claim-v2-c0-vectors.json) | 80329 | `93ecb8813f6ab35c6f2da21dbe63e978446eb6d2cbdec0c36e15b477659a0862` |
+| [adr-0005-task-claim-v2-single-host.md](../../docs/architecture/adr/adr-0005-task-claim-v2-single-host.md) | 13578 | `4f4a4b47d3f23285d450c2be0b17d17fc3eafd4f78654e74db11d5101e05a0d5` |

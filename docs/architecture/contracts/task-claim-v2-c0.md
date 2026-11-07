@@ -124,7 +124,7 @@ start at `"1"`; leading zeros and numeric JSON representations are rejected.
 | `revision`                           | Monotonic task-slot transition counter; increases on every accepted transition, including heartbeat and terminal state.                                      |
 | `state`                              | Lifecycle vocabulary: schema `$defs.state`; transition meaning below.                                                                                        |
 | `closingReason`                      | Null for active; `release` or `complete` for closing; preserved as terminal history.                                                                         |
-| `phase`                              | Work phase: schema `$defs.phase`; review phase is not human approval.                                                                 |
+| `phase`                              | Work phase: schema `$defs.phase`; review phase is not human approval.                                                                                        |
 | `issuedAt`, `renewedAt`, `expiresAt` | Authority UTC timestamps; request timestamps cannot extend validity. Expiry is exclusive.                                                                    |
 | `policyRevision`, `lastOperationId`  | Exact governing policy revision and last committed transition identity.                                                                                      |
 
