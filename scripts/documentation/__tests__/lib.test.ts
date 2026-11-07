@@ -371,6 +371,20 @@ describe('Task Claim C0 candidate conformance', () => {
     expect(result.stderr).toContain('Task Claim C0: domain-separated digest mismatch');
     expect(result.stdout).not.toContain('Documentation verified');
   });
+
+  test('a BOM-only codec failure cannot stand in for the duplicate-key negative', () => {
+    const root = claimRepository();
+    const vectors = JSON.parse(readFileSync(join(root, claimVectors), 'utf8'));
+    const duplicate = vectors.reject.find(
+      (item: { id: string }) => item.id === 'escaped-duplicate-key',
+    );
+    duplicate.inputUTF8Base64 = Buffer.concat([
+      Buffer.from([0xef, 0xbb, 0xbf]),
+      Buffer.from('{"a":"single key"}'),
+    ]).toString('base64');
+    writeJsonFile(root, claimVectors, vectors);
+    expect(() => verifyDocumentation(root)).toThrow(/Task Claim C0/);
+  });
 });
 
 afterEach(() => {

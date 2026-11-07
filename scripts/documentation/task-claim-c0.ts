@@ -181,7 +181,8 @@ function verifyRejection(item: Row, checks: ReturnType<typeof compile>): void {
         strictRejected = true;
       }
       insist(strictRejected, 'codec negative accepted');
-      const raw = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+      // Preserve a BOM: stripping it could hide a framing failure as duplicate keys.
+      const raw = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes);
       const value: unknown = JSON.parse(raw);
       let normalizedRejected = false;
       try {

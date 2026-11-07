@@ -480,3 +480,14 @@ The completed R6 local verification and independent source review are now
 recorded by `issue-428`; its remaining delivery blocker names the unmerged
 document/human-GitHub-review gate, alongside exact-byte ADR decision acceptance.
 Completed source review is not advertised as still pending.
+
+### R6 codec-negative framing follow-up
+
+A post-publication self-review found one verifier defect at source `2fe456bb`:
+the second UTF-8 decoder stripped a leading BOM. A BOM-prefixed single-key
+object could therefore stand in for the duplicate-key negative despite having
+no duplicate keys. The new regression failed on that source. Both codec reads
+now preserve the BOM so invalid framing cannot be mistaken for duplicate-key
+coverage. The corpus, v1 schema, C0 contract/schema and R6 four-file digests are
+unchanged. The earlier source's results remain earlier-source evidence; new
+source/platform/count/current-head results are recorded separately below.
