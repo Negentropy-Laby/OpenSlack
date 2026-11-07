@@ -7,13 +7,13 @@ audience:
   - contributors
   - reviewers
 owner: github-task-loop
-updated: 2026-11-03
+updated: 2026-11-07
 sources:
   - design/cdd/modules/github-task-loop.md
   - docs/architecture/control-manifest.md
   - docs/architecture/adr/adr-0005-task-claim-v2-single-host.md
-  - docs/architecture/contracts/task-claim-v2-c0-vectors.json
-  - docs/architecture/contracts/task-claim-v2-c0.schema.json
+  - docs/reference/vectors/task-claim/task-claim-v2-c0-vectors.json
+  - docs/reference/schemas/task-claim/task-claim-v2-c0.schema.json
 ---
 
 # Task Claim v2 — C0 Contract and Migration Boundary
@@ -122,9 +122,9 @@ start at `"1"`; leading zeros and numeric JSON representations are rejected.
 | `authority`                          | Backend `go`, activation generation and routing epoch. A restored database alone cannot activate a generation.                                               |
 | `claimEpoch`                         | Persistent task-slot reassignment counter; increases on each new acquisition, not heartbeat.                                                                 |
 | `revision`                           | Monotonic task-slot transition counter; increases on every accepted transition, including heartbeat and terminal state.                                      |
-| `state`                              | `active`, `closing`, `completed`, `released`, `expired` or `revoked`.                                                                                        |
+| `state`                              | Lifecycle vocabulary: schema `$defs.state`; transition meaning below.                                                                                        |
 | `closingReason`                      | Null for active; `release` or `complete` for closing; preserved as terminal history.                                                                         |
-| `phase`                              | `executing`, `awaiting_review` or `awaiting_dependency`; review phase is not human approval.                                                                 |
+| `phase`                              | Work phase: schema `$defs.phase`; review phase is not human approval.                                                                 |
 | `issuedAt`, `renewedAt`, `expiresAt` | Authority UTC timestamps; request timestamps cannot extend validity. Expiry is exclusive.                                                                    |
 | `policyRevision`, `lastOperationId`  | Exact governing policy revision and last committed transition identity.                                                                                      |
 
@@ -154,20 +154,19 @@ create it. Acquisition also supplies the expected terminal/empty-slot state.
 Same operation ID and canonical request digest returns the original receipt;
 same ID with different request returns `OPERATION_CONFLICT`. It does not
 revalidate and perform a second mutation. Distinct operations against a stale
-revision return `REVISION_CONFLICT`. Additional closed error codes are
-`UNAUTHENTICATED`, `SUBJECT_MISMATCH`, `TASK_INELIGIBLE`,
-`DEFINITION_CHANGED`, `CLAIM_NOT_CURRENT`, `LEASE_EXPIRED`, `CLAIM_REVOKED`,
-`AUTHORITY_NOT_ACTIVE`, `UNSETTLED_OPERATION`, `EVIDENCE_UNAVAILABLE` and
-`RECONCILIATION_REQUIRED`. Clients do not convert any of these to a legacy
-write or retry against a newly observed revision automatically.
+revision return `REVISION_CONFLICT`. The closed error vocabulary is defined by the schema's
+[`$defs.error`](../../reference/schemas/task-claim/task-claim-v2-c0.schema.json#/$defs/error).
+Clients do not convert a failure into a legacy write or automatically retry
+against a newly observed revision.
 
 ### Closed schema and validation/error order
 
-The [candidate JSON Schema](task-claim-v2-c0.schema.json) is normative for exact
+The [candidate JSON Schema](../../reference/schemas/task-claim/task-claim-v2-c0.schema.json) is normative for exact
 nested keys, required/null fields, per-operation payloads, receipts, observations
-and errors. It is data only, not an enabled API. Mutations have exactly
-`schema`, `operationId`, `operation`, `task`, `actor`, `holder`, `authority`,
-`expected`, `payload`. The authenticated `actor` and expected Claim `holder`
+and errors. It is data only, not an enabled API. Use
+[`$defs.mutationRequest`](../../reference/schemas/task-claim/task-claim-v2-c0.schema.json#/$defs/mutationRequest)
+for the closed mutation fields, and `$defs.state`/`$defs.phase` for lifecycle
+vocabularies. The authenticated `actor` and expected Claim `holder`
 are distinct: a service cannot establish a holder by sending these fields.
 `acquire` requires holder equal to its authenticated Agent actor. Service/admin
 operations additionally require administrator policy/session role; request
@@ -363,9 +362,9 @@ duplicate-key and closed-field checks before calling the unchanged v1 parser;
 ambiguous input fails closed. Neither the v1 parser nor the v1 observation hash
 is redefined by this amendment.
 
-The definition has exactly `schema`, `task`, `issueTitle`, `prose`, `manifest`
-and `labels`. `task` contains `workspaceId`, `provider`, `host`, `repositoryId`,
-`issueNodeId`, `issueNumber` and `taskId`; numeric IDs are decimal strings.
+The closed definition and shared task identity fields are specified by
+[`$defs.definition`](../../reference/schemas/task-claim/task-claim-v2-c0.schema.json#/$defs/definition)
+and `$defs.taskIdentityFields`; numeric IDs are decimal strings.
 `prose` is the exact body outside the unique complete manifest fence, retaining
 all remaining whitespace, line endings and Unicode. Remove exactly the opening
 fence line (with its LF or CRLF), enclosed manifest bytes and the closing three
@@ -375,15 +374,16 @@ fence. A second task fence or schema-bearing YAML task fence is ambiguous;
 other prose/code is not silently interpreted as another task. Do not trim or
 normalize text; unsupported legacy fence shapes require an explicit reviewed
 definition update, not reinterpretation of v1 history.
-The manifest projection contains the actual v1 keys `schema`, `task_id`, `title`,
-`task_type`, `agent_type`, `risk_level`, `priority`, `required_capabilities`,
-`allowed_paths`, `forbidden_paths`, `output_contract`, `success_criteria`,
-`human_approval_required_for`, `lease` and `idempotency_key` when present.
+The manifest projection's retained fields are specified by
+[`$defs.manifest`](../../reference/schemas/task-claim/task-claim-v2-c0.schema.json#/$defs/manifest),
+which references the pinned canonical v1 properties except for the declared
+lease representation and set constraints.
 `status` and `linked_pr` are lifecycle-only exclusions. Unknown manifest keys
 are rejected, not silently dropped. Optional absent fields stay absent; empty
 arrays/strings are distinct and remain subject to the field's validation.
 The lease keys `ttl_minutes` and `heartbeat_minutes` become canonical positive
-decimal strings without changing the v1 parser's numeric input contract.
+decimal strings while retaining the pinned v1 numeric ranges and unchanged
+parser input contract.
 
 `labels`, `required_capabilities`, `allowed_paths`, `forbidden_paths`,
 `output_contract` and `human_approval_required_for` are exact-string sets:
@@ -394,6 +394,18 @@ unknown label addition changes the definition. Lifecycle exclusions still
 participate in separate current task-eligibility checks.
 
 ### Frozen candidate byte profile
+
+R6 keeps the candidate schema ID and runtime v1 parser unchanged. The machine
+authorities live under Reference; unchanged manifest properties reference the
+canonical v1 schema. The vector header pins its path, schema ID and raw-byte
+SHA-256. A source-schema edit requires explicit re-review and re-pinning.
+`docs:verify` checks this binding, strict codec bytes/digests, all schema-bearing
+examples, rejection layers and static example references on every invocation.
+It reports codec-only cases separately from schema cases. Projection and
+transition examples receive static consistency checks; execution by independent
+C1 TS/Go state machines remains NOT_RUN. R5 recommendations apply only to the
+[retained R5 revision](https://github.com/Negentropy-Laby/OpenSlack/tree/5683d1a7843a8f3b0fbea1383d3054ff083f0058),
+not to these revised bytes.
 
 Use restricted RFC 8785 JCS: UTF-8 without BOM/trailing LF, recursive UTF-16
 property ordering, exact array order, JSON escaping, no Unicode normalization,
@@ -407,7 +419,7 @@ bytes. Domains are `openslack.task_definition.v1`,
 `openslack.task_claim_observation.v1` (read-only observation bytes); digest display is `sha256:` plus 64 lower-case
 hex characters. Reject unsupported domains/versions before comparison.
 
-[Data-only vectors](task-claim-v2-c0-vectors.json) contain raw UTF-8/base64 input,
+[Data-only vectors](../../reference/vectors/task-claim/task-claim-v2-c0-vectors.json) contain raw UTF-8/base64 input,
 expected canonical bytes/base64, length and digest, plus explicit rejection
 cases. They freeze the proposal, not a service implementation. C1 must execute
 the same accepted/rejected vectors in independently implemented TS and Go,

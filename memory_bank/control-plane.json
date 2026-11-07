@@ -4,6 +4,22 @@
   "updated": "2026-11-07",
   "authorities": [
     {
+      "fact": "contract.task-claim-v2-c0.schema",
+      "canonical": "docs/reference/schemas/task-claim/task-claim-v2-c0.schema.json",
+      "indexes": [
+        "docs/reference/README.md",
+        "docs/architecture/contracts/README.md"
+      ]
+    },
+    {
+      "fact": "contract.task-claim-v2-c0.vectors",
+      "canonical": "docs/reference/vectors/task-claim/task-claim-v2-c0-vectors.json",
+      "indexes": [
+        "docs/reference/README.md",
+        "docs/architecture/contracts/README.md"
+      ]
+    },
+    {
       "fact": "project.portfolio-state",
       "canonical": "memory_bank/control-plane.json#/portfolio",
       "projections": ["memory_bank/t0_core/current_state.md", "production/project-roadmap.md"],

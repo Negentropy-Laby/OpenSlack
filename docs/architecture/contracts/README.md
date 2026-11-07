@@ -6,7 +6,7 @@ authority: index
 audience:
   - contributors
 owner: architecture
-updated: 2026-08-03
+updated: 2026-11-07
 sources:
   - docs/architecture/architecture.md
 ---
@@ -23,3 +23,7 @@ also live beside their authority package and generated service mirror.
 - [Qoder MCP](qoder-mcp.md)
 - [Workflow Control](workflow-control.md)
 - [Workflow Runner Protocol](workflow-runner.md)
+
+- [Task Claim v2 C0 contract](task-claim-v2-c0.md) (In Review, R6)
+- [Task Claim v2 C0 candidate schema](../../reference/schemas/task-claim/task-claim-v2-c0.schema.json)
+- [Task Claim v2 C0 data vectors](../../reference/vectors/task-claim/task-claim-v2-c0-vectors.json)

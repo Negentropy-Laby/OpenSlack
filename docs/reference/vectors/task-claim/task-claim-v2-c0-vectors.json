@@ -816,5 +816,10 @@
       },
       "expectedError": "EVIDENCE_UNAVAILABLE"
     }
-  ]
+  ],
+  "sourceSchema": {
+    "path": "packages/github/src/task-manifest.schema.json",
+    "id": "https://openslack.dev/schemas/github-issue-task.schema.json",
+    "sha256": "4ad4278e2179a051b25b2716384e9227f53f34f69bde19905b243a3132fbd0dc"
+  }
 }

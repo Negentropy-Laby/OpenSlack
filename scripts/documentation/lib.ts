@@ -16,6 +16,9 @@ import addFormats from 'ajv-formats';
 import type { ValidateFunction } from 'ajv';
 import { parse as parseYaml, parseDocument } from 'yaml';
 
+import { verifyTaskClaimC0 } from './task-claim-c0.js';
+import type { TaskClaimC0Report } from './task-claim-c0.js';
+
 const SCHEMA_ROOT = 'docs/reference/schemas/documentation';
 const MIGRATION_MANIFEST = 'docs/reference/document-path-migration-v1.yaml';
 const CONTROL_PLANE = 'memory_bank/control-plane.json';
@@ -180,6 +183,7 @@ export interface VerificationResult {
   schemas: number;
   documents: number;
   generated: number;
+  taskClaimC0?: TaskClaimC0Report;
 }
 
 function asObject(value: unknown, label: string): JsonObject {
@@ -1194,7 +1198,12 @@ export function verifyDocumentation(root: string): VerificationResult {
   const documents = validateDocumentMap(root, map, canonical.controlPlane);
   validateLinks(root, collectMarkdownFiles(root, map.documents));
   const generated = verifyGenerated(root, canonical);
-  return { schemas: schemas.length, documents, generated };
+  const taskClaimC0 = map.documents.some(
+    (document) => document.id === 'architecture-task-claim-v2-c0' && document.status === 'active',
+  )
+    ? verifyTaskClaimC0(root)
+    : undefined;
+  return { schemas: schemas.length, documents, generated, ...(taskClaimC0 ? { taskClaimC0 } : {}) };
 }
 
 export function repositoryPathFromAbsolute(root: string, absolutePath: string): string {
