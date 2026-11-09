@@ -6,7 +6,7 @@ authority: projection
 audience:
   - contributors
 owner: project-governance
-updated: 2026-11-07
+updated: 2026-11-09
 sources:
   - memory_bank/control-plane.json#/assignments
 generated: true
@@ -25,7 +25,7 @@ generated: true
 | --- | --- | --- | --- | --- | --- |
 | issue-411 | Go Workflow R-EXT preparation and authenticated qualification | blocked | codex_qualification_rext | workflow-runtime | fresh_qualification_claim_and_current_runtime_binding_required<br>provider_input_plus_output_total_token_hard_bound_unverified<br>authenticated_external_run_resume_evidence_missing<br>restart_and_actual_600_second_drain_evidence_missing |
 | issue-427 | Cleanup: public-repository Permit-only qualification (2026-11) | reconciliation_required | unassigned | pr-review-merge | github_issue_closed_without_qualification_acceptance_evidence<br>administrator_public_scope_and_installation<br>fresh_activation_and_one_use_permits |
-| issue-428 | Task Claim v2: close C0 single-host contract and independent review | blocked | unassigned | github-task-loop | r6_document_delivery_and_human_github_review_pending<br>exact_byte_adr_decision_acceptance_pending |
+| issue-428 | Task Claim v2: close C0 single-host contract and independent review | blocked | unassigned | github-task-loop | exact_byte_adr_decision_acceptance_pending |
 | issue-429 | Task Claim v2 C1: state kernel and TS/Go canonical conformance | blocked | unassigned | github-task-loop | c0_acceptance_pending<br>implementation_not_authorized_this_round |
 | issue-430 | Task Claim v2 C2: PostgreSQL authority and local authenticated sessions | blocked | unassigned | github-task-loop | c1_delivery_pending<br>implementation_not_authorized_this_round |
 | issue-431 | Task Claim v2 C3: independently governed claimed cleanup admission | blocked | unassigned | pr-review-merge | c2_qualification_and_separate_action_grants_pending |

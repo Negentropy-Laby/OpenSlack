@@ -1,7 +1,7 @@
 {
   "$schema": "../docs/reference/schemas/documentation/control-plane.schema.json",
   "schema": "openslack.control_plane.v1",
-  "updated": "2026-11-07",
+  "updated": "2026-11-09",
   "authorities": [
     {
       "fact": "contract.task-claim-v2-c0.schema",
@@ -1249,7 +1249,7 @@
   },
   "assignments": {
     "schema": "openslack.work_assignments.v1",
-    "updated": "2026-11-07",
+    "updated": "2026-11-09",
     "assignments": [
       {
         "id": "issue-411",
@@ -1297,9 +1297,15 @@
           "legacy-v1-claim:ref-present:b8b11ed64238c3b622d110e5d2d11944a342609e:latest-expiry:2026-11-03T13:23:46.973Z:expired-not-active-execution",
           "resolved-source-dependencies:issue-433-and-issue-438:merged-pr-435",
           "historical-snapshot:https://github.com/Negentropy-Laby/OpenSlack/blob/5683d1a7843a8f3b0fbea1383d3054ff083f0058/memory_bank/control-plane.json",
-          "no-current-provider-preflight-or-qualification-performed-by-this-source-maintenance"
+          "no-current-provider-preflight-or-qualification-performed-by-this-source-maintenance",
+          "github:issue-411:open:observed:2026-11-09T14:34:19Z",
+          "legacy-v1-claim:2026-11-09-readback:ref-and-latest-expiry-unchanged;expired-not-active-execution",
+          "runtime-doctor:2026-11-09:aby-ready;openai-compatible-not-configured;upstream-provider-model-and-total-token-bound-unverified",
+          "source:befa93921ec0fb83cfe1709f9ee3dd4de67d06df:totalConstraint-unconditionally-denies-SEND_TOTAL_TOKEN_UNVERIFIED",
+          "this-preflight:runtime-doctors-only;no-campaign-reserve-or-provider-attempt-created",
+          "production/qa/qa-ledger-dual-qualification-2026-11-03.md#2026-11-09-batch-1-implementation-and-scoped-preflight"
         ],
-        "last_verified_at": "2026-11-07T09:24:18Z"
+        "last_verified_at": "2026-11-09T14:34:19Z"
       },
       {
         "id": "issue-427",
@@ -1342,9 +1348,14 @@
           "https://github.com/Negentropy-Laby/OpenSlack/actions/runs/41655523424",
           "source-preparation-dependency:issue-432:delivered-by-merged-pr-434",
           "github-closed-is-not-cleanup-qualification-pass",
-          "historical-snapshot:https://github.com/Negentropy-Laby/OpenSlack/blob/5683d1a7843a8f3b0fbea1383d3054ff083f0058/memory_bank/control-plane.json"
+          "historical-snapshot:https://github.com/Negentropy-Laby/OpenSlack/blob/5683d1a7843a8f3b0fbea1383d3054ff083f0058/memory_bank/control-plane.json",
+          "github:issue-427:closed:observed:2026-11-09T14:34:19Z",
+          "github:qualification-public:1381124543:public:default-main:auto-delete-false:observed:2026-11-09T14:34:19Z;not-deletion-App-installation-evidence",
+          "local-host:2026-11-09:configured-UIDs-44180-44181-differ-from-observed-24001-24002;broker-binary-and-socket-absent;no-isolation-qualification",
+          "registry:33a9b46866fedd768cb859abfd36341159fc0f3a3e306462575f1f34af7e7ebc:still-private-target-only;administrator-public-scope-update-required",
+          "production/qa/qa-ledger-dual-qualification-2026-11-03.md#cleanup-admission-gap-table"
         ],
-        "last_verified_at": "2026-11-07T09:24:18Z"
+        "last_verified_at": "2026-11-09T14:34:19Z"
       },
       {
         "id": "issue-428",
@@ -1373,7 +1384,6 @@
         ],
         "dependencies": [],
         "blockers": [
-          "r6_document_delivery_and_human_github_review_pending",
           "exact_byte_adr_decision_acceptance_pending"
         ],
         "evidence": [
@@ -1385,9 +1395,18 @@
         "R6-source-review:0412996ddaf8d8c73c63c11a18d8d548cd070c8e:ADEQUATE;unchanged-four-file-inputs;not-ADR-acceptance",
         "R6-local-schema-codec-verification:passed;C1-semantic-execution-NOT_RUN",
         "R6-BOM-framing-followup:597240339ac2759a439040e51d8e8a2c998260d0:independent-source-review-ADEQUATE;four-C0-inputs-unchanged",
-          "production/qa/qa-ledger-dual-qualification-2026-11-03.md"
+          "production/qa/qa-ledger-dual-qualification-2026-11-03.md",
+          "github:issue-428:open:observed:2026-11-09T14:34:19Z",
+          "github:pr-436:merged:befa93921ec0fb83cfe1709f9ee3dd4de67d06df:source-head:7041cb15a3a86c963279b54c08f7d8bb26c86c2b:merged-at:2026-11-07T11:52:02Z",
+          "github:pr-436:human-review:wsman:approved:2026-11-07T11:49:39Z:commit:7041cb15a3a86c963279b54c08f7d8bb26c86c2b;not-exact-ADR-acceptance",
+          "https://github.com/Negentropy-Laby/OpenSlack/actions/runs/42360008238/job/128366386067",
+          "https://github.com/Negentropy-Laby/OpenSlack/actions/runs/42360008255/job/128366202631",
+          "https://github.com/Negentropy-Laby/OpenSlack/actions/runs/42360008172/job/128366202331",
+          "https://github.com/Negentropy-Laby/OpenSlack/actions/runs/42360008172/job/128366202598",
+          "github:pr-436:final-head-checks-completed-success;tag-publish-expected-skip;post-merge-job-not-premerge-evidence",
+          "ADR-0005:R6-Proposed-sha256:4f4a4b47d3f23285d450c2be0b17d17fc3eafd4f78654e74db11d5101e05a0d5:13578-bytes:decision-acceptance-still-pending"
         ],
-        "last_verified_at": "2026-11-07T09:24:18Z"
+        "last_verified_at": "2026-11-09T14:34:19Z"
       },
       {
         "id": "issue-429",
@@ -1517,9 +1536,10 @@
           "https://github.com/Negentropy-Laby/OpenSlack/actions/runs/41655523224",
           "https://github.com/Negentropy-Laby/OpenSlack/actions/runs/41655523424",
           "human-delegated-source-maintenance:delivered-without-registered-agent-claim",
-          "historical-snapshot:https://github.com/Negentropy-Laby/OpenSlack/blob/5683d1a7843a8f3b0fbea1383d3054ff083f0058/memory_bank/control-plane.json"
+          "historical-snapshot:https://github.com/Negentropy-Laby/OpenSlack/blob/5683d1a7843a8f3b0fbea1383d3054ff083f0058/memory_bank/control-plane.json",
+          "github:issue-432:open:observed:2026-11-09T14:34:19Z;source-delivery-remains-merged;lifecycle-not-mutated"
         ],
-        "last_verified_at": "2026-11-07T09:24:18Z"
+        "last_verified_at": "2026-11-09T14:34:19Z"
       },
       {
         "id": "issue-433",
@@ -1562,9 +1582,10 @@
           "https://github.com/Negentropy-Laby/OpenSlack/actions/runs/42221044272",
           "https://github.com/Negentropy-Laby/OpenSlack/actions/runs/42221044284",
           "human-delegated-source-maintenance:delivered-without-registered-agent-claim",
-          "historical-snapshot:https://github.com/Negentropy-Laby/OpenSlack/blob/5683d1a7843a8f3b0fbea1383d3054ff083f0058/memory_bank/control-plane.json"
+          "historical-snapshot:https://github.com/Negentropy-Laby/OpenSlack/blob/5683d1a7843a8f3b0fbea1383d3054ff083f0058/memory_bank/control-plane.json",
+          "github:issue-433:open:observed:2026-11-09T14:34:19Z;source-delivery-remains-merged;lifecycle-not-mutated"
         ],
-        "last_verified_at": "2026-11-07T09:24:18Z"
+        "last_verified_at": "2026-11-09T14:34:19Z"
       },
       {
         "id": "issue-438",
@@ -1608,9 +1629,10 @@
           "https://github.com/Negentropy-Laby/OpenSlack/actions/runs/42221044284",
           "human-delegated-source-maintenance:delivered-without-registered-agent-claim",
           "historical-snapshot:https://github.com/Negentropy-Laby/OpenSlack/blob/5683d1a7843a8f3b0fbea1383d3054ff083f0058/memory_bank/control-plane.json",
-          "historical-original-tcp-reset-cause:unknown;new-source-and-regression-delivery-do-not-rewrite-old-failure"
+          "historical-original-tcp-reset-cause:unknown;new-source-and-regression-delivery-do-not-rewrite-old-failure",
+          "github:issue-438:open:observed:2026-11-09T14:34:19Z;source-delivery-remains-merged;lifecycle-not-mutated"
         ],
-        "last_verified_at": "2026-11-07T09:24:18Z"
+        "last_verified_at": "2026-11-09T14:34:19Z"
       },
       {
         "id": "issue-239",
