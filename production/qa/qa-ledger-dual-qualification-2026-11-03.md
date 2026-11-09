@@ -718,3 +718,36 @@ inputs and explicit qualification-only authorization before the agent executes
 the real canary/vendor/reconciliation matrix. This local diagnostic failure is
 retained independently of the successful documentation checks and does not
 block the four-path delivery, Cleanup, or an otherwise admitted Claim track.
+
+### First hosted candidate: dependency installation failure retained
+
+Batch-1 delivery/readback for bot-authored Draft
+[#439](https://github.com/Negentropy-Laby/OpenSlack/pull/439) completed at
+`2026-11-09T14:52:58.140Z`; local commit, published branch and PR head all
+matched `7aa87165066955a564351c33966c4e554e2de9fd`, tree
+`a0fad276a5da5ad1159eed0d152f0cb806ee03b5`. Its direct parent is the verified
+main `befa93921ec0fb83cfe1709f9ee3dd4de67d06df`, with no merge commits.
+
+The [first canary job](https://github.com/Negentropy-Laby/OpenSlack/actions/runs/42639010891/job/129234765499)
+failed in `bun install --frozen-lockfile` at `2026-11-09T14:53:11.9510118Z`:
+the pinned `@octokit/auth-token@5.1.2` tarball at `registry.npmmirror.com`
+returned HTTP 5xx. Build, golden evaluation and claim-flow classification did
+not execute in that failed job. This is an observed hosted dependency-fetch
+failure, not evidence of a failing application test or a completed CI gate.
+
+A subsequent bounded read of that exact tarball returned HTTP 200, 6,081 bytes,
+SHA-512 Base64
+`JcQDsBdg49Yky2w2ld20IHAlwr8d/d8N6NiOXbtuoPCqzbsiJgF633mVUw3x4mo0H5ypataQIX7SFu3yy44Mpw==`,
+equal to the unchanged frozen-lockfile integrity value. The artifact was hashed
+without installation or execution. This limited recovery observation does not
+guarantee availability from another runner and does not erase the original
+failure. An independent single read at `2026-11-09T14:59:52.490Z` returned
+HTTP 500, 78 bytes; recovery is not established. No dependency, lockfile,
+workflow, assertion, skip or timeout changed.
+
+The same clean `7aa87165` candidate separately reran the three explicit local
+test scopes and Broker race/vet with `-count=1`, retaining `*-7aa87165.json`
+and `cleanup-broker-race-vet-7aa87165.log` in the same external evidence
+directory. Those executions remain bound to that commit. This appendix is an
+evidence-only amendment to the same PR, not a second delivery or an extension
+of its permissions; its new head's checks must be observed independently.
