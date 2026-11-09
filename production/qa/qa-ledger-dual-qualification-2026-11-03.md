@@ -7,7 +7,7 @@ audience:
   - contributors
   - reviewers
 owner: qa
-updated: 2026-11-09
+updated: 2026-11-10
 sources:
   - production/qa/qa-ledger-cleanup-post420-2026-10-11.md
   - docs/architecture/contracts/task-claim-v2-c0.md
@@ -751,3 +751,80 @@ and `cleanup-broker-race-vet-7aa87165.log` in the same external evidence
 directory. Those executions remain bound to that commit. This appendix is an
 evidence-only amendment to the same PR, not a second delivery or an extension
 of its permissions; its new head's checks must be observed independently.
+
+## 2026-11-10: #439 dependency-source repair
+
+This is the explicitly authorized continuation of existing Draft
+[#439](https://github.com/Negentropy-Laby/OpenSlack/pull/439), not a new PR,
+Claim execution, qualification or release. The checked starting head is
+`dda9779cc551a188efa29ab07eff3e7df95b4e75`, tree
+`c98ff5c23c6e02f9bbc6e71011cc37988f5d8c7c`, on
+`docs/batch-1-ledger-closeout-20261109`; its published history is retained.
+The delegated maintenance scope is the three source/configuration files below,
+this appendix, and formal inventory/projection outputs. It does not create a
+new execution identity, claim, permission or provider budget. Independent
+technical review is not human GitHub approval. No ADR is required for this
+download-origin correction: no public interface, dependency selection,
+authority, protocol or deployment decision changes.
+
+`bunfig.toml` explicitly selects `https://registry.npmjs.org`. `bun.lock`
+changes only the 311 previously verified tarball URL prefixes from
+`https://registry.npmmirror.com/` to that official origin. All 418 package
+entries retain their versions, dependencies, platform conditions and integrity
+values. The 82 empty npm sources and 25 workspace entries are unchanged.
+The exact complete lock text also equals the old text with only that prefix
+substitution; no dependency resolver/update command was used. A separate
+read-only audit rejects a version mutation and a well-formed but different
+64-byte SHA-512 integrity value. These audit mutations are isolated values,
+not writes to the repository lockfile.
+
+The permanent regression in
+`scripts/release/__tests__/workflow.test.ts` checks the parsed Bun default
+registry, every explicit locked tarball origin and four single-condition
+negative URL cases. It does not freeze dependency versions, hashes, package
+counts or require an explicit URL where a future valid lock uses the default.
+Configuration and frozen-install semantics follow the existing
+[Bun registry contract](https://bun.com/docs/runtime/bunfig#installregistry)
+and [frozen installation contract](https://bun.com/docs/pm/cli/install).
+
+Evidence is retained outside Git in
+`/var/tmp/openslack-439-registry-20261110.hpxzD7sV`:
+
+| Observation | Actual result and scope |
+| --- | --- |
+| Official npm metadata | 311/311 exact package name, version, tarball path and integrity matches; `official-metadata.json`. Metadata agreement alone is not installation evidence. |
+| Regression-first failure | `registry-red.json`: 11 PASS, 2 FAIL, zero skipped. The failures are the absent explicit default registry and the old mirror URLs. |
+| Initial corrected regression | `registry-green.json`: 13 PASS, zero FAIL/skipped. Test source SHA-256 `71f1076a35982536182aacd37acb895a7e0fb8d16f19730604a7d7d983fb5e96`. |
+| Reviewed regression | `registry-green-reviewed.json`: 13 PASS, zero FAIL/skipped, after removing an unnecessary explicit-URL count precondition. Test source SHA-256 `edcf21d5ed14ef049e75dc902f17dde4b7c633cfa267d7f99073b81288c1e249`; report SHA-256 `d80c4f4dce1465e031481a029c11bc4813b093a4ba09b63b84a15d2737376ddc`. |
+| Independent source and QA review | ADEQUATE for the exact reviewed source bytes. Both reviewers independently read/hashed the inputs and reports; they did not independently rerun installation or inherit CI/qualification approval. |
+| Cold staging setup | An initial archive/overlay sequencing error found no `package.json`; preserved in `cold-staging-first-failure.txt`. This was an invalid staging attempt, not a passing cold install or a dependency regression. The archive completed before the corrected overlay and install. |
+| Valid cold install | PASS with Bun 1.4.0 in `/tmp/openslack-439-cold-20261110.mME2n1Ru`, archived from the starting head and overlaid with the three corrected files. The dedicated `/tmp/openslack-439-cache-20261110.0KqJDHAe` cache was empty before `bun install --frozen-lockfile --cache-dir /tmp/openslack-439-cache-20261110.0KqJDHAe`: 301 packages installed, exit 0. |
+| Repeat frozen install | PASS, exit 0: 351 installs across 411 packages checked with no changes. Both installs retain the exact corrected lock SHA-256 below. The cold snapshot carries the initial corrected test source, not the later count-assertion removal; its package declarations, registry and lock bytes are identical to the reviewed installation inputs. |
+| Typecheck/build/lint | PASS: `bun run typecheck`, `bun run build`, and ESLint for the changed test. Contract-family/source mirrors are included. Node's existing typeless-package warning remains a warning, not a changed dependency declaration. |
+| Documentation/projections | PASS: `docs:verify`, `docs:migration-check`, `docs:notification-verify`, `openslack status verify`, `git diff --check`. The four roadmap/state projections remain byte-identical; the two extra T0 state views retain their original Git mode. |
+| Formal inventory | `node scripts/verify-test-counts.mjs --update` generated 9,378 declared cases / 606 files, six additional cases. Only the root Vitest count in `.openslack/modules.yaml` and its generated `docs/status/current.md` count changed; module counts are unchanged. This is collection evidence, not a full-suite PASS count. |
+| Harness compatibility | Fresh `prepare-compatibility.mjs` completed against clean original Harness `22ddee3792402c3e70ec5f86a63c3e3e895a2f60`, with the corrected lock. Public-API typecheck and artifact emission passed without modifying original Harness files. Its ignored witness is SHA-256 `ed62ce180592be20deb71303ee4ee9ebcb1f29cfa6af718e80c1fa04343175cd`. This is local composition evidence, not live model qualification. |
+| Final clean candidate / full suite / hosted CI | Pending at this appendix's freeze. Exact commit/tree, commands, outputs, actual checkout SHA and final reports will be published separately without another evidence-only commit loop. Prior-head CI is not inherited. |
+
+Original lock SHA-256 is
+`c37b534a01955f7af0c85155186e7cd3c4fa99d8214ceed27175a187f3cc8db3`;
+corrected lock SHA-256 is
+`a2609b4f8139750a3154189b1691567dbdd0544efbefcd0d6b15fe77964fe8f8`.
+Corrected `bunfig.toml` SHA-256 is
+`5ac5c7cfc74667729a0dddbbd885bca59d58925f176f730c3c1654bd15a27029`.
+Local tools are Bun 1.4.0 and Node 24.18.1. No user-global registry, proxy or CA
+configuration was modified. The six tracked source manifests are rechecked
+against the final changed-path set before publication; only actual bound-input
+changes could justify a digest update.
+
+The regression commands name `scripts/release/__tests__/workflow.test.ts`
+explicitly with `bunx vitest run --reporter=json --outputFile=<report>`.
+The one-off audit uses the unchanged starting Git blob and the reviewed
+working-tree bytes, not a resolver-generated second lock. Permanent regression
+and candidate-specific provenance auditing have different purposes.
+
+All previous hosted mirror failures above remain failures. This repair does
+not assert Cleanup installation/GitHub qualification, #411 R-EXT, Claim v2
+acceptance/implementation, human review, governance merge or publication.
+No provider call, deletion, administrator configuration or automatic merge
+was executed by this batch.

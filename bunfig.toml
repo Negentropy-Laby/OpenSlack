@@ -1,4 +1,5 @@
 [install]
+registry = "https://registry.npmjs.org"
 text-lockfile = true
 
 [install.trustedDependencies]

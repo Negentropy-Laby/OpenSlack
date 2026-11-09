@@ -11,6 +11,7 @@ import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { describe, expect, it, onTestFinished } from 'vitest';
 import { parse } from 'yaml';
+import ts from 'typescript';
 import {
   testProcessEnvironment,
   testTemporaryDirectory,
@@ -23,6 +24,17 @@ const workflow = readFileSync(
   'utf-8',
 );
 const build = readFileSync(resolve(import.meta.dirname, '..', 'build.ts'), 'utf-8');
+
+function assertOfficialNpmTarball(source: string): void {
+  const url = new URL(source);
+  if (
+    url.origin !== 'https://registry.npmjs.org' ||
+    url.username !== '' ||
+    url.password !== ''
+  ) {
+    throw new Error('Non-official npm tarball URL');
+  }
+}
 
 describe('native release workflow integrity', () => {
   it('prepares pinned Go before plugin build and verifies its private module without service scaffolding', () => {
@@ -155,6 +167,48 @@ describe('native release workflow integrity', () => {
       }
     }
     expect(setups).toBeGreaterThan(0);
+  });
+
+  it('pins the default Bun registry to the public official source', () => {
+    const root = resolve(import.meta.dirname, '../../..');
+    const result = spawnSync(
+      'bun',
+      [
+        '-e',
+        'console.log(JSON.stringify(Bun.TOML.parse(await Bun.file(process.argv[1]).text())))',
+        join(root, 'bunfig.toml'),
+      ],
+      { cwd: root, env: testProcessEnvironment(), encoding: 'utf8', timeout: 20_000 },
+    );
+    expect(result.error).toBeUndefined();
+    expect(result.status, result.stderr).toBe(0);
+    expect(JSON.parse(result.stdout).install.registry).toBe('https://registry.npmjs.org');
+  });
+
+  it('keeps explicit npm lockfile tarballs on the official source', () => {
+    const path = resolve(import.meta.dirname, '../../../bun.lock');
+    const lock = ts.parseConfigFileTextToJson(path, readFileSync(path, 'utf8'));
+    expect(lock.error).toBeUndefined();
+    const packages = lock.config.packages as Record<string, unknown[]>;
+    for (const entry of Object.values(packages)) {
+      const source = entry[1];
+      // Workspace links have no source; empty npm sources use install.registry.
+      if (source === undefined || source === '') continue;
+      expect(source).toBeTypeOf('string');
+      assertOfficialNpmTarball(source as string);
+    }
+  });
+
+  it.each([
+    'https://registry.npmmirror.com/example/-/example-1.0.0.tgz',
+    'http://registry.npmjs.org/example/-/example-1.0.0.tgz',
+    'https://registry.npmjs.org.invalid/example/-/example-1.0.0.tgz',
+    'https://fixture@registry.npmjs.org/example/-/example-1.0.0.tgz',
+  ])('rejects a non-official npm source: %s', (source) => {
+    expect(() =>
+      assertOfficialNpmTarball('https://registry.npmjs.org/example/-/example-1.0.0.tgz'),
+    ).not.toThrow();
+    expect(() => assertOfficialNpmTarball(source)).toThrow('Non-official npm tarball URL');
   });
 
   it('runs PR release smoke and cleanup qualification for both native targets', () => {
