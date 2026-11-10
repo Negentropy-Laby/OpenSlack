@@ -1012,3 +1012,67 @@ The install entrypoint bytes are SHA-256
 Current-head hosted checks, LIVE PRMS and valid human review remain pending at
 this pre-delivery observation. The PR stays Draft until required checks close;
 there is no automatic merge or change to any external qualification/release gate.
+
+## #439 Watch stale-lock test follow-up — 2026-11-10
+
+The requesting human explicitly added the Watch lock-test narrow repair to the
+same #439 after the review-11 delivery. This is separate from the eleven original
+findings, not a renumbering or a new PR. The starting published head is
+`e9623a69001737e9c756df83516f29e14b8a3d13`; its Windows release job failed
+`WatchDeliveryQueueV2 > reclaims an old lock only after its same-host owner
+process is gone` with `QUEUE_LOCK_TIMEOUT`. Its other required checks subsequently
+passed, including the reviewed Go verifier and downstream documentation steps;
+the tag-release job was intentionally skipped. None of that old-head evidence
+is promoted to the repaired head's PASS.
+
+### Necessary repair and unchanged boundary
+
+The v2 success fixture inherited a 100ms acquisition budget but used real
+`Date.now()` across actual lock reclamation/fsync operations. Its purpose is
+successful safe reclamation, not an I/O latency qualification. The existing v1
+test already separates those concerns with a locally advancing clock and an
+independent deadline rejection test. This follow-up aligns the v2 fixture with
+that existing pattern:
+
+- The success case advances only `Date.now()` deterministically; actual files,
+  fsync, PID liveness, nonce/inode checks and `getStats()` remain real. The old
+  lock and the reclaim gate must both disappear.
+- Two additional cases exhaust the unchanged budget at exactly **100ms** and
+  at **101ms**. Both must return `QUEUE_LOCK_TIMEOUT` after reclaim cleanup;
+  previously seeded durable queue bytes must remain unchanged.
+- Every clock spy is restored in `finally`, with the original function identity
+  checked afterward. The real live-owner rejection case is unchanged.
+
+This is a **no-ADR** local test-fixture repair of an existing contract: no
+production/runtime code, timeout, public API, schema, permission, dependency,
+registry, provider budget or workflow is changed. The two declared cases are
+registered only through the existing inventory/status generators. No new tool,
+platform, artificial production fault hook or administrator grant is required.
+
+### Measured local evidence and limits
+
+A retained test-only probe delays each real `fsyncSync` call by 125ms. Applied
+to the exact old test in an `e9623a69` source archive, it fails with
+`QUEUE_LOCK_TIMEOUT` after four injected fsync calls. Applied to the repaired
+test with the same probe, it passes after seven real fsync calls. The target
+diagnostics select one case: the 20/22 other cases are unselected, not proof of
+full-suite execution. The probe is outside the delivery tree and is not a CI
+prerequisite. It establishes a reproducible mechanism, not a measurement of
+the historical Windows job's fsync duration or proof of its sole cause.
+
+Normal, non-injected regression execution passed **65/65** across queue v1,
+queue v2, notification blob storage and real-process blob/storage races, with
+zero failed/skipped cases. The production lock implementation remains
+SHA-256 `5adbcf2bec418fdd740ff9dc010a3496e45cda75d5934edf05db06911ba337df`;
+the repaired v2 test is SHA-256
+`b03890606a78bd11bf1ea34eed8fab0d9de76149ef9f0f9bb06dd7fdfe299c06`.
+
+Full typecheck/build and affected-file lint passed locally. The previous
+`e9623a69` local full-suite FAIL, Windows failure, diagnostic rerun HTTP 403 and
+published review-11 evidence remain history; they are neither overwritten nor
+counted as this candidate's success. Final commit/tree, independent reviews,
+affected/full regressions and native current-head CI are recorded in the
+separate evidence directory `/var/tmp/openslack-439-watch-lock.F4VtaAQV` and the
+existing PR. Current-head CI, human approval and merge remain unestablished
+at this appendix's authoring point. No permission expansion, human-auth fallback,
+real provider call, remote cleanup or merge is authorized by this repair.

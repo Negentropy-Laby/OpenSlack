@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { platformTestTimeout } from '../../../../scripts/testing/process-fixture.mjs';
 import {
   existsSync,
@@ -426,9 +426,49 @@ describe('WatchDeliveryQueueV2', () => {
     const old = new Date(Date.now() - 60_000);
     utimesSync(lockPath, old, old);
 
-    expect(store.getStats()).toMatchObject({ count: 0, pending: 0 });
+    // Exercise reclamation, not the host's fsync latency. As in the v1 case,
+    // advance a deterministic clock without changing the 100 ms lock budget.
+    const originalNow = Date.now;
+    let clock = originalNow();
+    const time = vi.spyOn(Date, 'now').mockImplementation(() => ++clock);
+    try {
+      expect(store.getStats()).toMatchObject({ count: 0, pending: 0 });
+    } finally {
+      time.mockRestore();
+    }
+    expect(Date.now).toBe(originalNow);
     expect(existsSync(lockPath)).toBe(false);
+    expect(existsSync(`${lockPath}.reclaim`)).toBe(false);
   });
+
+  it.each([100, 101])(
+    'rejects stale-lock recovery at %i ms of the unchanged 100 ms acquisition budget',
+    (elapsed) => {
+      const { store } = enqueueService(queueV2({ policy: { lockStaleMs: 1 } }));
+      const stateBytes = readFileSync(store.statePath);
+      const lockPath = `${store.statePath}.lock`;
+      const originalNow = Date.now;
+      const start = originalNow();
+      writeFileSync(lockPath, JSON.stringify({ pid: 999_999, nonce: 'stale' }), { mode: 0o600 });
+      utimesSync(lockPath, new Date(start - 60_000), new Date(start - 60_000));
+      const time = vi
+        .spyOn(Date, 'now')
+        .mockReturnValueOnce(start)
+        .mockReturnValueOnce(start)
+        .mockReturnValue(start + elapsed);
+      try {
+        expect(() => store.getStats()).toThrowError(
+          expect.objectContaining({ code: 'QUEUE_LOCK_TIMEOUT' }),
+        );
+        expect(existsSync(lockPath)).toBe(false);
+        expect(existsSync(`${lockPath}.reclaim`)).toBe(false);
+        expect(readFileSync(store.statePath)).toEqual(stateBytes);
+      } finally {
+        time.mockRestore();
+      }
+      expect(Date.now).toBe(originalNow);
+    },
+  );
 
   it('recovers an accepted embedded receipt without another POST', () => {
     const crashing = queueV2({
