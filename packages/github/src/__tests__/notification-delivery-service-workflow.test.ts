@@ -380,6 +380,7 @@ describe('notification delivery service workflow', () => {
     const goGuardIndex = stepIndex('Require the exact Go toolchain');
     const actionlintIndex = stepIndex('Validate the notification workflows');
     const setupNodeIndex = job.steps.findIndex((step) => step.uses === setupNodeAction);
+    const sourceCheckIndex = stepIndex('Check dependency sources before installation');
     const setupBunIndex = job.steps.findIndex((step) => step.uses === setupBunAction);
     const installIndex = stepIndex('Install root dependencies');
     const graphGoldenIndex = stepIndex('Verify Organization Graph golden contracts');
@@ -421,7 +422,8 @@ describe('notification delivery service workflow', () => {
     expect(goGuardIndex).toBe(setupGoIndex + 1);
     expect(actionlintIndex).toBe(goGuardIndex + 1);
     expect(setupNodeIndex).toBe(actionlintIndex + 1);
-    expect(setupBunIndex).toBe(setupNodeIndex + 1);
+    expect(sourceCheckIndex).toBe(setupNodeIndex + 1);
+    expect(setupBunIndex).toBe(sourceCheckIndex + 1);
     expect(installIndex).toBe(setupBunIndex + 1);
     expect(graphGoldenIndex).toBe(installIndex + 1);
     expect(governanceGoldenIndex).toBe(graphGoldenIndex + 1);
@@ -488,10 +490,15 @@ describe('notification delivery service workflow', () => {
       uses: setupBunAction,
       with: { 'bun-version': '1.4.0' },
     });
+    expect(job.steps[sourceCheckIndex]).toEqual({
+      name: 'Check dependency sources before installation',
+      'working-directory': '.',
+      run: 'node scripts/ci/install-dependencies.mjs --check',
+    });
     expect(job.steps[installIndex]).toEqual({
       name: 'Install root dependencies',
       'working-directory': '.',
-      run: 'bun install --frozen-lockfile',
+      run: 'node scripts/ci/install-dependencies.mjs',
     });
     expect(job.steps[graphGoldenIndex]).toEqual({
       name: 'Verify Organization Graph golden contracts',
@@ -665,6 +672,7 @@ describe('notification delivery service workflow', () => {
       'Require the exact Go toolchain',
       'Validate the notification workflows',
       'Set up the exact Node toolchain',
+      'Check dependency sources before installation',
       'Set up the exact Bun toolchain',
       'Install root dependencies',
       'Verify Organization Graph golden contracts',
@@ -720,7 +728,8 @@ describe('notification delivery service workflow', () => {
       ),
       'Validate the notification workflows':
         'go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12 .github/workflows/notification-delivery-service.yml .github/workflows/openslack-reusable-validate.yml',
-      'Install root dependencies': 'bun install --frozen-lockfile',
+      'Check dependency sources before installation': 'node scripts/ci/install-dependencies.mjs --check',
+      'Install root dependencies': 'node scripts/ci/install-dependencies.mjs',
       'Verify Organization Graph golden contracts': 'bun run graph:golden -- --check',
       'Verify Governance Control golden contracts': 'bun run governance:golden -- --check',
       'Verify Workflow contract family golden contracts':
@@ -1069,8 +1078,10 @@ describe('notification delivery service workflow', () => {
       'Require the exact source head',
       'Set up the exact Go toolchain',
       'Set up the exact Node toolchain',
+      'Check dependency sources before installation',
       'Set up the exact Bun toolchain',
-      'Install and build the sealed TypeScript runner',
+      'Install root dependencies',
+      'Build and verify the sealed TypeScript runner',
       'Qualify native Windows runner and GS9-F2b TypeScript boundaries',
       'Qualify native Windows Job Object process trees',
     ]);
@@ -1085,8 +1096,14 @@ describe('notification delivery service workflow', () => {
     ]);
     expect(windowsActions.every((action) => /@[0-9a-f]{40}$/u.test(action))).toBe(true);
     const windowsBuild = windowsJob.steps.find(
-      (step) => step.name === 'Install and build the sealed TypeScript runner',
+      (step) => step.name === 'Build and verify the sealed TypeScript runner',
     )?.run;
+    expect(windowsJob.steps.find((step) => step.name === 'Install root dependencies')).toEqual({
+      name: 'Install root dependencies',
+      run: 'node scripts/ci/install-dependencies.mjs',
+    });
+    expect(windowsBuild).not.toContain('install-dependencies.mjs');
+    expect(windowsBuild).not.toMatch(/\bbun\s+install\b/u);
     expect(windowsBuild).toContain('scripts/qualification/workflow-runner-bundle.ts verify-local');
     expect(windowsBuild).toContain('--node-executable $nodeExecutable');
     const windowsTests = windowsJob.steps.find(

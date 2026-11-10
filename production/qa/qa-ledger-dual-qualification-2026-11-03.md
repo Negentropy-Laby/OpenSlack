@@ -7,7 +7,7 @@ audience:
   - contributors
   - reviewers
 owner: qa
-updated: 2026-11-07
+updated: 2026-11-10
 sources:
   - production/qa/qa-ledger-cleanup-post420-2026-10-11.md
   - docs/architecture/contracts/task-claim-v2-c0.md
@@ -517,3 +517,562 @@ same expired heartbeat; structured verification times were refreshed. No Claim
 or Issue lifecycle was mutated. The named-branch failure, earlier platform
 results, Node 22.0 tooling startup failure and all older Unknowns remain
 separate historical observations, rather than being relabeled by this pass.
+
+## 2026-11-09 batch-1 implementation and scoped preflight
+
+### Scope, authority and current source delivery
+
+Remote `main`, `origin/main` and the clean primary checkout were independently
+read back at `befa93921ec0fb83cfe1709f9ee3dd4de67d06df`. This new delivery uses
+an isolated branch; the primary checkout, retained #415 worktrees, stashes and
+historical claim ref were not changed. It is human-delegated documentation
+maintenance, not an execution under a borrowed qualification identity or a
+fabricated Agent Claim. The selected content set is the canonical control
+plane, this ledger and the two generated roadmaps. No registry, policy,
+provider configuration, ADR or release authority is changed.
+
+GitHub readbacks completed by `2026-11-09T14:34:19Z` establish:
+
+- [#436](https://github.com/Negentropy-Laby/OpenSlack/pull/436) merged at
+  `2026-11-07T11:52:02Z`, merge `befa93921ec0fb83cfe1709f9ee3dd4de67d06df`,
+  source head `7041cb15a3a86c963279b54c08f7d8bb26c86c2b`. Human `wsman`
+  approved that head at `2026-11-07T11:49:39Z`. Required rollup contexts
+  succeeded; tag publication was normally skipped. The post-merge job is not
+  pre-merge approval evidence.
+- The [Go/documentation job](https://github.com/Negentropy-Laby/OpenSlack/actions/runs/42360008255/job/128366202631)
+  reports that **Run reviewed Go workspace verifier**, **Verify root
+  documentation governance** and **Verify notification delivery documentation**
+  actually completed successfully on that source head. Linux and Windows
+  [build scope](https://github.com/Negentropy-Laby/OpenSlack/actions/runs/42360008172)
+  and [Self Validate](https://github.com/Negentropy-Laby/OpenSlack/actions/runs/42360008238)
+  are earlier-delivery evidence, not CI for this new documentation candidate.
+- #411 remains open/claimed, #428 open/blocked, #432/#433/#438 open/blocked,
+  and #427 closed/blocked. #415 remains open/done. These are observed GitHub
+  projections, not fabricated execution states. Existing reconciliation
+  statuses remain unchanged; no Issue was closed, reopened or relabeled.
+- The latest [#411 heartbeat](https://github.com/Negentropy-Laby/OpenSlack/issues/411#issuecomment-6602529066)
+  still expired at `2026-11-03T13:23:46.973Z`; the ref still points to
+  `b8b11ed64238c3b622d110e5d2d11944a342609e`. Neither an existing ref nor a
+  claimed label establishes a fresh lease. No renewal or deletion occurred.
+
+Only the obsolete #428 document-delivery/human-GitHub-review blocker is
+removed. The R6 four-input digest table above remains exact and unchanged;
+ADR-0005 remains **Proposed**, its Acceptance Record **Pending**. GitHub
+approval and merge do not accept those exact bytes. C1–C7 implementation stays
+blocked on the named decision authority, not on #411 or Cleanup qualification.
+
+### #411 send-contract gap table
+
+Supported redacted runtime doctors were executed against the primary checkout's
+existing configuration using the independently installed, same-source CLI.
+The first attempts could not start because that checkout's local dependency
+tree could not resolve `@openslack/core`. That environment failure is retained;
+it was not classified as an absent provider. After the isolated frozen install
+and build, the actual diagnostics returned Aby **PASS / ready**, configured via
+`.openslack.local/agent-runtime.json`, and direct OpenAI-compatible **FAIL /
+not_configured**. No configuration was changed and no model request was made.
+
+| Required property | Measured or source-bound evidence | Consequence if omitted | Owner and minimum next action |
+| --- | --- | --- | --- |
+| Existing runtime binding | Aby doctor confirms the local bridge, Bun 1.4.0 and bridge entrypoints; it does not attest the upstream vendor/model. Direct OpenAI-compatible configuration is absent in this checkout. | A bridge label cannot identify the actual serialization, counting or server output-limit contract. | Existing binding administrator supplies the approved non-secret upstream/model/protocol binding through its supported configuration; the agent inspects it without changing suppliers or sending a prompt. |
+| Hard input-plus-output bound | `packages/workflows/src/internal/workflow-send-admission.ts` at `befa9392`: `totalConstraint()` unconditionally denies `SEND_TOTAL_TOKEN_UNVERIFIED`. An output-only cap is insufficient. | A real attempt could exceed 8,192 tokens including hidden/reasoning usage. | Sending-constraint maintainer verifies the actual provider contract, full serialized input bound, server-enforced output/reasoning limit and retry behavior; add regression-first code only after that proof. Unknown bindings continue to deny. |
+| Current principal and lease | GitHub still exposes the expired November 3 heartbeat/ref. A fresh production principal/permission resolution and formal claim recovery have not been executed in this maintenance scope. | No current qualification ownership or actual provider/run binding is proven. | Qualification executor follows the supported identity and claim-recovery path after admission prerequisites; no copied identity, ad-hoc ref removal or borrowed Aby principal. |
+| Campaign budget and original history | This preflight created no campaign, reserve or attempt and consumed no provider budget. Historical attempt journals were not opened or reset. | A new directory could otherwise hide prior attempts or unknown settlements. | Qualification executor reconciles the existing journal and Go reserve/settle before admission; preserve at most 4 attempts, 8,192 input-plus-output each and 32,768 total. Remaining allowance is not asserted here. |
+| Frozen execution and approvals | The fixture and refusal boundary exist in merged source; no sealed execution candidate, live run, Workflow Trust decision or effect approval was established by this maintenance. | Local/CI evidence could be mistaken for authenticated resume, effect or drain qualification. | After the narrow provider fix is reviewed and merged, freeze source/bundle/allowlist/images and obtain the separate human decisions; the agent then runs the prescribed restart/resume and real 600-second sampling matrix. |
+
+The Aby bridge's upstream provider remains **UNVERIFIED**, not “all providers
+are unconfigured.” No provider-specific fix can be selected from these doctor
+results alone. Batch 2 is BLOCKED on that missing contract proof; batch 4 is
+NOT_RUN. This does not block independent Cleanup work or accepted Claim work.
+
+### Cleanup admission gap table
+
+The public GitHub metadata readback identifies
+`Negentropy-Laby/openslack-cleanup-qualification-public`, ID `1381124543`,
+`private: false`, default `main`, `delete_branch_on_merge: false`. This ordinary
+repository query does not verify the deletion App's installation, token scope,
+ruleset visibility or permission to delete. No actual deletion, Permit
+consumption, installation or activation was attempted.
+
+| Required property | Measured or source-bound evidence | Consequence if omitted | Owner and minimum next action |
+| --- | --- | --- | --- |
+| Exact target and scoped registry | Current administration contract binds the public repository/ID. Pinned registry SHA-256 `33a9b46866fedd768cb859abfd36341159fc0f3a3e306462575f1f34af7e7ebc` still allows only the old private qualification repository. | The production authorizer must reject the public target; a general repository read cannot grant cleanup scope. | Independent administrator updates the exact public repository scope and regenerated contract pin through its configuration delivery, retaining denial of old `pr.cleanup_branch`; no executor self-grant. |
+| Actual OS identities | WSL2 host `DESKTOP-2SJF7KU`: named accounts are UID/GID `24001/24002`; contract requires `44180/44181`, which were not found. The inspecting session is root with Docker-group membership. | Root reachability does not establish isolated executor identity; silently changing account numbers or the contract would invalidate the binding. | Administrator reconciles the chosen contract with real accounts through the reviewed identity process; the agent does not renumber/recreate accounts. |
+| Installed artifacts and state | `/etc/openslack-cleanup` is `0750 root:24001`; `/usr/lib/openslack-cleanup` is `0755 root:root`; `/var/lib/openslack-cleanup` is `0700 24001:24001`. Broker binary, `/run/openslack-cleanup` and its socket are absent. Protected credential/state contents were not read. | There is no evidence of a runnable current installation or safe upgrade/backup history. | Administrator provides the actual installation/launch history and installs or upgrades the frozen artifact with reviewed backup steps. Preserve ledger, worker journal and consumed/unknown operations; do not infer “never started” from a missing socket. |
+| App, task view and independent isolation | Current deletion-App installation, target protection, full controlled task view and distinct-UID access denials were NOT_RUN. | An early invalid Permit/identity rejection cannot prove protection, dependency or credential isolation. | Administrator supplies the selected-repository App/configuration, protection and task view; the agent verifies each intended gate from an otherwise legal baseline under the independent UID. |
+| Fresh activation and one-use targets | No current boot nonce or exact live Permit was obtained. Old private-target authorizations are not migrated or extended. | Reusing old activation could resurrect an old execution opportunity or repeat a side effect. | Administrator activates the actual new instance and issues exact target-specific one-use Permits; the agent runs preview, independent negatives, one deletion, original-receipt replay, absent readback and restart-only receipt query. Unknown results remain frozen for reconciliation. |
+
+Only the affected installation/authorization/real-GitHub steps are BLOCKED.
+No helper, wrapper, dashboard or broad Issue cleanup is a prerequisite to
+completing this four-path documentation delivery.
+
+### Independent tracks and bounded next work
+
+Read-only release collision checks found no OpenSlack `v0.2.0` Release and a
+404 for its exact tag ref. Public npm lookups returned 404 for version `0.2.0`
+of `@openslack/plugin-api`, `@openslack/plugin-host`,
+`@openslack/plugin-testkit` and `@openslack/sdk`. These observations are not a
+reservation of a tag/version, publisher authorization, signature qualification
+or permission to publish; collisions must be checked again at release freeze.
+No release state or historical “not configured” label was promoted.
+
+| Track | This round's result | Independent next condition |
+| --- | --- | --- |
+| Batch 1 / M1 | Four-path correction and two gap tables prepared; candidate validation and bot delivery are recorded separately, not inherited from #436. | Current-candidate documentation checks, independent review and new PR delivery. |
+| Batch 2 / #411 constraint | BLOCKED; actual upstream/model/total-token contract is not proven. | Supported redacted binding evidence, then a bounded provider-specific change. |
+| Batch 3 / Cleanup | BLOCKED at the explicit identity, scoped registry and installation gates above. | Reviewed administrator inputs; all actual tests remain the agent's responsibility. |
+| Batch 4 / R-EXT | NOT_RUN; no calls, effects, attempt reset or 600-second sampling. | Batch 2 merged, fresh claim and frozen live candidate, independent approvals. |
+| Batch 5 / C0–C7 | C0 document delivery/human GitHub review complete; exact R6 ADR acceptance BLOCKED. No C1 module, SQL, session, action or cutover is implemented here. | Exact retained Proposed inputs, decision authority/time/scope; then separate implementation deliveries in OpenSlack, with qualification/cutover limited to the public qualification repository and the primary task route unchanged. |
+| Batch 6A | External qualification NOT_RUN. #372/#373 still require formal current-scope amendments; extra model calls have no budget. | Existing task-specific admission and external inputs; P2 plugin/Negentropy/Graph work does not block unrelated P1. |
+| Batch 6B / 0.2.0 | Collision preflight only; nine gates, publisher inputs, canonical two-platform capstone and promotion remain unclosed. | Existing release runbook and role authority; no extra model budget is borrowed from #411. |
+
+Issue comments/closing, an additional #415 assignment, C1–C3 timestamp-only
+refreshes and wrapper enhancements remain P2/P3. They do not block M1 or any
+unrelated qualified core track. Current code, local tests, hosted CI, distinct
+UID isolation, live GitHub, live provider, human acceptance, merge and release
+continue to be separate claims.
+
+### Batch-1 local validation and preserved diagnostic failure
+
+Validation used the isolated four-path candidate on parent `befa9392`, Linux
+WSL2, Bun `1.4.0`, Node `24.18.1` and Go `1.26.5`. Counts below describe
+separate executions, not a cumulative completion percentage. No implementation,
+test, source-binding input or inventory declaration changed.
+
+| Command or invariant | Measured result |
+| --- | --- |
+| `bun install --frozen-lockfile` | PASS; 351 installs across 411 packages checked without changes. `bun.lock` SHA-256 remains `c37b534a01955f7af0c85155186e7cd3c4fa99d8214ceed27175a187f3cc8db3`, equal to the parent blob. |
+| `bun run typecheck`; `bun run build`; `bun run openslack workspace validate` | PASS; contract-family/source mirror checks included. |
+| Documentation/send-admission/runtime-diagnostics regression | PASS, 96 tests in the three explicitly selected files. No live provider request or primary-checkout configuration write; fixture-local writes remain test setup. |
+| Existing eight-file cleanup/transport/CLI regression | PASS, 245 tests, including real bare Git/two-clone expected-SHA rejection. This is not GitHub qualification. |
+| Private executor/auth/client/digest composition | PASS, 88 tests; local FD/bare Git composition verifies one push, zero-push final rejection and no resend after an unknown result. |
+| Cleanup Broker `go test -race ./...` and `go vet ./...` | PASS, 11 Go packages. Local tests do not prove the actual installed service or OS identity isolation. |
+| `docs:generate`, `docs:verify`, `docs:migration-check`, `docs:notification-verify`, `openslack status verify`, `git diff --check` | PASS. Documentation verification covers 7 schemas, 167 active documents and 4 projections; C0 semantic execution remains NOT_RUN. Status is an exact inventory/projection match, not a new full-suite execution. |
+| Scoped canonical invariants | PASS; 31 unique assignment IDs; six selected assignments only; all historical evidence retained; all execution/status fields unchanged; other control-plane authorities and #429–431 unchanged. |
+| Source binding scan | Six tracked manifests/schema files scanned, 261 path/digest bindings; no changed path is bound, so no digest or source lock is rewritten. |
+| Extra generated state views | Original SHA-256 values remain `68fc9d20a630027d4b79b8e3da06f7569c38a3e503f2f0748017753168a3575d` and `3808cc58412b63118f6af06cb8a1a7d1851a1fcd1f7367a80d06f39415ab64c9`; both retain Git mode `100644` and no diff. |
+| Independent evidence/source review | ADEQUATE after the two wording corrections above. The final validation-only appendix receives its own readback; no previous-head CI is inherited. |
+| This new candidate's hosted CI / human review / merge | Not established by these local results; tracked by the new bot delivery's exact head. |
+
+The three regression scopes were each repeated once to retain machine reports
+in `/var/tmp/openslack-six-batch-20261109.NFVVqa5m`, without accumulating the
+repeated counts. These are the executed test selections, with the same report
+directory expressed as a shell variable for readability:
+
+```bash
+OPENSLACK_BATCH_EVIDENCE=/var/tmp/openslack-six-batch-20261109.NFVVqa5m
+
+bunx vitest run \
+  scripts/documentation/__tests__/lib.test.ts \
+  packages/workflows/src/__tests__/workflow-send-admission.test.ts \
+  packages/agent-runtime/src/__tests__/openai-compatible-diagnostics.test.ts \
+  --reporter=json --outputFile="$OPENSLACK_BATCH_EVIDENCE/docs-send-diagnostics.json"
+
+bunx vitest run \
+  packages/delivery/src/__tests__/git-transport.test.ts \
+  packages/delivery/src/__tests__/branch-cleanup.test.ts \
+  packages/pr/src/__tests__/cleanup-branch.test.ts \
+  packages/pr/src/__tests__/task-link.test.ts \
+  packages/github/src/__tests__/branch-evidence.test.ts \
+  apps/cli/src/__tests__/pr-cleanup-branch-command.test.ts \
+  packages/collaboration/src/__tests__/events.test.ts \
+  packages/runtime/src/__tests__/propose.test.ts \
+  --reporter=json --outputFile="$OPENSLACK_BATCH_EVIDENCE/cleanup-eight.json"
+
+bunx vitest run \
+  packages/pr/src/__tests__/cleanup-broker-executor.test.ts \
+  packages/pr/src/__tests__/cleanup-executor-auth.test.ts \
+  packages/pr/src/__tests__/cleanup-client-subprocess.test.ts \
+  packages/pr/src/__tests__/cleanup-broker-digest.test.ts \
+  --reporter=json --outputFile="$OPENSLACK_BATCH_EVIDENCE/executor-composition.json"
+```
+
+The Go command was `go version && go test -race ./... && go vet ./...`, run
+in `services/cleanup-broker`. The retained `cleanup-broker-race-vet.log` is
+explicitly a transcription of this turn's observed output, not a raw PTY log.
+The source-binding check recursively inspected `{path, sha256}` objects from
+`git ls-files '*source-manifest*.json'` and compared their paths with the four
+changed paths. It establishes no changed binding input, not a fresh execution
+of all service contract tests. Local reports remain outside the four-path Git
+delivery and contain no credentials or raw provider responses.
+
+An additional batch-6A preflight at `2026-11-09T14:44:16Z` invoked the supported
+`github notifications qualification status` command against the primary
+checkout using the same-source isolated CLI. It exited 1 with
+`QUALIFICATION_ARTIFACT_INVALID`, not `QUALIFICATION_NOT_RUN` or PASS. The
+canonical report directory/file is absent, while `.openslack.local/daemon`
+and its `blobs` directory have mode `0777` on the Windows-mounted checkout.
+The command constructs queue/blob/receipt stores before reading the report;
+those constructors can initialize local directories and enforce secure storage.
+The generic error therefore does not prove a corrupted qualification receipt,
+and this invocation is not claimed as a strictly side-effect-free inspection
+or proof that local storage was unchanged. No local state is removed, chmodded
+or reset in response. No service admission, vendor delivery or qualification
+seal was executed. The exact failing stage remains UNVERIFIED.
+
+For #369, the existing append-only PR #308 PX2 receipt declares PASS only for
+its historical audit; the current evidence index still records runtime
+admission GATED, no passing sealed qualification report and IB7 NOT_AUTHORIZED.
+The owner must establish a secure qualification state location, current gate
+inputs and explicit qualification-only authorization before the agent executes
+the real canary/vendor/reconciliation matrix. This local diagnostic failure is
+retained independently of the successful documentation checks and does not
+block the four-path delivery, Cleanup, or an otherwise admitted Claim track.
+
+### First hosted candidate: dependency installation failure retained
+
+Batch-1 delivery/readback for bot-authored Draft
+[#439](https://github.com/Negentropy-Laby/OpenSlack/pull/439) completed at
+`2026-11-09T14:52:58.140Z`; local commit, published branch and PR head all
+matched `7aa87165066955a564351c33966c4e554e2de9fd`, tree
+`a0fad276a5da5ad1159eed0d152f0cb806ee03b5`. Its direct parent is the verified
+main `befa93921ec0fb83cfe1709f9ee3dd4de67d06df`, with no merge commits.
+
+The [first canary job](https://github.com/Negentropy-Laby/OpenSlack/actions/runs/42639010891/job/129234765499)
+failed in `bun install --frozen-lockfile` at `2026-11-09T14:53:11.9510118Z`:
+the pinned `@octokit/auth-token@5.1.2` tarball at `registry.npmmirror.com`
+returned HTTP 5xx. Build, golden evaluation and claim-flow classification did
+not execute in that failed job. This is an observed hosted dependency-fetch
+failure, not evidence of a failing application test or a completed CI gate.
+
+A subsequent bounded read of that exact tarball returned HTTP 200, 6,081 bytes,
+SHA-512 Base64
+`JcQDsBdg49Yky2w2ld20IHAlwr8d/d8N6NiOXbtuoPCqzbsiJgF633mVUw3x4mo0H5ypataQIX7SFu3yy44Mpw==`,
+equal to the unchanged frozen-lockfile integrity value. The artifact was hashed
+without installation or execution. This limited recovery observation does not
+guarantee availability from another runner and does not erase the original
+failure. An independent single read at `2026-11-09T14:59:52.490Z` returned
+HTTP 500, 78 bytes; recovery is not established. No dependency, lockfile,
+workflow, assertion, skip or timeout changed.
+
+The same clean `7aa87165` candidate separately reran the three explicit local
+test scopes and Broker race/vet with `-count=1`, retaining `*-7aa87165.json`
+and `cleanup-broker-race-vet-7aa87165.log` in the same external evidence
+directory. Those executions remain bound to that commit. This appendix is an
+evidence-only amendment to the same PR, not a second delivery or an extension
+of its permissions; its new head's checks must be observed independently.
+
+## 2026-11-10: #439 dependency-source repair
+
+This is the explicitly authorized continuation of existing Draft
+[#439](https://github.com/Negentropy-Laby/OpenSlack/pull/439), not a new PR,
+Claim execution, qualification or release. The checked starting head is
+`dda9779cc551a188efa29ab07eff3e7df95b4e75`, tree
+`c98ff5c23c6e02f9bbc6e71011cc37988f5d8c7c`, on
+`docs/batch-1-ledger-closeout-20261109`; its published history is retained.
+The delegated maintenance scope is the three source/configuration files below,
+this appendix, and formal inventory/projection outputs. It does not create a
+new execution identity, claim, permission or provider budget. Independent
+technical review is not human GitHub approval. No ADR is required for this
+download-origin correction: no public interface, dependency selection,
+authority, protocol or deployment decision changes.
+
+`bunfig.toml` explicitly selects `https://registry.npmjs.org`. `bun.lock`
+changes only the 311 previously verified tarball URL prefixes from
+`https://registry.npmmirror.com/` to that official origin. All 418 package
+entries retain their versions, dependencies, platform conditions and integrity
+values. The 82 empty npm sources and 25 workspace entries are unchanged.
+The exact complete lock text also equals the old text with only that prefix
+substitution; no dependency resolver/update command was used. A separate
+read-only audit rejects a version mutation and a well-formed but different
+64-byte SHA-512 integrity value. These audit mutations are isolated values,
+not writes to the repository lockfile.
+
+The permanent regression in
+`scripts/release/__tests__/workflow.test.ts` checks the parsed Bun default
+registry, every explicit locked tarball origin and four single-condition
+negative URL cases. It does not freeze dependency versions, hashes, package
+counts or require an explicit URL where a future valid lock uses the default.
+Configuration and frozen-install semantics follow the existing
+[Bun registry contract](https://bun.com/docs/runtime/bunfig#installregistry)
+and [frozen installation contract](https://bun.com/docs/pm/cli/install).
+
+Evidence is retained outside Git in
+`/var/tmp/openslack-439-registry-20261110.hpxzD7sV`:
+
+| Observation | Actual result and scope |
+| --- | --- |
+| Official npm metadata | 311/311 exact package name, version, tarball path and integrity matches; `official-metadata.json`. Metadata agreement alone is not installation evidence. |
+| Regression-first failure | `registry-red.json`: 11 PASS, 2 FAIL, zero skipped. The failures are the absent explicit default registry and the old mirror URLs. |
+| Initial corrected regression | `registry-green.json`: 13 PASS, zero FAIL/skipped. Test source SHA-256 `71f1076a35982536182aacd37acb895a7e0fb8d16f19730604a7d7d983fb5e96`. |
+| Reviewed regression | `registry-green-reviewed.json`: 13 PASS, zero FAIL/skipped, after removing an unnecessary explicit-URL count precondition. Test source SHA-256 `edcf21d5ed14ef049e75dc902f17dde4b7c633cfa267d7f99073b81288c1e249`; report SHA-256 `d80c4f4dce1465e031481a029c11bc4813b093a4ba09b63b84a15d2737376ddc`. |
+| Independent source and QA review | ADEQUATE for the exact reviewed source bytes. Both reviewers independently read/hashed the inputs and reports; they did not independently rerun installation or inherit CI/qualification approval. |
+| Cold staging setup | An initial archive/overlay sequencing error found no `package.json`; preserved in `cold-staging-first-failure.txt`. This was an invalid staging attempt, not a passing cold install or a dependency regression. The archive completed before the corrected overlay and install. |
+| Valid cold install | PASS with Bun 1.4.0 in `/tmp/openslack-439-cold-20261110.mME2n1Ru`, archived from the starting head and overlaid with the three corrected files. The dedicated `/tmp/openslack-439-cache-20261110.0KqJDHAe` cache was empty before `bun install --frozen-lockfile --cache-dir /tmp/openslack-439-cache-20261110.0KqJDHAe`: 301 packages installed, exit 0. |
+| Repeat frozen install | PASS, exit 0: 351 installs across 411 packages checked with no changes. Both installs retain the exact corrected lock SHA-256 below. The cold snapshot carries the initial corrected test source, not the later count-assertion removal; its package declarations, registry and lock bytes are identical to the reviewed installation inputs. |
+| Typecheck/build/lint | PASS: `bun run typecheck`, `bun run build`, and ESLint for the changed test. Contract-family/source mirrors are included. Node's existing typeless-package warning remains a warning, not a changed dependency declaration. |
+| Documentation/projections | PASS: `docs:verify`, `docs:migration-check`, `docs:notification-verify`, `openslack status verify`, `git diff --check`. The four roadmap/state projections remain byte-identical; the two extra T0 state views retain their original Git mode. |
+| Formal inventory | `node scripts/verify-test-counts.mjs --update` generated 9,378 declared cases / 606 files, six additional cases. Only the root Vitest count in `.openslack/modules.yaml` and its generated `docs/status/current.md` count changed; module counts are unchanged. This is collection evidence, not a full-suite PASS count. |
+| Harness compatibility | Fresh `prepare-compatibility.mjs` completed against clean original Harness `22ddee3792402c3e70ec5f86a63c3e3e895a2f60`, with the corrected lock. Public-API typecheck and artifact emission passed without modifying original Harness files. Its ignored witness is SHA-256 `ed62ce180592be20deb71303ee4ee9ebcb1f29cfa6af718e80c1fa04343175cd`. This is local composition evidence, not live model qualification. |
+| Final clean candidate / full suite / hosted CI | Pending at this appendix's freeze. Exact commit/tree, commands, outputs, actual checkout SHA and final reports will be published separately without another evidence-only commit loop. Prior-head CI is not inherited. |
+
+Original lock SHA-256 is
+`c37b534a01955f7af0c85155186e7cd3c4fa99d8214ceed27175a187f3cc8db3`;
+corrected lock SHA-256 is
+`a2609b4f8139750a3154189b1691567dbdd0544efbefcd0d6b15fe77964fe8f8`.
+Corrected `bunfig.toml` SHA-256 is
+`5ac5c7cfc74667729a0dddbbd885bca59d58925f176f730c3c1654bd15a27029`.
+Local tools are Bun 1.4.0 and Node 24.18.1. No user-global registry, proxy or CA
+configuration was modified. The six tracked source manifests are rechecked
+against the final changed-path set before publication; only actual bound-input
+changes could justify a digest update.
+
+The regression commands name `scripts/release/__tests__/workflow.test.ts`
+explicitly with `bunx vitest run --reporter=json --outputFile=<report>`.
+The one-off audit uses the unchanged starting Git blob and the reviewed
+working-tree bytes, not a resolver-generated second lock. Permanent regression
+and candidate-specific provenance auditing have different purposes.
+
+All previous hosted mirror failures above remain failures. This repair does
+not assert Cleanup installation/GitHub qualification, #411 R-EXT, Claim v2
+acceptance/implementation, human review, governance merge or publication.
+No provider call, deletion, administrator configuration or automatic merge
+was executed by this batch.
+
+## 2026-11-10: #439 eleven-finding repair contract and historical erratum
+
+This appendix records the authorized follow-up to the eleven-finding review
+of `917db1f173fb94d647364f201caf05834afa1911`, tree
+`970e8f94d9ade6bab991702b235602f79912f25c`. It continues the existing
+`docs/batch-1-ledger-closeout-20261109` branch and
+[#439](https://github.com/Negentropy-Laby/OpenSlack/pull/439), not a new PR.
+The review disposition is **CHANGES_REQUIRED** until the repaired candidate
+has its own verification and independent review. Previous source reviews,
+installation results and hosted failures retain their original scope; they
+are not inherited as approval or execution evidence for this follow-up.
+
+The confirmed policy is official npm sources only for supported development
+and CI installation, with no mirror fallback. The original `bun.lock` bytes
+of this follow-up remain the reviewed official-source lock; dependency
+versions, graph, integrity, Bun 1.4.0 and Node requirements are not changed.
+The historical 311 explicit tarball URLs and 82 empty/default npm sources
+describe that lock snapshot, not hard-coded acceptance counts for future
+valid locks.
+
+### Disposition of all eleven findings
+
+| Finding | Priority and reviewed conclusion | Required repair or retained decision |
+| --- | --- | --- |
+| 1 — environment overrides | P1; existing byte-level assertions do not constrain effective registry settings. | Reject mirror environment overrides at the supported entrypoint and isolate installation configuration; empty npm sources must use the controlled official registry. |
+| 2 — gate after installation | P1; a bad source can fail installation before Vitest runs. This is not a demonstrated successful merge bypass. | Run a named Node-only lock/environment check before dependency installation, without Bun, installed packages or network. |
+| 3 — unrecognized lock structure | P1; the old scan can skip every unrecognized entry. | Validate supported `lockfileVersion`/`configVersion`, tables and tuple shapes; classify every entry, including valid workspace links and empty npm sources, without fixed URL counts. |
+| 4 — duplicate keys | P1; TypeScript's last-wins parser accepts duplicate keys. A malicious earlier table being downloaded by Bun was not demonstrated. | Strict JSONC parsing rejects root, nested and escaped-equivalent duplicate keys while accepting supported comments and trailing commas. |
+| 5 — scope registries | P1; default-only validation does not cover scope routing. | Validate every default/scope registry, including supported string/object URL forms, and isolate global configuration from the first Bun invocation. |
+| 6 — official-only availability | Confirmed policy tradeoff, not a reason to restore a mirror. Explicit locked URLs also remain official even if the default registry is removed. | Document official npm reachability, standard proxies and explicit CA configuration; restricted mirror-only networks remain unsupported. |
+| 7 — missing error context | P1; failures need a package and field locator. | Stable reason codes, package keys, field paths and sanitized origins; no raw URL, userinfo, query, fragment or credential-bearing exception output. |
+| 8 — parser/output diagnosis | P1; raw JSON parsing/property access does not identify the violated invariant. | Distinguish process/executable failure, malformed output framing, configuration shape and source-policy rejection; installer calls remain zero on configuration failure. |
+| 9 — unlocatable wording corrections | P1; the old acceptance sentence does not identify its conditions. | Retain the old sentence and append the exact two contrasts and recovery limitations below; obtain fresh independent review for the new candidate. |
+| 10 — repeated positive control | P2; one source assertion executes in four parameterized rows, not four edit locations. | Use one standalone positive control and retain parameterized negative cases; no platform defect is inferred. |
+| 11 — executable fixture convention | P2; consistency/diagnosis issue, not a reproduced naked-spawn platform failure. | Use the repository `testExecutable` fixture and the same normalized child environment in tests. |
+
+P2 changes travel with their affected tests and do not block implementing the
+P1 source gate. This is a scoped implementation of the already confirmed
+official-source policy, with diagnostics and regression coverage; it changes
+no product runtime/business API, permission, authority or persisted protocol.
+No new ADR is required for that implementation choice. This does not waive
+independent review or governance: the workflow wiring touches `.github/**`
+and is **Red Zone**, requiring the applicable human GitHub review before
+merge. No review, merge or release is established by this authoring appendix.
+
+### Historical batch-1 review erratum for finding 9
+
+The historical sentence at
+[the original batch-1 verdict](https://github.com/Negentropy-Laby/OpenSlack/blob/7aa87165066955a564351c33966c4e554e2de9fd/production/qa/qa-ledger-dual-qualification-2026-11-03.md#L654),
+`ADEQUATE after the two wording corrections above`, is retained unchanged.
+The two conditions can now be identified as follows:
+
+1. **Claim implementation location.** The reviewer's recovered message begins
+   `初检：当前 diff 严格四路径` (pre-correction file-read output chunk `80df39`). The original
+   wording was `then separate C1–C7 deliveries in the public qualification
+   repository, not the main task route`. The corrected wording is `then
+   separate implementation deliveries in OpenSlack, with qualification/cutover
+   limited to the public qualification repository and the primary task route
+   unchanged.` The corrected text is independently locatable in
+   [the published batch-1 blob, line 625](https://github.com/Negentropy-Laby/OpenSlack/blob/7aa87165066955a564351c33966c4e554e2de9fd/production/qa/qa-ledger-dual-qualification-2026-11-03.md#L625).
+   It distinguishes the implementation delivery repository from the limited
+   qualification/cutover target; it does not start C1–C7 or migrate the main
+   task route.
+2. **Source rejection versus actual preflight.** The reviewer's recovered
+   message begins `另一处建议精确化` (pre-correction file-read output chunk `815769`). The original
+   evidence combined
+   `source:befa93921ec0fb83cfe1709f9ee3dd4de67d06df:totalConstraint-unconditionally-denies-SEND_TOTAL_TOKEN_UNVERIFIED;no-provider-attempt-created`.
+   The corrected evidence separates
+   `source:befa93921ec0fb83cfe1709f9ee3dd4de67d06df:totalConstraint-unconditionally-denies-SEND_TOTAL_TOKEN_UNVERIFIED`
+   from
+   `this-preflight:runtime-doctors-only;no-campaign-reserve-or-provider-attempt-created`.
+   Both corrected entries are in
+   [the published control-plane blob, lines 1304–1305](https://github.com/Negentropy-Laby/OpenSlack/blob/7aa87165066955a564351c33966c4e554e2de9fd/memory_bank/control-plane.json#L1304).
+   The source rejection is not a universal assertion of zero prior reservation
+   writes: reservation can precede `totalConstraint` refusal. The zero-campaign
+   observation belongs to that doctors-only preflight.
+
+Both corrections were read back in the original tool chunk `ff26b4`; this
+follow-up statically rechecked the corrected bytes in the exact published
+`7aa87165066955a564351c33966c4e554e2de9fd` blob. The original reviewer supplied
+the message recollections and before/after wording during this follow-up.
+There is no separately persisted original review report or permanent message
+ID for those conversation messages. Chunk labels aid local traceability but
+are not immutable public evidence links, and the recalled pre-correction text
+has no independently published original blob here. This appendix does not
+retroactively manufacture such evidence or turn a present recollection into a
+past published review. Fresh independent source/evidence review is required
+for the final repaired candidate.
+
+### Supported-entry guarantee and pending candidate evidence
+
+The supported commands are
+`node scripts/ci/install-dependencies.mjs --check` and
+`node scripts/ci/install-dependencies.mjs`. The first is a read-only Node-only
+lock/environment check without Bun, installed dependencies, network or
+temporary writes. Default installation additionally validates configuration
+using the fixed Bun parser under inert isolated bootstrap configuration,
+then invokes a Bun 1.4.0 frozen official-source install. Only `--cache-dir`
+and `--cafile` are optional installation arguments. A root `.npmrc` is rejected
+by existence/type inspection without reading its contents.
+
+Installation children do not inherit global registry/auth configuration or
+dynamic runtime overrides. Parent-process publishing authentication remains
+unchanged. Standard proxy variables are preserved; explicit `--cafile` is the
+CA path, and legacy CA settings require named migration rather than silent
+removal. Isolation lasts through child exit, with cleanup limited to the
+specific private directory created by the entrypoint. This is not a host/PATH
+sandbox, a restriction on arbitrary bare Bun commands, proof of a physical
+network/CDN endpoint, or historical origin proof for existing cache entries.
+
+| Evidence layer | Follow-up candidate status |
+| --- | --- |
+| Lock/configuration/diagnostic and early-failure regression | NOT_RUN at this appendix's authoring point; exact-candidate reports must identify commands, environment, exit codes and input hashes. |
+| Isolated cold/repeat frozen install | NOT_RUN for this follow-up; prior-head install evidence above is historical, and cache hits alone do not prove download origin. |
+| Full typecheck/build, applicable lint, formal inventory, source bindings and documentation checks | NOT_RUN for the completed follow-up candidate; maintainers update only genuinely affected canonical/generated inputs. |
+| Full Vitest and compatibility witness | NOT_RUN for this follow-up candidate; no previous witness or overlapping test counts are promoted. |
+| Independent source/security/evidence review | NOT_RUN for the completed follow-up candidate; this appendix is authored documentation, not independent acceptance. |
+| Current-head Linux/Windows/macOS CI and actual checkout steps | NOT_RUN for the new candidate; verify Go verifier and downstream documentation steps actually execute. |
+| Human GitHub review / PRMS / merge | NOT_RUN for the repaired candidate; governed delivery is through the same #439, with no automatic merge. |
+
+Final reports belong in a separately retained candidate-bound evidence bundle
+and the existing PR, not in repeated evidence-only commit loops. No provider
+attempt, Cleanup deletion, administrator configuration, Claim implementation,
+publication or release promotion is part of this follow-up. Other assignments,
+qualification gates and release states remain unchanged.
+
+### Review-11 implementation observations — 2026-11-10, before delivery
+
+These observations concern the repaired source based on `917db1f1`, not its
+old hosted PASS. The final commit/tree, actual CI checkout and complete command
+records belong to the separately retained delivery bundle and the same PR.
+The install entrypoint bytes are SHA-256
+`903bd843ad87ace4409c690da949a19f451f440bf22e91d783c9b3953d4ebd18`.
+`bun.lock` remains byte-identical to the published baseline, SHA-256
+`a2609b4f8139750a3154189b1691567dbdd0544efbefcd0d6b15fe77964fe8f8`.
+
+- **Measured RED:** the old source guard accepted three isolated bad locks
+  (unknown format, missing tuple source, duplicate package table). Additional
+  semantic/JSON-frame regressions produced seven failures before their repair;
+  a missing-entrypoint collection failure is not counted as behavioral proof.
+- **Measured related GREEN:** direct Vitest execution of the dependency-install,
+  release-workflow and two affected Notification workflow tests passed
+  **136/136** (98, 15, 15 and 8 respectively). URL negative controls preserve the
+  legal tarball path and alter one relevant condition; parser/process/source
+  reason codes have distinct assertions.
+- **Measured installation:** an independent source snapshot with an absent cache
+  completed a Bun 1.4.0 controlled frozen install and a subsequent frozen install.
+  Both retained the lock bytes. The real no-network workspace fixture separately
+  exercised malicious synthetic HOME/config/dotenv/dynamic environment inputs;
+  it is not proof of all npm downloads or physical network origin.
+- **Measured integrity:** full typecheck/build, applicable test-file ESLint
+  (zero errors, one explicit-any warning), `node --check`, formal inventory,
+  deterministic status/document generation and documentation verification passed.
+  Inventory is **9,478 declared cases / 607 files**, not a passing-test count.
+  All 261 path/hash bindings across six source-manifest files match their
+  declared repository/service roots. Only the changed Notification workflow
+  hash and its independent Go-test expected literal were rebound; binding sets
+  and comparison logic are unchanged. Workflow Control contracts passed
+  `GOWORK=off GOTOOLCHAIN=local go test -race ./tests/contracts -count=1`.
+- **Measured compatibility:** the existing producer emitted a fresh Harness
+  witness after rebuilding this checkout and the unmodified pinned original
+  Harness dependency; no old witness was promoted.
+- **Local full-suite FAIL retained:** direct full Vitest on WSL/root,
+  Node 24.18.1, Bun 1.4.0, Git 2.34.1 and default Python 3.10.6 recorded
+  **9,380 PASS / 73 FAIL / 25 skipped**. The affected source/CI tests passed.
+  Seventy-one failed case names also failed at the old local baseline; the
+  Python-dependent tests explicitly require Python 3.11+. Two additional
+  asynchronous governance-shadow cases failed in the full run; a separate
+  five-case diagnostic passed without source edits. That diagnostic does not
+  erase the full-run failure or establish its cause. No timeout/assertion was
+  relaxed. Hosted full-suite/platform evidence remains a separate requirement.
+- **Independent review:** the non-author technical reviewer first required
+  stricter npm identity/metadata/SRI classification, then independently verified
+  those rejections and the unchanged real lock. Non-author source/QA review found
+  the corrected negative controls, exact reason codes, fourteen pre-install
+  entries and the two hash-only source-lock updates adequate. The documentation
+  reviewer separately verified the historical erratum against `7aa87165`, with
+  the original-message trace limitation retained. These are scoped reviews, not
+  human GitHub approval, hosted CI, merge or qualification.
+
+Current-head hosted checks, LIVE PRMS and valid human review remain pending at
+this pre-delivery observation. The PR stays Draft until required checks close;
+there is no automatic merge or change to any external qualification/release gate.
+
+## #439 Watch stale-lock test follow-up — 2026-11-10
+
+The requesting human explicitly added the Watch lock-test narrow repair to the
+same #439 after the review-11 delivery. This is separate from the eleven original
+findings, not a renumbering or a new PR. The starting published head is
+`e9623a69001737e9c756df83516f29e14b8a3d13`; its Windows release job failed
+`WatchDeliveryQueueV2 > reclaims an old lock only after its same-host owner
+process is gone` with `QUEUE_LOCK_TIMEOUT`. Its other required checks subsequently
+passed, including the reviewed Go verifier and downstream documentation steps;
+the tag-release job was intentionally skipped. None of that old-head evidence
+is promoted to the repaired head's PASS.
+
+### Necessary repair and unchanged boundary
+
+The v2 success fixture inherited a 100ms acquisition budget but used real
+`Date.now()` across actual lock reclamation/fsync operations. Its purpose is
+successful safe reclamation, not an I/O latency qualification. The existing v1
+test already separates those concerns with a locally advancing clock and an
+independent deadline rejection test. This follow-up aligns the v2 fixture with
+that existing pattern:
+
+- The success case advances only `Date.now()` deterministically; actual files,
+  fsync, PID liveness, nonce/inode checks and `getStats()` remain real. The old
+  lock and the reclaim gate must both disappear.
+- Two additional cases exhaust the unchanged budget at exactly **100ms** and
+  at **101ms**. Both must return `QUEUE_LOCK_TIMEOUT` after reclaim cleanup;
+  previously seeded durable queue bytes must remain unchanged.
+- Every clock spy is restored in `finally`, with the original function identity
+  checked afterward. The real live-owner rejection case is unchanged.
+
+This is a **no-ADR** local test-fixture repair of an existing contract: no
+production/runtime code, timeout, public API, schema, permission, dependency,
+registry, provider budget or workflow is changed. The two declared cases are
+registered only through the existing inventory/status generators. No new tool,
+platform, artificial production fault hook or administrator grant is required.
+
+### Measured local evidence and limits
+
+A retained test-only probe delays each real `fsyncSync` call by 125ms. Applied
+to the exact old test in an `e9623a69` source archive, it fails with
+`QUEUE_LOCK_TIMEOUT` after four injected fsync calls. Applied to the repaired
+test with the same probe, it passes after seven real fsync calls. The target
+diagnostics select one case: the 20/22 other cases are unselected, not proof of
+full-suite execution. The probe is outside the delivery tree and is not a CI
+prerequisite. It establishes a reproducible mechanism, not a measurement of
+the historical Windows job's fsync duration or proof of its sole cause.
+
+Normal, non-injected regression execution passed **65/65** across queue v1,
+queue v2, notification blob storage and real-process blob/storage races, with
+zero failed/skipped cases. The production lock implementation remains
+SHA-256 `5adbcf2bec418fdd740ff9dc010a3496e45cda75d5934edf05db06911ba337df`;
+the repaired v2 test is SHA-256
+`b03890606a78bd11bf1ea34eed8fab0d9de76149ef9f0f9bb06dd7fdfe299c06`.
+
+Full typecheck/build and affected-file lint passed locally. The previous
+`e9623a69` local full-suite FAIL, Windows failure, diagnostic rerun HTTP 403 and
+published review-11 evidence remain history; they are neither overwritten nor
+counted as this candidate's success. Final commit/tree, independent reviews,
+affected/full regressions and native current-head CI are recorded in the
+separate evidence directory `/var/tmp/openslack-439-watch-lock.F4VtaAQV` and the
+existing PR. Current-head CI, human approval and merge remain unestablished
+at this appendix's authoring point. No permission expansion, human-auth fallback,
+real provider call, remote cleanup or merge is authorized by this repair.

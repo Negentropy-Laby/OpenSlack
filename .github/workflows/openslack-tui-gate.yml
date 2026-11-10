@@ -25,12 +25,15 @@ jobs:
           node-version: '22'
           package-manager-cache: false
 
+      - name: Check dependency sources before installation
+        run: node scripts/ci/install-dependencies.mjs --check
+
       # Setup bun
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.4.0
 
-      - run: bun install --frozen-lockfile
+      - run: node scripts/ci/install-dependencies.mjs
 
       - name: Typecheck
         run: bun run typecheck

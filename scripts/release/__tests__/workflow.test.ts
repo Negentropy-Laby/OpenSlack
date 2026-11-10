@@ -6,16 +6,24 @@ import {
   realpathSync,
   rmSync,
   symlinkSync,
+  writeFileSync,
 } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { describe, expect, it, onTestFinished } from 'vitest';
 import { parse } from 'yaml';
 import {
+  testExecutable,
   testProcessEnvironment,
   testTemporaryDirectory,
   testBash,
 } from '../../testing/process-fixture.mjs';
+import {
+  createChildEnvironment,
+  parseBunfigOutput,
+  validateBunfig,
+  validateLockfile,
+} from '../../ci/install-dependencies.mjs';
 import { HARNESS_COMPATIBILITY_SHA } from '../../../integrations/deepseek-harness/compatibility-witness.mjs';
 
 const workflow = readFileSync(
@@ -24,7 +32,81 @@ const workflow = readFileSync(
 );
 const build = readFileSync(resolve(import.meta.dirname, '..', 'build.ts'), 'utf-8');
 
+function npmLockfile(source: string): string {
+  return JSON.stringify({
+    lockfileVersion: 1,
+    configVersion: 1,
+    workspaces: { '': { name: 'official-source-test' } },
+    packages: {
+      example: ['example@1.0.0', source, {}, `sha512-${Buffer.alloc(64).toString('base64')}`],
+    },
+  });
+}
+
 describe('native release workflow integrity', () => {
+  it('checks dependency sources before every supported root installation without masking failures', () => {
+    const root = resolve(import.meta.dirname, '../../..');
+    const expected = new Map<string, string[]>([
+      ['notification-delivery-service.yml', ['validate', 'workflow-runner-windows']],
+      ['notification-import-qualification.yml', ['qualification']],
+      ['npm-stage-publish.yml', ['publish']],
+      ['openslack-issue-done.yml', ['on-pr-merged']],
+      ['openslack-release.yml', ['build', 'node22-core']],
+      ['openslack-reusable-validate.yml', ['validate', 'node22-core', 'macos-read-paths']],
+      ['openslack-self-canary.yml', ['canary']],
+      ['openslack-self-observe.yml', ['observe']],
+      ['openslack-self-validate.yml', ['classify']],
+      ['openslack-tui-gate.yml', ['tui-visual-gate']],
+    ]);
+    const observed: string[] = [];
+    for (const name of readdirSync(join(root, '.github/workflows')).filter((name) => /\.ya?ml$/.test(name))) {
+      const config = parse(readFileSync(join(root, '.github/workflows', name), 'utf8'));
+      for (const [jobName, job] of Object.entries(config.jobs ?? {}) as Array<[string, {
+        defaults?: { run?: { 'working-directory'?: string } };
+        steps?: Array<{ name?: string; uses?: string; run?: string; if?: string; 'continue-on-error'?: unknown; 'working-directory'?: string }>;
+      }]>) {
+        const steps = job.steps ?? [];
+        for (const [installIndex, install] of steps.entries()) {
+          expect(install.run ?? '', `${name}/${jobName}: unsupported bare root installation`).not.toMatch(/\bbun\s+install\b/);
+          if (install.run !== 'node scripts/ci/install-dependencies.mjs') continue;
+          const context = `${name}/${jobName}`;
+          observed.push(context);
+          const nodeIndex = steps.findIndex((step) => step.uses?.startsWith('actions/setup-node@'));
+          const checkoutIndex = steps.findIndex((step) => step.uses?.startsWith('actions/checkout@'));
+          const bunIndex = steps.findIndex((step) => step.uses?.startsWith('oven-sh/setup-bun@'));
+          const checks = steps.filter((step) => step.name === 'Check dependency sources before installation');
+          expect(checks, context).toHaveLength(1);
+          const check = checks[0];
+          const checkIndex = steps.indexOf(check);
+          expect(check.run, context).toBe('node scripts/ci/install-dependencies.mjs --check');
+          expect(checkoutIndex, context).toBeGreaterThanOrEqual(0);
+          expect(nodeIndex, context).toBeGreaterThan(checkoutIndex);
+          expect(checkIndex, context).toBe(nodeIndex + 1);
+          expect(installIndex, context).toBeGreaterThan(checkIndex);
+          expect(bunIndex, context).toBeGreaterThan(checkIndex);
+          expect(installIndex, context).toBeGreaterThan(bunIndex);
+          for (const step of [check, install]) {
+            expect(step.if, context).toBeUndefined();
+            expect(step['continue-on-error'], context).toBeUndefined();
+            expect(step['working-directory'] ?? job.defaults?.run?.['working-directory'] ?? '.', context).toBe('.');
+            expect(step.run, context).not.toMatch(/(?:always\s*\(|\|\||\b(?:true|continue-on-error)\b|\$LASTEXITCODE)/i);
+          }
+        }
+      }
+    }
+    expect(observed.sort()).toEqual([...expected].flatMap(([name, jobs]) => jobs.map((job) => `${name}/${job}`)).sort());
+    const release = parse(workflow);
+    expect(release.jobs.publish.steps.some((step: { run?: string }) => step.run?.includes('install-dependencies.mjs'))).toBe(false);
+    const isolation = release.jobs.build.steps.find((step: { name?: string }) => step.name === 'Verify official dependency installation isolation');
+    expect(isolation, 'both native release platforms must execute the new installer regressions').toBeDefined();
+    expect(isolation.if).toBeUndefined();
+    expect(isolation['continue-on-error']).toBeUndefined();
+    expect(isolation.run).toBe('node node_modules/vitest/vitest.mjs run scripts/release/__tests__/dependency-install.test.ts');
+    const pluginIndex = release.jobs.build.steps.findIndex((step: { name?: string }) => step.name === 'Build the OpenSlack-owned external plugin');
+    expect(pluginIndex, 'the required Harness project must have a fresh witness before Vitest loads any project').toBeGreaterThanOrEqual(0);
+    expect(release.jobs.build.steps.indexOf(isolation)).toBeGreaterThan(pluginIndex);
+  });
+
   it('prepares pinned Go before plugin build and verifies its private module without service scaffolding', () => {
     const root = resolve(import.meta.dirname, '../../..');
     for (const [name, job] of [['openslack-release.yml', 'build'], ['openslack-reusable-validate.yml', 'validate']] as const) {
@@ -155,6 +237,50 @@ describe('native release workflow integrity', () => {
       }
     }
     expect(setups).toBeGreaterThan(0);
+  });
+
+  it('pins the default Bun registry to the public official source', () => {
+    const root = resolve(import.meta.dirname, '../../..');
+    const isolated = testTemporaryDirectory('openslack-bunfig-source-');
+    onTestFinished(() => rmSync(isolated, { recursive: true, force: true }));
+    const bootstrap = join(isolated, 'bootstrap.toml');
+    writeFileSync(bootstrap, '[install]\nauto = "disable"\nregistry = "https://registry.npmjs.org"\n', { mode: 0o600 });
+    writeFileSync(join(isolated, '.npmrc'), '', { mode: 0o600 });
+    writeFileSync(join(isolated, '.bunfig.toml'), '', { mode: 0o600 });
+    const env = createChildEnvironment(testProcessEnvironment(), isolated);
+    const result = spawnSync(
+      testExecutable('bun', env),
+      [
+        '--no-env-file',
+        `--config=${bootstrap}`,
+        '-e',
+        'console.log(JSON.stringify({bunVersion:Bun.version,config:Bun.TOML.parse(await Bun.stdin.text())}))',
+      ],
+      { cwd: isolated, env, input: readFileSync(join(root, 'bunfig.toml'), 'utf8'), encoding: 'utf8', timeout: 20_000 },
+    );
+    expect(result.error).toBeUndefined();
+    expect(result.status, 'isolated Bun TOML parser must exit successfully').toBe(0);
+    expect(() => validateBunfig(parseBunfigOutput(result.stdout))).not.toThrow();
+  });
+
+  it('classifies every lockfile package and keeps explicit npm tarballs on the official source', () => {
+    const path = resolve(import.meta.dirname, '../../../bun.lock');
+    const classified = validateLockfile(readFileSync(path));
+    expect(classified.npm + classified.workspaces).toBe(classified.packages);
+    expect(classified.explicit + classified.default).toBe(classified.npm);
+  });
+
+  it('accepts an official npm tarball independently of the current dependency inventory', () => {
+    expect(() => validateLockfile(npmLockfile('https://registry.npmjs.org/example/-/example-1.0.0.tgz'))).not.toThrow();
+  });
+
+  it.each([
+    'https://registry.npmmirror.com/example/-/example-1.0.0.tgz',
+    'http://registry.npmjs.org/example/-/example-1.0.0.tgz',
+    'https://registry.npmjs.org.invalid/example/-/example-1.0.0.tgz',
+    'https://fixture@registry.npmjs.org/example/-/example-1.0.0.tgz',
+  ])('rejects a non-official npm source: %s', (source) => {
+    expect(() => validateLockfile(npmLockfile(source))).toThrow();
   });
 
   it('runs PR release smoke and cleanup qualification for both native targets', () => {

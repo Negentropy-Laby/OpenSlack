@@ -303,6 +303,15 @@ describe('notification import qualification deployment', () => {
     const protectedSetupIndex = workflow.jobs.qualification.steps.findIndex(
       (step) => step.uses === 'oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6',
     );
+    const protectedNodeIndex = workflow.jobs.qualification.steps.findIndex(
+      (step) => step.uses === 'actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e',
+    );
+    const protectedSourceCheckIndex = workflow.jobs.qualification.steps.findIndex(
+      (step) => step.name === 'Check dependency sources before installation',
+    );
+    const protectedInstallIndex = workflow.jobs.qualification.steps.findIndex(
+      (step) => step.run === 'node scripts/ci/install-dependencies.mjs',
+    );
     const protectedCredentialIndex = workflow.jobs.qualification.steps.findIndex(
       (step) => step.name === 'Materialize run-scoped credentials',
     );
@@ -311,6 +320,18 @@ describe('notification import qualification deployment', () => {
     expect(protectedGuardIndex).toBeLessThan(protectedSetupIndex);
     expect(protectedGuardIndex).toBeLessThan(protectedInputGuardIndex);
     expect(protectedGuardIndex).toBeLessThan(protectedCredentialIndex);
+    expect(protectedNodeIndex).toBeGreaterThan(protectedGuardIndex);
+    expect(workflow.jobs.qualification.steps[protectedNodeIndex]?.with).toEqual({
+      'node-version': '22.14.0',
+      'package-manager-cache': false,
+    });
+    expect(protectedSourceCheckIndex).toBe(protectedNodeIndex + 1);
+    expect(workflow.jobs.qualification.steps[protectedSourceCheckIndex]?.run).toBe(
+      'node scripts/ci/install-dependencies.mjs --check',
+    );
+    expect(protectedInstallIndex).toBeGreaterThan(protectedSourceCheckIndex);
+    expect(protectedInstallIndex).toBeGreaterThan(protectedSetupIndex);
+    expect(protectedInstallIndex).toBeLessThan(protectedCredentialIndex);
     expect(workflow.jobs.qualification.steps[protectedCheckoutIndex]?.with).toEqual({
       ref: '${{ inputs.expected_commit }}',
       'persist-credentials': false,

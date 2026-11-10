@@ -71,7 +71,8 @@ Use `openslack collaboration integration negentropy export-slot --format json`,
 # 1. Clone and install
 git clone https://github.com/Negentropy-Laby/OpenSlack.git
 cd OpenSlack
-bun install --frozen-lockfile
+node scripts/ci/install-dependencies.mjs --check
+node scripts/ci/install-dependencies.mjs
 
 # 2. One-step setup (validate + eval + doctor + all checks)
 bun run openslack setup
@@ -85,6 +86,36 @@ bun run openslack status
 # 5. Ask the Operator anything
 bun run openslack ask "检查系统状态"
 ```
+
+### Supported dependency installation
+
+Development and CI use the two installation commands above. The `--check`
+mode uses only Node built-ins to check lockfile structure and source-related
+environment settings. It needs no Bun, `node_modules`, network or temporary
+files. The default mode additionally validates the effective configuration,
+then performs a frozen install with Bun **1.4.0**.
+
+The supported installer allows only the official npm registry,
+`https://registry.npmjs.org`, for both explicit tarball URLs and empty/default
+npm sources. It rejects mirror overrides, including scope registries, and has
+no mirror fallback. Official npm access is therefore a network prerequisite;
+a machine that can reach only a mirror cannot use this supported path.
+
+The installation child uses isolated configuration rather than the user's
+global registry/auth settings or project `.env` files. A root `.npmrc` is
+rejected without reading its contents. Parent-process publishing credentials
+are unchanged and are not passed to dependency installation. Standard proxy
+environment variables remain available. For a custom CA, pass
+`--cafile /path/to/ca.pem`; relative CA paths resolve from the repository root.
+Legacy CA configuration is rejected with a migration diagnostic rather than
+silently removed. The only other optional argument is
+`--cache-dir /path/to/cache`.
+
+These guarantees cover this entrypoint, not arbitrary bare `bun install`
+commands, a compromised host/PATH, or the physical network/CDN endpoint.
+An existing cache hit is not proof of a package's historical download origin.
+The installer does not change user-global configuration or the parent
+environment.
 
 See [Advanced Setup](#advanced-setup) for development mode, production builds, and manual steps.
 
