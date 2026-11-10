@@ -102,6 +102,9 @@ describe('native release workflow integrity', () => {
     expect(isolation.if).toBeUndefined();
     expect(isolation['continue-on-error']).toBeUndefined();
     expect(isolation.run).toBe('node node_modules/vitest/vitest.mjs run scripts/release/__tests__/dependency-install.test.ts');
+    const pluginIndex = release.jobs.build.steps.findIndex((step: { name?: string }) => step.name === 'Build the OpenSlack-owned external plugin');
+    expect(pluginIndex, 'the required Harness project must have a fresh witness before Vitest loads any project').toBeGreaterThanOrEqual(0);
+    expect(release.jobs.build.steps.indexOf(isolation)).toBeGreaterThan(pluginIndex);
   });
 
   it('prepares pinned Go before plugin build and verifies its private module without service scaffolding', () => {
