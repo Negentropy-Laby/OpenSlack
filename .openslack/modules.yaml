@@ -1,6 +1,6 @@
 schema: openslack.modules.v2
-vitest_tests: 9378
-vitest_files: 606
+vitest_tests: 9478
+vitest_files: 607
 # Collected Vitest cases; module counts cover their declared packages and may overlap.
 modules:
   - id: self_evolution

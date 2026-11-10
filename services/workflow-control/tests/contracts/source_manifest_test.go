@@ -417,7 +417,7 @@ func TestSourceManifestBindsOnlyUnreleasedGS9IInputs(t *testing.T) {
 		},
 		"workflowHostedGateSource": {
 			Path:   ".github/workflows/notification-delivery-service.yml",
-			SHA256: "bbe103c5f356752656a9b2b5b4233cdc82022b45cbf58f1a11a5fbe10888a692",
+			SHA256: "0ed049c4fd828cfdbdf1fce67701db7d72ca0ce8c888d7a45d70ecb15d7f2ebb",
 		},
 		"workflowControlAuthorityBindingValidationSource": {
 			Path:   "services/workflow-control/internal/authoritybinding/validation.go",

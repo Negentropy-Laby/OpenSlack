@@ -6,7 +6,7 @@ authority: index
 audience:
   - contributors
 owner: project-governance
-updated: 2026-09-14
+updated: 2026-11-10
 sources:
   - AGENTS.md
   - design/cdd/module-index.md
@@ -24,6 +24,15 @@ the architecture control manifest and path-scoped repository policy.
 - [Notification Delivery development](notification-delivery/README.md)
 - [Plugin development](plugins/authoring.md)
 - [Technical debt](technical-debt.md)
+
+## Dependency installation
+
+Follow the root [supported dependency installation](../../README.md#supported-dependency-installation)
+instructions. Development and CI use `node scripts/ci/install-dependencies.mjs`
+with Bun 1.4.0; `--check` is the Node-only, read-only preflight that runs before
+dependency downloads. Official npm access is required, with no mirror fallback.
+Do not replace the supported path with a bare installation command or pass
+publishing credentials to its child process.
 
 ## Local process and storage tests
 

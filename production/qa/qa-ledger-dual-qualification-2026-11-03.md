@@ -828,3 +828,187 @@ not assert Cleanup installation/GitHub qualification, #411 R-EXT, Claim v2
 acceptance/implementation, human review, governance merge or publication.
 No provider call, deletion, administrator configuration or automatic merge
 was executed by this batch.
+
+## 2026-11-10: #439 eleven-finding repair contract and historical erratum
+
+This appendix records the authorized follow-up to the eleven-finding review
+of `917db1f173fb94d647364f201caf05834afa1911`, tree
+`970e8f94d9ade6bab991702b235602f79912f25c`. It continues the existing
+`docs/batch-1-ledger-closeout-20261109` branch and
+[#439](https://github.com/Negentropy-Laby/OpenSlack/pull/439), not a new PR.
+The review disposition is **CHANGES_REQUIRED** until the repaired candidate
+has its own verification and independent review. Previous source reviews,
+installation results and hosted failures retain their original scope; they
+are not inherited as approval or execution evidence for this follow-up.
+
+The confirmed policy is official npm sources only for supported development
+and CI installation, with no mirror fallback. The original `bun.lock` bytes
+of this follow-up remain the reviewed official-source lock; dependency
+versions, graph, integrity, Bun 1.4.0 and Node requirements are not changed.
+The historical 311 explicit tarball URLs and 82 empty/default npm sources
+describe that lock snapshot, not hard-coded acceptance counts for future
+valid locks.
+
+### Disposition of all eleven findings
+
+| Finding | Priority and reviewed conclusion | Required repair or retained decision |
+| --- | --- | --- |
+| 1 — environment overrides | P1; existing byte-level assertions do not constrain effective registry settings. | Reject mirror environment overrides at the supported entrypoint and isolate installation configuration; empty npm sources must use the controlled official registry. |
+| 2 — gate after installation | P1; a bad source can fail installation before Vitest runs. This is not a demonstrated successful merge bypass. | Run a named Node-only lock/environment check before dependency installation, without Bun, installed packages or network. |
+| 3 — unrecognized lock structure | P1; the old scan can skip every unrecognized entry. | Validate supported `lockfileVersion`/`configVersion`, tables and tuple shapes; classify every entry, including valid workspace links and empty npm sources, without fixed URL counts. |
+| 4 — duplicate keys | P1; TypeScript's last-wins parser accepts duplicate keys. A malicious earlier table being downloaded by Bun was not demonstrated. | Strict JSONC parsing rejects root, nested and escaped-equivalent duplicate keys while accepting supported comments and trailing commas. |
+| 5 — scope registries | P1; default-only validation does not cover scope routing. | Validate every default/scope registry, including supported string/object URL forms, and isolate global configuration from the first Bun invocation. |
+| 6 — official-only availability | Confirmed policy tradeoff, not a reason to restore a mirror. Explicit locked URLs also remain official even if the default registry is removed. | Document official npm reachability, standard proxies and explicit CA configuration; restricted mirror-only networks remain unsupported. |
+| 7 — missing error context | P1; failures need a package and field locator. | Stable reason codes, package keys, field paths and sanitized origins; no raw URL, userinfo, query, fragment or credential-bearing exception output. |
+| 8 — parser/output diagnosis | P1; raw JSON parsing/property access does not identify the violated invariant. | Distinguish process/executable failure, malformed output framing, configuration shape and source-policy rejection; installer calls remain zero on configuration failure. |
+| 9 — unlocatable wording corrections | P1; the old acceptance sentence does not identify its conditions. | Retain the old sentence and append the exact two contrasts and recovery limitations below; obtain fresh independent review for the new candidate. |
+| 10 — repeated positive control | P2; one source assertion executes in four parameterized rows, not four edit locations. | Use one standalone positive control and retain parameterized negative cases; no platform defect is inferred. |
+| 11 — executable fixture convention | P2; consistency/diagnosis issue, not a reproduced naked-spawn platform failure. | Use the repository `testExecutable` fixture and the same normalized child environment in tests. |
+
+P2 changes travel with their affected tests and do not block implementing the
+P1 source gate. This is a scoped implementation of the already confirmed
+official-source policy, with diagnostics and regression coverage; it changes
+no product runtime/business API, permission, authority or persisted protocol.
+No new ADR is required for that implementation choice. This does not waive
+independent review or governance: the workflow wiring touches `.github/**`
+and is **Red Zone**, requiring the applicable human GitHub review before
+merge. No review, merge or release is established by this authoring appendix.
+
+### Historical batch-1 review erratum for finding 9
+
+The historical sentence at
+[the original batch-1 verdict](https://github.com/Negentropy-Laby/OpenSlack/blob/7aa87165066955a564351c33966c4e554e2de9fd/production/qa/qa-ledger-dual-qualification-2026-11-03.md#L654),
+`ADEQUATE after the two wording corrections above`, is retained unchanged.
+The two conditions can now be identified as follows:
+
+1. **Claim implementation location.** The reviewer's recovered message begins
+   `初检：当前 diff 严格四路径` (pre-correction file-read output chunk `80df39`). The original
+   wording was `then separate C1–C7 deliveries in the public qualification
+   repository, not the main task route`. The corrected wording is `then
+   separate implementation deliveries in OpenSlack, with qualification/cutover
+   limited to the public qualification repository and the primary task route
+   unchanged.` The corrected text is independently locatable in
+   [the published batch-1 blob, line 625](https://github.com/Negentropy-Laby/OpenSlack/blob/7aa87165066955a564351c33966c4e554e2de9fd/production/qa/qa-ledger-dual-qualification-2026-11-03.md#L625).
+   It distinguishes the implementation delivery repository from the limited
+   qualification/cutover target; it does not start C1–C7 or migrate the main
+   task route.
+2. **Source rejection versus actual preflight.** The reviewer's recovered
+   message begins `另一处建议精确化` (pre-correction file-read output chunk `815769`). The original
+   evidence combined
+   `source:befa93921ec0fb83cfe1709f9ee3dd4de67d06df:totalConstraint-unconditionally-denies-SEND_TOTAL_TOKEN_UNVERIFIED;no-provider-attempt-created`.
+   The corrected evidence separates
+   `source:befa93921ec0fb83cfe1709f9ee3dd4de67d06df:totalConstraint-unconditionally-denies-SEND_TOTAL_TOKEN_UNVERIFIED`
+   from
+   `this-preflight:runtime-doctors-only;no-campaign-reserve-or-provider-attempt-created`.
+   Both corrected entries are in
+   [the published control-plane blob, lines 1304–1305](https://github.com/Negentropy-Laby/OpenSlack/blob/7aa87165066955a564351c33966c4e554e2de9fd/memory_bank/control-plane.json#L1304).
+   The source rejection is not a universal assertion of zero prior reservation
+   writes: reservation can precede `totalConstraint` refusal. The zero-campaign
+   observation belongs to that doctors-only preflight.
+
+Both corrections were read back in the original tool chunk `ff26b4`; this
+follow-up statically rechecked the corrected bytes in the exact published
+`7aa87165066955a564351c33966c4e554e2de9fd` blob. The original reviewer supplied
+the message recollections and before/after wording during this follow-up.
+There is no separately persisted original review report or permanent message
+ID for those conversation messages. Chunk labels aid local traceability but
+are not immutable public evidence links, and the recalled pre-correction text
+has no independently published original blob here. This appendix does not
+retroactively manufacture such evidence or turn a present recollection into a
+past published review. Fresh independent source/evidence review is required
+for the final repaired candidate.
+
+### Supported-entry guarantee and pending candidate evidence
+
+The supported commands are
+`node scripts/ci/install-dependencies.mjs --check` and
+`node scripts/ci/install-dependencies.mjs`. The first is a read-only Node-only
+lock/environment check without Bun, installed dependencies, network or
+temporary writes. Default installation additionally validates configuration
+using the fixed Bun parser under inert isolated bootstrap configuration,
+then invokes a Bun 1.4.0 frozen official-source install. Only `--cache-dir`
+and `--cafile` are optional installation arguments. A root `.npmrc` is rejected
+by existence/type inspection without reading its contents.
+
+Installation children do not inherit global registry/auth configuration or
+dynamic runtime overrides. Parent-process publishing authentication remains
+unchanged. Standard proxy variables are preserved; explicit `--cafile` is the
+CA path, and legacy CA settings require named migration rather than silent
+removal. Isolation lasts through child exit, with cleanup limited to the
+specific private directory created by the entrypoint. This is not a host/PATH
+sandbox, a restriction on arbitrary bare Bun commands, proof of a physical
+network/CDN endpoint, or historical origin proof for existing cache entries.
+
+| Evidence layer | Follow-up candidate status |
+| --- | --- |
+| Lock/configuration/diagnostic and early-failure regression | NOT_RUN at this appendix's authoring point; exact-candidate reports must identify commands, environment, exit codes and input hashes. |
+| Isolated cold/repeat frozen install | NOT_RUN for this follow-up; prior-head install evidence above is historical, and cache hits alone do not prove download origin. |
+| Full typecheck/build, applicable lint, formal inventory, source bindings and documentation checks | NOT_RUN for the completed follow-up candidate; maintainers update only genuinely affected canonical/generated inputs. |
+| Full Vitest and compatibility witness | NOT_RUN for this follow-up candidate; no previous witness or overlapping test counts are promoted. |
+| Independent source/security/evidence review | NOT_RUN for the completed follow-up candidate; this appendix is authored documentation, not independent acceptance. |
+| Current-head Linux/Windows/macOS CI and actual checkout steps | NOT_RUN for the new candidate; verify Go verifier and downstream documentation steps actually execute. |
+| Human GitHub review / PRMS / merge | NOT_RUN for the repaired candidate; governed delivery is through the same #439, with no automatic merge. |
+
+Final reports belong in a separately retained candidate-bound evidence bundle
+and the existing PR, not in repeated evidence-only commit loops. No provider
+attempt, Cleanup deletion, administrator configuration, Claim implementation,
+publication or release promotion is part of this follow-up. Other assignments,
+qualification gates and release states remain unchanged.
+
+### Review-11 implementation observations — 2026-11-10, before delivery
+
+These observations concern the repaired source based on `917db1f1`, not its
+old hosted PASS. The final commit/tree, actual CI checkout and complete command
+records belong to the separately retained delivery bundle and the same PR.
+The install entrypoint bytes are SHA-256
+`903bd843ad87ace4409c690da949a19f451f440bf22e91d783c9b3953d4ebd18`.
+`bun.lock` remains byte-identical to the published baseline, SHA-256
+`a2609b4f8139750a3154189b1691567dbdd0544efbefcd0d6b15fe77964fe8f8`.
+
+- **Measured RED:** the old source guard accepted three isolated bad locks
+  (unknown format, missing tuple source, duplicate package table). Additional
+  semantic/JSON-frame regressions produced seven failures before their repair;
+  a missing-entrypoint collection failure is not counted as behavioral proof.
+- **Measured related GREEN:** direct Vitest execution of the dependency-install,
+  release-workflow and two affected Notification workflow tests passed
+  **136/136** (98, 15, 15 and 8 respectively). URL negative controls preserve the
+  legal tarball path and alter one relevant condition; parser/process/source
+  reason codes have distinct assertions.
+- **Measured installation:** an independent source snapshot with an absent cache
+  completed a Bun 1.4.0 controlled frozen install and a subsequent frozen install.
+  Both retained the lock bytes. The real no-network workspace fixture separately
+  exercised malicious synthetic HOME/config/dotenv/dynamic environment inputs;
+  it is not proof of all npm downloads or physical network origin.
+- **Measured integrity:** full typecheck/build, applicable test-file ESLint
+  (zero errors, one explicit-any warning), `node --check`, formal inventory,
+  deterministic status/document generation and documentation verification passed.
+  Inventory is **9,478 declared cases / 607 files**, not a passing-test count.
+  All 261 path/hash bindings across six source-manifest files match their
+  declared repository/service roots. Only the changed Notification workflow
+  hash and its independent Go-test expected literal were rebound; binding sets
+  and comparison logic are unchanged. Workflow Control contracts passed
+  `GOWORK=off GOTOOLCHAIN=local go test -race ./tests/contracts -count=1`.
+- **Measured compatibility:** the existing producer emitted a fresh Harness
+  witness after rebuilding this checkout and the unmodified pinned original
+  Harness dependency; no old witness was promoted.
+- **Local full-suite FAIL retained:** direct full Vitest on WSL/root,
+  Node 24.18.1, Bun 1.4.0, Git 2.34.1 and default Python 3.10.6 recorded
+  **9,380 PASS / 73 FAIL / 25 skipped**. The affected source/CI tests passed.
+  Seventy-one failed case names also failed at the old local baseline; the
+  Python-dependent tests explicitly require Python 3.11+. Two additional
+  asynchronous governance-shadow cases failed in the full run; a separate
+  five-case diagnostic passed without source edits. That diagnostic does not
+  erase the full-run failure or establish its cause. No timeout/assertion was
+  relaxed. Hosted full-suite/platform evidence remains a separate requirement.
+- **Independent review:** the non-author technical reviewer first required
+  stricter npm identity/metadata/SRI classification, then independently verified
+  those rejections and the unchanged real lock. Non-author source/QA review found
+  the corrected negative controls, exact reason codes, fourteen pre-install
+  entries and the two hash-only source-lock updates adequate. The documentation
+  reviewer separately verified the historical erratum against `7aa87165`, with
+  the original-message trace limitation retained. These are scoped reviews, not
+  human GitHub approval, hosted CI, merge or qualification.
+
+Current-head hosted checks, LIVE PRMS and valid human review remain pending at
+this pre-delivery observation. The PR stays Draft until required checks close;
+there is no automatic merge or change to any external qualification/release gate.
