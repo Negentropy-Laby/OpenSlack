@@ -102,6 +102,11 @@ jobs:
       - name: Typecheck release and runtime sources
         run: bun run typecheck
 
+      - name: Verify official dependency installation isolation
+        run: >-
+          node node_modules/vitest/vitest.mjs run
+          scripts/release/__tests__/dependency-install.test.ts
+
       - name: Prepare the pinned private supervisor toolchain
         uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16
         with:

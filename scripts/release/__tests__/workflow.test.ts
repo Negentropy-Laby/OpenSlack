@@ -97,6 +97,11 @@ describe('native release workflow integrity', () => {
     expect(observed.sort()).toEqual([...expected].flatMap(([name, jobs]) => jobs.map((job) => `${name}/${job}`)).sort());
     const release = parse(workflow);
     expect(release.jobs.publish.steps.some((step: { run?: string }) => step.run?.includes('install-dependencies.mjs'))).toBe(false);
+    const isolation = release.jobs.build.steps.find((step: { name?: string }) => step.name === 'Verify official dependency installation isolation');
+    expect(isolation, 'both native release platforms must execute the new installer regressions').toBeDefined();
+    expect(isolation.if).toBeUndefined();
+    expect(isolation['continue-on-error']).toBeUndefined();
+    expect(isolation.run).toBe('node node_modules/vitest/vitest.mjs run scripts/release/__tests__/dependency-install.test.ts');
   });
 
   it('prepares pinned Go before plugin build and verifies its private module without service scaffolding', () => {
