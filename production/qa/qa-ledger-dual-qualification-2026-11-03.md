@@ -1076,3 +1076,110 @@ separate evidence directory `/var/tmp/openslack-439-watch-lock.F4VtaAQV` and the
 existing PR. Current-head CI, human approval and merge remain unestablished
 at this appendix's authoring point. No permission expansion, human-auth fallback,
 real provider call, remote cleanup or merge is authorized by this repair.
+
+## PR #441 scope-enabled Git and Watch repair — 2026-11-12
+
+This appendix is an additive local repair record, not completion of #441,
+#411, Cleanup qualification, Claim v2 or release. The original post-merge
+Windows Effect Shadow failure remains a historical failure with its precise
+cause unconfirmed. The previously recorded root full-suite result remains
+9,427 passed / 31 failed / 25 skipped; selected later successes do not rewrite it.
+
+### Authority and source boundary
+
+At `2026-11-12T01:03:13.639+08:00`, production principal resolution read back
+the administrator-applied registry SHA-256
+`a961cf2308c1889f8196a42c45127d55c717dd12d80c26cd1da16af749fe63da`.
+All 14 approved additional paths were allowed and the protected deny rules,
+Yellow ceiling, run binding and approval/merge prohibitions were preserved.
+Issue #440 (`TASK-2026-904630`) had the matching 26-path scope. The real claim
+was renewed through the supported heartbeat path; this is legacy ownership
+evidence, not Claim v2. The administrator's local registry change is retained
+in the primary checkout and is **not** part of this repair delivery. The agent
+did not edit, stage or publish its own registry or substitute another identity.
+
+The only delivery remains Draft PR
+[#441](https://github.com/Negentropy-Laby/OpenSlack/pull/441), on
+`fix/workflow-qualification-closeout-20261111`. This work began at
+`4eb9254dadc9730005c547acc29b4ac3ce5a93db`, tree
+`6d31dcdef97e365a786a4214a39667380a37446b`; the additional working inputs are
+identified independently in `/var/tmp/openslack-441-scope-enabled.REvHrYrW`.
+The eventual delivery commit/tree and current-head checks are recorded outside
+the frozen source in that evidence directory and the same PR, not inherited
+from the old head. Other worktrees, stash and historical evidence are preserved.
+
+### Necessary narrow repairs
+
+- Git 2.34.1 rejects `worktree list --porcelain -z`. Discovery now proves the
+  conventional primary and this exact linked registration with reciprocal
+  `.git`, `gitdir` and `commondir` evidence instead of parsing ambiguous newline
+  porcelain or traversing unrelated missing registrations. Stable-file bounds,
+  command cancellation, local overrides and foreign-primary rejection remain.
+  Filesystem traversal/return preserves case; comparison normalization does not
+  alter returned Windows paths. Unprovable layouts keep their own local state.
+- Watch replay comparison no longer treats a newly observed timestamp or newly
+  generated persistence/deadline clock as a changed input. Stored original
+  event, persistence time, deadline, attempts, availability, receipt, authority
+  and recovery history are retained. Route, epoch, vendor, Blob, config and
+  substantive event conflicts still reject. No queue shape, retry budget,
+  timeout, lock or fsync policy was changed.
+- The formal inventory generator records **9,492 declared cases in 607 files**,
+  including the three earlier Effect Shadow additions and nine Git/Watch cases.
+  The existing status generator produced its matching projection. Inventory is
+  not an executed-test count. No count was hand-filled and no source-binding
+  set was expanded.
+
+Both changes are local repairs of existing membership/replay contracts, with
+no new public authorization, durable protocol or authority. Independent static
+security and QA reviews found and followed up Windows path case preservation,
+a negative fixture that could stop too early at ENOENT, and missing replay
+assertions after accepted receipts and governed recovery. The final four-file
+review records contain complete input hashes; neither review ran tests or
+conferred human approval, architectural acceptance or qualification.
+
+### Measured evidence and outstanding layers
+
+| Layer | Result and scope |
+| --- | --- |
+| First Git/Watch RED | 43 passed / 7 failed; original unsupported-Git and new replay failures retained. |
+| Git/Watch GREEN-B | 50 passed, zero failed/skipped; real temporary Git and persistent queues. |
+| Modern Git observation | Git 2.45.2 client file: 22 passed; Linux only, not Windows evidence. |
+| Related final local subset | 91 passed, zero failed/skipped across client, both queues, v2 router and Effect Shadow; overlaps the 50 above and is not added to it. |
+| Build/checks | Full typecheck/build preparation, affected-file lint, formal inventory verification, generated status verification and documentation checks passed locally. |
+| Source bindings | Six tracked manifest/schema files, 261 recognized bindings, zero missing/drift and no changed bound input after applying the service-relative Notification base. The initial root-only probe is retained as an invalid diagnostic, not a source defect. |
+| Nonroot complete suite A | 9,443 passed / 24 failed / 25 skipped on unchanged copied code and fresh formal Harness witness. Nineteen failures stopped on absent pnpm/cache/HOME prerequisites; five Go/shadow failures remained unconfirmed. |
+| Nonroot complete suite B | After explicit tool/cache/account-environment preparation: 9,459 passed / 8 failed / 25 skipped, exit 1. All 31 historical root failing titles passed in both complete runs. This remains a complete-suite FAIL, not a waiver or qualification. |
+| Native platforms/current-head CI | Not established for the additional candidate at this appendix's authoring point. |
+
+The isolated setup preserves its missing nested MCP dependency, missing vendor
+declaration and Go download timeout failures separately. Corrections copy only
+installed dependencies/builds and locked verified module caches into the owned
+test fixture; the original Harness source, checks and deployment eligibility are
+unchanged. A missing witness cannot be bypassed. Run B adds the actual nobody
+home spelling `/nonexistent`, a private npm cache and a real Harness-pinned pnpm
+installation; no system home, global registry, proxy, CA or credential is changed.
+Tests run as existing UID/GID 65534, not as the Broker qualification identity;
+local nonroot execution does not establish installed UID isolation.
+
+Run B's eight failures are retained individually: three SDK/composition cases
+cannot read their expected logs and one Harness task deadline expires. Watch
+daemon, Cleanup fixture, effect authorization and Go account-framing cases
+serialize `STACK_TRACE_ERROR` near their time bounds; their precise failure
+mechanisms remain unconfirmed. These are not all classified as
+environment failures. The keyless SDK summaries report terminal-complete and
+exit zero but absent expected durable logs; exit zero is not substituted for
+those missing assertions. No source repair outside the approved path/task
+intersection is attempted. Further diagnosis and current-head CI remain open;
+there is no automatic repeat-until-green, timeout increase, skip or weakened
+assertion. The exact test reports, commands, identity/toolchain, witness and
+unchanged-code readbacks are retained externally. This appendix was added
+after the copied-code executions and is not represented as an executed input.
+
+Provider proof remains **BLOCKED**: the designated OpenCode Go endpoint/model
+does not by itself prove complete input, cache/reasoning, enforced output and
+gateway-attempt bounds. `SEND_TOTAL_TOKEN_UNVERIFIED` remains fail-closed and
+no model request or budget reset occurred. Cleanup's administrator-reviewed
+UID/public-repository/pin differences remain outstanding; none of the three
+conditional administration-contract paths is changed. No installation,
+activation, Permit consumption, real deletion, approval, merge or release is
+claimed. These unresolved obligations keep the single PR Draft.
