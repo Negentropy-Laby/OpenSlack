@@ -382,21 +382,21 @@ export function createWorkflowEffectAuthorizationPort(options: {
         });
         throw new WorkflowEffectApprovalPendingError(binding.runId, artifact.approval.approvalId);
       }
-      if (
+      const observationScope =
         artifact?.kind === 'effect_decision_committed' ||
         artifact?.kind === 'effect_audit_recorded'
-      ) {
-        observeAuthority({
-          runId: binding.runId,
-          approvalId: artifact.approval.approvalId,
-          evaluationIndex: occurrence.record.evaluationIndex,
-        });
-      }
+          ? {
+              runId: binding.runId,
+              approvalId: artifact.approval.approvalId,
+              evaluationIndex: occurrence.record.evaluationIndex,
+            }
+          : undefined;
       if (
         (artifact?.kind === 'effect_decision_committed' ||
           artifact?.kind === 'effect_audit_recorded') &&
         artifact.approval.status === 'rejected'
       ) {
+        if (observationScope) observeAuthority(observationScope);
         if (artifact.approvalDecisionHash === null) {
           throw new WorkflowEffectReconciliationRequiredError(
             'Rejected workflow effect decision has no exact decision hash.',
@@ -437,6 +437,11 @@ export function createWorkflowEffectAuthorizationPort(options: {
         });
       } catch (error) {
         mapStoreError(error);
+      } finally {
+        // The observer reconstructs its prefix under the same owner lock as
+        // claim acquisition. Notify only after this attempt has released it;
+        // observation still neither delays nor authorizes TypeScript execution.
+        if (observationScope) observeAuthority(observationScope);
       }
     },
 
