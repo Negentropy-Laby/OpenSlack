@@ -1183,3 +1183,123 @@ UID/public-repository/pin differences remain outstanding; none of the three
 conditional administration-contract paths is changed. No installation,
 activation, Permit consumption, real deletion, approval, merge or release is
 claimed. These unresolved obligations keep the single PR Draft.
+
+## 2026-11-12: scoped transport repair and remaining-failure diagnosis
+
+This is an additive execution record for existing Draft #441, based on parent
+`7b37d4c1a0a0e5be36caf2de5c50f431a7b60431`. It does not replace the failures
+above, grant an identity or task scope, or claim the whole repair plan complete.
+The eventual commit/tree and later platform/Hosted observations are indexed in
+the external evidence directory, without repeatedly committing check results.
+
+Evidence root: `/var/tmp/openslack-441-exec-f.0rXaaHQD`. The acting principal
+remains `codex_runtime_source-repair`, run `RUN-20260919113827-kv682q`, task #440
+(`TASK-2026-904630`). Production readback in `preflight.json` confirms the
+administrator's existing registry digest
+`a961cf2308c1889f8196a42c45127d55c717dd12d80c26cd1da16af749fe63da`, the three
+runtime paths and inventory/status/ledger path intersection, protected denials,
+and the formally renewed legacy claim. This is not Claim v2 evidence. The primary
+checkout's administrator change is preserved outside this repair delivery.
+
+### Narrow repair, not a Provider total-token authorization
+
+The adapter now captures options, model, run ID and cancellation signal before
+awaiting. Reservation, host veto, encoded request, credential, endpoint and
+settlement retain the same launch binding. A retained mutable options object
+cannot swap the opaque boundary after reservation or change the settlement port.
+Controlled OpenAI-compatible requests carry optional, frozen internal transport
+evidence and use `redirect: 'error'`; unchanged transports do not receive invented
+defaults. This evidence describes local adapter retry behavior only, never
+gateway/upstream physical attempts or a token-count guarantee. The post-admission
+deadline check rejects before POST instead of starting a new one-millisecond
+transport after the total deadline has already expired.
+
+The reviewed source identities are raw SHA-256 and byte sizes:
+
+| Input | Bytes | SHA-256 |
+| --- | ---: | --- |
+| `packages/agent-runtime/src/openai-compatible-runtime.ts` | 28399 | `c54156d3e5f0c331bd09cb49621090c73887c9b76ca763f542eeebb67d3221c1` |
+| `packages/agent-runtime/src/internal/provider-send-admission.ts` | 1710 | `82fc9b754d5119f5cbca631c276e513ae184554e5db6ba077b46df48707759fd` |
+| `packages/agent-runtime/src/__tests__/openai-compatible-runtime.test.ts` | 55951 | `8750fb8927ddb01f0c605d8bbf510fc2590ecdb5fccbb6bd0882b9f792341655` |
+
+| Layer | Observed result and limitation |
+| --- | --- |
+| Final-test baseline RED | The final 40-case test file on the unchanged parent implementation produced 29 passed / 11 failed. Exact baseline implementation and test digests are in `red-final-local.json`; no source rollback was performed in the repair worktree. |
+| Focused GREEN | Runtime 40 passed and Workflow send-admission 18 passed, 0 failed/skipped. These 58 overlap earlier focused results and are not added to them. Five real loopback HTTP redirect cases verify one source POST and zero redirected requests. Veto, cancellation and expired-admission cases verify zero fetch calls. |
+| Earlier deadline RED | `provider-deadline-red.json` preserves two real expired-admission failures and one incorrect test expectation for the cancellation error class. The latter was corrected to the exact original abort reason; it is not counted as a third production defect. |
+| Repository checks | `checks-final-local.json`: typecheck, build, affected ESLint, formal inventory, documentation verify/migration/Notification verify, status verify, workspace validate, Cleanup Broker race tests and vet all exited 0. This local build/check execution as UID 0 is not nonroot isolation qualification. |
+| Inventory and bindings | Formal producer updated and verified 9,502 declared cases / 607 files. Six manifest/schema files contain 261 recognized bindings, with no missing/drift/affected entries; no source-lock digest or binding set was changed. |
+| Independent review | `provider-security-final.md` and `provider-qa-final.md` read the exact three source/test identities above; no blocking finding remained. They read producer results, did not independently rerun them, and confer no human approval or merge readiness. |
+| Final complete suite/platform/Hosted | Pending at this appendix's authoring point. Parent-head CI has 11 successful checks and the normal skipped publish job; it is historical evidence for the parent, not for the additional repair. |
+
+The check receipt above binds the five code/inventory/status inputs and predates
+this additive appendix. Final appendix documentation verification is recorded
+separately in `docs-after-append-final-local.json`; it is not inferred from those
+earlier checks or from the unchanged runtime source hashes.
+
+The total-token guard still returns `SEND_TOTAL_TOKEN_UNVERIFIED`. Official
+model availability and a generated-token ceiling do not prove the frozen
+OpenCode gateway's complete input, cache/reasoning, transformation and retry
+bounds. No supplied secret was used or persisted; all model responses in these
+tests are synthetic or loopback fixtures. No live campaign, provider attempt,
+budget refund/reset or supplier/endpoint fallback occurred.
+
+### Local Harness prerequisites and unresolved failures
+
+The first unchanged seven-file diagnostic produced 254 passed / 4 failed /
+1 skipped. Three SDK/MCP failures repeated the missing-log condition. The
+retained test-copy script had omitted `native/system` runtime artifacts and
+resolution links from the otherwise built original Harness. The JSONL plugin
+therefore could not import its file-lock dependency; optional persistence did
+not stop keyless SDK completion. Independent log assertions correctly failed.
+
+The isolated copy was repaired with the exact original native outputs and
+relative links, not changes to Harness source or the tests. The complete copy
+inventory and checksums are in `harness-native-closure.json`; native import and
+formal witness preparation exited 0 as UID/GID 65534. Original Harness remains
+unchanged at `22ddee3792402c3e70ec5f86a63c3e3e895a2f60`. A first root Git probe
+was correctly rejected for dubious ownership before copying; the corrected
+probe ran as the clone owner, without changing global Git configuration.
+
+After that prerequisite correction, the same seven unmodified test files
+produced 257 passed / 1 failed / 1 skipped (`remaining-eight-closure-b.json`).
+All three durable Session cases passed. This subset is not a complete-suite
+PASS and does not erase the eight-failure full run. The current witness does
+not enumerate the native subtree; its separate artifact closure is retained
+rather than claiming the witness alone detected or covered the omission.
+
+The remaining subset failure is the real Go account-framing case. Verbose
+output confirms its original 30-second test-budget expiry; separate unchanged
+builds took approximately 30.7 seconds and 30.4 seconds. Installed Vitest's
+timeout stack replacement explains the generic `STACK_TRACE_ERROR` marker,
+but does not by itself identify every historical slow phase. Static review
+also finds build/startup cleanup outside `finally` and kill without observed
+closure. No test deadline or Go/VCS check was relaxed. That test file is outside
+the current task scope and has not been edited.
+
+The 100-request Harness case passes this subset, but static review confirms
+duplicate admission performs an unnecessary temporary write/fsync before reading
+the existing route. Its contribution to the earlier full-run deadline failure
+is not independently established. A safe strict-read fast path and deterministic
+zero-write replay regression remain proposed, not implemented; its implementation
+path is outside the current principal/task intersection. Watch, Cleanup fixture
+and effect-expiry cases passed this subset, not a replacement full-load proof.
+
+### Still blocked; no completion promotion
+
+- A minimum further repair scope can reuse the already allowed state-repair test
+  for Harness regression: only `packages/agent-runtime/src/harness-admission.ts`
+  needs new principal and task coverage; the Go framing test needs task coverage.
+  An authorized scope owner must make that exact amendment. `task.sync` proposes
+  a PR and is not evidence of Issue-definition-edit authority. No self-grant,
+  Issue body edit or new action was used to bypass this gap.
+- Provider total-bound proof remains missing; production admission stays denied.
+- Cleanup still needs administrator-accepted existing UID 24001/24002 mapping
+  against contract 44180/44181, public-repository registry scope and a reviewed
+  new pin. The unchanged current pin correctly binds the old private-only
+  registry; reading it does not approve a replacement. The existing never-started
+  backup route is not used on started or unknown-history state.
+- Final nonroot complete execution, native platforms, new-head Hosted checks,
+  current-candidate review, valid human approval and LIVE PRMS remain separate.
+  The PR stays Draft. No installation, activation, Permit, real deletion, Claim
+  C1–C7, #411 external qualification, merge, release or production claim follows.
