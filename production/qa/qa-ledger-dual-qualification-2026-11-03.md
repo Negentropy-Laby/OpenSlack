@@ -1303,3 +1303,73 @@ and effect-expiry cases passed this subset, not a replacement full-load proof.
   current-candidate review, valid human approval and LIVE PRMS remain separate.
   The PR stays Draft. No installation, activation, Permit, real deletion, Claim
   C1–C7, #411 external qualification, merge, release or production claim follows.
+
+## 2026-11-12: recovered test lifecycle repair and bounded validation scope
+
+This additive continuation starts at published PR #441 head
+`b6bc44ca63e588e31cc648870d4f124678f04b4f`. It preserves the preceding failures,
+the recovery package's original patch/index, the administrator's primary-checkout
+changes and all other worktrees. The three recovered source snapshots match that
+parent. The recovery package could not preserve two historical EIO-affected
+artifacts; their absence remains recorded, not repaired by replacement evidence.
+
+The execution record is
+`.openslack/tasks/workflow-qualification-closeout-20261111.json`. Its evidence
+directory is
+`/mnt/d/Users/WSMAN/Desktop/Coding Task/openslack-441-execution-20261112.lyaifdb7`.
+The existing principal and #440 claim were revalidated through production
+authorization and the supported bot heartbeat. No identity or administrator
+registry was copied into the isolated execution worktree.
+
+The Operator fixture owns each test's gates, producers, observers, spy and roots.
+Teardown releases gates, waits for producers, flushes observers, restores the
+owned spy, then removes roots only after quiescence is established. Publisher
+entry is observed before the hung-publisher assertion; cancellation cannot stand
+in for that observation. Cleanup errors remain separate from a prior assertion
+failure. Required-checks and staged-path refusal now prepare and clean their real
+filesystem/Git fixtures in lifecycle hooks. Both malformed-rule rejection modes,
+the zero-publication assertion, HEAD and existing staged contents remain checked.
+No test timeout, worker count, skip or production guard was weakened.
+
+| Layer | Observation and limit |
+| --- | --- |
+| Focused regression | `focused-tests-final.json` and its raw Vitest result: 55 passed, zero failed/skipped across the final three repaired files. This is not a full-suite result. |
+| Go framing | `go-framing-preparation.json` records normal checksum-verified preparation with explicit writable GOPATH/GOCACHE/GOMODCACHE and unchanged module/source inputs. `go-framing-test.json` runs the original selected real Go handler/TypeScript two-read case under its original deadline. No Go framing source change was needed. |
+| Affected static checks | `bootstrap-build-b.json` and `affected-lint.json` exit zero. The first typecheck failure is retained as `bootstrap-build.json`; the owned-spy function comparison was corrected before the successful build. |
+| Declared inventory | Formal `verify-test-counts.mjs --update` collects 9,503 declared cases in 607 files, including platform-skipped declarations. The extra declaration separates the publisher failure variants; inventory is not a pass count. |
+| Cleanup failure diagnostics | `fixture-lifecycle-diagnostic-result.json` exercises the verbatim final fixture function with controlled dependency failures and real temporary directories. All six scenarios pass: normal order, unentered-gate cancellation, flush failure, primary assertion plus flush failure, restoration failure, and observer creation failure. This diagnostic does not replace real integration execution. |
+| Independent test review | `review-test-repairs.md` and additive `review-test-repairs-final.md` statically review the exact final source, including Operator SHA-256 `162768d743ce8ff7d1ce5f63c3d3ce30293e1643b2a775541ae58faa53e66ba0` and Runtime SHA-256 `1088a2513735aee7ac2ee35e42c7fef3da9935d85c37600416c470c4eb5e416b`; no remaining finding. The reviewer did not independently rerun tests or approve the whole PR. |
+| Original Harness preparation | The network partial-clone failure is retained. A fresh private checkout at the required original commit was reconstructed from complete local Git objects without modifying the original Harness checkout. Its normal frozen install/build and the formal compatibility witness producer are required for complete execution. |
+| Final candidate/platform/Hosted | Results are indexed externally against the actual commit/tree after this source change is frozen. Old-head checks and local focused passes are not inherited by the new candidate. |
+
+The human-approved #440 amendment fixes the Wanmol endpoint and
+`deepseek-v4.1-flash`, with a separate allowance of four generation attempts,
+8,192 input-plus-output tokens per attempt and 32,768 aggregate tokens. This
+does not consume or reset #411's history or budget. The supplied credential was
+used only in protected transport memory for a non-generating model-list GET;
+no value was retained in source or evidence. The endpoint advertises the exact
+alias, but supplies no input-count, output/reasoning or hidden-retry bound in that
+metadata. Public discovery responses are retained in
+`gateway-public-discovery.json`. Generation POST count remains zero.
+
+Independent Provider review is recorded in `review-provider-boundary.md`.
+Serialized request identity, no local retry and a generated-output limit alone
+cannot establish the gateway's complete physical consumption. Production
+`SEND_TOTAL_TOKEN_UNVERIFIED` therefore remains in force. Obtaining vendor
+documents is not imposed as an external prerequisite on the requester; the
+unproven technical properties remain a concrete safety failure, not PASS.
+
+The independently reviewed Cleanup draft is
+`cleanup-administrator-proposed.patch`, with its exact ten-path follow-up scope
+in `cleanup-administrator-handoff.md`. It retains the existing 24001/24002
+accounts and public target, updates the canonical contract and registry pin, and
+uses the existing generator. It has not been accepted or applied. Production
+authorization denies the repair principal's registry/contract contribution;
+no self-grant, registry write, account change, install, activation, Permit or
+real deletion was performed. The current contracts and frozen historical
+private-target fixtures retain their original identities.
+
+PR #441 remains Draft while these mandatory Provider and administrator items
+are incomplete. Current-head Hosted checks, complete candidate review, valid
+human approval and LIVE PRMS remain separate delivery gates. No #411,
+production, merge or release status is promoted by this continuation.
