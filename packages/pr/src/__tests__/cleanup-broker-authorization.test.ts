@@ -52,10 +52,14 @@ it('authorizes selected product repository independently of fixed workspace auth
     principalId: 'principal:cleanup_qualification_pr418',
     runtimeUid: 'cleanup_qualification_pr418',
     runId: 'cleanup-pr418-f8db249a48c8492587e4515a31c60c45',
-    repository: 'Negentropy-Laby/openslack-cleanup-qualification',
+    repository: 'Negentropy-Laby/openslack-cleanup-qualification-public',
   };
   expect(validateCleanupBrokerRegistry(bytes, binding).repository).toBe(binding.repository);
-  for (const repository of ['Negentropy-Laby/OpenSlack', 'Negentropy-Laby/other']) {
+  for (const repository of [
+    'Negentropy-Laby/openslack-cleanup-qualification',
+    'Negentropy-Laby/OpenSlack',
+    'Negentropy-Laby/other',
+  ]) {
     expect(() => validateCleanupBrokerRegistry(bytes, { ...binding, repository })).toThrow(
       CleanupBrokerRegistryError,
     );
