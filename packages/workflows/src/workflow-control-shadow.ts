@@ -667,11 +667,12 @@ export function productionJournalSecurity(): WorkflowControlShadowJournalSecurit
       productionWindowsSecurityCache.delete(resolve(path).toLowerCase());
       const sid = currentWindowsSid();
       const script = [
+        '$ErrorActionPreference = "Stop"',
         WINDOWS_SECURITY_MODULE_IMPORT,
         '$owner = [System.Security.Principal.SecurityIdentifier]::new($env:OPENSLACK_WORKFLOW_SHADOW_SID)',
         `$system = [System.Security.Principal.SecurityIdentifier]::new('${WINDOWS_SYSTEM_SID}')`,
         '$acl = Get-Acl -LiteralPath $env:OPENSLACK_WORKFLOW_SHADOW_PATH',
-        '$acl.SetOwner($owner)',
+        'if ($acl.GetOwner([System.Security.Principal.SecurityIdentifier]).Value -ne $owner.Value) { $acl.SetOwner($owner) }',
         '$acl.SetAccessRuleProtection($true, $false)',
         'foreach ($rule in @($acl.Access)) { [void]$acl.RemoveAccessRuleSpecific($rule) }',
         '$rights = [System.Security.AccessControl.FileSystemRights]::FullControl',
@@ -682,7 +683,11 @@ export function productionJournalSecurity(): WorkflowControlShadowJournalSecurit
         '$type = [System.Security.AccessControl.AccessControlType]::Allow',
         '$acl.AddAccessRule([System.Security.AccessControl.FileSystemAccessRule]::new($owner, $rights, $inheritance, $propagation, $type))',
         '$acl.AddAccessRule([System.Security.AccessControl.FileSystemAccessRule]::new($system, $rights, $inheritance, $propagation, $type))',
-        'Set-Acl -LiteralPath $env:OPENSLACK_WORKFLOW_SHADOW_PATH -AclObject $acl',
+        // Set-Acl copies descriptor sections and can request audit privileges on
+        // protected paths. Persist only modified access rules (and a changed owner).
+        directory
+          ? '[System.IO.Directory]::SetAccessControl($env:OPENSLACK_WORKFLOW_SHADOW_PATH, $acl)'
+          : '[System.IO.File]::SetAccessControl($env:OPENSLACK_WORKFLOW_SHADOW_PATH, $acl)',
       ].join('; ');
       execFileSync(
         'powershell.exe',
