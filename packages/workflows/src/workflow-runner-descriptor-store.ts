@@ -131,26 +131,20 @@ function parseWindowsAcl(value: string): {
 
 function currentWindowsSid(): string {
   if (cachedWindowsSid) return cachedWindowsSid;
-  const output = execFileSync(
-    'powershell.exe',
-    [
-      '-NoLogo',
-      '-NoProfile',
-      '-NonInteractive',
-      '-Command',
-      '[System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value',
-    ],
-    { encoding: 'utf8', timeout: 20_000, windowsHide: true },
-  )
-    .trim()
-    .toUpperCase();
-  if (!WINDOWS_SID.test(output)) {
+  const output = execFileSync('whoami.exe', ['/user', '/fo', 'csv', '/nh'], {
+    encoding: 'utf8',
+    timeout: 20_000,
+    windowsHide: true,
+    maxBuffer: 16 * 1024,
+  }).trim();
+  const match = /^"(?:""|[^"])*","(S-\d(?:-\d+)+)"$/iu.exec(output);
+  if (!match || !WINDOWS_SID.test(match[1]!.toUpperCase())) {
     return storeFail(
       'WORKFLOW_RUNNER_DESCRIPTOR_STORE_PERMISSION_DENIED',
       'Current Windows SID is unavailable.',
     );
   }
-  cachedWindowsSid = output;
+  cachedWindowsSid = match[1]!.toUpperCase();
   return cachedWindowsSid;
 }
 

@@ -11,7 +11,7 @@ import {
 } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   createWorkflowRunnerExecutionDescriptor,
   hashWorkflowRunnerDescriptor,
@@ -174,6 +174,62 @@ function v2Descriptor() {
 
 afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
+});
+
+describe('Windows descriptor identity query', () => {
+  afterEach(() => {
+    vi.doUnmock('node:child_process');
+    vi.resetModules();
+  });
+
+  async function securityModule(query: typeof execFileSync) {
+    vi.resetModules();
+    vi.doMock('node:child_process', () => ({ execFileSync: query }));
+    return import('../workflow-runner-descriptor-store.js');
+  }
+
+  it('accepts one current-user CSV record and caches only its validated SID', async () => {
+    const query = vi.fn().mockReturnValue('"domain\\worker, ""quoted""","S-1-5-21-42-1001"\r\n');
+    const { createWorkflowRunnerDescriptorPathSecurity } = await securityModule(query);
+    expect(createWorkflowRunnerDescriptorPathSecurity('win32').platform).toBe('win32');
+    expect(createWorkflowRunnerDescriptorPathSecurity('win32').platform).toBe('win32');
+    expect(query).toHaveBeenCalledTimes(1);
+    expect(query).toHaveBeenCalledWith('whoami.exe', ['/user', '/fo', 'csv', '/nh'], {
+      encoding: 'utf8',
+      timeout: 20_000,
+      windowsHide: true,
+      maxBuffer: 16 * 1024,
+    });
+  });
+
+  it.each([
+    'S-1-5-21-42-1001',
+    '"domain\\worker","not-a-sid"',
+    '"domain\\worker","S-1-5-21-42-1001"\n"other","S-1-5-21-99"',
+    '"domain\\worker","S-1-5-21-42-1001","unexpected"',
+  ])('refuses malformed current-user SID output %j', async (output) => {
+    const query = vi.fn().mockReturnValue(output);
+    const { createWorkflowRunnerDescriptorPathSecurity } = await securityModule(query);
+    expect(() => createWorkflowRunnerDescriptorPathSecurity('win32')).toThrow(
+      expect.objectContaining({ code: 'WORKFLOW_RUNNER_DESCRIPTOR_STORE_PERMISSION_DENIED' }),
+    );
+    expect(query).toHaveBeenCalledTimes(1);
+  });
+
+  it('propagates a failed identity query without fallback or caching its result', async () => {
+    const failure = new Error('owned current-user query failed');
+    const query = vi
+      .fn()
+      .mockImplementationOnce(() => {
+        throw failure;
+      })
+      .mockReturnValue('"domain\\worker","S-1-5-21-42-1001"');
+    const { createWorkflowRunnerDescriptorPathSecurity } = await securityModule(query);
+    expect(() => createWorkflowRunnerDescriptorPathSecurity('win32')).toThrow(failure);
+    expect(query).toHaveBeenCalledTimes(1);
+    expect(createWorkflowRunnerDescriptorPathSecurity('win32').platform).toBe('win32');
+    expect(query).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe('GS8-B sealed execution descriptor', () => {
