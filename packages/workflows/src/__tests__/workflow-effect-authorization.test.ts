@@ -1078,6 +1078,7 @@ describe('workflow effect D2 authorization', () => {
             { length: 4_095 },
             (_, index) => `${(index + 1).toString(16).padStart(64, '0')}.json`,
           );
+          const initialNames = await readdir(claims);
           // Populate the real store in setup; the guarded operation retains its
           // original test deadline and every batch still starts 128 real writes.
           for (let offset = 0; offset < names.length; offset += 128) {
@@ -1094,7 +1095,7 @@ describe('workflow effect D2 authorization', () => {
               );
             }
           }
-          expect(await readdir(claims)).toHaveLength(names.length);
+          expect((await readdir(claims)).sort()).toEqual([...initialNames, ...names].sort());
           preparedCase = value;
         }),
       platformTestTimeout(5_000),
