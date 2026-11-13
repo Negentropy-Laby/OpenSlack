@@ -370,10 +370,15 @@ describe('governance shadow observation journal', () => {
     const diagnostics: string[] = [];
     const root = await journalRoot();
     const calls: GovernanceShadowEnvelope[] = [];
+    let publishObserved!: () => void;
+    const publication = new Promise<void>((resolve) => {
+      publishObserved = resolve;
+    });
     const port = await createGovernedPlanShadowObservationPort({
       journalRoot: root,
       publisher: createGovernanceShadowPublisherPort(async (value) => {
         calls.push(value);
+        publishObserved();
         return accepted(value);
       }),
       diagnosticSink: (value) => {
@@ -382,9 +387,13 @@ describe('governance shadow observation journal', () => {
     });
 
     expect(() => port.reconcile([record(1)])).not.toThrow();
-    await waitFor(() => expect(diagnostics).toContain('journal_incomplete'));
-    await waitFor(() => expect(calls).toHaveLength(1));
-    await waitFor(async () => expect(await readdir(join(root, 'entries'))).toHaveLength(0));
+    // Reconciliation enqueues its record after the initial gap check. Wait for
+    // the actual publisher entry before flushing that record's durable ACK.
+    await publication;
+    await port.flush();
+    expect(diagnostics).toContain('journal_incomplete');
+    expect(calls).toHaveLength(1);
+    expect(await readdir(join(root, 'entries'))).toHaveLength(0);
   });
 
   it('acknowledges a committed mismatch and emits only its bounded code', async () => {
