@@ -1059,35 +1059,60 @@ describe('workflow effect D2 authorization', () => {
     await expect(readFile(lock, 'utf8')).resolves.toBe('{}\n');
   });
 
-  it('fails closed when the bounded authority-store entry budget is exhausted', async () => {
-    const value = await fixture();
-    await createPending(value.makePort());
-    const claims = join(
-      value.workspaceRoot,
-      '.openslack.local',
-      'workflows',
-      'effect-authority',
-      'claims',
+  describe('bounded authority-store capacity', () => {
+    let preparedCase: Awaited<ReturnType<typeof fixture>> | undefined;
+
+    beforeEach(
+      () =>
+        trackRevisionPhase(async (ownedRoots) => {
+          const value = await fixture(undefined, undefined, ownedRoots);
+          await createPending(value.makePort());
+          const claims = join(
+            value.workspaceRoot,
+            '.openslack.local',
+            'workflows',
+            'effect-authority',
+            'claims',
+          );
+          const names = Array.from(
+            { length: 4_095 },
+            (_, index) => `${(index + 1).toString(16).padStart(64, '0')}.json`,
+          );
+          // Populate the real store in setup; the guarded operation retains its
+          // original test deadline and every batch still starts 128 real writes.
+          for (let offset = 0; offset < names.length; offset += 128) {
+            const settled = await Promise.allSettled(
+              names
+                .slice(offset, offset + 128)
+                .map((name) => writeFile(join(claims, name), '', { mode: 0o600 })),
+            );
+            const failures = settled.filter((result) => result.status === 'rejected');
+            if (failures.length > 0) {
+              throw new AggregateError(
+                failures.map((result) => result.reason),
+                'Authority-store capacity fixture preparation failed.',
+              );
+            }
+          }
+          expect(await readdir(claims)).toHaveLength(names.length);
+          preparedCase = value;
+        }),
+      platformTestTimeout(5_000),
     );
-    const names = Array.from(
-      { length: 4_095 },
-      (_, index) => `${(index + 1).toString(16).padStart(64, '0')}.json`,
-    );
-    for (let offset = 0; offset < names.length; offset += 128) {
-      await Promise.all(
-        names
-          .slice(offset, offset + 128)
-          .map((name) => writeFile(join(claims, name), '', { mode: 0o600 })),
-      );
-    }
-    await expect(
-      value.makePort().prepare({
-        runId: 'run-1',
-        evaluationIndex: 1,
-        operation: 'openslack.governance.audit',
-        detail: 'bounded audit',
-      }),
-    ).rejects.toMatchObject({ code: 'WORKFLOW_EFFECT_AUTHORITY_LIMIT_EXCEEDED' });
+
+    it('fails closed when the bounded authority-store entry budget is exhausted', () =>
+      trackRevisionPhase(async () => {
+        if (preparedCase === undefined)
+          throw new Error('Authority capacity fixture was not prepared');
+        await expect(
+          preparedCase.makePort().prepare({
+            runId: 'run-1',
+            evaluationIndex: 1,
+            operation: 'openslack.governance.audit',
+            detail: 'bounded audit',
+          }),
+        ).rejects.toMatchObject({ code: 'WORKFLOW_EFFECT_AUTHORITY_LIMIT_EXCEEDED' });
+      }));
   });
 
   it('keeps identical effect contents distinct by deterministic evaluation occurrence', async () => {
