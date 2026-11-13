@@ -1097,8 +1097,10 @@ describe('GS9-D effect shadow transport and durable observation', () => {
           }
         }
       }
-      if (!primaryFailed && cleanupErrors.length > 0) {
-        throw new AggregateError(cleanupErrors, 'Effect-shadow fixture cleanup failed.');
+      if (cleanupErrors.length > 0) {
+        const failure = new AggregateError(cleanupErrors, 'Effect-shadow fixture cleanup failed.');
+        if (primaryFailed) console.error(failure);
+        else throw failure;
       }
     }
   }
