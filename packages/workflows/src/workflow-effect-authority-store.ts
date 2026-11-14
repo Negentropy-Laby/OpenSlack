@@ -97,6 +97,7 @@ interface AuthorityTreeCacheEntry {
 const authorityTreeCache = new Map<string, AuthorityTreeCacheEntry>();
 const authorityPathsCache = new Map<string, StorePaths>();
 const authorityPathInitializers = new Map<string, Promise<StorePaths>>();
+const authorityPathWriters = new Map<string, Set<Promise<void>>>();
 
 type AuthorityState =
   | 'provisional'
@@ -356,27 +357,38 @@ async function preparePaths(approvalStoreRoot: string, create: boolean): Promise
       'Approval store root is not the authenticated workflow authority root.',
     );
   }
-  const cached = authorityPathsCache.get(root);
-  if (cached) {
-    try {
-      const canonicalRoot = await assertOwnerDirectory(root, JOURNAL_SECURITY);
-      await Promise.all([
-        assertOwnerDirectory(cached.records, JOURNAL_SECURITY, canonicalRoot),
-        assertOwnerDirectory(cached.claims, JOURNAL_SECURITY, canonicalRoot),
-        assertOwnerDirectory(cached.locks, JOURNAL_SECURITY, canonicalRoot),
-      ]);
-      return cached;
-    } catch {
-      authorityPathsCache.delete(root);
-      authorityTreeCache.delete(root);
-      // Re-run the complete initialization path after any identity drift. It
-      // distinguishes a missing lineage from an unsafe replacement and keeps
-      // the stable reconciliation error instead of exposing a cache artifact.
-    }
-  }
   const inFlight = authorityPathInitializers.get(root);
   if (inFlight) return inFlight;
-  const initializing = preparePathsUncached(approvalStoreRoot, create).then((paths) => {
+  const priorWriters = [...(authorityPathWriters.get(root) ?? [])];
+  // Publish the whole verification before it starts. Concurrent callers must
+  // finish the same root/directory checks before any can mutate its lock entries.
+  // The file lock still arbitrates every operation and every other process.
+  const initializing = Promise.resolve().then(async () => {
+    // Only earlier writers are included. Later writers observe this published
+    // verification and wait for it before creating their original file lock.
+    await Promise.all(priorWriters);
+    const cached = authorityPathsCache.get(root);
+    if (cached) {
+      try {
+        const canonicalRoot = await assertOwnerDirectory(root, JOURNAL_SECURITY);
+        const checked = await Promise.allSettled([
+          assertOwnerDirectory(cached.records, JOURNAL_SECURITY, canonicalRoot),
+          assertOwnerDirectory(cached.claims, JOURNAL_SECURITY, canonicalRoot),
+          assertOwnerDirectory(cached.locks, JOURNAL_SECURITY, canonicalRoot),
+        ]);
+        // A rejected sibling does not cancel the remaining security reads.
+        // Drain them before fallback can create or harden the same directories.
+        for (const check of checked) if (check.status === 'rejected') throw check.reason;
+        return cached;
+      } catch {
+        authorityPathsCache.delete(root);
+        authorityTreeCache.delete(root);
+        // Re-run the complete initialization path after any identity drift. It
+        // distinguishes a missing lineage from an unsafe replacement and keeps
+        // the stable reconciliation error instead of exposing a cache artifact.
+      }
+    }
+    const paths = await preparePathsUncached(approvalStoreRoot, create);
     if (authorityPathsCache.size >= AUTHORITY_TREE_CACHE_LIMIT) {
       const oldest = authorityPathsCache.keys().next().value;
       if (oldest !== undefined) {
@@ -391,7 +403,7 @@ async function preparePaths(approvalStoreRoot: string, create: boolean): Promise
   try {
     return await initializing;
   } finally {
-    authorityPathInitializers.delete(root);
+    if (authorityPathInitializers.get(root) === initializing) authorityPathInitializers.delete(root);
   }
 }
 
@@ -1117,7 +1129,33 @@ async function recoverAuthorityTemporaries(paths: StorePaths): Promise<void> {
   }
 }
 
+async function withAuthorityPathMutation<T>(paths: StorePaths, operation: () => Promise<T>): Promise<T> {
+  // Capture verification before publishing this writer, so the two snapshots
+  // cannot wait on each other. Writers still compete through the original lock.
+  const verification = authorityPathInitializers.get(paths.root);
+  const completed = Promise.withResolvers<void>();
+  let writers = authorityPathWriters.get(paths.root);
+  if (!writers) {
+    writers = new Set();
+    authorityPathWriters.set(paths.root, writers);
+  }
+  writers.add(completed.promise);
+  try {
+    if (verification) await verification;
+    return await operation();
+  } finally {
+    writers.delete(completed.promise);
+    if (writers.size === 0 && authorityPathWriters.get(paths.root) === writers) authorityPathWriters.delete(paths.root);
+    // This signals completion even after refusal/release failure, never approval.
+    completed.resolve();
+  }
+}
+
 async function withLock<T>(paths: StorePaths, operation: () => Promise<T>): Promise<T> {
+  return withAuthorityPathMutation(paths, () => withAuthorityFileLock(paths, operation));
+}
+
+async function withAuthorityFileLock<T>(paths: StorePaths, operation: () => Promise<T>): Promise<T> {
   let release: (() => Promise<void>) | undefined;
   try {
     release = await acquireOwnerJournalLock(paths.locks, 'authority', JOURNAL_SECURITY);
@@ -4077,6 +4115,14 @@ export async function scanWorkflowEffectAuthorityObservationPrefixes(
     });
   }
   const paths = await preparePaths(approvalStoreRoot, false);
+  return withAuthorityPathMutation(paths, () => scanAuthorityObservationPrefixesLocked(paths, approvalStoreRoot, priorIndex));
+}
+
+async function scanAuthorityObservationPrefixesLocked(
+  paths: StorePaths,
+  approvalStoreRoot: string,
+  priorIndex: ReadonlyMap<string, WorkflowEffectAuthorityObservationRecordIdentity>,
+): Promise<WorkflowEffectAuthorityObservationScan> {
   let release: (() => Promise<void>) | undefined;
   try {
     release = await acquireOwnerJournalLock(paths.locks, 'authority', JOURNAL_SECURITY);

@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { chmod, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
+import { chmod, mkdtemp, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { performance } from 'node:perf_hooks';
@@ -30,6 +30,7 @@ import {
   LocalWorkflowEffectAuthorityStore,
   prepareWorkflowEffectAuthorityDecision,
   repairWorkflowEffectAuthoritySecurity,
+  scanWorkflowEffectAuthorityObservationPrefixes,
 } from '../workflow-effect-authority-store.js';
 import {
   createWorkflowEffectLeaseAuthority,
@@ -1567,6 +1568,204 @@ describe('workflow effect D2 authorization', () => {
         approval: { approvalId: renewedApprovalId },
       },
     });
+  });
+
+  describe('cached authority directory verification', () => {
+    function ownVerification(work: Promise<unknown>[], promise: Promise<unknown>): Promise<unknown> {
+      work.push(promise);
+      void promise.catch(() => undefined);
+      return promise;
+    }
+
+    async function waitForVerificationGate(entered: Promise<void>, work: Promise<unknown>): Promise<void> {
+      await Promise.race([entered, work.then(() => { throw new Error('AUTHORITY_VERIFICATION_GATE_NOT_ENTERED'); })]);
+    }
+
+    async function restoreVerification(operations: Array<() => void | Promise<void>>, primaryFailed: boolean) {
+      const errors: unknown[] = [];
+      for (const operation of operations) {
+        try { await operation(); } catch (error) { errors.push(error); }
+      }
+      if (errors.length > 0) {
+        console.error('Authority verification fixture cleanup also failed', { count: errors.length, codes: errors.map(fixtureCleanupCode) });
+        if (!primaryFailed) throw new Error('AUTHORITY_VERIFICATION_FIXTURE_CLEANUP_FAILED');
+      }
+    }
+
+    async function preparedStore(ownedRoots: string[]) {
+      const value = await fixture(undefined, undefined, ownedRoots);
+      const store = new LocalWorkflowEffectAuthorityStore(value.approvalRoot, value.getNow);
+      const find = () => store.find(value.binding, 1, 'governance', 'occurrence', REASON_HASH);
+      await expect(find()).resolves.toBeUndefined();
+      return { root: join(value.workspaceRoot, '.openslack.local', 'workflows', 'effect-authority'), approvalRoot: value.approvalRoot, find };
+    }
+
+    it('holds concurrent lookups behind the same complete directory verification and rechecks a later lookup', () => trackRevisionPhase(async ownedRoots => {
+      const value = await preparedStore(ownedRoots);
+      const security = await import('../workflow-control-shadow.js');
+      const original = security.assertOwnerDirectory;
+      const entered = Promise.withResolvers<void>(), release = Promise.withResolvers<void>();
+      let rootReads = 0, primaryFailed = false;
+      const restore: Array<() => void> = [], work: Promise<unknown>[] = [];
+      try {
+        const spy = vi.spyOn(security, 'assertOwnerDirectory').mockImplementation(async (...args) => {
+          if (args[0] === value.root) { rootReads += 1; entered.resolve(); await release.promise; }
+          return original(...args);
+        });
+        restore.push(() => spy.mockRestore());
+        const first = ownVerification(work, value.find());
+        ownVerification(work, value.find());
+        await waitForVerificationGate(entered.promise, first);
+        expect(rootReads).toBe(1);
+        expect(await readdir(join(value.root, 'locks'))).toEqual([]);
+        release.resolve();
+        await expect(Promise.all(work)).resolves.toEqual([undefined, undefined]);
+        const later = ownVerification(work, value.find());
+        await expect(later).resolves.toBeUndefined();
+        expect(rootReads).toBe(2);
+      } catch (error) { primaryFailed = true; throw error; }
+      finally { release.resolve(); await Promise.allSettled(work); await restoreVerification(restore.reverse(), primaryFailed); }
+    }));
+
+    it.each(['find', 'observer'] as const)('waits for a live local %s lock owner before starting a later directory verification', kind => trackRevisionPhase(async ownedRoots => {
+      const value = await preparedStore(ownedRoots);
+      const security = await import('../workflow-control-shadow.js');
+      const originalRead = security.assertOwnerDirectory, originalAcquire = security.acquireOwnerJournalLock;
+      const entered = Promise.withResolvers<void>(), release = Promise.withResolvers<void>();
+      let held = false, lockCalls = 0, readsWhileHeld = 0, primaryFailed = false;
+      const restore: Array<() => void> = [], work: Promise<unknown>[] = [];
+      try {
+        const readSpy = vi.spyOn(security, 'assertOwnerDirectory').mockImplementation(async (...args) => {
+          if (held && args[0] === value.root) readsWhileHeld += 1;
+          return originalRead(...args);
+        });
+        restore.push(() => readSpy.mockRestore());
+        const acquireSpy = vi.spyOn(security, 'acquireOwnerJournalLock').mockImplementation(async (...args) => {
+          const unlock = await originalAcquire(...args);
+          if (lockCalls++ !== 0) return unlock;
+          held = true; entered.resolve(); await release.promise;
+          return async () => { try { await unlock(); } finally { held = false; } };
+        });
+        restore.push(() => acquireSpy.mockRestore());
+        const first = ownVerification(work, kind === 'observer' ? scanWorkflowEffectAuthorityObservationPrefixes(value.approvalRoot) : value.find());
+        await waitForVerificationGate(entered.promise, first);
+        expect(await readdir(join(value.root, 'locks'))).toContain('authority.lock');
+        ownVerification(work, value.find());
+        await new Promise<void>(resolve => setImmediate(resolve));
+        expect(readsWhileHeld).toBe(0);
+        release.resolve();
+        const results = await Promise.all(work);
+        expect(results[1]).toBeUndefined();
+        if (kind === 'observer') expect(results[0]).toMatchObject({ prefixes: [], failures: [], recordIndex: new Map() });
+        else expect(results[0]).toBeUndefined();
+        expect(lockCalls).toBe(2);
+        expect(await readdir(join(value.root, 'locks'))).toEqual([]);
+      } catch (error) { primaryFailed = true; throw error; }
+      finally { release.resolve(); await Promise.allSettled(work); await restoreVerification(restore.reverse(), primaryFailed); }
+    }));
+
+    it.each(['find', 'observer'] as const)('ends the %s writer phase after lock acquisition is refused', kind => trackRevisionPhase(async ownedRoots => {
+      const value = await preparedStore(ownedRoots);
+      const security = await import('../workflow-control-shadow.js');
+      const refused = Object.assign(new Error('Controlled owner lock acquisition refusal.'), { code: 'EACCES' });
+      const restore: Array<() => void> = [], work: Promise<unknown>[] = [];
+      let primaryFailed = false;
+      try {
+        const spy = vi.spyOn(security, 'acquireOwnerJournalLock').mockRejectedValueOnce(refused);
+        restore.push(() => spy.mockRestore());
+        const first = ownVerification(work, kind === 'observer' ? scanWorkflowEffectAuthorityObservationPrefixes(value.approvalRoot) : value.find());
+        if (kind === 'observer') await expect(first).rejects.toBe(refused);
+        else await expect(first).rejects.toMatchObject({ code: 'WORKFLOW_EFFECT_AUTHORITY_FILE_UNSAFE', cause: refused });
+        expect(await readdir(join(value.root, 'locks'))).toEqual([]);
+        const next = ownVerification(work, value.find());
+        await expect(next).resolves.toBeUndefined();
+      } catch (error) { primaryFailed = true; throw error; }
+      finally { await Promise.allSettled(work); await restoreVerification(restore.reverse(), primaryFailed); }
+    }));
+
+    it('refuses every waiting lookup after a directory replacement and retries fresh after restoration', () => trackRevisionPhase(async ownedRoots => {
+      const value = await preparedStore(ownedRoots);
+      const security = await import('../workflow-control-shadow.js');
+      const original = security.assertOwnerDirectory;
+      const entered = Promise.withResolvers<void>(), release = Promise.withResolvers<void>();
+      let rootReads = 0, moved = false, primaryFailed = false;
+      const retained = value.root + '-retained';
+      const restore: Array<() => void> = [], work: Promise<unknown>[] = [];
+      try {
+        const spy = vi.spyOn(security, 'assertOwnerDirectory').mockImplementation(async (...args) => {
+          if (args[0] === value.root) { rootReads += 1; entered.resolve(); await release.promise; }
+          return original(...args);
+        });
+        restore.push(() => spy.mockRestore());
+        const first = ownVerification(work, value.find());
+        ownVerification(work, value.find());
+        const outcomes = Promise.allSettled(work);
+        await waitForVerificationGate(entered.promise, first);
+        expect(rootReads).toBe(1);
+        await rename(value.root, retained); moved = true;
+        await writeFile(value.root, 'unsafe directory replacement', { mode: 0o600 });
+        release.resolve();
+        const settled = await outcomes;
+        expect(settled).toHaveLength(2);
+        for (const result of settled) {
+          expect(result.status).toBe('rejected');
+          if (result.status === 'rejected') expect(result.reason).toMatchObject({ code: 'WORKFLOW_EFFECT_AUTHORITY_PATH_UNSAFE' });
+        }
+        await rm(value.root); await rename(retained, value.root); moved = false;
+        const later = ownVerification(work, value.find());
+        await expect(later).resolves.toBeUndefined();
+      } catch (error) { primaryFailed = true; throw error; }
+      finally {
+        release.resolve(); await Promise.allSettled(work);
+        await restoreVerification([...restore.reverse(),
+          async () => { if (moved) await rm(value.root, { force: true }); },
+          async () => { if (moved) { await rename(retained, value.root); moved = false; } },
+        ], primaryFailed);
+      }
+    }));
+
+    it('joins all started child checks before falling back from a rejected cached verification', () => trackRevisionPhase(async ownedRoots => {
+      const value = await preparedStore(ownedRoots);
+      const security = await import('../workflow-control-shadow.js');
+      const filesystem = (await import('node:fs/promises')).default;
+      const { syncBuiltinESMExports } = await import('node:module');
+      const originalRead = security.assertOwnerDirectory, originalEnsure = security.ensureOwnerDirectory;
+      const originalStat = filesystem.lstat, rootStat = await originalStat(value.root);
+      const entered = Promise.withResolvers<void>(), release = Promise.withResolvers<void>();
+      let fallbackStarted = false, primaryFailed = false;
+      const restore: Array<() => void> = [];
+      // Only the fallback's existence probe is made immediate, using this real
+      // unchanged root stat. Security checks still read their own live bigint stats.
+      let work: ReturnType<typeof value.find> | undefined;
+      try {
+        const readSpy = vi.spyOn(security, 'assertOwnerDirectory').mockImplementation(async (...args) => {
+          if (args[0] === join(value.root, 'records')) throw new TypeError('Controlled cached security rejection.');
+          if (args[0] === join(value.root, 'claims')) { entered.resolve(); await release.promise; }
+          return originalRead(...args);
+        });
+        restore.push(() => readSpy.mockRestore());
+        const ensureSpy = vi.spyOn(security, 'ensureOwnerDirectory').mockImplementation(async (...args) => {
+          if (args[0] === value.root) fallbackStarted = true;
+          return originalEnsure(...args);
+        });
+        restore.push(() => ensureSpy.mockRestore());
+        const statSpy = vi.spyOn(filesystem, 'lstat').mockImplementation(((...args: Parameters<typeof filesystem.lstat>) =>
+          args[0] === value.root && args[1] === undefined ? Promise.resolve(rootStat) : originalStat(...args)) as typeof filesystem.lstat);
+        restore.push(() => statSpy.mockRestore());
+        syncBuiltinESMExports();
+        work = value.find();
+        await waitForVerificationGate(entered.promise, work);
+        await new Promise<void>(resolve => setImmediate(resolve));
+        expect(fallbackStarted).toBe(false);
+        release.resolve();
+        await expect(work).resolves.toBeUndefined();
+        expect(fallbackStarted).toBe(true);
+      } catch (error) { primaryFailed = true; throw error; }
+      finally {
+        release.resolve(); await Promise.allSettled(work ? [work] : []);
+        await restoreVerification([...restore.reverse(), () => syncBuiltinESMExports()], primaryFailed);
+      }
+    }));
   });
 
   describe('concurrent approval revisions', () => {
