@@ -73,6 +73,69 @@ function runningFixture() {
 }
 
 describe('governed admission and shared canonical state repair', () => {
+  it.each(['EPERM', 'PRIVATE_FIXTURE_CODE'])('preserves the first safe preparation failure for %s without recording raw errors', async code => {
+    const { host, options, store, root, execute } = fixture();
+    vi.mocked(options.prepare).mockRejectedValue(Object.assign(new Error('fixture-sensitive /private/source Authorization: Bearer fixture-secret'), { code }));
+    const { runId } = await host.dispatch('TASK-FIXTURE', 'safe-prepare-failure');
+    await vi.waitFor(() => expect(store.readRun(runId)?.status).toBe('failed'));
+    const expectedCode = code === 'EPERM' ? 'EPERM' : 'UNKNOWN';
+    expect(store.readRun(runId)).toMatchObject({ failureCode: 'EXECUTION_FAILED',
+      errorSummary: `Harness task did not reach verified acceptance (prepare: ${expectedCode})`,
+      harnessExecution: { acceptance: 'indeterminate', lifecycle: { phase: 'stopped_before_start' } },
+    });
+    expect(execute).not.toHaveBeenCalled();
+    const state = readFileSync(join(root, '.openslack.local/agents/runs', runId, 'run.json'));
+    const transcript = readFileSync(store.readRun(runId)!.transcriptPath, 'utf8');
+    expect(transcript).toContain(`"phase":"prepare"`);
+    expect(transcript).toContain(`"errorCode":"${expectedCode}"`);
+    for (const text of [state.toString('utf8'), transcript]) {
+      expect(text).not.toContain('fixture-secret');
+      expect(text).not.toContain('/private/source');
+      expect(text).not.toContain('PRIVATE_FIXTURE_CODE');
+    }
+    expect(await host.close(100)).toEqual({ stopped: true, unknownRunIds: [] });
+    expect(readFileSync(join(root, '.openslack.local/agents/runs', runId, 'run.json'))).toEqual(state);
+  });
+
+  it('does not inspect exception getters while retaining a safe preparation failure', async () => {
+    const { host, options, store, execute } = fixture();
+    const getter = vi.fn(() => { throw new Error('Exception getter must not be invoked'); });
+    const error = Object.defineProperty(new Error('fixture-sensitive'), 'code', { get: getter });
+    vi.mocked(options.prepare).mockRejectedValue(error);
+    const { runId } = await host.dispatch('TASK-FIXTURE', 'safe-getter-failure');
+    await vi.waitFor(() => expect(store.readRun(runId)?.status).toBe('failed'));
+    expect(store.readRun(runId)?.errorSummary).toBe('Harness task did not reach verified acceptance (prepare: UNKNOWN)');
+    expect(getter).not.toHaveBeenCalled();
+    expect(execute).not.toHaveBeenCalled();
+  });
+
+  it('retains publication as the first safe failure when closing the failed admission', async () => {
+    const { host, options, store, execute } = fixture();
+    vi.mocked(options.publish).mockRejectedValue(Object.assign(new Error('fixture-sensitive'), { code: 'EACCES' }));
+    await expect(host.dispatch('TASK-FIXTURE', 'safe-publication-failure')).rejects.toMatchObject({ code: 'EACCES' });
+    const [run] = store.listRuns();
+    expect(run).toMatchObject({ failureCode: 'EXECUTION_FAILED',
+      errorSummary: 'Harness task did not reach verified acceptance (publication: EACCES)',
+      harnessExecution: { visible: false, lifecycle: { phase: 'stopped_before_start' } },
+    });
+    expect(await host.close(100)).toEqual({ stopped: true, unknownRunIds: [] });
+    expect(store.readRun(run!.runId)?.errorSummary).toBe(run!.errorSummary);
+    expect(execute).not.toHaveBeenCalled();
+  });
+
+  it.each(['direct', 'prototype'] as const)('never enters %s exception Proxy traps while capturing the first failure', async kind => {
+    const { host, options, store, execute } = fixture();
+    const trap = vi.fn(() => { void host.close(100); return undefined; });
+    const proxy = new Proxy({}, { getOwnPropertyDescriptor: trap, getPrototypeOf: () => { trap(); return null; } });
+    const error = kind === 'direct' ? proxy : Object.setPrototypeOf(Object.assign(new Error('fixture-sensitive'), { code: 'EPERM' }), proxy);
+    vi.mocked(options.prepare).mockRejectedValue(error);
+    const { runId } = await host.dispatch('TASK-FIXTURE', 'safe-proxy-failure');
+    await vi.waitFor(() => expect(store.readRun(runId)?.status).toBe('failed'));
+    expect(trap).not.toHaveBeenCalled();
+    expect(store.readRun(runId)?.errorSummary).toBe(`Harness task did not reach verified acceptance (prepare: ${kind === 'direct' ? 'UNKNOWN' : 'EPERM'})`);
+    expect(execute).not.toHaveBeenCalled();
+  });
+
   it.each(['verified', 'rejected'] as const)('38-07: does not publish %s acceptance into a replacement owner generation', async outcome => {
     const { host, options, store, root, execute } = fixture();
     let accepted = false, completion = false, replaced = false;
