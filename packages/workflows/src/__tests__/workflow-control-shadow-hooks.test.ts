@@ -1,7 +1,7 @@
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi, type TestContext } from 'vitest';
 import { RunStore, type RunStoreFs, type RunMeta } from '../run-store.js';
 import { createWorkflowRunStoreRecoveryAccess } from '../internal/workflow-run-store-recovery-access.js';
 import {
@@ -13,7 +13,41 @@ import { createWorkflowEffectDecisionAuthority } from '../workflow-effect-approv
 import { LocalWorkflowEffectApprovalStore } from '../workflow-effect-approval-store.js';
 import { acceptedReceipt, shadowObservation } from './workflow-control-shadow-fixtures.js';
 
-const roots: string[] = [];
+type ObservationPort = Awaited<ReturnType<typeof createWorkflowControlObservationPortForTest>>;
+interface OwnedHookCase {
+  roots: string[];
+  ports: Set<ObservationPort>;
+  work: Set<Promise<unknown>>;
+  phase: string;
+  started: number;
+  steps: { phase: string; durationMs: number; outcome: 'fulfilled' | 'rejected' }[];
+  diagnostics: Record<string, unknown>[];
+}
+const ownedCases = new WeakMap<TestContext['task'], OwnedHookCase>();
+function ownCase(context: TestContext, operation: (owned: OwnedHookCase) => Promise<void>) {
+  const owned: OwnedHookCase = { roots: [], ports: new Set(), work: new Set(), phase: 'start', started: performance.now(), steps: [], diagnostics: [] };
+  ownedCases.set(context.task, owned);
+  const work = Promise.resolve().then(() => operation(owned));
+  owned.work.add(work);
+  void work.catch(() => undefined);
+  return work;
+}
+async function measure<T>(owned: OwnedHookCase, phase: string, operation: () => Promise<T>): Promise<T> {
+  owned.phase = phase;
+  const started = performance.now();
+  let completed = false;
+  try { const value = await operation(); completed = true; return value; }
+  finally {
+    owned.steps.push({ phase, durationMs: performance.now() - started, outcome: completed ? 'fulfilled' : 'rejected' });
+    if (owned.phase === phase) owned.phase = 'between_segments';
+  }
+}
+function diagnostic(context: TestContext, owned: OwnedHookCase, phase: 'before_drain' | 'retained' | 'after_drain', cleanupFailures: number) {
+  owned.diagnostics.push({ code: 'WORKFLOW_SHADOW_HOOK_TEST_LIFECYCLE', phase,
+    activePhase: owned.phase, elapsedMs: performance.now() - owned.started,
+    steps: owned.steps.map((step) => ({ ...step })), cleanupFailures, retainedRoots: phase === 'retained' ? owned.roots.length : 0 });
+  Object.assign(context.task.meta, { workflowShadowHookLifecycle: owned.diagnostics });
+}
 const UNIT_JOURNAL_SECURITY: WorkflowControlShadowJournalSecurityDependencies = Object.freeze({
   platform: 'win32',
   currentWindowsSid: () => 'S-1-5-21-1000',
@@ -32,14 +66,33 @@ const UNIT_JOURNAL_SECURITY: WorkflowControlShadowJournalSecurityDependencies = 
 
 vi.setConfig({ testTimeout: process.platform === 'win32' ? 45_000 : 5_000 });
 
-afterEach(async () => {
-  await Promise.all(roots.splice(0).map((root) => rm(root, { force: true, recursive: true })));
+afterEach(async (context) => {
+  const owned = ownedCases.get(context.task);
+  if (!owned) return;
+  const failed = context.task.result?.state === 'fail';
+  if (failed) diagnostic(context, owned, 'before_drain', 0);
+  // A test deadline does not cancel its producer. Join it before the final
+  // scheduled-work snapshot; a hung owner leaves its private directory intact.
+  const work = await Promise.allSettled([...owned.work]);
+  const ports = await Promise.allSettled([...owned.ports].map((port) => port.flush()));
+  const failures = [...work, ...ports].filter((result) => result.status === 'rejected').length;
+  if (failures) {
+    diagnostic(context, owned, 'retained', failures);
+    // A rejected producer already carries the original case failure.
+    if (!failed && work.every((result) => result.status === 'fulfilled')) throw new Error('WORKFLOW_SHADOW_HOOK_TEST_CLEANUP_FAILED');
+    return;
+  }
+  const removed = await Promise.allSettled(owned.roots.map((root) => rm(root, { force: true, recursive: true })));
+  const cleanupFailures = removed.filter((result) => result.status === 'rejected').length;
+  diagnostic(context, owned, cleanupFailures ? 'retained' : 'after_drain', cleanupFailures);
+  if (cleanupFailures && !failed) throw new Error('WORKFLOW_SHADOW_HOOK_TEST_CLEANUP_FAILED');
+  ownedCases.delete(context.task);
 });
 
-async function root(name: string) {
+async function root(name: string, owned: OwnedHookCase) {
   const temporaryRoot = process.platform === 'win32' ? tmpdir() : '/tmp';
-  const value = resolve(await mkdtemp(join(temporaryRoot, `${name}-`)));
-  roots.push(value);
+  const value = resolve(await measure(owned, 'fixture.directory', () => mkdtemp(join(temporaryRoot, `${name}-`))));
+  owned.roots.push(value);
   return value;
 }
 
@@ -66,9 +119,9 @@ function memFs(failPath?: string): RunStoreFs & { readonly files: Map<string, st
   };
 }
 
-async function observationPort(journalRoot: string, published: number[]) {
+async function observationPort(journalRoot: string, published: number[], owned: OwnedHookCase) {
   let build = 0;
-  return createWorkflowControlObservationPortForTest(
+  const port = await measure(owned, 'fixture.initialize_and_replay', () => createWorkflowControlObservationPortForTest(
     {
       enabled: true,
       workspaceId: 'workspace.test',
@@ -86,7 +139,9 @@ async function observationPort(journalRoot: string, published: number[]) {
       },
     },
     UNIT_JOURNAL_SECURITY,
-  );
+  ));
+  owned.ports.add(port);
+  return port;
 }
 
 function meta(): RunMeta {
@@ -102,10 +157,10 @@ function meta(): RunMeta {
 }
 
 describe('Workflow Control GS7-B authoritative post-commit hooks', () => {
-  it('covers the RunStore observation inventory after committed authority writes', async () => {
-    const journal = join(await root('workflow-shadow-hook'), 'journal');
+  it('covers the RunStore observation inventory after committed authority writes', (context) => ownCase(context, async (owned) => {
+    const journal = join(await root('workflow-shadow-hook', owned), 'journal');
     const published: number[] = [];
-    const port = await observationPort(journal, published);
+    const port = await observationPort(journal, published, owned);
     const fs = memFs();
     const store = new RunStore({
       access: createWorkflowRunStoreRecoveryAccess(),
@@ -114,46 +169,47 @@ describe('Workflow Control GS7-B authoritative post-commit hooks', () => {
       observationPort: port,
     });
 
-    await store.initRun('run-shadow-test', meta());
-    await port.flush();
-    await store.transitionStatus('run-shadow-test', 'paused');
-    await port.flush();
-    await store.setCurrentPhase('run-shadow-test', 'review');
-    await port.flush();
-    await store.savePhaseCheckpoint('run-shadow-test', {
+    await measure(owned, 'authority.init_run', () => store.initRun('run-shadow-test', meta()));
+    await measure(owned, 'flush.1', () => port.flush());
+    await measure(owned, 'authority.transition_status', () => store.transitionStatus('run-shadow-test', 'paused'));
+    await measure(owned, 'flush.2', () => port.flush());
+    await measure(owned, 'authority.current_phase', () => store.setCurrentPhase('run-shadow-test', 'review'));
+    await measure(owned, 'flush.3', () => port.flush());
+    await measure(owned, 'authority.phase_checkpoint', () => store.savePhaseCheckpoint('run-shadow-test', {
       phase: 'review',
       timestamp: '2026-08-03T00:00:01.000Z',
       status: 'completed',
-    });
-    await port.flush();
-    await store.saveAgentResult('run-shadow-test', 'agent-1', { data: true });
-    await port.flush();
-    await store.appendBudgetWarning('run-shadow-test', {
+    }));
+    await measure(owned, 'flush.4', () => port.flush());
+    await measure(owned, 'authority.agent_result', () => store.saveAgentResult('run-shadow-test', 'agent-1', { data: true }));
+    await measure(owned, 'flush.5', () => port.flush());
+    await measure(owned, 'authority.budget_warning', () => store.appendBudgetWarning('run-shadow-test', {
       timestamp: '2026-08-03T00:00:02.000Z',
       kind: 'threshold',
       message: 'warning',
       tokensUsed: 5,
       tokenBudget: 10,
       percent: 0.5,
-    });
-    await port.flush();
-    await store.savePendingApproval('run-shadow-test', {
+    }));
+    await measure(owned, 'flush.6', () => port.flush());
+    await measure(owned, 'authority.pending_approval', () => store.savePendingApproval('run-shadow-test', {
       operation: 'effect',
       detail: 'not exported',
       timestamp: '2026-08-03T00:00:02.000Z',
-    });
-    await port.flush();
-    const [approval] = await store.loadPendingApprovals('run-shadow-test');
-    await store.resolvePendingApproval('run-shadow-test', approval!.id, 'approved');
-    await port.flush();
+    }));
+    await measure(owned, 'flush.7', () => port.flush());
+    const [approval] = await measure(owned, 'authority.load_approvals', () => store.loadPendingApprovals('run-shadow-test'));
+    await measure(owned, 'authority.resolve_approval', () => store.resolvePendingApproval('run-shadow-test', approval!.id, 'approved'));
+    await measure(owned, 'flush.8', () => port.flush());
     expect(published).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
-  });
+  }));
 
-  it('never observes a failed authority write', async () => {
+  it('never observes a failed authority write', (context) => ownCase(context, async (owned) => {
     const failedPublished: number[] = [];
     const failedPort = await observationPort(
-      join(await root('workflow-shadow-hook-failed'), 'journal'),
+      join(await root('workflow-shadow-hook-failed', owned), 'journal'),
       failedPublished,
+      owned,
     );
     const failing = new RunStore({
       access: createWorkflowRunStoreRecoveryAccess(),
@@ -166,12 +222,12 @@ describe('Workflow Control GS7-B authoritative post-commit hooks', () => {
     );
     await failedPort.flush();
     expect(failedPublished).toEqual([]);
-  });
+  }));
 
-  it('observes effect approval commits and exact authority recovery only after durable state', async () => {
-    const workspace = await root('workflow-shadow-effect');
+  it('observes effect approval commits and exact authority recovery only after durable state', (context) => ownCase(context, async (owned) => {
+    const workspace = await root('workflow-shadow-effect', owned);
     const published: number[] = [];
-    const port = await observationPort(join(workspace, 'journal'), published);
+    const port = await observationPort(join(workspace, 'journal'), published, owned);
     const now = Date.now();
     const authority = createWorkflowEffectDecisionAuthority({
       workspaceId: 'workspace.test',
@@ -246,5 +302,5 @@ describe('Workflow Control GS7-B authoritative post-commit hooks', () => {
     });
     await port.flush();
     expect(published).toEqual([1, 2, 3, 4]);
-  });
+  }));
 });

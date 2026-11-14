@@ -52,6 +52,9 @@ const INPUT_HASH = '4'.repeat(64);
 const REASON_HASH = '5'.repeat(64);
 const roots: string[] = [];
 let revisionPhase: { work: Promise<void>; roots: string[] } | undefined;
+const CONSUMED_CLAIM_MISSING_CASE = 'fails closed when a consumed claim file disappears but its authority high-watermark remains';
+const consumedClaimFixtures = new WeakMap<object, { value: Awaited<ReturnType<typeof fixture>>; claimPath: string }>();
+
 
 function fixtureCleanupCode(error: unknown): string {
   try {
@@ -86,11 +89,11 @@ function trackRevisionPhase(operation: (ownedRoots: string[]) => Promise<void>):
 vi.setConfig({ testTimeout: process.platform === 'win32' ? 120_000 : 5_000 });
 
 // A hook/test timeout must not delete fixtures while its real I/O is still in flight.
-afterEach(async () => {
+afterEach(async (context) => {
   const phase = revisionPhase;
   revisionPhase = undefined;
   const ownedRoots = roots.splice(0);
-  let primaryFailed = false;
+  let primaryFailed = context.task.result?.state === 'fail';
   if (phase) {
     await measureFixturePhase('wait', () => phase.work.catch(() => { primaryFailed = true; }));
   }
@@ -106,6 +109,42 @@ afterEach(async () => {
     else throw new AggregateError(failures.map(result => result.reason), 'Effect authorization fixture cleanup failed');
   }
 }, platformTestTimeout(30_000));
+
+
+beforeEach((context) => {
+  if (context.task.name !== CONSUMED_CLAIM_MISSING_CASE) return;
+  return trackRevisionPhase(async (ownedRoots) => {
+    const started = performance.now();
+    let completed = false;
+    try {
+      const value = await fixture(undefined, undefined, ownedRoots);
+      const { pending } = await createPending(value.makePort());
+      await approve(value, pending.approvalId);
+      const port = value.makePort();
+      const prepared = await port.prepare({
+        runId: 'run-1',
+        evaluationIndex: 1,
+        operation: 'openslack.governance.audit',
+        detail: 'bounded audit',
+      });
+      const claim = await port.authorize(prepared);
+      if (claim.disposition !== 'claimed') throw new Error('expected claim');
+      await port.complete(claim.authority, { ok: true });
+      const [claimFile] = await authorityClaimFiles(
+        value,
+        'openslack.workflow_effect_execution_record.v1',
+      );
+
+      if (claimFile === undefined) throw new Error('Consumed claim fixture was not prepared');
+      consumedClaimFixtures.set(context.task, { value, claimPath: claimFile.path });
+      completed = true;
+    } finally {
+      Object.assign(context.task.meta, { consumedClaimPreparation: {
+        durationMs: performance.now() - started, completed,
+      } });
+    }
+  });
+}, platformTestTimeout(5_000));
 
 async function fixture(
   nowValue = new Date().toISOString(),
@@ -869,25 +908,11 @@ describe('workflow effect D2 authorization', () => {
     });
   });
 
-  it('fails closed when a consumed claim file disappears but its authority high-watermark remains', async () => {
-    const value = await fixture();
-    const { pending } = await createPending(value.makePort());
-    await approve(value, pending.approvalId);
-    const port = value.makePort();
-    const prepared = await port.prepare({
-      runId: 'run-1',
-      evaluationIndex: 1,
-      operation: 'openslack.governance.audit',
-      detail: 'bounded audit',
-    });
-    const claim = await port.authorize(prepared);
-    if (claim.disposition !== 'claimed') throw new Error('expected claim');
-    await port.complete(claim.authority, { ok: true });
-    const [claimFile] = await authorityClaimFiles(
-      value,
-      'openslack.workflow_effect_execution_record.v1',
-    );
-    await rm(claimFile!.path);
+  it(CONSUMED_CLAIM_MISSING_CASE, (context) => trackRevisionPhase(async () => {
+    const prepared = consumedClaimFixtures.get(context.task);
+    if (prepared === undefined) throw new Error('Consumed claim fixture was not prepared');
+    const { value, claimPath } = prepared;
+    await rm(claimPath);
 
     const retry = value.makePort();
     const retryPrepared = await retry.prepare({
@@ -899,7 +924,7 @@ describe('workflow effect D2 authorization', () => {
     await expect(retry.authorize(retryPrepared)).rejects.toBeInstanceOf(
       WorkflowEffectReconciliationRequiredError,
     );
-  });
+  }));
 
   it('does not treat a bare terminal v2 record as execution authority', async () => {
     const value = await fixture();
