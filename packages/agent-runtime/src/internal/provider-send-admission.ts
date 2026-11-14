@@ -22,7 +22,28 @@ const hooks = new WeakMap<
   ProviderAttemptPort,
   (reservation: ProviderAttemptReservation, request: ProviderSendRequest) => Promise<void>
 >();
+const preparationHooks = new WeakMap<
+  ProviderAttemptPort,
+  (request: ProviderSendRequest) => Promise<void>
+>();
 export const hasProviderSendAdmission = (port: ProviderAttemptPort): boolean => hooks.has(port);
+
+/** Host-only read-only veto before a durable Go reservation. It grants no send authority. */
+export function bindProviderSendPreparation(
+  port: ProviderAttemptPort,
+  prepare: (request: ProviderSendRequest) => Promise<void>,
+): void {
+  if (preparationHooks.has(port))
+    throw new TypeError('Provider send preparation is already bound.');
+  preparationHooks.set(port, prepare);
+}
+
+export async function prepareProviderSend(
+  port: ProviderAttemptPort,
+  request: ProviderSendRequest,
+): Promise<void> {
+  await preparationHooks.get(port)?.(Object.freeze({ ...request }));
+}
 
 export function bindProviderSendAdmission(
   port: ProviderAttemptPort,

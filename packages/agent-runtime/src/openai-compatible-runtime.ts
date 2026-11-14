@@ -30,6 +30,7 @@ import {
 import type { ProviderAttemptReservation } from './provider-attempt-port.js';
 import {
   reserveProviderAttempt,
+  prepareProviderAttemptSend,
   admitProviderAttemptSend,
   settleProviderAttempt,
   type ProviderAttemptBoundary,
@@ -243,7 +244,32 @@ export class OpenAICompatibleExecutionAdapter implements AgentExecutionAdapter {
         if (remaining <= 0) throw new AgentBudgetExceededError();
         let maxTokens = Math.min(options.maxOutputTokens, remaining);
         const requestedTotalTokens = remaining;
+        // Snapshot the complete request before any host await. Preparation is
+        // read-only and may refuse before reserving durable Go authority.
+        const preparedRequestBytes = JSON.stringify({
+          model: modelId,
+          messages,
+          tools: definitions.map((definition) => ({
+            type: 'function',
+            function: {
+              name: toWireToolName(definition.name),
+              description: definition.description,
+              parameters: definition.inputSchema,
+            },
+          })),
+          tool_choice: definitions.length > 0 ? 'auto' : undefined,
+          max_tokens: maxTokens,
+        });
         if (options.providerAttemptBoundary) {
+          await prepareProviderAttemptSend(options.providerAttemptBoundary, {
+            providerId: options.providerId,
+            modelId,
+            requestBytes: preparedRequestBytes,
+            transportEvidence,
+            signal,
+          });
+          throwIfAborted(signal);
+          if (Date.now() - startedAt >= options.timeoutMs) throw new ProviderTimeoutError();
           reservation = await reserveProviderAttempt(options.providerAttemptBoundary, {
             providerId: options.providerId,
             modelId,
@@ -275,20 +301,9 @@ export class OpenAICompatibleExecutionAdapter implements AgentExecutionAdapter {
           }
           maxTokens = Math.min(maxTokens, authorizedTokens);
         }
-        requestBody = JSON.stringify({
-          model: modelId,
-          messages,
-          tools: definitions.map((definition) => ({
-            type: 'function',
-            function: {
-              name: toWireToolName(definition.name),
-              description: definition.description,
-              parameters: definition.inputSchema,
-            },
-          })),
-          tool_choice: definitions.length > 0 ? 'auto' : undefined,
-          max_tokens: maxTokens,
-        });
+        const preparedRequest = JSON.parse(preparedRequestBytes) as Record<string, unknown>;
+        preparedRequest.max_tokens = maxTokens;
+        requestBody = JSON.stringify(preparedRequest);
         if (options.providerAttemptBoundary && reservation) {
           try {
             await admitProviderAttemptSend(options.providerAttemptBoundary, reservation, {
