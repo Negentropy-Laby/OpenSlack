@@ -224,10 +224,12 @@ function createWorkspace(
     readonly contractDelivery?: boolean;
     readonly workflowAction?: 'allow' | 'ask' | 'deny';
     readonly noScenarios?: boolean;
+    readonly onCreated?: (root: string) => void;
   } = {},
 ): string {
   const root = mkdtempSync(join(tmpdir(), 'openslack-governed-composition-'));
   roots.push(root);
+  options.onCreated?.(root);
   writeFileSync(
     join(root, 'openslack.yaml'),
     [
@@ -1774,79 +1776,83 @@ describe('production agent-bound governed mutation composition', () => {
     };
     const fixtureRoot = mkdtempSync(join(tmpdir(), 'openslack-harness-compatibility-'));
     roots.push(fixtureRoot);
-    const fixture = prepareSdkFixture(fixtureRoot, [
-      { name: 'read', args: { file_path: 'fixture.txt' } },
-      { name: 'write', args: { file_path: 'fixture.txt', content: 'after' } },
-      { name: 'mcp__openslack__openslack_preview_workflow', args: { workflowId: 'harness.task.report', input: {
-        runId: '$runId', reportId: 'progress-1', summary: 'Changed the approved fixture.', evidenceRefs: ['artifact:fixture'] } } },
-      { name: 'mcp__openslack__openslack_confirm_plan', args: { planId: '$planId' } },
-      'fixture complete',
-    ]);
-    const workspaceRoot = createWorkspace({ action: 'deny', noScenarios: true });
-    const registry = join(workspaceRoot, '.openslack/agents/registry', `${PRINCIPAL_REF}.yaml`);
-    writeFileSync(registry, readFileSync(registry, 'utf8').replace('  github:',
-      '    harness.task.dispatch: allow\n    harness.task.report: allow\n  github:'));
-    writeFileSync(join(workspaceRoot, 'fixture.txt'), 'before');
-    const fixtureHooks = join(fixtureRoot, 'empty-fixture-hooks');
-    mkdirSync(fixtureHooks);
-    const git = (...args: string[]) => execFileSync('git', ['-c', `core.hooksPath=${fixtureHooks}`, ...args], { cwd: workspaceRoot, encoding: 'utf8' }).trim();
-    git('init', '--initial-branch=main');
-    git('add', 'fixture.txt');
-    git('-c', 'user.name=Keyless Harness Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-m', 'fixture baseline');
-    const baseline = git('rev-parse', 'HEAD');
-    const deployment = { harnessRoot, pluginRoot, pluginBuildHash: hashHarnessPluginArtifacts(pluginRoot),
-      nodeExecutable: process.execPath, nodeVersion: '24.18.1' as const, nodeSha256: hashHarnessNodeExecutable(process.execPath),
-      dshHome: fixture.home, agentId: PRINCIPAL_REF, provider: 'openslack-fixture', model: 'fixture',
-      workerPatch: fixture.patch, exitGraceMs: HARNESS_CLEANUP_BUDGET.totalMs,
-      callbackMcp: { cliModule: join(repositoryRoot, 'apps/cli/dist/index.js'), workspaceRoot, principalRef: PRINCIPAL_REF } };
-    const verification = { resultMode: 'text' as const, requireReport: true, checks: [{ path: 'fixture.txt', expectedText: 'after' }] };
-    const resolvedConfig = { agentId: PRINCIPAL_REF, source: 'fixture', runtimeProvider: 'deepseek-harness', model: 'fixture',
-      tools: ['Read', 'Write', 'Edit', ...['openslack_get_activity', 'openslack_preview_workflow', 'openslack_confirm_plan', 'openslack_cancel_plan']
-        .map(name => `mcp.openslack.${name}`)], permissionMode: 'acceptEdits' as const };
-    const task = { taskId: 'TASK-2026-100001', principalId: `principal:${PRINCIPAL_REF}`, baseline, timeoutMs: 240_000,
-      executionBuildHash: hashHarnessRuntimeArtifacts(harnessRoot), verificationHash: hashHarnessInput(verification), deploymentHash: hashHarnessDeployment(deployment),
-      request: { agentId: PRINCIPAL_REF, prompt: 'Change only fixture.txt, report current-task progress, then answer fixture complete.',
-        resolvedConfig, permissionProfile: buildHarnessTaskPermissionProfile(resolvedConfig) },
-      scope: { readPaths: ['fixture.txt'], writePaths: ['fixture.txt'], forbiddenPaths: ['.git/**', '.openslack*/**'] },
-      outputSchema: { type: 'string', const: 'fixture complete' },
-    };
-    const descriptor = { schema: 'openslack.harness_workspace_task.v1', sourceKind: 'approved-workspace-task', claimRequired: false,
-      task, allowedPaths: ['fixture.txt'], forbiddenPaths: ['.git/**', '.openslack*/**'], verification };
-    const directory = join(workspaceRoot, '.openslack.local/harness/tasks');
-    mkdirSync(directory, { recursive: true });
-    mkdirSync(join(workspaceRoot, '.openslack.local/collaboration'), { recursive: true });
-    const path = join(directory, 'fixture.json');
-    writeFileSync(path, JSON.stringify(descriptor));
-    writeFileSync(join(workspaceRoot, '.openslack.local/harness/deployment.json'), JSON.stringify({
-      schema: 'openslack.harness_deployment.v1', workspaceId: WORKSPACE_ID, identityRoot: workspaceRoot,
-      principal: { agentId: PRINCIPAL_REF, uid: `${PRINCIPAL_REF}-uid`, principalId: `principal:${PRINCIPAL_REF}`,
-        runtimeRunId: 'RUN-governed-composition-001', provider: 'cli' }, execution: deployment,
-      tasks: { [task.taskId]: { path, sha256: hashHarnessInput(descriptor) } },
-    }));
-    const host = createConfiguredHarnessTaskHost(workspaceRoot, PRINCIPAL_REF)!;
-    const callerRoot = join(fixtureRoot, 'caller');
-    mkdirSync(callerRoot);
-    const caller = prepareSdkFixture(callerRoot, [
-      { name: 'mcp__openslack__openslack_preview_workflow', args: { workflowId: 'harness.task.dispatch', input: { taskId: task.taskId, requestId: 'first' } } },
-      { name: 'mcp__openslack__openslack_confirm_plan', args: { planId: '$planId' } },
-      { name: 'mcp__openslack__openslack_get_activity', args: { objectKind: 'workflow', objectId: '$runId' }, poll: true },
-      'end-to-end verified',
-    ]);
-    const callerProfile = join(caller.home, 'profiles/sdk/cordis.patch.yml');
-    const rows = JSON.parse(readFileSync(callerProfile, 'utf8')) as Array<{ insert: object[] }>;
-    const callerSdk = rows[0]!.insert.find(row => 'id' in row && row.id === 'sdk-jsonrpc-server') as { disabled?: boolean };
-    callerSdk.disabled = true;
-    rows[0]!.insert.push({ id: 'openslack-sdk-host', name: '@openslack/deepseek-harness-plugin/sdk-host', config: {
-      generation: 'fixture-caller', runtimeEntries: caller.runtimeEntries, startEligibility: JSON.stringify({ mode: 'not_applicable' }),
-      mcp: { mode: 'task', workspaceRoot, cliModule: deployment.callbackMcp.cliModule,
-        principalRef: PRINCIPAL_REF, timeoutMs: 240_000 },
-    } }, { id: 'openslack-initiator', name: '@openslack/deepseek-harness-plugin/initiator', config: {
-      taskId: task.taskId, principalId: `principal:${PRINCIPAL_REF}`, generation: 'fixture-caller', sessionId: 'openslack-caller',
-      expiresAt: new Date(Date.now() + 300_000).toISOString(),
-    } });
-    writeFileSync(callerProfile, JSON.stringify(rows));
+    let ownedWorkspaceRoot: string | undefined;
+    let hostForCleanup: ReturnType<typeof createConfiguredHarnessTaskHost>;
     let passed = false, primaryFailed = false;
     try {
+      const fixture = prepareSdkFixture(fixtureRoot, [
+        { name: 'read', args: { file_path: 'fixture.txt' } },
+        { name: 'write', args: { file_path: 'fixture.txt', content: 'after' } },
+        { name: 'mcp__openslack__openslack_preview_workflow', args: { workflowId: 'harness.task.report', input: {
+          runId: '$runId', reportId: 'progress-1', summary: 'Changed the approved fixture.', evidenceRefs: ['artifact:fixture'] } } },
+        { name: 'mcp__openslack__openslack_confirm_plan', args: { planId: '$planId' } },
+        'fixture complete',
+      ]);
+      const workspaceRoot = createWorkspace({ action: 'deny', noScenarios: true,
+        onCreated: root => { ownedWorkspaceRoot = root; } });
+      const registry = join(workspaceRoot, '.openslack/agents/registry', `${PRINCIPAL_REF}.yaml`);
+      writeFileSync(registry, readFileSync(registry, 'utf8').replace('  github:',
+        '    harness.task.dispatch: allow\n    harness.task.report: allow\n  github:'));
+      writeFileSync(join(workspaceRoot, 'fixture.txt'), 'before');
+      const fixtureHooks = join(fixtureRoot, 'empty-fixture-hooks');
+      mkdirSync(fixtureHooks);
+      const git = (...args: string[]) => execFileSync('git', ['-c', `core.hooksPath=${fixtureHooks}`, ...args], { cwd: workspaceRoot, encoding: 'utf8' }).trim();
+      git('init', '--initial-branch=main');
+      git('add', 'fixture.txt');
+      git('-c', 'user.name=Keyless Harness Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-m', 'fixture baseline');
+      const baseline = git('rev-parse', 'HEAD');
+      const deployment = { harnessRoot, pluginRoot, pluginBuildHash: hashHarnessPluginArtifacts(pluginRoot),
+        nodeExecutable: process.execPath, nodeVersion: '24.18.1' as const, nodeSha256: hashHarnessNodeExecutable(process.execPath),
+        dshHome: fixture.home, agentId: PRINCIPAL_REF, provider: 'openslack-fixture', model: 'fixture',
+        workerPatch: fixture.patch, exitGraceMs: HARNESS_CLEANUP_BUDGET.totalMs,
+        callbackMcp: { cliModule: join(repositoryRoot, 'apps/cli/dist/index.js'), workspaceRoot, principalRef: PRINCIPAL_REF } };
+      const verification = { resultMode: 'text' as const, requireReport: true, checks: [{ path: 'fixture.txt', expectedText: 'after' }] };
+      const resolvedConfig = { agentId: PRINCIPAL_REF, source: 'fixture', runtimeProvider: 'deepseek-harness', model: 'fixture',
+        tools: ['Read', 'Write', 'Edit', ...['openslack_get_activity', 'openslack_preview_workflow', 'openslack_confirm_plan', 'openslack_cancel_plan']
+          .map(name => `mcp.openslack.${name}`)], permissionMode: 'acceptEdits' as const };
+      const task = { taskId: 'TASK-2026-100001', principalId: `principal:${PRINCIPAL_REF}`, baseline, timeoutMs: 240_000,
+        executionBuildHash: hashHarnessRuntimeArtifacts(harnessRoot), verificationHash: hashHarnessInput(verification), deploymentHash: hashHarnessDeployment(deployment),
+        request: { agentId: PRINCIPAL_REF, prompt: 'Change only fixture.txt, report current-task progress, then answer fixture complete.',
+          resolvedConfig, permissionProfile: buildHarnessTaskPermissionProfile(resolvedConfig) },
+        scope: { readPaths: ['fixture.txt'], writePaths: ['fixture.txt'], forbiddenPaths: ['.git/**', '.openslack*/**'] },
+        outputSchema: { type: 'string', const: 'fixture complete' },
+      };
+      const descriptor = { schema: 'openslack.harness_workspace_task.v1', sourceKind: 'approved-workspace-task', claimRequired: false,
+        task, allowedPaths: ['fixture.txt'], forbiddenPaths: ['.git/**', '.openslack*/**'], verification };
+      const directory = join(workspaceRoot, '.openslack.local/harness/tasks');
+      mkdirSync(directory, { recursive: true });
+      mkdirSync(join(workspaceRoot, '.openslack.local/collaboration'), { recursive: true });
+      const path = join(directory, 'fixture.json');
+      writeFileSync(path, JSON.stringify(descriptor));
+      writeFileSync(join(workspaceRoot, '.openslack.local/harness/deployment.json'), JSON.stringify({
+        schema: 'openslack.harness_deployment.v1', workspaceId: WORKSPACE_ID, identityRoot: workspaceRoot,
+        principal: { agentId: PRINCIPAL_REF, uid: `${PRINCIPAL_REF}-uid`, principalId: `principal:${PRINCIPAL_REF}`,
+          runtimeRunId: 'RUN-governed-composition-001', provider: 'cli' }, execution: deployment,
+        tasks: { [task.taskId]: { path, sha256: hashHarnessInput(descriptor) } },
+      }));
+      const host = createConfiguredHarnessTaskHost(workspaceRoot, PRINCIPAL_REF)!;
+      hostForCleanup = host;
+      const callerRoot = join(fixtureRoot, 'caller');
+      mkdirSync(callerRoot);
+      const caller = prepareSdkFixture(callerRoot, [
+        { name: 'mcp__openslack__openslack_preview_workflow', args: { workflowId: 'harness.task.dispatch', input: { taskId: task.taskId, requestId: 'first' } } },
+        { name: 'mcp__openslack__openslack_confirm_plan', args: { planId: '$planId' } },
+        { name: 'mcp__openslack__openslack_get_activity', args: { objectKind: 'workflow', objectId: '$runId' }, poll: true },
+        'end-to-end verified',
+      ]);
+      const callerProfile = join(caller.home, 'profiles/sdk/cordis.patch.yml');
+      const rows = JSON.parse(readFileSync(callerProfile, 'utf8')) as Array<{ insert: object[] }>;
+      const callerSdk = rows[0]!.insert.find(row => 'id' in row && row.id === 'sdk-jsonrpc-server') as { disabled?: boolean };
+      callerSdk.disabled = true;
+      rows[0]!.insert.push({ id: 'openslack-sdk-host', name: '@openslack/deepseek-harness-plugin/sdk-host', config: {
+        generation: 'fixture-caller', runtimeEntries: caller.runtimeEntries, startEligibility: JSON.stringify({ mode: 'not_applicable' }),
+        mcp: { mode: 'task', workspaceRoot, cliModule: deployment.callbackMcp.cliModule,
+          principalRef: PRINCIPAL_REF, timeoutMs: 240_000 },
+      } }, { id: 'openslack-initiator', name: '@openslack/deepseek-harness-plugin/initiator', config: {
+        taskId: task.taskId, principalId: `principal:${PRINCIPAL_REF}`, generation: 'fixture-caller', sessionId: 'openslack-caller',
+        expiresAt: new Date(Date.now() + 300_000).toISOString(),
+      } });
+      writeFileSync(callerProfile, JSON.stringify(rows));
       await host.observe('harness.task.dispatch', { taskId: task.taskId, requestId: 'compatibility-1' });
       const output = execFileSync(process.execPath, [join(pluginRoot, 'tests/fixtures/sdk-caller.mjs'),
         harnessRoot, caller.home, caller.workspace, caller.patch], { encoding: 'utf8', env: { PATH: process.env.PATH }, timeout: 270_000, maxBuffer: 32 * 1024 * 1024 });
@@ -1932,11 +1938,20 @@ describe('production agent-bound governed mutation composition', () => {
       throw error;
     } finally {
       let cleanupFailed = false, cleanupFailure: unknown, stopUnconfirmed = false;
-      try { const closed = await host.close(15_000); stopUnconfirmed = !closed.stopped; expect(closed.stopped).toBe(true); }
-      catch (error) { cleanupFailed = true; cleanupFailure = error; }
+      try {
+        if (hostForCleanup) {
+          const closed = await hostForCleanup.close(15_000);
+          stopUnconfirmed = !closed.stopped;
+          expect(closed.stopped).toBe(true);
+        }
+      } catch (error) { cleanupFailed = true; cleanupFailure = error; }
       if (!passed || cleanupFailed || process.env.OPENSLACK_HARNESS_KEEP_EVIDENCE === '1') {
-        roots.splice(roots.indexOf(fixtureRoot), 1); roots.splice(roots.indexOf(workspaceRoot), 1);
-        console.info(`Keyless closed-loop ${passed ? 'evidence' : 'failure'} retained: ${fixtureRoot}, ${workspaceRoot}`);
+        for (const ownedRoot of [fixtureRoot, ownedWorkspaceRoot]) {
+          if (ownedRoot === undefined) continue;
+          const index = roots.indexOf(ownedRoot);
+          if (index >= 0) roots.splice(index, 1);
+        }
+        console.info(`Keyless closed-loop ${passed ? 'evidence' : 'failure'} retained: ${fixtureRoot}, ${ownedWorkspaceRoot ?? 'workspace not prepared'}`);
       }
       if (cleanupFailed) {
         if (primaryFailed) console.error('Keyless closed-loop cleanup also failed; owned directories retained', { phase: 'host_close', code: stopUnconfirmed ? 'FIXTURE_STOP_UNCONFIRMED' : fixtureCleanupCode(cleanupFailure) });

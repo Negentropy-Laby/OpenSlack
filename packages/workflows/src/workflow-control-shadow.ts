@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process';
+import { execFile, execFileSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import { chmodSync, constants as fsConstants, type BigIntStats } from 'node:fs';
 import {
@@ -563,11 +563,11 @@ function parseWindowsPathSecurity(value: unknown): WindowsPathSecurity {
   });
 }
 
-function assertOwnerOnlyPath(
+async function assertOwnerOnlyPath(
   path: string,
   stat: BigIntStats,
   security: WorkflowControlShadowJournalSecurityDependencies,
-): void {
+): Promise<void> {
   if (security.platform !== 'win32') {
     if ((Number(stat.mode) & 0o077) !== 0) {
       throw new TypeError('Workflow Control shadow journal path must be owner-only.');
@@ -583,7 +583,7 @@ function assertOwnerOnlyPath(
   // unchanged owner-only directories can share the same bounded cache as files.
   const cacheable = true;
   const acl = parseWindowsPathSecurity(
-    security.readWindowsPathSecurity(path, securityIdentity(path, stat), cacheable),
+    await security.readWindowsPathSecurity(path, securityIdentity(path, stat), cacheable),
   );
   const allowed = new Set([sid, WINDOWS_SYSTEM_SID]);
   const failure = acl.reparse
@@ -623,7 +623,7 @@ export function productionJournalSecurity(): WorkflowControlShadowJournalSecurit
   return Object.freeze({
     platform: process.platform,
     currentWindowsSid,
-    readWindowsPathSecurity(path: string, identity: string, cacheable: boolean) {
+    async readWindowsPathSecurity(path: string, identity: string, cacheable: boolean) {
       const cacheKey = resolve(path).toLowerCase();
       if (cacheable) {
         const cached = productionWindowsSecurityCache.get(cacheKey);
@@ -638,17 +638,23 @@ export function productionJournalSecurity(): WorkflowControlShadowJournalSecurit
         '$rules = @($acl.GetAccessRules($true, $true, [System.Security.Principal.SecurityIdentifier]) | ForEach-Object { [pscustomobject]@{ sid = $_.IdentityReference.Value; type = $_.AccessControlType.ToString() } })',
         '[pscustomobject]@{ owner = $owner; protected = $acl.AreAccessRulesProtected; reparse = $reparse; rules = $rules } | ConvertTo-Json -Compress -Depth 4',
       ].join('; ');
-      const value = execFileSync(
-        'powershell.exe',
-        ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', script],
-        {
-          encoding: 'utf8',
-          windowsHide: true,
-          timeout: WINDOWS_SECURITY_COMMAND_TIMEOUT_MS,
-          maxBuffer: 64 * 1024,
-          env: { ...process.env, OPENSLACK_WORKFLOW_SHADOW_PATH: path },
-        },
-      );
+      const value = await new Promise<string>((resolveOutput, reject) => {
+        execFile(
+          'powershell.exe',
+          ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', script],
+          {
+            encoding: 'utf8',
+            windowsHide: true,
+            timeout: WINDOWS_SECURITY_COMMAND_TIMEOUT_MS,
+            maxBuffer: 64 * 1024,
+            env: { ...process.env, OPENSLACK_WORKFLOW_SHADOW_PATH: path },
+          },
+          (error, stdout) => {
+            if (error) reject(error);
+            else resolveOutput(stdout);
+          },
+        );
+      });
       if (cacheable) {
         if (productionWindowsSecurityCache.size >= WINDOWS_SECURITY_CACHE_LIMIT) {
           productionWindowsSecurityCache.delete(
@@ -718,7 +724,7 @@ async function assertStableDirectorySecurity(
 ): Promise<void> {
   let before = initial;
   for (let attempt = 0; attempt < 3; attempt += 1) {
-    assertOwnerOnlyPath(path, before, security);
+    await assertOwnerOnlyPath(path, before, security);
     const after = await lstat(path, { bigint: true });
     if (!sameDirectoryObject(before, after)) {
       throw new TypeError(
@@ -752,7 +758,7 @@ export async function ensureOwnerDirectory(
   if (!before.isDirectory() || before.isSymbolicLink()) {
     throw new TypeError('Workflow Control shadow journal directory must be owner-only.');
   }
-  assertOwnerOnlyPath(path, before, security);
+  await assertOwnerOnlyPath(path, before, security);
   const canonical = await realpath(path);
   if (
     !sameCanonicalPath(canonical, path, security) ||
@@ -782,7 +788,7 @@ export async function assertOwnerDirectory(
   if (!stat.isDirectory() || stat.isSymbolicLink()) {
     throw new TypeError('Workflow Control shadow journal directory must be owner-only.');
   }
-  assertOwnerOnlyPath(path, stat, security);
+  await assertOwnerOnlyPath(path, stat, security);
   const canonical = await realpath(path);
   if (
     !sameCanonicalPath(canonical, path, security) ||
@@ -845,7 +851,7 @@ export async function assertOwnerFile(
   if (!before.isFile() || before.isSymbolicLink()) {
     throw new TypeError('Workflow Control shadow journal file is unsafe.');
   }
-  assertOwnerOnlyPath(path, before, security);
+  await assertOwnerOnlyPath(path, before, security);
   const canonical = await realpath(path);
   if (!sameCanonicalPath(canonical, path, security)) {
     throw new TypeError('Workflow Control shadow journal file is non-canonical.');

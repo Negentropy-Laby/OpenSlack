@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -1128,4 +1128,76 @@ describe('GS9-D effect shadow transport and durable observation', () => {
     () => rebuildDurableObservations({ cancelClaim: true }),
     process.platform === 'win32' ? 120_000 : 30_000,
   );
+});
+
+
+describe('journal asynchronous Windows ACL inspection', () => {
+  const sid = 'S-1-5-21-42-1001';
+  const safeAcl = () => JSON.stringify({ owner: sid, protected: true, reparse: false,
+    rules: [{ sid, type: 'Allow' }, { sid: 'S-1-5-18', type: 'Allow' }] });
+  afterEach(() => { vi.doUnmock('node:child_process'); vi.resetModules(); });
+  async function productionSecurity(query: ReturnType<typeof vi.fn>) {
+    vi.resetModules();
+    const sync = vi.fn(() => safeAcl());
+    vi.doMock('node:child_process', () => ({ execFile: query, execFileSync: sync }));
+    const module = await import('../workflow-control-shadow.js');
+    return { security: module.productionJournalSecurity(), sync };
+  }
+
+  it('awaits the native ACL callback while independent work progresses with the original command bound', async () => {
+    const path = join(await temporaryRoot(), 'acl-fixture');
+    let callback: ((error: Error | null, stdout: string, stderr: string) => void) | undefined;
+    const query = vi.fn((_file: string, _args: string[], _options: unknown, done: typeof callback) => { callback = done; });
+    const { security, sync } = await productionSecurity(query);
+    const pending = Promise.resolve(security.readWindowsPathSecurity(path, 'snapshot-1', true));
+    let settled = false; void pending.then(() => { settled = true; }, () => { settled = true; });
+    try {
+      await new Promise<void>(resolve => setImmediate(resolve));
+      expect(query).toHaveBeenCalledTimes(1);
+      expect(settled).toBe(false);
+      const [file, args, options] = query.mock.calls[0]!;
+      expect(file).toBe('powershell.exe');
+      expect(args.slice(0, 4)).toEqual(['-NoLogo', '-NoProfile', '-NonInteractive', '-Command']);
+      expect(args[4]).toContain('GetAccessRules($true, $true, [System.Security.Principal.SecurityIdentifier])');
+      expect(options).toMatchObject({ encoding: 'utf8', windowsHide: true, timeout: 20_000,
+        maxBuffer: 64 * 1024, env: { OPENSLACK_WORKFLOW_SHADOW_PATH: path } });
+      expect(sync).not.toHaveBeenCalled();
+    } finally { callback?.(null, safeAcl(), ''); await pending.catch(() => undefined); }
+    expect(await security.readWindowsPathSecurity(path, 'snapshot-1', true)).toBe(safeAcl());
+    expect(query).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects native inspection failures without caching them or performing an automatic retry', async () => {
+    const path = join(await temporaryRoot(), 'acl-failure');
+    const failure = Object.assign(new Error('Controlled native inspection failure'), { code: 'ETIMEDOUT' });
+    const query = vi.fn().mockImplementationOnce((_file, _args, _options, done) => done(failure, '', ''))
+      .mockImplementationOnce((_file, _args, _options, done) => done(null, safeAcl(), ''));
+    const { security, sync } = await productionSecurity(query);
+    await expect(Promise.resolve().then(() => security.readWindowsPathSecurity(path, 'snapshot-1', true))).rejects.toBe(failure);
+    expect(query).toHaveBeenCalledTimes(1);
+    expect(await security.readWindowsPathSecurity(path, 'snapshot-1', true)).toBe(safeAcl());
+    expect(await security.readWindowsPathSecurity(path, 'snapshot-1', true)).toBe(safeAcl());
+    expect(query).toHaveBeenCalledTimes(2);
+    expect(sync).not.toHaveBeenCalled();
+  });
+
+  it.each(['stable', 'changed'] as const)('waits for the security result and checks the %s file identity after the await', async mode => {
+    const path = join(await temporaryRoot(), 'owned-acl-fixture');
+    await writeFile(path, 'before', { mode: 0o600 });
+    const entered = Promise.withResolvers<void>(), released = Promise.withResolvers<string>();
+    const security = { platform: 'win32' as const, currentWindowsSid: () => sid,
+      readWindowsPathSecurity: () => { entered.resolve(); return released.promise; }, hardenPath: () => undefined };
+    const checking = journalOperations.assertOwnerFile(path, security);
+    let settled = false;
+    const outcome = checking.then(value => { settled = true; return { value }; }, error => { settled = true; return { error }; });
+    try {
+      await entered.promise;
+      await new Promise<void>(resolve => setImmediate(resolve));
+      expect(settled).toBe(false);
+      if (mode === 'changed') await writeFile(path, 'changed during the actual security await');
+    } finally { released.resolve(safeAcl()); }
+    const result = await outcome;
+    if (mode === 'changed') expect(result).toMatchObject({ error: expect.objectContaining({ message: expect.stringContaining('changed') }) });
+    else expect(result).toMatchObject({ value: expect.objectContaining({ size: 6n }) });
+  });
 });
