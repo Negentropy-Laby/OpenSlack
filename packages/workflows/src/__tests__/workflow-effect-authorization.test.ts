@@ -3,6 +3,8 @@ import { execFileSync } from 'node:child_process';
 import { chmod, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
+import { performance } from 'node:perf_hooks';
+import { types as utilTypes } from 'node:util';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   applyWorkflowEffectApprovalDecision,
@@ -50,6 +52,26 @@ const REASON_HASH = '5'.repeat(64);
 const roots: string[] = [];
 let revisionPhase: { work: Promise<void>; roots: string[] } | undefined;
 
+function fixtureCleanupCode(error: unknown): string {
+  try {
+    if (!error || typeof error !== 'object' || utilTypes.isProxy(error)) return 'UNKNOWN';
+    const code = Object.getOwnPropertyDescriptor(error, 'code')?.value;
+    return typeof code === 'string' && ['EACCES', 'EPERM', 'ENOENT', 'EBUSY', 'EIO', 'ENOSPC', 'ENOTEMPTY'].includes(code) ? code : 'UNKNOWN';
+  } catch { return 'UNKNOWN'; }
+}
+
+async function measureFixturePhase<T>(
+  phase: 'preparation' | 'protocol' | 'wait' | 'cleanup',
+  operation: () => Promise<T>,
+): Promise<T> {
+  const started = performance.now();
+  try {
+    return await operation();
+  } finally {
+    console.info('Effect authorization fixture phase', { phase, elapsedMs: performance.now() - started });
+  }
+}
+
 function trackRevisionPhase(operation: (ownedRoots: string[]) => Promise<void>): Promise<void> {
   const ownedRoots = revisionPhase?.roots ?? [];
   const work = operation(ownedRoots);
@@ -67,14 +89,21 @@ afterEach(async () => {
   const phase = revisionPhase;
   revisionPhase = undefined;
   const ownedRoots = roots.splice(0);
-  await phase?.work.catch(() => undefined);
+  let primaryFailed = false;
+  if (phase) {
+    await measureFixturePhase('wait', () => phase.work.catch(() => { primaryFailed = true; }));
+  }
   // Phase-owned roots stay separate even if the hook times out and another
   // case starts while a filesystem call from this phase is still completing.
-  await Promise.all(
-    [...ownedRoots, ...(phase?.roots ?? [])].map((root) =>
-      rm(root, { recursive: true, force: true }),
-    ),
+  const cleanup = () => Promise.allSettled(
+    [...ownedRoots, ...(phase?.roots ?? [])].map(root => rm(root, { recursive: true, force: true })),
   );
+  const settled = phase ? await measureFixturePhase('cleanup', cleanup) : await cleanup();
+  const failures = settled.filter(result => result.status === 'rejected');
+  if (failures.length > 0) {
+    if (primaryFailed) console.error('Effect authorization fixture cleanup also failed', { phase: 'remove', count: failures.length, codes: failures.map(result => fixtureCleanupCode(result.reason)) });
+    else throw new AggregateError(failures.map(result => result.reason), 'Effect authorization fixture cleanup failed');
+  }
 }, platformTestTimeout(30_000));
 
 async function fixture(
@@ -680,24 +709,26 @@ describe('workflow effect D2 authorization', () => {
     });
   });
 
-  it('rejects a terminal human rejection without creating an execution claim', async () => {
-    const value = await fixture();
-    const { pending } = await createPending(value.makePort());
-    await reject(value, pending.approvalId);
-    const port = value.makePort();
-    const prepared = await port.prepare({
-      runId: 'run-1',
-      evaluationIndex: 1,
-      operation: 'openslack.governance.audit',
-      detail: 'bounded audit',
+  it('rejects a terminal human rejection without creating an execution claim', () => trackRevisionPhase(async ownedRoots => {
+    const value = await measureFixturePhase('preparation', () => fixture(undefined, undefined, ownedRoots));
+    await measureFixturePhase('protocol', async () => {
+      const { pending } = await createPending(value.makePort());
+      await reject(value, pending.approvalId);
+      const port = value.makePort();
+      const prepared = await port.prepare({
+        runId: 'run-1',
+        evaluationIndex: 1,
+        operation: 'openslack.governance.audit',
+        detail: 'bounded audit',
+      });
+      await expect(port.authorize(prepared)).rejects.toMatchObject({
+        code: 'WORKFLOW_EFFECT_AUTHORIZATION_REJECTED',
+      });
+      expect(
+        await authorityClaimFiles(value, 'openslack.workflow_effect_execution_record.v1'),
+      ).toEqual([]);
     });
-    await expect(port.authorize(prepared)).rejects.toMatchObject({
-      code: 'WORKFLOW_EFFECT_AUTHORIZATION_REJECTED',
-    });
-    expect(
-      await authorityClaimFiles(value, 'openslack.workflow_effect_execution_record.v1'),
-    ).toEqual([]);
-  });
+  }));
 
   it('fails closed on workflow, input, correlation, and effect identity drift', async () => {
     const value = await fixture();
@@ -1059,81 +1090,109 @@ describe('workflow effect D2 authorization', () => {
     await expect(readFile(lock, 'utf8')).resolves.toBe('{}\n');
   });
 
-  it('fails closed when the bounded authority-store entry budget is exhausted', async () => {
-    const value = await fixture();
-    await createPending(value.makePort());
-    const claims = join(
-      value.workspaceRoot,
-      '.openslack.local',
-      'workflows',
-      'effect-authority',
-      'claims',
+  describe('bounded authority-store capacity', () => {
+    let preparedCase: Awaited<ReturnType<typeof fixture>> | undefined;
+
+    beforeEach(
+      () =>
+        trackRevisionPhase(async (ownedRoots) => {
+          const value = await fixture(undefined, undefined, ownedRoots);
+          await createPending(value.makePort());
+          const claims = join(
+            value.workspaceRoot,
+            '.openslack.local',
+            'workflows',
+            'effect-authority',
+            'claims',
+          );
+          const names = Array.from(
+            { length: 4_095 },
+            (_, index) => `${(index + 1).toString(16).padStart(64, '0')}.json`,
+          );
+          const initialNames = await readdir(claims);
+          // Populate the real store in setup; the guarded operation retains its
+          // original test deadline and every batch still starts 128 real writes.
+          for (let offset = 0; offset < names.length; offset += 128) {
+            const settled = await Promise.allSettled(
+              names
+                .slice(offset, offset + 128)
+                .map((name) => writeFile(join(claims, name), '', { mode: 0o600 })),
+            );
+            const failures = settled.filter((result) => result.status === 'rejected');
+            if (failures.length > 0) {
+              throw new AggregateError(
+                failures.map((result) => result.reason),
+                'Authority-store capacity fixture preparation failed.',
+              );
+            }
+          }
+          expect((await readdir(claims)).sort()).toEqual([...initialNames, ...names].sort());
+          preparedCase = value;
+        }),
+      platformTestTimeout(5_000),
     );
-    const names = Array.from(
-      { length: 4_095 },
-      (_, index) => `${(index + 1).toString(16).padStart(64, '0')}.json`,
-    );
-    for (let offset = 0; offset < names.length; offset += 128) {
-      await Promise.all(
-        names
-          .slice(offset, offset + 128)
-          .map((name) => writeFile(join(claims, name), '', { mode: 0o600 })),
-      );
-    }
-    await expect(
-      value.makePort().prepare({
+
+    it('fails closed when the bounded authority-store entry budget is exhausted', () =>
+      trackRevisionPhase(async () => {
+        if (preparedCase === undefined)
+          throw new Error('Authority capacity fixture was not prepared');
+        await expect(
+          preparedCase.makePort().prepare({
+            runId: 'run-1',
+            evaluationIndex: 1,
+            operation: 'openslack.governance.audit',
+            detail: 'bounded audit',
+          }),
+        ).rejects.toMatchObject({ code: 'WORKFLOW_EFFECT_AUTHORITY_LIMIT_EXCEEDED' });
+      }));
+  });
+
+  it('keeps identical effect contents distinct by deterministic evaluation occurrence', () => trackRevisionPhase(async ownedRoots => {
+    const value = await measureFixturePhase('preparation', () => fixture(undefined, undefined, ownedRoots));
+    await measureFixturePhase('protocol', async () => {
+      const port = value.makePort();
+      const first = await createPending(port);
+      await approve(value, first.pending.approvalId);
+      const resumedFirst = value.makePort();
+      const firstPrepared = await resumedFirst.prepare({
         runId: 'run-1',
         evaluationIndex: 1,
         operation: 'openslack.governance.audit',
         detail: 'bounded audit',
-      }),
-    ).rejects.toMatchObject({ code: 'WORKFLOW_EFFECT_AUTHORITY_LIMIT_EXCEEDED' });
-  });
+      });
+      const firstClaim = await resumedFirst.authorize(firstPrepared);
+      expect(firstClaim.disposition).toBe('claimed');
+      if (firstClaim.disposition !== 'claimed') throw new Error('expected first claim');
+      await resumedFirst.complete(firstClaim.authority, undefined);
 
-  it('keeps identical effect contents distinct by deterministic evaluation occurrence', async () => {
-    const value = await fixture();
-    const port = value.makePort();
-    const first = await createPending(port);
-    await approve(value, first.pending.approvalId);
-    const resumedFirst = value.makePort();
-    const firstPrepared = await resumedFirst.prepare({
-      runId: 'run-1',
-      evaluationIndex: 1,
-      operation: 'openslack.governance.audit',
-      detail: 'bounded audit',
+      const secondPrepared = await port.prepare({
+        runId: 'run-1',
+        evaluationIndex: 2,
+        operation: 'openslack.governance.audit',
+        detail: 'bounded audit',
+      });
+      let secondPending: WorkflowEffectApprovalPendingError | undefined;
+      try {
+        await port.authorize(secondPrepared);
+      } catch (error) {
+        if (error instanceof WorkflowEffectApprovalPendingError) secondPending = error;
+        else throw error;
+      }
+      expect(secondPending?.approvalId).not.toBe(first.pending.approvalId);
+      await approve(value, secondPending!.approvalId);
+      const secondPort = value.makePort();
+      const resumedSecond = await secondPort.prepare({
+        runId: 'run-1',
+        evaluationIndex: 2,
+        operation: 'openslack.governance.audit',
+        detail: 'bounded audit',
+      });
+      const secondClaim = await secondPort.authorize(resumedSecond);
+      expect(secondClaim.disposition).toBe('claimed');
+      if (secondClaim.disposition !== 'claimed') throw new Error('expected second claim');
+      expect(secondClaim.executionId).not.toBe(firstClaim.executionId);
     });
-    const firstClaim = await resumedFirst.authorize(firstPrepared);
-    expect(firstClaim.disposition).toBe('claimed');
-    if (firstClaim.disposition !== 'claimed') throw new Error('expected first claim');
-    await resumedFirst.complete(firstClaim.authority, undefined);
-
-    const secondPrepared = await port.prepare({
-      runId: 'run-1',
-      evaluationIndex: 2,
-      operation: 'openslack.governance.audit',
-      detail: 'bounded audit',
-    });
-    let secondPending: WorkflowEffectApprovalPendingError | undefined;
-    try {
-      await port.authorize(secondPrepared);
-    } catch (error) {
-      if (error instanceof WorkflowEffectApprovalPendingError) secondPending = error;
-      else throw error;
-    }
-    expect(secondPending?.approvalId).not.toBe(first.pending.approvalId);
-    await approve(value, secondPending!.approvalId);
-    const secondPort = value.makePort();
-    const resumedSecond = await secondPort.prepare({
-      runId: 'run-1',
-      evaluationIndex: 2,
-      operation: 'openslack.governance.audit',
-      detail: 'bounded audit',
-    });
-    const secondClaim = await secondPort.authorize(resumedSecond);
-    expect(secondClaim.disposition).toBe('claimed');
-    if (secondClaim.disposition !== 'claimed') throw new Error('expected second claim');
-    expect(secondClaim.executionId).not.toBe(firstClaim.executionId);
-  });
+  }));
 
   it('recovers a committed v2 decision from the prepared decision journal after restart', async () => {
     const value = await fixture('2026-10-01T00:00:00.000Z');

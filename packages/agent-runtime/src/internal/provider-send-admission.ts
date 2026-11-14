@@ -1,17 +1,49 @@
 import type { ProviderAttemptPort, ProviderAttemptReservation } from '../provider-attempt-port.js';
 
 /** Host-only composition. This hook can restrict an existing Go reservation; it grants none. */
+export interface ProviderSendTransportEvidence {
+  readonly schema: 'openslack.openai_send_transport.v1';
+  readonly endpoint: string;
+  readonly method: 'POST';
+  readonly redirect: 'error';
+  /** Adapter retries only; this makes no claim about gateway/upstream attempts. */
+  readonly adapterAutomaticRetries: 0;
+}
+
 export interface ProviderSendRequest {
   readonly providerId: string;
   readonly modelId: string;
   readonly requestBytes: string;
+  /** Absent for transports without reviewed local evidence; absence proves nothing. */
+  readonly transportEvidence?: ProviderSendTransportEvidence;
   readonly signal?: AbortSignal;
 }
 const hooks = new WeakMap<
   ProviderAttemptPort,
   (reservation: ProviderAttemptReservation, request: ProviderSendRequest) => Promise<void>
 >();
+const preparationHooks = new WeakMap<
+  ProviderAttemptPort,
+  (request: ProviderSendRequest) => Promise<void>
+>();
 export const hasProviderSendAdmission = (port: ProviderAttemptPort): boolean => hooks.has(port);
+
+/** Host-only read-only veto before a durable Go reservation. It grants no send authority. */
+export function bindProviderSendPreparation(
+  port: ProviderAttemptPort,
+  prepare: (request: ProviderSendRequest) => Promise<void>,
+): void {
+  if (preparationHooks.has(port))
+    throw new TypeError('Provider send preparation is already bound.');
+  preparationHooks.set(port, prepare);
+}
+
+export async function prepareProviderSend(
+  port: ProviderAttemptPort,
+  request: ProviderSendRequest,
+): Promise<void> {
+  await preparationHooks.get(port)?.(Object.freeze({ ...request }));
+}
 
 export function bindProviderSendAdmission(
   port: ProviderAttemptPort,

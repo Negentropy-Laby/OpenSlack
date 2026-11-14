@@ -5,7 +5,11 @@ import type {
   ProviderAttemptReserveInput,
 } from '../provider-attempt-port.js';
 import type { ProviderUsageReceipt } from '../provider-usage-evidence.js';
-import { admitProviderSend, type ProviderSendRequest } from './provider-send-admission.js';
+import {
+  admitProviderSend,
+  prepareProviderSend,
+  type ProviderSendRequest,
+} from './provider-send-admission.js';
 
 /** Opaque capability minted by the launcher host and consumed only by adapters. */
 export interface ProviderAttemptBoundary {
@@ -45,6 +49,13 @@ export function reserveProviderAttempt(
   input: ProviderAttemptReserveInput,
 ): Promise<ProviderAttemptReservation> {
   return port(boundary).reserve(input);
+}
+
+export function prepareProviderAttemptSend(
+  boundary: ProviderAttemptBoundary,
+  request: ProviderSendRequest,
+): Promise<void> {
+  return prepareProviderSend(port(boundary), request);
 }
 
 export function settleProviderAttempt(

@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
+import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -28,7 +29,13 @@ import {
   type ProviderAttemptPort,
 } from '../index.js';
 import { createProviderAttemptBoundary } from '../internal/provider-attempt-boundary.js';
-import { bindProviderSendAdmission } from '../internal/provider-send-admission.js';
+import {
+  bindProviderSendAdmission,
+  bindProviderSendPreparation,
+} from '../internal/provider-send-admission.js';
+import type { ProviderSendRequest } from '../internal/provider-send-admission.js';
+import type { ProviderAttemptReservation } from '../provider-attempt-port.js';
+import { buildProviderUsageIdentityHashes } from '../provider-usage-evidence.js';
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -210,6 +217,139 @@ describe('OpenAI-compatible agent runtime', () => {
 
   afterEach(() => rmSync(root, { recursive: true, force: true }));
 
+  it('prepares the full Unicode request and tool schemas without reserving on a host refusal', async () => {
+    const { context } = createContext(root);
+    context.prompt = '检查仓库：🧪 café';
+    const definitions = context.toolExecutor.listDefinitions();
+    const port: ProviderAttemptPort = {
+      reserve: vi.fn(),
+      settle: vi.fn(),
+    };
+    const preparation = vi.fn(async (_request: ProviderSendRequest) => {
+      throw new RuntimeMisconfiguredError('SEND_TOTAL_TOKEN_UNVERIFIED');
+    });
+    bindProviderSendPreparation(port, preparation);
+    expect(() => bindProviderSendPreparation(port, async () => {})).toThrow('already bound');
+    const admission = vi.fn(async () => {});
+    bindProviderSendAdmission(port, admission);
+    const transport = vi.fn();
+    await expect(
+      adapter(transport as typeof fetch, {
+        providerAttemptBoundary: createProviderAttemptBoundary(port),
+      }).execute(context),
+    ).rejects.toThrow('SEND_TOTAL_TOKEN_UNVERIFIED');
+    expect(preparation).toHaveBeenCalledOnce();
+    const prepared = preparation.mock.calls[0]![0];
+    expect(Object.isFrozen(prepared)).toBe(true);
+    expect(Object.isFrozen(prepared.transportEvidence)).toBe(true);
+    expect(prepared.transportEvidence).toMatchObject({
+      endpoint: 'https://example.test/v1/chat/completions',
+      redirect: 'error',
+      adapterAutomaticRetries: 0,
+    });
+    const body = JSON.parse(prepared.requestBytes);
+    expect(body.messages).toEqual([
+      expect.objectContaining({ role: 'system', content: expect.any(String) }),
+      { role: 'user', content: context.prompt },
+    ]);
+    expect(
+      body.tools.map((tool: { function: { parameters: unknown } }) => tool.function.parameters),
+    ).toEqual(definitions.map((definition) => definition.inputSchema));
+    expect(body).toMatchObject({ model: 'test-model', max_tokens: 50 });
+    expect(port.reserve).not.toHaveBeenCalled();
+    expect(port.settle).not.toHaveBeenCalled();
+    expect(admission).not.toHaveBeenCalled();
+    expect(transport).not.toHaveBeenCalled();
+  });
+
+  it('keeps prepared messages and schemas when reserve awaits and still applies final admission', async () => {
+    const { context } = createContext(root);
+    const definitions = structuredClone(context.toolExecutor.listDefinitions());
+    vi.spyOn(context.toolExecutor, 'listDefinitions').mockReturnValue(definitions);
+    const initialPrompt = context.prompt;
+    let prepared!: ProviderSendRequest;
+    const port: ProviderAttemptPort = {
+      reserve: vi.fn(async () => {
+        context.prompt = 'changed after preparation';
+        definitions[0]!.inputSchema = { changedAfterPreparation: true };
+        return {
+          reservationId: 'reservation.prepared',
+          callId: 'call.prepared',
+          authorizedTokens: '25',
+        };
+      }),
+      settle: vi.fn(),
+    };
+    bindProviderSendPreparation(port, async (request) => {
+      prepared = request;
+    });
+    const admission = vi.fn(
+      async (_reservation: ProviderAttemptReservation, _request: ProviderSendRequest) => {
+        throw new RuntimeMisconfiguredError('FINAL_SEND_VETO');
+      },
+    );
+    bindProviderSendAdmission(port, admission);
+    const transport = vi.fn();
+    await expect(
+      adapter(transport as typeof fetch, {
+        providerAttemptBoundary: createProviderAttemptBoundary(port),
+      }).execute(context),
+    ).rejects.toThrow('FINAL_SEND_VETO');
+    const before = JSON.parse(prepared.requestBytes);
+    const after = JSON.parse(admission.mock.calls[0]![1].requestBytes);
+    expect(before.messages[1]).toEqual({ role: 'user', content: initialPrompt });
+    expect(after).toEqual({ ...before, max_tokens: 25 });
+    expect(after.tools[0].function.parameters).not.toEqual(definitions[0]!.inputSchema);
+    expect(port.reserve).toHaveBeenCalledOnce();
+    expect(port.settle).not.toHaveBeenCalled();
+    expect(transport).not.toHaveBeenCalled();
+  });
+
+  it('does not reserve or settle after cancellation during request preparation', async () => {
+    const { context } = createContext(root);
+    const controller = new AbortController();
+    const reason = new Error('cancel during preparation');
+    const port: ProviderAttemptPort = { reserve: vi.fn(), settle: vi.fn() };
+    bindProviderSendPreparation(port, async () => {
+      controller.abort(reason);
+    });
+    const transport = vi.fn();
+    await expect(
+      adapter(transport as typeof fetch, {
+        providerAttemptBoundary: createProviderAttemptBoundary(port),
+      }).execute({ ...context, signal: controller.signal }),
+    ).rejects.toBe(reason);
+    expect(port.reserve).not.toHaveBeenCalled();
+    expect(port.settle).not.toHaveBeenCalled();
+    expect(transport).not.toHaveBeenCalled();
+  });
+
+  it.each([2_000, 2_001])(
+    'does not reserve when preparation uses %i ms of the total deadline',
+    async (elapsed) => {
+      const { context } = createContext(root);
+      let now = Date.now();
+      const clock = vi.spyOn(Date, 'now').mockImplementation(() => now);
+      const port: ProviderAttemptPort = { reserve: vi.fn(), settle: vi.fn() };
+      bindProviderSendPreparation(port, async () => {
+        now += elapsed;
+      });
+      const transport = vi.fn();
+      try {
+        await expect(
+          adapter(transport as typeof fetch, {
+            providerAttemptBoundary: createProviderAttemptBoundary(port),
+          }).execute(context),
+        ).rejects.toBeInstanceOf(ProviderTimeoutError);
+        expect(port.reserve).not.toHaveBeenCalled();
+        expect(port.settle).not.toHaveBeenCalled();
+        expect(transport).not.toHaveBeenCalled();
+      } finally {
+        clock.mockRestore();
+      }
+    },
+  );
+
   it('applies the host send veto after reservation and exact encoding, before physical fetch', async () => {
     const { context } = createContext(root);
     const port: ProviderAttemptPort = {
@@ -220,13 +360,11 @@ describe('OpenAI-compatible agent runtime', () => {
       })),
       settle: vi.fn(async () => {}),
     };
-    const veto = vi.fn(async (_reservation, request) => {
-      expect(JSON.parse(request.requestBytes)).toMatchObject({
-        model: 'test-model',
-        max_tokens: 50,
-      });
-      throw new RuntimeMisconfiguredError('SEND_TOTAL_TOKEN_UNVERIFIED');
-    });
+    const veto = vi.fn(
+      async (_reservation: ProviderAttemptReservation, _request: ProviderSendRequest) => {
+        throw new RuntimeMisconfiguredError('SEND_TOTAL_TOKEN_UNVERIFIED');
+      },
+    );
     bindProviderSendAdmission(port, veto);
     const transport = vi.fn(async () => jsonResponse({}));
     await expect(
@@ -236,9 +374,308 @@ describe('OpenAI-compatible agent runtime', () => {
     ).rejects.toThrow();
     expect(port.reserve).toHaveBeenCalledTimes(1);
     expect(veto).toHaveBeenCalledTimes(1);
+    const request = veto.mock.calls[0]![1];
+    expect(request.transportEvidence).toEqual({
+      schema: 'openslack.openai_send_transport.v1',
+      endpoint: 'https://example.test/v1/chat/completions',
+      method: 'POST',
+      redirect: 'error',
+      adapterAutomaticRetries: 0,
+    });
+    expect(Object.isFrozen(request)).toBe(true);
+    expect(Object.isFrozen(request.transportEvidence)).toBe(true);
+    expect(JSON.parse(request.requestBytes)).toMatchObject({ model: 'test-model', max_tokens: 50 });
     expect(transport).not.toHaveBeenCalled();
     expect(port.settle).not.toHaveBeenCalled();
   });
+
+  it('cannot replace the reserved host veto by mutating adapter options while reserve awaits', async () => {
+    const { context } = createContext(root);
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const original: ProviderAttemptPort = {
+      reserve: vi.fn(async () => {
+        await gate;
+        return {
+          reservationId: 'reservation.original',
+          callId: 'call.original',
+          authorizedTokens: '100',
+        };
+      }),
+      settle: vi.fn(async () => {}),
+    };
+    const replacement: ProviderAttemptPort = {
+      reserve: vi.fn(),
+      settle: vi.fn(async () => {}),
+    };
+    const veto = vi.fn(async () => {
+      throw new RuntimeMisconfiguredError('SEND_TOTAL_TOKEN_UNVERIFIED');
+    });
+    bindProviderSendAdmission(original, veto);
+    const transport = vi.fn(async () =>
+      jsonResponse({
+        choices: [{ message: { content: 'done' } }],
+        usage: { total_tokens: 1 },
+      }),
+    );
+    const options: ConstructorParameters<typeof OpenAICompatibleExecutionAdapter>[0] = {
+      providerId: 'openai-compatible',
+      baseUrl: 'https://example.test/v1',
+      model: 'test-model',
+      credentialRef: 'env:TEST_RUNTIME_KEY',
+      apiKey: 'transport-only-test-value',
+      timeoutMs: 2_000,
+      maxTurns: 4,
+      maxToolCalls: 4,
+      maxOutputTokens: 50,
+      maxResponseBytes: 64 * 1024,
+      maxToolResultBytes: 64 * 1024,
+      fetchImpl: transport as typeof fetch,
+      providerAttemptBoundary: createProviderAttemptBoundary(original),
+    };
+    const result = new OpenAICompatibleExecutionAdapter(options)
+      .execute(context)
+      .catch((error) => error);
+    try {
+      await vi.waitFor(() => expect(original.reserve).toHaveBeenCalledOnce());
+      options.providerAttemptBoundary = createProviderAttemptBoundary(replacement);
+      release();
+      expect(await result).toBeInstanceOf(RuntimeMisconfiguredError);
+    } finally {
+      release();
+      await result;
+    }
+    expect(veto).toHaveBeenCalledOnce();
+    expect(transport).not.toHaveBeenCalled();
+    expect(original.settle).not.toHaveBeenCalled();
+    expect(replacement.reserve).not.toHaveBeenCalled();
+    expect(replacement.settle).not.toHaveBeenCalled();
+  });
+
+  it('uses the captured endpoint, credential, identity and settlement port after admission awaits', async () => {
+    const { context } = createContext(root);
+    const originalRunId = context.runId;
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const original: ProviderAttemptPort = {
+      reserve: vi.fn(async () => ({
+        reservationId: 'reservation.original',
+        callId: 'call.original',
+        authorizedTokens: '100',
+      })),
+      settle: vi.fn(async () => {}),
+    };
+    const replacement: ProviderAttemptPort = { reserve: vi.fn(), settle: vi.fn(async () => {}) };
+    const admission = vi.fn(
+      async (_reservation: ProviderAttemptReservation, _request: ProviderSendRequest) => {
+        await gate;
+      },
+    );
+    bindProviderSendAdmission(original, admission);
+    const transport = vi.fn(async () =>
+      jsonResponse({
+        choices: [{ message: { content: 'done' } }],
+        usage: { total_tokens: 1 },
+      }),
+    );
+    const otherTransport = vi.fn();
+    const options: ConstructorParameters<typeof OpenAICompatibleExecutionAdapter>[0] = {
+      providerId: 'openai-compatible',
+      baseUrl: 'https://example.test/v1',
+      model: 'test-model',
+      credentialRef: 'env:TEST_RUNTIME_KEY',
+      apiKey: 'transport-only-test-value',
+      timeoutMs: 2_000,
+      maxTurns: 4,
+      maxToolCalls: 4,
+      maxOutputTokens: 50,
+      maxResponseBytes: 64 * 1024,
+      maxToolResultBytes: 64 * 1024,
+      fetchImpl: transport as typeof fetch,
+      providerAttemptBoundary: createProviderAttemptBoundary(original),
+    };
+    const running = new OpenAICompatibleExecutionAdapter(options).execute(context);
+    try {
+      await vi.waitFor(() => expect(admission).toHaveBeenCalledOnce());
+      Object.assign(options, {
+        providerId: 'replacement',
+        model: 'replacement-model',
+        baseUrl: 'https://replacement.test/v1',
+        apiKey: 'replacement-test-value',
+        fetchImpl: otherTransport,
+        providerAttemptBoundary: createProviderAttemptBoundary(replacement),
+      });
+      context.runId = 'RUN-MUTATED-AFTER-ADMISSION';
+      context.resolvedConfig.model = 'mutated-context-model';
+      release();
+      await expect(running).resolves.toMatchObject({ data: 'done', tokenUsage: 1 });
+    } finally {
+      release();
+      await running.catch(() => {});
+    }
+    expect(transport).toHaveBeenCalledOnce();
+    const [endpoint, init] = transport.mock.calls[0]! as unknown as [string, RequestInit];
+    expect(endpoint).toBe('https://example.test/v1/chat/completions');
+    expect(init.redirect).toBe('error');
+    expect(init.headers).toMatchObject({ authorization: 'Bearer transport-only-test-value' });
+    const envelope = admission.mock.calls[0]![1] as unknown as {
+      transportEvidence: { endpoint: string };
+      requestBytes: string;
+    };
+    expect(envelope.transportEvidence.endpoint).toBe(endpoint);
+    expect(envelope.requestBytes).toBe(init.body);
+    expect(JSON.parse(String(init.body)).model).toBe('test-model');
+    expect(vi.mocked(original.reserve).mock.calls[0]![0].providerRunId).toBe(originalRunId);
+    expect(original.settle).toHaveBeenCalledOnce();
+    expect(vi.mocked(original.settle).mock.calls[0]![1]).toMatchObject(
+      buildProviderUsageIdentityHashes('openai-compatible', 'test-model', originalRunId),
+    );
+    expect(replacement.settle).not.toHaveBeenCalled();
+    expect(otherTransport).not.toHaveBeenCalled();
+  });
+
+  it.each([301, 302, 303, 307, 308])(
+    'does not follow a real HTTP %i redirect after controlled admission',
+    async (status) => {
+      const { context } = createContext(root);
+      const port: ProviderAttemptPort = {
+        reserve: vi.fn(async () => ({
+          reservationId: 'reservation.redirect',
+          callId: 'call.redirect',
+          authorizedTokens: '100',
+        })),
+        settle: vi.fn(async () => {}),
+      };
+      bindProviderSendAdmission(port, async () => {});
+      let sourcePosts = 0,
+        redirectedRequests = 0;
+      const server = createServer((request, response) => {
+        request.resume();
+        if (request.url === '/entry/chat/completions') {
+          if (request.method === 'POST') sourcePosts++;
+          response.writeHead(status, { location: '/redirect-target' });
+          response.end();
+        } else {
+          redirectedRequests++;
+          response.writeHead(200, { 'content-type': 'application/json' });
+          response.end(
+            JSON.stringify({
+              choices: [{ message: { content: 'done' } }],
+              usage: { total_tokens: 1 },
+            }),
+          );
+        }
+      });
+      try {
+        await new Promise<void>((resolve, reject) => {
+          server.once('error', reject);
+          server.listen(0, '127.0.0.1', resolve);
+        });
+        const address = server.address();
+        if (!address || typeof address === 'string')
+          throw new Error('Missing local fixture address');
+        await expect(
+          adapter(fetch, {
+            baseUrl: `http://127.0.0.1:${address.port}/entry`,
+            providerAttemptBoundary: createProviderAttemptBoundary(port),
+          }).execute(context),
+        ).rejects.toBeInstanceOf(ProviderUnavailableError);
+        expect(sourcePosts).toBe(1);
+        expect(redirectedRequests).toBe(0);
+        expect(port.reserve).toHaveBeenCalledOnce();
+        expect(port.settle).toHaveBeenCalledOnce();
+        expect(vi.mocked(port.settle).mock.calls[0]![1]).toMatchObject({
+          status: 'unreported',
+          outcome: 'provider_attempt_failed',
+        });
+      } finally {
+        server.closeAllConnections();
+        await new Promise<void>((resolve) => server.close(() => resolve()));
+      }
+    },
+  );
+
+  it('does not send if cancellation arrives while the host admission awaits', async () => {
+    const { context } = createContext(root);
+    const controller = new AbortController();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const port: ProviderAttemptPort = {
+      reserve: vi.fn(async () => ({
+        reservationId: 'reservation.cancel',
+        callId: 'call.cancel',
+        authorizedTokens: '100',
+      })),
+      settle: vi.fn(async () => {}),
+    };
+    const admission = vi.fn(async () => {
+      await gate;
+    });
+    bindProviderSendAdmission(port, admission);
+    const transport = vi.fn();
+    const executionContext = { ...context, signal: controller.signal };
+    const running = adapter(transport as typeof fetch, {
+      providerAttemptBoundary: createProviderAttemptBoundary(port),
+    })
+      .execute(executionContext)
+      .catch((error) => error);
+    try {
+      await vi.waitFor(() => expect(admission).toHaveBeenCalledOnce());
+      const reason = new Error('fixture cancellation');
+      controller.abort(reason);
+      executionContext.signal = new AbortController().signal;
+      release();
+      expect(await running).toBe(reason);
+    } finally {
+      release();
+      await running;
+    }
+    expect(transport).not.toHaveBeenCalled();
+  });
+
+  it.each([2_000, 2_001])(
+    'does not send when admission uses %i ms of the total deadline',
+    async (elapsed) => {
+      const { context } = createContext(root);
+      const port: ProviderAttemptPort = {
+        reserve: vi.fn(async () => ({
+          reservationId: 'reservation.deadline',
+          callId: 'call.deadline',
+          authorizedTokens: '100',
+        })),
+        settle: vi.fn(async () => {}),
+      };
+      let now = Date.now();
+      const clock = vi.spyOn(Date, 'now').mockImplementation(() => now);
+      bindProviderSendAdmission(port, async () => {
+        now += elapsed;
+      });
+      const transport = vi.fn(async () =>
+        jsonResponse({
+          choices: [{ message: { content: 'done' } }],
+          usage: { total_tokens: 1 },
+        }),
+      );
+      try {
+        await expect(
+          adapter(transport as typeof fetch, {
+            providerAttemptBoundary: createProviderAttemptBoundary(port),
+          }).execute(context),
+        ).rejects.toBeInstanceOf(ProviderTimeoutError);
+        expect(transport).not.toHaveBeenCalled();
+        expect(port.reserve).toHaveBeenCalledOnce();
+        expect(port.settle).toHaveBeenCalledOnce();
+      } finally {
+        clock.mockRestore();
+      }
+    },
+  );
 
   it.each(['adapter', 'providerRegistry'] as const)(
     'refuses governed %s overrides before their execution',
@@ -260,6 +697,82 @@ describe('OpenAI-compatible agent runtime', () => {
       expect(port.reserve).not.toHaveBeenCalled();
     },
   );
+
+  it('prepares complete tool history and refuses a follow-up before another reservation', async () => {
+    const { context } = createContext(root, { tokens: 100 });
+    const prepared: ProviderSendRequest[] = [];
+    const port: ProviderAttemptPort = {
+      reserve: vi.fn(async () => ({
+        reservationId: 'reservation.history',
+        callId: 'call.history',
+        authorizedTokens: '100',
+      })),
+      settle: vi.fn(async () => {}),
+    };
+    bindProviderSendPreparation(port, async (request) => {
+      prepared.push(request);
+      if (prepared.length === 2) throw new RuntimeMisconfiguredError('SEND_TOTAL_TOKEN_UNVERIFIED');
+    });
+    const transport = vi.fn(async () =>
+      jsonResponse({
+        choices: [
+          {
+            message: {
+              content: null,
+              tool_calls: [
+                {
+                  id: 'call-history',
+                  type: 'function',
+                  function: { name: 'repo_read', arguments: '{"path":"README.md"}' },
+                },
+              ],
+            },
+            finish_reason: 'tool_calls',
+          },
+        ],
+        usage: { prompt_tokens: 6, completion_tokens: 4, total_tokens: 10 },
+      }),
+    );
+    await expect(
+      adapter(transport as typeof fetch, {
+        providerAttemptBoundary: createProviderAttemptBoundary(port),
+      }).execute(context),
+    ).rejects.toThrow('SEND_TOTAL_TOKEN_UNVERIFIED');
+    expect(prepared).toHaveLength(2);
+    const first = JSON.parse(prepared[0]!.requestBytes);
+    const followup = JSON.parse(prepared[1]!.requestBytes);
+    expect(followup.messages.slice(0, first.messages.length)).toEqual(first.messages);
+    expect(followup.messages).toEqual([
+      ...first.messages,
+      {
+        role: 'assistant',
+        content: null,
+        tool_calls: [
+          {
+            id: 'call-history',
+            type: 'function',
+            function: { name: 'repo_read', arguments: '{"path":"README.md"}' },
+          },
+        ],
+      },
+      expect.objectContaining({
+        role: 'tool',
+        tool_call_id: 'call-history',
+        content: expect.stringContaining('runtime fixture'),
+      }),
+    ]);
+    expect(followup.tools).toEqual(first.tools);
+    expect(port.reserve).toHaveBeenCalledTimes(1);
+    expect(port.settle).toHaveBeenCalledTimes(1);
+    expect(transport).toHaveBeenCalledTimes(1);
+    expect(port.settle).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        totalTokens: '10',
+        status: 'reported',
+      }),
+    );
+  });
 
   it('runs a governed multi-turn tool loop with wire-name mapping and usage charging', async () => {
     const requests: Array<Record<string, unknown>> = [];

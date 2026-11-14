@@ -441,20 +441,47 @@ describe('standalone read-only fixed workspace acceptance', () => {
         expect(readFileSync(value.registry)).toEqual(before);
         expect(existsSync(join(value.workspace, '.openslack/outbox'))).toBe(false);
       });
-      it('keeps the real private registry blocked for the new public target without writes', () => {
+      it('accepts the exact current public pair and refuses old or changed registry bytes without writes', () => {
         const value = fixture('production');
-        const before = readFileSync(value.registry);
-        const result = invoke(value.args(), productionTool);
-        expect(result.status).toBe(2);
-        expect(result.value.blockingIssues).toContainEqual({
-          code: 'WORKSPACE_REGISTRY_BINDING_MISMATCH',
-          role: 'registry',
+        const accepted = invoke(value.args(), productionTool);
+        expect(accepted.status, accepted.stderr).toBe(0);
+        expect(accepted.value).toMatchObject({
+          status: 'PASS',
+          identity: { state: 'MATCHED' },
+          registry: { state: 'MATCHED', fixedBytes: true },
+          pathAuthorization: { decision: 'allow', immutableSnapshot: true },
+          effects: { filesystemWrites: false, executionContextCreated: false },
         });
-        expect(result.value.registry.fixedBytes).toBe(true);
-        expect(result.value.effects.filesystemWrites).toBe(false);
-        expect(result.value.effects.executionContextCreated).toBe(false);
-        expect(readFileSync(value.registry)).toEqual(before);
+        expect(accepted.value.blockingIssues).toEqual([]);
+        expect(readFileSync(value.registry)).toEqual(productionRegistryBytes);
         expect(existsSync(join(value.workspace, '.openslack/outbox'))).toBe(false);
+        for (const rejected of [
+          { bytes: historicalRegistryBytes, bindingMismatch: true },
+          {
+            bytes: Buffer.concat([productionRegistryBytes, Buffer.from('\n')]),
+            bindingMismatch: false,
+          },
+        ]) {
+          value.put(value.registry, rejected.bytes);
+          const before = readFileSync(value.registry);
+          const result = invoke(value.args(), productionTool);
+          expect(result.status).toBe(2);
+          expect(result.value.blockingIssues).toContainEqual({
+            code: 'WORKSPACE_REGISTRY_BYTES_MISMATCH',
+            role: 'registry',
+          });
+          if (rejected.bindingMismatch) {
+            expect(result.value.blockingIssues).toContainEqual({
+              code: 'WORKSPACE_REGISTRY_BINDING_MISMATCH',
+              role: 'registry',
+            });
+          }
+          expect(result.value.registry.fixedBytes).toBe(false);
+          expect(result.value.effects.filesystemWrites).toBe(false);
+          expect(result.value.effects.executionContextCreated).toBe(false);
+          expect(readFileSync(value.registry)).toEqual(before);
+          expect(existsSync(join(value.workspace, '.openslack/outbox'))).toBe(false);
+        }
       });
 
       it('does not migrate an old private selection into the public campaign', () => {

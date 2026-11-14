@@ -30,6 +30,7 @@ import {
 import type { ProviderAttemptReservation } from './provider-attempt-port.js';
 import {
   reserveProviderAttempt,
+  prepareProviderAttemptSend,
   admitProviderAttemptSend,
   settleProviderAttempt,
   type ProviderAttemptBoundary,
@@ -183,10 +184,24 @@ export class OpenAICompatibleExecutionAdapter implements AgentExecutionAdapter {
   }
 
   async execute<T>(context: AdapterExecutionContext): Promise<AdapterExecutionResult<T>> {
-    const fetchImpl = this.options.fetchImpl ?? fetch;
-    const endpoint = this.options.baseUrl.endsWith('/chat/completions')
-      ? this.options.baseUrl
-      : `${this.options.baseUrl}/chat/completions`;
+    // Keep the reservation, veto, transport and settlement on one launch snapshot.
+    // In particular, an await must not let retained caller options replace the port.
+    const options = Object.freeze({ ...this.options });
+    const { runId, signal } = context;
+    const fetchImpl = options.fetchImpl ?? fetch;
+    const endpoint = options.baseUrl.endsWith('/chat/completions')
+      ? options.baseUrl
+      : `${options.baseUrl}/chat/completions`;
+    const modelId = context.resolvedConfig.model ?? options.model;
+    const transportEvidence = options.providerAttemptBoundary
+      ? Object.freeze({
+          schema: 'openslack.openai_send_transport.v1' as const,
+          endpoint,
+          method: 'POST' as const,
+          redirect: 'error' as const,
+          adapterAutomaticRetries: 0 as const,
+        })
+      : undefined;
     const definitions = context.toolExecutor.listDefinitions();
     const messages: OpenAIMessage[] = [
       {
@@ -209,7 +224,7 @@ export class OpenAICompatibleExecutionAdapter implements AgentExecutionAdapter {
     // calculations use this captured value plus the local usage accumulator.
     const initialTokensRemaining = context.runState.tokensRemaining;
 
-    for (let turn = 0; turn < this.options.maxTurns; turn += 1) {
+    for (let turn = 0; turn < options.maxTurns; turn += 1) {
       let requestBody = '';
       let responseBytes: string | undefined;
       let attemptStarted = false;
@@ -218,23 +233,47 @@ export class OpenAICompatibleExecutionAdapter implements AgentExecutionAdapter {
       let reservation: ProviderAttemptReservation | undefined;
       let sendAdmissionFailed = false;
       try {
-        throwIfAborted(context.signal);
-        if (Date.now() - startedAt >= this.options.timeoutMs) {
+        throwIfAborted(signal);
+        if (Date.now() - startedAt >= options.timeoutMs) {
           throw new ProviderTimeoutError();
         }
         const remaining =
           initialTokensRemaining === null
-            ? this.options.maxOutputTokens
+            ? options.maxOutputTokens
             : initialTokensRemaining - tokenUsage;
         if (remaining <= 0) throw new AgentBudgetExceededError();
-        let maxTokens = Math.min(this.options.maxOutputTokens, remaining);
+        let maxTokens = Math.min(options.maxOutputTokens, remaining);
         const requestedTotalTokens = remaining;
-        const modelId = context.resolvedConfig.model ?? this.options.model;
-        if (this.options.providerAttemptBoundary) {
-          reservation = await reserveProviderAttempt(this.options.providerAttemptBoundary, {
-            providerId: this.options.providerId,
+        // Snapshot the complete request before any host await. Preparation is
+        // read-only and may refuse before reserving durable Go authority.
+        const preparedRequestBytes = JSON.stringify({
+          model: modelId,
+          messages,
+          tools: definitions.map((definition) => ({
+            type: 'function',
+            function: {
+              name: toWireToolName(definition.name),
+              description: definition.description,
+              parameters: definition.inputSchema,
+            },
+          })),
+          tool_choice: definitions.length > 0 ? 'auto' : undefined,
+          max_tokens: maxTokens,
+        });
+        if (options.providerAttemptBoundary) {
+          await prepareProviderAttemptSend(options.providerAttemptBoundary, {
+            providerId: options.providerId,
             modelId,
-            providerRunId: context.runId,
+            requestBytes: preparedRequestBytes,
+            transportEvidence,
+            signal,
+          });
+          throwIfAborted(signal);
+          if (Date.now() - startedAt >= options.timeoutMs) throw new ProviderTimeoutError();
+          reservation = await reserveProviderAttempt(options.providerAttemptBoundary, {
+            providerId: options.providerId,
+            modelId,
+            providerRunId: runId,
             providerAttempt: String(turn + 1),
             // The authority settles prompt + completion usage. Reserve the
             // remaining total-token budget; max_tokens remains a separate
@@ -262,34 +301,29 @@ export class OpenAICompatibleExecutionAdapter implements AgentExecutionAdapter {
           }
           maxTokens = Math.min(maxTokens, authorizedTokens);
         }
-        requestBody = JSON.stringify({
-          model: modelId,
-          messages,
-          tools: definitions.map((definition) => ({
-            type: 'function',
-            function: {
-              name: toWireToolName(definition.name),
-              description: definition.description,
-              parameters: definition.inputSchema,
-            },
-          })),
-          tool_choice: definitions.length > 0 ? 'auto' : undefined,
-          max_tokens: maxTokens,
-        });
-        if (this.options.providerAttemptBoundary && reservation) {
+        const preparedRequest = JSON.parse(preparedRequestBytes) as Record<string, unknown>;
+        preparedRequest.max_tokens = maxTokens;
+        requestBody = JSON.stringify(preparedRequest);
+        if (options.providerAttemptBoundary && reservation) {
           try {
-            await admitProviderAttemptSend(this.options.providerAttemptBoundary, reservation, {
-              providerId: this.options.providerId,
+            await admitProviderAttemptSend(options.providerAttemptBoundary, reservation, {
+              providerId: options.providerId,
               modelId,
               requestBytes: requestBody,
-              signal: context.signal,
+              transportEvidence,
+              signal,
             });
           } catch (error) {
             sendAdmissionFailed = true;
             throw error;
           }
         }
-        throwIfAborted(context.signal);
+        throwIfAborted(signal);
+        // Reservation/admission may await external authorities. Expiry there is
+        // a pre-send refusal, not permission to send with a new 1 ms timeout.
+        if (Date.now() - startedAt >= options.timeoutMs) {
+          throw new ProviderTimeoutError();
+        }
         attemptStarted = true;
         const response = await fetchWithTimeout(
           fetchImpl,
@@ -297,13 +331,14 @@ export class OpenAICompatibleExecutionAdapter implements AgentExecutionAdapter {
           {
             method: 'POST',
             headers: {
-              authorization: `Bearer ${this.options.apiKey}`,
+              authorization: `Bearer ${options.apiKey}`,
               'content-type': 'application/json',
             },
             body: requestBody,
+            ...(transportEvidence ? { redirect: transportEvidence.redirect } : {}),
           },
-          Math.max(1, this.options.timeoutMs - (Date.now() - startedAt)),
-          context.signal,
+          Math.max(1, options.timeoutMs - (Date.now() - startedAt)),
+          signal,
         );
         if (!response.ok) {
           responseBytes = JSON.stringify({ kind: 'http_status', status: String(response.status) });
@@ -324,13 +359,13 @@ export class OpenAICompatibleExecutionAdapter implements AgentExecutionAdapter {
         try {
           raw = await readResponseTextBounded(
             response,
-            this.options.maxResponseBytes,
-            Math.max(1, this.options.timeoutMs - (Date.now() - startedAt)),
-            context.signal,
+            options.maxResponseBytes,
+            Math.max(1, options.timeoutMs - (Date.now() - startedAt)),
+            signal,
           );
         } catch (error) {
           if (
-            context.signal?.aborted ||
+            signal?.aborted ||
             error instanceof ProviderTimeoutError ||
             error instanceof AgentLimitExceededError
           ) {
@@ -344,7 +379,7 @@ export class OpenAICompatibleExecutionAdapter implements AgentExecutionAdapter {
         reportedUsage = usage;
         const used = usage.totalTokens;
         tokenUsage += used;
-        context.recorder.chargeUsage(context.runId, used);
+        context.recorder.chargeUsage(runId, used);
         if (initialTokensRemaining !== null && tokenUsage > initialTokensRemaining) {
           throw new AgentBudgetExceededError();
         }
@@ -381,9 +416,9 @@ export class OpenAICompatibleExecutionAdapter implements AgentExecutionAdapter {
         }
 
         const acceptedReceipt = buildProviderUsageReceipt({
-          providerId: this.options.providerId,
+          providerId: options.providerId,
           modelId,
-          runId: context.runId,
+          runId,
           attempt: turn + 1,
           status: 'reported',
           usage,
@@ -393,19 +428,19 @@ export class OpenAICompatibleExecutionAdapter implements AgentExecutionAdapter {
         });
         usageEvidence.push(acceptedReceipt);
         receiptRecorded = true;
-        if (this.options.providerAttemptBoundary) {
+        if (options.providerAttemptBoundary) {
           if (!reservation) {
             throw new RuntimeMisconfiguredError(
               'Provider attempt completed without a durable reservation.',
             );
           }
           await settleProviderAttempt(
-            this.options.providerAttemptBoundary,
+            options.providerAttemptBoundary,
             reservation,
             acceptedReceipt,
           );
         }
-        context.recorder.progress(context.runId, {
+        context.recorder.progress(runId, {
           step: 'provider_turn_completed',
           provider: 'openai-compatible',
           turn: turn + 1,
@@ -422,7 +457,7 @@ export class OpenAICompatibleExecutionAdapter implements AgentExecutionAdapter {
           });
           for (const call of requestedTools) {
             toolCalls += 1;
-            if (toolCalls > this.options.maxToolCalls) {
+            if (toolCalls > options.maxToolCalls) {
               throw new AgentLimitExceededError('Agent tool-call limit was exceeded.');
             }
             if (typeof call.id !== 'string' || !call.id || call.type !== 'function') {
@@ -431,11 +466,11 @@ export class OpenAICompatibleExecutionAdapter implements AgentExecutionAdapter {
             const toolName = fromWireToolName(call.function?.name);
             const args = parseToolArguments(toolName, call.function?.arguments);
             const result = await context.toolExecutor.execute(toolName, args, {
-              signal: context.signal,
-              deadlineAt: startedAt + this.options.timeoutMs,
-              maxResultBytes: this.options.maxToolResultBytes,
+              signal,
+              deadlineAt: startedAt + options.timeoutMs,
+              maxResultBytes: options.maxToolResultBytes,
             });
-            if (Buffer.byteLength(JSON.stringify(result)) > this.options.maxToolResultBytes) {
+            if (Buffer.byteLength(JSON.stringify(result)) > options.maxToolResultBytes) {
               throw new AgentLimitExceededError('Agent tool-result byte limit was exceeded.');
             }
             messages.push({
@@ -464,9 +499,9 @@ export class OpenAICompatibleExecutionAdapter implements AgentExecutionAdapter {
           !sendAdmissionFailed
         ) {
           const failedReceipt = buildProviderUsageReceipt({
-            providerId: this.options.providerId,
-            modelId: context.resolvedConfig.model ?? this.options.model,
-            runId: context.runId,
+            providerId: options.providerId,
+            modelId,
+            runId,
             attempt: turn + 1,
             status: reportedUsage === null ? 'unreported' : 'reported',
             usage: reportedUsage,
@@ -476,7 +511,7 @@ export class OpenAICompatibleExecutionAdapter implements AgentExecutionAdapter {
           });
           usageEvidence.push(failedReceipt);
           receiptRecorded = true;
-          if (this.options.providerAttemptBoundary) {
+          if (options.providerAttemptBoundary) {
             if (!reservation) {
               throw new RuntimeMisconfiguredError(
                 'Provider attempt failed without a durable reservation.',
@@ -484,7 +519,7 @@ export class OpenAICompatibleExecutionAdapter implements AgentExecutionAdapter {
             }
             try {
               await settleProviderAttempt(
-                this.options.providerAttemptBoundary,
+                options.providerAttemptBoundary,
                 reservation,
                 failedReceipt,
               );

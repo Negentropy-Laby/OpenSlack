@@ -13,6 +13,7 @@ import {
 } from '@openslack/agent-runtime';
 import {
   bindProviderSendAdmission,
+  bindProviderSendPreparation,
   providerUsageRequestHash,
   type ProviderSendRequest,
 } from '@openslack/agent-runtime/internal/provider-send-admission';
@@ -759,6 +760,15 @@ export async function createWorkflowSendAdmissionPort(input: {
       return result;
     },
   };
+  bindProviderSendPreparation(port, async (request) => {
+    if (request.providerId !== b.providerId || request.modelId !== b.modelId)
+      return deny('SEND_ADMISSION_INVALID');
+    request.signal?.throwIfAborted();
+    // No enforceable gateway counting/transform/output/physical-attempt
+    // contract is bound yet. Refuse without a Go call or campaign append.
+    // Final post-reservation admission remains an independent mandatory gate.
+    return deny('SEND_TOTAL_TOKEN_UNVERIFIED');
+  });
   bindProviderSendAdmission(port, async (reservation, request) => {
     if (
       !owned.has(reservation) ||

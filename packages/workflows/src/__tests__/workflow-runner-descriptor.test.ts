@@ -1,6 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import {
   chmod,
+  lstat,
   mkdir,
   mkdtemp,
   readFile,
@@ -11,7 +12,7 @@ import {
 } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   createWorkflowRunnerExecutionDescriptor,
   hashWorkflowRunnerDescriptor,
@@ -174,6 +175,164 @@ function v2Descriptor() {
 
 afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
+});
+
+describe('Windows descriptor identity query', () => {
+  afterEach(() => {
+    vi.doUnmock('node:child_process');
+    vi.resetModules();
+  });
+
+  async function securityModule(query: typeof execFileSync, aclQuery = vi.fn()) {
+    vi.resetModules();
+    vi.doMock('node:child_process', () => ({ execFileSync: query, execFile: aclQuery }));
+    return import('../workflow-runner-descriptor-store.js');
+  }
+
+  it('accepts one current-user CSV record and caches only its validated SID', async () => {
+    const query = vi.fn().mockReturnValue('"domain\\worker, ""quoted""","S-1-5-21-42-1001"\r\n');
+    const { createWorkflowRunnerDescriptorPathSecurity } = await securityModule(query);
+    expect(createWorkflowRunnerDescriptorPathSecurity('win32').platform).toBe('win32');
+    expect(createWorkflowRunnerDescriptorPathSecurity('win32').platform).toBe('win32');
+    expect(query).toHaveBeenCalledTimes(1);
+    expect(query).toHaveBeenCalledWith('whoami.exe', ['/user', '/fo', 'csv', '/nh'], {
+      encoding: 'utf8',
+      timeout: 20_000,
+      windowsHide: true,
+      maxBuffer: 16 * 1024,
+    });
+  });
+
+  it.each([
+    'S-1-5-21-42-1001',
+    '"domain\\worker","not-a-sid"',
+    '"domain\\worker","S-1-5-21-42-1001"\n"other","S-1-5-21-99"',
+    '"domain\\worker","S-1-5-21-42-1001","unexpected"',
+  ])('refuses malformed current-user SID output %j', async (output) => {
+    const query = vi.fn().mockReturnValue(output);
+    const { createWorkflowRunnerDescriptorPathSecurity } = await securityModule(query);
+    expect(() => createWorkflowRunnerDescriptorPathSecurity('win32')).toThrow(
+      expect.objectContaining({ code: 'WORKFLOW_RUNNER_DESCRIPTOR_STORE_PERMISSION_DENIED' }),
+    );
+    expect(query).toHaveBeenCalledTimes(1);
+  });
+
+  it('propagates a failed identity query without fallback or caching its result', async () => {
+    const failure = new Error('owned current-user query failed');
+    const query = vi
+      .fn()
+      .mockImplementationOnce(() => {
+        throw failure;
+      })
+      .mockReturnValue('"domain\\worker","S-1-5-21-42-1001"');
+    const { createWorkflowRunnerDescriptorPathSecurity } = await securityModule(query);
+    expect(() => createWorkflowRunnerDescriptorPathSecurity('win32')).toThrow(failure);
+    expect(query).toHaveBeenCalledTimes(1);
+    expect(createWorkflowRunnerDescriptorPathSecurity('win32').platform).toBe('win32');
+    expect(query).toHaveBeenCalledTimes(2);
+  });
+
+  async function aclFixture() {
+    const root = await mkdtemp(join(tmpdir(), 'descriptor-acl-query-'));
+    roots.push(root);
+    const path = join(root, 'owned.json');
+    await writeFile(path, '{}');
+    return { path, stat: await lstat(path, { bigint: true }) };
+  }
+
+  const ownerOnlyAcl = () => JSON.stringify({
+    owner: 'S-1-5-21-42-1001', protected: true, reparse: false,
+    allow: ['S-1-5-21-42-1001', 'S-1-5-18'], deny: [],
+  });
+
+  it('awaits the asynchronous ACL query while unrelated event-loop work proceeds', async () => {
+    const fixture = await aclFixture();
+    const identity = vi.fn().mockReturnValue('"domain\\worker","S-1-5-21-42-1001"');
+    let release: ((error: Error | null, stdout: string, stderr: string) => void) | undefined;
+    const query = vi.fn((...args: unknown[]) => {
+      release = args.at(-1) as typeof release;
+      return {};
+    });
+    const { createWorkflowRunnerDescriptorPathSecurity } = await securityModule(identity, query);
+    const security = createWorkflowRunnerDescriptorPathSecurity('win32');
+    const inspecting = security.assertOwnerOnly(fixture.path, false, fixture.stat);
+    let settled = false;
+    void inspecting.then(() => { settled = true; }, () => { settled = true; });
+    try {
+      expect(query).toHaveBeenCalledTimes(1);
+      expect(identity).toHaveBeenCalledTimes(1);
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(settled).toBe(false);
+      const [executable, args, options] = query.mock.calls[0]! as [
+        string, string[], { encoding: string; timeout: number; windowsHide: boolean; env: NodeJS.ProcessEnv },
+      ];
+      expect(executable).toBe('powershell.exe');
+      expect(args?.slice(0, 4)).toEqual(['-NoLogo', '-NoProfile', '-NonInteractive', '-Command']);
+      expect(args?.[4]).toContain('Get-Acl -LiteralPath');
+      expect(options).toMatchObject({ encoding: 'utf8', timeout: 20_000, windowsHide: true });
+      expect(options?.env?.OPENSLACK_WORKFLOW_RUNNER_PATH).toBe(fixture.path);
+      release!(null, ownerOnlyAcl(), '');
+      await inspecting;
+      expect(settled).toBe(true);
+    } finally {
+      release?.(new Error('fixture closed'), '', '');
+      await inspecting.catch(() => undefined);
+    }
+  });
+
+  it('propagates an asynchronous ACL query failure without a fallback query', async () => {
+    const fixture = await aclFixture();
+    const failure = Object.assign(new Error('ACL query deadline'), { code: 'ETIMEDOUT' });
+    const identity = vi.fn().mockReturnValue('"domain\\worker","S-1-5-21-42-1001"');
+    const query = vi.fn((...args: unknown[]) => {
+      const callback = args.at(-1) as (error: Error) => void;
+      queueMicrotask(() => callback(failure));
+      return {};
+    });
+    const { createWorkflowRunnerDescriptorPathSecurity } = await securityModule(identity, query);
+    await expect(createWorkflowRunnerDescriptorPathSecurity('win32')
+      .assertOwnerOnly(fixture.path, false, fixture.stat)).rejects.toBe(failure);
+    expect(query).toHaveBeenCalledTimes(1);
+    expect(identity).toHaveBeenCalledTimes(1);
+  });
+
+  it('refuses malformed asynchronous ACL output', async () => {
+    const fixture = await aclFixture();
+    const identity = vi.fn().mockReturnValue('"domain\\worker","S-1-5-21-42-1001"');
+    const query = vi.fn((...args: unknown[]) => {
+      const callback = args.at(-1) as (error: null, stdout: string, stderr: string) => void;
+      queueMicrotask(() => callback(null, '{not-json', ''));
+      return {};
+    });
+    const { createWorkflowRunnerDescriptorPathSecurity } = await securityModule(identity, query);
+    await expect(createWorkflowRunnerDescriptorPathSecurity('win32')
+      .assertOwnerOnly(fixture.path, false, fixture.stat)).rejects.toMatchObject({
+        code: 'WORKFLOW_RUNNER_DESCRIPTOR_STORE_PERMISSION_DENIED',
+      });
+    expect(query).toHaveBeenCalledTimes(1);
+    expect(identity).toHaveBeenCalledTimes(1);
+  });
+
+  it('rechecks ACLs on every call and refuses a later grant to another SID', async () => {
+    const fixture = await aclFixture();
+    const identity = vi.fn().mockReturnValue('"domain\\worker","S-1-5-21-42-1001"');
+    let calls = 0;
+    const query = vi.fn((...args: unknown[]) => {
+      const callback = args.at(-1) as (error: null, stdout: string, stderr: string) => void;
+      const acl = JSON.parse(ownerOnlyAcl());
+      if (++calls > 1) acl.allow.push('S-1-5-21-99-1001');
+      queueMicrotask(() => callback(null, JSON.stringify(acl), ''));
+      return {};
+    });
+    const { createWorkflowRunnerDescriptorPathSecurity } = await securityModule(identity, query);
+    const security = createWorkflowRunnerDescriptorPathSecurity('win32');
+    await security.assertOwnerOnly(fixture.path, false, fixture.stat);
+    await expect(security.assertOwnerOnly(fixture.path, false, fixture.stat)).rejects.toMatchObject({
+      code: 'WORKFLOW_RUNNER_DESCRIPTOR_STORE_PERMISSION_DENIED',
+    });
+    expect(query).toHaveBeenCalledTimes(2);
+    expect(identity).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('GS8-B sealed execution descriptor', () => {

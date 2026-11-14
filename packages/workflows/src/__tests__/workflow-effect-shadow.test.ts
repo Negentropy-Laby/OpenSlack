@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
-import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { basename, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Ajv2020 } from 'ajv/dist/2020.js';
 import {
@@ -21,12 +21,15 @@ import {
 import {
   createWorkflowEffectShadowHttpPublisher,
   createWorkflowEffectShadowObservationPort,
+  type WorkflowEffectShadowDiagnostic,
 } from '../workflow-effect-shadow.js';
 import {
   WORKFLOW_EFFECT_SHADOW_ERROR_CODES,
   workflowEffectShadowCanonicalJson,
 } from '../workflow-effect-shadow-contract.js';
 import { productionJournalSecurity, writeExclusive } from '../workflow-control-shadow.js';
+import * as journalOperations from '../workflow-control-shadow.js';
+import * as effectAuthorityOperations from '../workflow-effect-authority-store.js';
 import {
   createWorkflowEffectLeaseAuthority,
   type WorkflowEffectLeaseBinding,
@@ -632,159 +635,388 @@ describe('GS9-D effect shadow transport and durable observation', () => {
     }
   });
 
-  it(
-    'rebuilds pending, decision, and audit observations from durable D2 authority without granting Go authority',
-    async () => {
-      const workspaceRoot = await temporaryRoot();
-      const approvalRoot = join(workspaceRoot, '.openslack.local', 'workflows', 'effect-approvals');
-      let now = new Date().toISOString();
-      let sequence = 2;
-      const binding: WorkflowEffectLeaseBinding = {
-        workspaceId: 'workspace-1',
-        runId: 'run-1',
-        correlationId: 'correlation-1',
-        workflowId: 'workflow-1',
-        workflowVersion: '1.0.0',
-        workflowSourceHash: SOURCE_HASH,
-        manifestHash: MANIFEST_HASH,
-        inputHash: INPUT_HASH,
-        descriptorExpiresAt: new Date(Date.parse(now) + 60 * 60_000).toISOString(),
-        expectedControlBuildHash: BUILD_HASH,
-        async emitIntent(handle, beforeSend) {
-          const message = validateWorkflowRunnerMessage({
-            protocolVersion: WORKFLOW_RUNNER_PROTOCOL_VERSION,
-            kind: 'effect_intent',
-            workspaceId: 'workspace-1',
-            jobId: 'job-1',
-            workflowRunId: 'run-1',
-            attemptId: 'attempt-1',
-            leaseId: 'lease-1',
-            fencingToken: 1,
-            sequence,
-            eventId: `event-${sequence}`,
-            correlationId: 'correlation-1',
-            sentAt: now,
-            payload: handle,
-          }) as WorkflowRunnerEffectIntentMessage;
-          const prepared = prepareWorkflowRunnerMessage(message);
-          await beforeSend({ message, prepared });
-          const receipt = createWorkflowRunnerEventReceipt(message, {
-            status: 'accepted',
-            errorCode: null,
-            sequence: sequence + 1,
-            sentAt: now,
-            controlBuildHash: BUILD_HASH,
-          });
-          sequence += 2;
-          return { message, prepared, receipt };
-        },
-      };
-      const delivered: WorkflowEffectControlEnvelope[] = [];
-      const seen = new Set<string>();
-      let failFirstDelivery = true;
-      const publisher = createWorkflowEffectShadowHttpPublisher({
-        endpoint: 'http://127.0.0.1:8084/v1/shadow/workflow-control/effect-events',
-        bearerToken: 'qualification-bearer-token-value',
-        callerId: 'workflow-runner',
-        fetchImpl: vi.fn(async (_input, init) => {
-          if (failFirstDelivery) {
-            failFirstDelivery = false;
-            throw new TypeError('qualification observer unavailable');
-          }
-          const envelope = validateWorkflowEffectControlEnvelope(JSON.parse(String(init?.body)));
-          delivered.push(envelope);
-          const prepared = prepareWorkflowEffectControlEnvelope(envelope);
-          const replay = seen.has(prepared.idempotencyKey);
-          seen.add(prepared.idempotencyKey);
-          return new Response(receiptFor(envelope), {
-            status: replay ? 200 : 201,
-            headers: {
-              'content-type': 'application/json',
-              ...(replay ? { 'Idempotency-Replayed': 'true' } : {}),
-            },
-          });
-        }) as typeof fetch,
-      });
-      const observer = await createWorkflowEffectShadowObservationPort({
-        enabled: true,
-        workspaceRoot,
-        journalRoot: join(workspaceRoot, '.openslack.local', 'workflow-effect-shadow'),
-        publisher,
-      });
-      const makePort = () =>
-        createWorkflowEffectAuthorizationPort({
-          workspaceRoot,
-          effectBoundary: Object.freeze({ intent: vi.fn(), outcome: vi.fn() }),
-          leaseAuthority: createWorkflowEffectLeaseAuthority(binding),
-          now: () => now,
-          effectShadowObservationPort: observer,
+  async function rebuildDurableObservations(
+    options: {
+      contendWithExecutionClaim?: boolean;
+      decision?: 'approved' | 'rejected';
+      cancelClaim?: boolean;
+    } = {},
+  ) {
+    const {
+      contendWithExecutionClaim = false,
+      decision = 'approved',
+      cancelClaim = false,
+    } = options;
+    const workspaceRoot = await temporaryRoot();
+    const approvalRoot = join(workspaceRoot, '.openslack.local', 'workflows', 'effect-approvals');
+    let now = new Date().toISOString();
+    let sequence = 2;
+    const binding: WorkflowEffectLeaseBinding = {
+      workspaceId: 'workspace-1',
+      runId: 'run-1',
+      correlationId: 'correlation-1',
+      workflowId: 'workflow-1',
+      workflowVersion: '1.0.0',
+      workflowSourceHash: SOURCE_HASH,
+      manifestHash: MANIFEST_HASH,
+      inputHash: INPUT_HASH,
+      descriptorExpiresAt: new Date(Date.parse(now) + 60 * 60_000).toISOString(),
+      expectedControlBuildHash: BUILD_HASH,
+      async emitIntent(handle, beforeSend) {
+        const message = validateWorkflowRunnerMessage({
+          protocolVersion: WORKFLOW_RUNNER_PROTOCOL_VERSION,
+          kind: 'effect_intent',
+          workspaceId: 'workspace-1',
+          jobId: 'job-1',
+          workflowRunId: 'run-1',
+          attemptId: 'attempt-1',
+          leaseId: 'lease-1',
+          fencingToken: 1,
+          sequence,
+          eventId: `event-${sequence}`,
+          correlationId: 'correlation-1',
+          sentAt: now,
+          payload: handle,
+        }) as WorkflowRunnerEffectIntentMessage;
+        const prepared = prepareWorkflowRunnerMessage(message);
+        await beforeSend({ message, prepared });
+        const receipt = createWorkflowRunnerEventReceipt(message, {
+          status: 'accepted',
+          errorCode: null,
+          sequence: sequence + 1,
+          sentAt: now,
+          controlBuildHash: BUILD_HASH,
         });
-      const first = makePort();
-      const prepared = await first.prepare({
-        runId: 'run-1',
-        evaluationIndex: 1,
-        operation: 'openslack.governance.audit',
-        detail: 'bounded audit',
-      });
-      let pending!: WorkflowEffectApprovalPendingError;
+        sequence += 2;
+        return { message, prepared, receipt };
+      },
+    };
+    const delivered: WorkflowEffectControlEnvelope[] = [];
+    const diagnostics: WorkflowEffectShadowDiagnostic[] = [];
+    let releaseExecutionClaim: (() => void) | undefined;
+    let releasedExecutionClaim = false;
+    let witnessedClaimLock = false;
+    let recoveredWhileClaimHeld = false;
+    let observerLockWaits = 0;
+    const seen = new Set<string>();
+    let failFirstDelivery = true;
+    const publisher = createWorkflowEffectShadowHttpPublisher({
+      endpoint: 'http://127.0.0.1:8084/v1/shadow/workflow-control/effect-events',
+      bearerToken: 'qualification-bearer-token-value',
+      callerId: 'workflow-runner',
+      fetchImpl: vi.fn(async (_input, init) => {
+        if (failFirstDelivery) {
+          failFirstDelivery = false;
+          throw new TypeError('qualification observer unavailable');
+        }
+        const envelope = validateWorkflowEffectControlEnvelope(JSON.parse(String(init?.body)));
+        delivered.push(envelope);
+        const prepared = prepareWorkflowEffectControlEnvelope(envelope);
+        const replay = seen.has(prepared.idempotencyKey);
+        seen.add(prepared.idempotencyKey);
+        return new Response(receiptFor(envelope), {
+          status: replay ? 200 : 201,
+          headers: {
+            'content-type': 'application/json',
+            ...(replay ? { 'Idempotency-Replayed': 'true' } : {}),
+          },
+        });
+      }) as typeof fetch,
+    });
+    const observer = await createWorkflowEffectShadowObservationPort({
+      enabled: true,
+      workspaceRoot,
+      journalRoot: join(workspaceRoot, '.openslack.local', 'workflow-effect-shadow'),
+      publisher,
+      diagnosticSink: (diagnostic) => {
+        diagnostics.push(diagnostic);
+        if (diagnostic.outcome === 'failed') releaseExecutionClaim?.();
+      },
+    });
+    const observationEvidence = async () => {
+      const entries = join(workspaceRoot, '.openslack.local', 'workflow-effect-shadow', 'entries');
+      const evidenceFailure = (error: unknown) => {
+        const code = (error as { code?: unknown })?.code;
+        return {
+          evidenceCode:
+            typeof code === 'string' && /^[A-Z][A-Z0-9_]{0,127}$/u.test(code)
+              ? code
+              : 'OBSERVATION_EVIDENCE_UNAVAILABLE',
+        };
+      };
       try {
-        await first.authorize(prepared);
+        const journal = await Promise.all(
+          (await readdir(entries)).map(async (name) => {
+            try {
+              const value = validateWorkflowEffectControlEnvelope(
+                JSON.parse(await readFile(join(entries, name), 'utf8')),
+              );
+              return {
+                operation: value.operation,
+                sourceSequence: value.sourceSequence,
+                observationHash: value.observationHash,
+              };
+            } catch (error) {
+              return evidenceFailure(error);
+            }
+          }),
+        );
+        return JSON.stringify({
+          diagnostics,
+          journal,
+          witnessedClaimLock,
+          recoveredWhileClaimHeld,
+          observerLockWaits,
+        });
       } catch (error) {
-        if (error instanceof WorkflowEffectApprovalPendingError) pending = error;
-        else throw error;
+        return JSON.stringify({
+          diagnostics,
+          ...evidenceFailure(error),
+          witnessedClaimLock,
+          recoveredWhileClaimHeld,
+          observerLockWaits,
+        });
       }
-      await observer.flush();
-      expect(delivered).toEqual([]);
-      await new Promise((resolve) => setTimeout(resolve, 350));
-      await observer.flush();
-      expect(delivered.map((value) => value.operation)).toEqual(['approval_created']);
+    };
+    const makePort = () =>
+      createWorkflowEffectAuthorizationPort({
+        workspaceRoot,
+        effectBoundary: Object.freeze({ intent: vi.fn(), outcome: vi.fn() }),
+        leaseAuthority: createWorkflowEffectLeaseAuthority(binding),
+        now: () => now,
+        effectShadowObservationPort: observer,
+      });
+    const first = makePort();
+    const prepared = await first.prepare({
+      runId: 'run-1',
+      evaluationIndex: 1,
+      operation: 'openslack.governance.audit',
+      detail: 'bounded audit',
+    });
+    let pending!: WorkflowEffectApprovalPendingError;
+    try {
+      await first.authorize(prepared);
+    } catch (error) {
+      if (error instanceof WorkflowEffectApprovalPendingError) pending = error;
+      else throw error;
+    }
+    await observer.flush();
+    expect(delivered).toEqual([]);
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    await observer.flush();
+    expect(delivered.map((value) => value.operation)).toEqual(['approval_created']);
 
-      const decisionAuthority = createWorkflowEffectDecisionAuthority({
-        workspaceId: 'workspace-1',
-        humanPrincipalIds: ['wsman'],
-        capabilities: ['workflow.effect.decide'],
-        maxBindingTtlMs: 60_000,
-      });
-      const approvals = new LocalWorkflowEffectApprovalStore(
-        approvalRoot,
-        decisionAuthority,
-        () => now,
+    const decisionAuthority = createWorkflowEffectDecisionAuthority({
+      workspaceId: 'workspace-1',
+      humanPrincipalIds: ['wsman'],
+      capabilities: ['workflow.effect.decide'],
+      maxBindingTtlMs: 60_000,
+    });
+    const approvals = new LocalWorkflowEffectApprovalStore(
+      approvalRoot,
+      decisionAuthority,
+      () => now,
+    );
+    const pendingRecord = await approvals.read('run-1', pending.approvalId);
+    const decisionBinding = decisionAuthority.issueHumanDecisionBinding({
+      principalId: 'wsman',
+      capability: 'workflow.effect.decide',
+      runId: 'run-1',
+      approvalId: pending.approvalId,
+      correlationId: 'correlation-1',
+      approvalExpiresAt: pendingRecord!.expiresAt,
+      decision,
+      reasonHash: REASON_HASH,
+      expiresAt: new Date(
+        Math.min(Date.now() + 30_000, Date.parse(pendingRecord!.expiresAt) - 1),
+      ).toISOString(),
+    });
+    now = decisionBinding.issuedAt;
+    const decided = await approvals.decide({
+      runId: 'run-1',
+      approvalId: pending.approvalId,
+      expectedRevision: 0,
+      decision,
+      reasonHash: REASON_HASH,
+      binding: decisionBinding,
+    });
+    const resumed = makePort();
+    const resumedPrepared = await resumed.prepare({
+      runId: 'run-1',
+      evaluationIndex: 1,
+      operation: 'openslack.governance.audit',
+      detail: 'bounded audit',
+    });
+    const restoreSpies: Array<() => void> = [];
+    let rejectClaimWriteStarted: ((error: unknown) => void) | undefined;
+    let authorizing: ReturnType<typeof resumed.authorize> | undefined;
+    let primaryFailed = false;
+    let primaryError: unknown;
+    try {
+      let claimWriteStarted: Promise<void> | undefined;
+      let recoveryRequested = false;
+      if (contendWithExecutionClaim) {
+        let reportClaimWriteStarted!: () => void;
+        claimWriteStarted = new Promise<void>((resolve, reject) => {
+          reportClaimWriteStarted = resolve;
+          rejectClaimWriteStarted = reject;
+        });
+        // Keep an early setup failure's cleanup rejection observed even if
+        // the main barrier race or observer recovery has not attached yet.
+        void claimWriteStarted.catch(() => undefined);
+        const release = new Promise<void>((resolve) => {
+          releaseExecutionClaim = () => {
+            releasedExecutionClaim = true;
+            resolve();
+          };
+        });
+        const write = journalOperations.atomicWrite;
+        const writeSpy = vi
+          .spyOn(journalOperations, 'atomicWrite')
+          .mockImplementation(async (...args) => {
+            const [path, body] = args;
+            const text =
+              typeof body === 'string'
+                ? body
+                : new TextDecoder('utf-8', { fatal: true }).decode(body);
+            if (
+              basename(dirname(path)) === 'records' &&
+              basename(dirname(dirname(path))) === 'effect-authority' &&
+              JSON.parse(text).executionState === 'claimed'
+            ) {
+              const authorityRoot = dirname(dirname(path));
+              const lock = JSON.parse(
+                await readFile(join(authorityRoot, 'locks', 'authority.lock'), 'utf8'),
+              );
+              expect(lock.pid).toBe(process.pid);
+              const claimRecords = await Promise.all(
+                (await readdir(join(authorityRoot, 'claims'))).map(async (name) =>
+                  JSON.parse(await readFile(join(authorityRoot, 'claims', name), 'utf8')),
+                ),
+              );
+              expect(
+                claimRecords.filter(
+                  (record) => record.schema === 'openslack.workflow_effect_execution_record.v1',
+                ),
+              ).toMatchObject([
+                { artifact: { claimStatus: 'claimed' }, owner: { pid: process.pid } },
+              ]);
+              witnessedClaimLock = true;
+              reportClaimWriteStarted();
+              await release;
+            }
+            return write(...args);
+          });
+        restoreSpies.push(() => writeSpy.mockRestore());
+        let recovering = false;
+        const recover = effectAuthorityOperations.recoverWorkflowEffectAuthorityObservationPrefix;
+        const recoverSpy = vi
+          .spyOn(effectAuthorityOperations, 'recoverWorkflowEffectAuthorityObservationPrefix')
+          .mockImplementation(async (...args) => {
+            expect(args.slice(1)).toEqual(['run-1', pending.approvalId, 1]);
+            recoveryRequested = true;
+            await claimWriteStarted;
+            recoveredWhileClaimHeld = !releasedExecutionClaim;
+            recovering = true;
+            try {
+              return await recover(...args);
+            } finally {
+              recovering = false;
+            }
+          });
+        restoreSpies.push(() => recoverSpy.mockRestore());
+        const acquire = journalOperations.acquireOwnerJournalLock;
+        const lockSpy = vi
+          .spyOn(journalOperations, 'acquireOwnerJournalLock')
+          .mockImplementation(async (locks, hash, security) => {
+            if (
+              recovering &&
+              basename(locks) === 'locks' &&
+              basename(dirname(locks)) === 'effect-authority'
+            ) {
+              let lockTime = Date.now();
+              return acquire(locks, hash, {
+                ...security,
+                now: () => lockTime,
+                sleep: async () => {
+                  observerLockWaits += 1;
+                  lockTime += journalOperations.WORKFLOW_CONTROL_SHADOW_POLICY.maxTimeoutMs + 1;
+                },
+              });
+            }
+            return acquire(locks, hash, security);
+          });
+        restoreSpies.push(() => lockSpy.mockRestore());
+      }
+      const executionClaims = async () => {
+        const directory = join(
+          workspaceRoot,
+          '.openslack.local',
+          'workflows',
+          'effect-authority',
+          'claims',
+        );
+        const records = await Promise.all(
+          (await readdir(directory)).map(async (name) =>
+            JSON.parse(await readFile(join(directory, name), 'utf8')),
+          ),
+        );
+        return records
+          .filter((record) => record.schema === 'openslack.workflow_effect_execution_record.v1')
+          .map((record) => ({
+            executionId: record.artifact.executionId,
+            claimStatus: record.artifact.claimStatus,
+            ownerPid: record.owner?.pid ?? null,
+          }));
+      };
+      authorizing = resumed.authorize(
+        resumedPrepared,
+        cancelClaim ? AbortSignal.abort(new Error('qualification claim cancelled')) : undefined,
       );
-      const pendingRecord = await approvals.read('run-1', pending.approvalId);
-      const decisionBinding = decisionAuthority.issueHumanDecisionBinding({
-        principalId: 'wsman',
-        capability: 'workflow.effect.decide',
-        runId: 'run-1',
-        approvalId: pending.approvalId,
-        correlationId: 'correlation-1',
-        approvalExpiresAt: pendingRecord!.expiresAt,
-        decision: 'approved',
-        reasonHash: REASON_HASH,
-        expiresAt: new Date(
-          Math.min(Date.now() + 30_000, Date.parse(pendingRecord!.expiresAt) - 1),
-        ).toISOString(),
-      });
-      now = decisionBinding.issuedAt;
-      const decided = await approvals.decide({
-        runId: 'run-1',
-        approvalId: pending.approvalId,
-        expectedRevision: 0,
-        decision: 'approved',
-        reasonHash: REASON_HASH,
-        binding: decisionBinding,
-      });
-      const resumed = makePort();
-      const resumedPrepared = await resumed.prepare({
-        runId: 'run-1',
-        evaluationIndex: 1,
-        operation: 'openslack.governance.audit',
-        detail: 'bounded audit',
-      });
-      const claim = await resumed.authorize(resumedPrepared);
+      if (decision === 'rejected' || cancelClaim) {
+        await expect(authorizing).rejects.toMatchObject({
+          code:
+            decision === 'rejected'
+              ? 'WORKFLOW_EFFECT_AUTHORIZATION_REJECTED'
+              : 'WORKFLOW_EFFECT_AUTHORITY_REJECTED',
+        });
+        await observer.flush();
+        expect(
+          delivered.at(-1)?.operation,
+          delivered.at(-1)?.operation === 'approval_decided'
+            ? undefined
+            : await observationEvidence(),
+        ).toBe('approval_decided');
+        expect(await executionClaims()).toEqual([]);
+        expect((await approvals.read('run-1', pending.approvalId))?.status).toBe(decision);
+        return;
+      }
+      if (claimWriteStarted) {
+        await Promise.race([
+          claimWriteStarted,
+          authorizing.then(() => {
+            if (!witnessedClaimLock) {
+              throw new Error('Execution-claim fixture barrier was not reached.');
+            }
+          }),
+        ]);
+        if (!recoveryRequested) releaseExecutionClaim?.();
+      }
+      const claim = await authorizing;
       expect(claim).toMatchObject({ disposition: 'claimed' });
       if (claim.disposition !== 'claimed') throw new Error('expected an execution claim');
       await observer.flush();
-      expect(delivered.at(-1)?.operation).toBe('approval_decided');
+      expect(
+        delivered.at(-1)?.operation,
+        delivered.at(-1)?.operation === 'approval_decided'
+          ? undefined
+          : await observationEvidence(),
+      ).toBe('approval_decided');
+      if (contendWithExecutionClaim) {
+        expect(witnessedClaimLock).toBe(true);
+        expect(recoveryRequested).toBe(true);
+        expect(observerLockWaits).toBeLessThanOrEqual(1);
+      }
 
       now = new Date(Date.parse(now) + 1).toISOString();
       await approvals.markAuditProjected({
@@ -795,7 +1027,10 @@ describe('GS9-D effect shadow transport and durable observation', () => {
       });
       await resumed.complete(claim.authority, { ok: true });
       await observer.flush();
-      expect(delivered.at(-1)?.operation).toBe('audit_recorded');
+      expect(
+        delivered.at(-1)?.operation,
+        delivered.at(-1)?.operation === 'audit_recorded' ? undefined : await observationEvidence(),
+      ).toBe('audit_recorded');
       expect(
         delivered.every(
           (value) =>
@@ -811,7 +1046,158 @@ describe('GS9-D effect shadow transport and durable observation', () => {
       expect(createHash('sha256').update(JSON.stringify(delivered)).digest('hex')).toMatch(
         /^[0-9a-f]{64}$/u,
       );
-    },
+      const beforeReplay = await executionClaims();
+      expect(beforeReplay).toEqual([
+        { executionId: claim.executionId, claimStatus: 'executed', ownerPid: null },
+      ]);
+      const replayPort = makePort();
+      const replayPrepared = await replayPort.prepare({
+        runId: 'run-1',
+        evaluationIndex: 1,
+        operation: 'openslack.governance.audit',
+        detail: 'bounded audit',
+      });
+      const deliveryCount = delivered.length;
+      const replay = await replayPort.authorize(replayPrepared);
+      expect(replay).toMatchObject({
+        disposition: 'replay',
+        executionId: claim.executionId,
+        value: { ok: true },
+      });
+      await observer.flush();
+      expect(delivered.length).toBeGreaterThan(deliveryCount);
+      expect(delivered.at(-1)?.operation).toBe('audit_recorded');
+      expect(await executionClaims()).toEqual(beforeReplay);
+    } catch (error) {
+      primaryFailed = true;
+      primaryError = error;
+      throw error;
+    } finally {
+      releaseExecutionClaim?.();
+      rejectClaimWriteStarted?.(
+        primaryFailed
+          ? primaryError
+          : new Error('Execution-claim fixture closed before its barrier.'),
+      );
+      const cleanupErrors: unknown[] = [];
+      try {
+        await authorizing?.then(
+          () => undefined,
+          () => undefined,
+        );
+        await observer.flush();
+      } catch (error) {
+        cleanupErrors.push(error);
+      } finally {
+        for (const restore of restoreSpies.reverse()) {
+          try {
+            restore();
+          } catch (error) {
+            cleanupErrors.push(error);
+          }
+        }
+      }
+      if (cleanupErrors.length > 0) {
+        const failure = new AggregateError(cleanupErrors, 'Effect-shadow fixture cleanup failed.');
+        if (primaryFailed) console.error(failure);
+        else throw failure;
+      }
+    }
+  }
+
+  it(
+    'rebuilds pending, decision, and audit observations from durable D2 authority without granting Go authority',
+    () => rebuildDurableObservations(),
     process.platform === 'win32' ? 120_000 : 30_000,
   );
+
+  it(
+    'does not lose the durable decision observation while its own execution claim holds the authority lock',
+    () => rebuildDurableObservations({ contendWithExecutionClaim: true }),
+    process.platform === 'win32' ? 120_000 : 30_000,
+  );
+
+  it(
+    'observes an authenticated rejected decision without claiming an execution',
+    () => rebuildDurableObservations({ decision: 'rejected' }),
+    process.platform === 'win32' ? 120_000 : 30_000,
+  );
+
+  it(
+    'observes the durable decision when claim acquisition is cancelled before consumption',
+    () => rebuildDurableObservations({ cancelClaim: true }),
+    process.platform === 'win32' ? 120_000 : 30_000,
+  );
+});
+
+
+describe('journal asynchronous Windows ACL inspection', () => {
+  const sid = 'S-1-5-21-42-1001';
+  const safeAcl = () => JSON.stringify({ owner: sid, protected: true, reparse: false,
+    rules: [{ sid, type: 'Allow' }, { sid: 'S-1-5-18', type: 'Allow' }] });
+  afterEach(() => { vi.doUnmock('node:child_process'); vi.resetModules(); });
+  async function productionSecurity(query: ReturnType<typeof vi.fn>) {
+    vi.resetModules();
+    const sync = vi.fn(() => safeAcl());
+    vi.doMock('node:child_process', () => ({ execFile: query, execFileSync: sync }));
+    const module = await import('../workflow-control-shadow.js');
+    return { security: module.productionJournalSecurity(), sync };
+  }
+
+  it('awaits the native ACL callback while independent work progresses with the original command bound', async () => {
+    const path = join(await temporaryRoot(), 'acl-fixture');
+    let callback: ((error: Error | null, stdout: string, stderr: string) => void) | undefined;
+    const query = vi.fn((_file: string, _args: string[], _options: unknown, done: typeof callback) => { callback = done; });
+    const { security, sync } = await productionSecurity(query);
+    const pending = Promise.resolve(security.readWindowsPathSecurity(path, 'snapshot-1', true));
+    let settled = false; void pending.then(() => { settled = true; }, () => { settled = true; });
+    try {
+      await new Promise<void>(resolve => setImmediate(resolve));
+      expect(query).toHaveBeenCalledTimes(1);
+      expect(settled).toBe(false);
+      const [file, args, options] = query.mock.calls[0]!;
+      expect(file).toBe('powershell.exe');
+      expect(args.slice(0, 4)).toEqual(['-NoLogo', '-NoProfile', '-NonInteractive', '-Command']);
+      expect(args[4]).toContain('GetAccessRules($true, $true, [System.Security.Principal.SecurityIdentifier])');
+      expect(options).toMatchObject({ encoding: 'utf8', windowsHide: true, timeout: 20_000,
+        maxBuffer: 64 * 1024, env: { OPENSLACK_WORKFLOW_SHADOW_PATH: path } });
+      expect(sync).not.toHaveBeenCalled();
+    } finally { callback?.(null, safeAcl(), ''); await pending.catch(() => undefined); }
+    expect(await security.readWindowsPathSecurity(path, 'snapshot-1', true)).toBe(safeAcl());
+    expect(query).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects native inspection failures without caching them or performing an automatic retry', async () => {
+    const path = join(await temporaryRoot(), 'acl-failure');
+    const failure = Object.assign(new Error('Controlled native inspection failure'), { code: 'ETIMEDOUT' });
+    const query = vi.fn().mockImplementationOnce((_file, _args, _options, done) => done(failure, '', ''))
+      .mockImplementationOnce((_file, _args, _options, done) => done(null, safeAcl(), ''));
+    const { security, sync } = await productionSecurity(query);
+    await expect(Promise.resolve().then(() => security.readWindowsPathSecurity(path, 'snapshot-1', true))).rejects.toBe(failure);
+    expect(query).toHaveBeenCalledTimes(1);
+    expect(await security.readWindowsPathSecurity(path, 'snapshot-1', true)).toBe(safeAcl());
+    expect(await security.readWindowsPathSecurity(path, 'snapshot-1', true)).toBe(safeAcl());
+    expect(query).toHaveBeenCalledTimes(2);
+    expect(sync).not.toHaveBeenCalled();
+  });
+
+  it.each(['stable', 'changed'] as const)('waits for the security result and checks the %s file identity after the await', async mode => {
+    const path = join(await temporaryRoot(), 'owned-acl-fixture');
+    await writeFile(path, 'before', { mode: 0o600 });
+    const entered = Promise.withResolvers<void>(), released = Promise.withResolvers<string>();
+    const security = { platform: 'win32' as const, currentWindowsSid: () => sid,
+      readWindowsPathSecurity: () => { entered.resolve(); return released.promise; }, hardenPath: () => undefined };
+    const checking = journalOperations.assertOwnerFile(path, security);
+    let settled = false;
+    const outcome = checking.then(value => { settled = true; return { value }; }, error => { settled = true; return { error }; });
+    try {
+      await entered.promise;
+      await new Promise<void>(resolve => setImmediate(resolve));
+      expect(settled).toBe(false);
+      if (mode === 'changed') await writeFile(path, 'changed during the actual security await');
+    } finally { released.resolve(safeAcl()); }
+    const result = await outcome;
+    if (mode === 'changed') expect(result).toMatchObject({ error: expect.objectContaining({ message: expect.stringContaining('changed') }) });
+    else expect(result).toMatchObject({ value: expect.objectContaining({ size: 6n }) });
+  });
 });

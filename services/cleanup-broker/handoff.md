@@ -220,10 +220,16 @@ verifier's lack of live authority evidence; it is not a current assertion that
 the registry is absent. Historical package gates and approved input bytes are
 retained. Current deployment state requires a fresh independent host report.
 
-`OpenSlack-Cleanup-Qual` and UID/GID 44180/44181 are administrator-selected
-external bindings, not facts proved by repository fixtures. Compare the actual
-host accounts, ownership and identity mapping with the approved inputs before
-reuse. Any disagreement stops deployment; do not recreate or recycle accounts.
+The current source contract selects `OpenSlack-Cleanup-Qual`, Broker UID/GID
+24001/24001 and Agent UID/GID 24002/24002, with the reviewed registry pin for
+`Negentropy-Laby/openslack-cleanup-qualification-public` (1381124543), `main`
+and automatic branch deletion disabled. The former 44180/44181 identity
+selection and private registry remain only in frozen historical evidence.
+These source bindings do not prove deployment or distinct-UID isolation.
+Compare actual accounts, ownership, nologin shells, groups and identity mapping
+with fresh independently approved inputs before reuse. Any disagreement stops
+deployment; do not recreate or recycle accounts. Installation, activation,
+Permits and real qualification remain separate gates.
 
 Only ordinary staging files are included. No private keys, tokens, real
 permits, activation records or live ledger are supplied. A runtime inventory

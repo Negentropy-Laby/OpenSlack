@@ -99,7 +99,7 @@
   },
   "repositories": {
     "allowed_product_repos": [
-      "Negentropy-Laby/openslack-cleanup-qualification"
+      "Negentropy-Laby/openslack-cleanup-qualification-public"
     ],
     "workspace_repo": {
       "default_branch": "main",
