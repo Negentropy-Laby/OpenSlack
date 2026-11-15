@@ -32,6 +32,10 @@ import { createProviderAttemptBoundary } from '../internal/provider-attempt-boun
 import {
   bindProviderSendAdmission,
   bindProviderSendPreparation,
+  observeProviderSendPreparation,
+  finalizeProviderSendObservation,
+  consumeProviderSendObservation,
+  providerTokenHeadroom,
 } from '../internal/provider-send-admission.js';
 import type { ProviderSendRequest } from '../internal/provider-send-admission.js';
 import type { ProviderAttemptReservation } from '../provider-attempt-port.js';
@@ -206,6 +210,281 @@ function terminalFailureCases(): Array<{
     },
   ];
 }
+
+describe('non-authorizing provider request observations', () => {
+  function fixture() {
+    const port: ProviderAttemptPort = { reserve: vi.fn(), settle: vi.fn() };
+    const request: ProviderSendRequest = {
+      providerId: 'openai-compatible',
+      modelId: 'test-model',
+      requestBytes: JSON.stringify({
+        model: 'test-model',
+        messages: [{ role: 'user', content: 'observed request' }],
+        max_tokens: 512,
+      }),
+      transportEvidence: {
+        schema: 'openslack.openai_send_transport.v1',
+        endpoint: 'https://example.test/v1/chat/completions',
+        method: 'POST',
+        redirect: 'error',
+        adapterAutomaticRetries: 0,
+      },
+    };
+    const scope = Object.freeze({
+      providerRunId: 'RUN-OBSERVATION',
+      providerAttempt: '1',
+      requestedTokens: '8192',
+      expiresAt: Date.now() + 60_000,
+    });
+    const reservation = {
+      reservationId: 'reservation.observation',
+      callId: 'call.observation',
+      authorizedTokens: '1024',
+    };
+    const finalRequest = {
+      ...request,
+      requestBytes: JSON.stringify({ ...JSON.parse(request.requestBytes), max_tokens: 24 }),
+    };
+    return { port, request, scope, reservation, finalRequest };
+  }
+
+  it.each([
+    ['1024', '1000', '8192', 24],
+    ['8192', '8191', '8192', 1],
+    ['1024', '1024', '8192', 0],
+  ] as const)(
+    'subtracts local integer allocations %s - %s without claiming a provider bound',
+    (grant, allocated, requested, expected) => {
+      expect(providerTokenHeadroom(grant, allocated, requested)).toBe(expected);
+    },
+  );
+
+  it.each([
+    ['0', '0', '8192'],
+    ['01', '0', '8192'],
+    ['1.5', '0', '8192'],
+    ['9007199254740992', '0', '9007199254740992'],
+    ['8193', '1', '8192'],
+    ['1024', '1025', '8192'],
+    ['1024', '-1', '8192'],
+    ['1024', '0', '08192'],
+  ])('rejects noncanonical or impossible arithmetic %s/%s/%s', (grant, allocated, requested) => {
+    expect(() => providerTokenHeadroom(grant!, allocated!, requested!)).toThrow(
+      RuntimeMisconfiguredError,
+    );
+  });
+
+  it.each(['clone', 'proxy', 'content-hash'] as const)(
+    'refuses a forged %s observation without invoking a port',
+    async (kind) => {
+      const f = fixture();
+      const observed = await observeProviderSendPreparation(f.port, f.request, f.scope);
+      const forged =
+        kind === 'proxy'
+          ? new Proxy(observed, {})
+          : {
+              ...observed,
+              ...(kind === 'content-hash' ? { observationHash: 'a'.repeat(64) } : {}),
+            };
+      expect(Object.isFrozen(observed)).toBe(true);
+      expect(Object.keys(observed)).toEqual(['kind']);
+      expect(() =>
+        finalizeProviderSendObservation(f.port, forged, f.reservation, f.finalRequest, f.scope),
+      ).toThrow(RuntimeMisconfiguredError);
+      expect(f.port.reserve).not.toHaveBeenCalled();
+      expect(f.port.settle).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([
+    'port',
+    'run',
+    'turn',
+    'request-limit',
+    'expiry-identity',
+    'endpoint',
+    'model',
+    'bytes',
+  ] as const)('refuses prepared %s drift and burns the failed observation', async (kind) => {
+    const f = fixture();
+    const observed = await observeProviderSendPreparation(f.port, f.request, f.scope);
+    const port = kind === 'port' ? { reserve: vi.fn(), settle: vi.fn() } : f.port;
+    const scope = {
+      ...f.scope,
+      ...(kind === 'run' ? { providerRunId: 'RUN-OTHER' } : {}),
+      ...(kind === 'turn' ? { providerAttempt: '2' } : {}),
+      ...(kind === 'request-limit' ? { requestedTokens: '8191' } : {}),
+      ...(kind === 'expiry-identity' ? { expiresAt: f.scope.expiresAt + 1 } : {}),
+    };
+    const request = {
+      ...f.finalRequest,
+      ...(kind === 'endpoint'
+        ? {
+            transportEvidence: {
+              ...f.request.transportEvidence!,
+              endpoint: 'https://other.test/v1/chat/completions',
+            },
+          }
+        : {}),
+      ...(kind === 'model' ? { modelId: 'other-model' } : {}),
+      ...(kind === 'bytes'
+        ? {
+            requestBytes: f.finalRequest.requestBytes.replace(
+              'observed request',
+              'observed request!',
+            ),
+          }
+        : {}),
+    };
+    expect(() =>
+      finalizeProviderSendObservation(port, observed, f.reservation, request, scope),
+    ).toThrow(RuntimeMisconfiguredError);
+    expect(() =>
+      finalizeProviderSendObservation(f.port, observed, f.reservation, f.finalRequest, f.scope),
+    ).toThrow(RuntimeMisconfiguredError);
+    expect(f.port.reserve).not.toHaveBeenCalled();
+    expect(f.port.settle).not.toHaveBeenCalled();
+  });
+
+  it('refuses an expired observation at the original deadline', async () => {
+    const f = fixture();
+    const observed = await observeProviderSendPreparation(f.port, f.request, f.scope);
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(f.scope.expiresAt);
+    try {
+      expect(() =>
+        finalizeProviderSendObservation(f.port, observed, f.reservation, f.finalRequest, f.scope),
+      ).toThrow(ProviderTimeoutError);
+    } finally {
+      clock.mockRestore();
+    }
+    expect(f.port.reserve).not.toHaveBeenCalled();
+  });
+
+  it('cannot encode a zero output allocation as a valid final request', async () => {
+    const f = fixture();
+    expect(providerTokenHeadroom('1024', '1024', f.scope.requestedTokens)).toBe(0);
+    const observed = await observeProviderSendPreparation(f.port, f.request, f.scope);
+    const request = {
+      ...f.finalRequest,
+      requestBytes: JSON.stringify({ ...JSON.parse(f.request.requestBytes), max_tokens: 0 }),
+    };
+    expect(() =>
+      finalizeProviderSendObservation(f.port, observed, f.reservation, request, f.scope),
+    ).toThrow(RuntimeMisconfiguredError);
+    expect(f.port.reserve).not.toHaveBeenCalled();
+  });
+
+  it('refuses reservation accessors without executing them or invoking an authority', async () => {
+    const f = fixture();
+    let reads = 0;
+    Object.defineProperty(f.reservation, 'reservationId', {
+      enumerable: true,
+      get: () => {
+        reads++;
+        return 'reservation.observation';
+      },
+    });
+    const observed = await observeProviderSendPreparation(f.port, f.request, f.scope);
+    expect(() =>
+      finalizeProviderSendObservation(f.port, observed, f.reservation, f.finalRequest, f.scope),
+    ).toThrow(RuntimeMisconfiguredError);
+    expect(reads).toBe(0);
+    expect(f.port.reserve).not.toHaveBeenCalled();
+    expect(f.port.settle).not.toHaveBeenCalled();
+  });
+
+  it('allows only one finalization and one consumption of an observed reservation', async () => {
+    const f = fixture();
+    const observed = await observeProviderSendPreparation(f.port, f.request, f.scope);
+    const evidence = finalizeProviderSendObservation(
+      f.port,
+      observed,
+      f.reservation,
+      f.finalRequest,
+      f.scope,
+    );
+    expect(evidence).toMatchObject({
+      schema: 'openslack.provider_observation.v1',
+      observationHash: expect.stringMatching(/^[0-9a-f]{64}$/u),
+    });
+    expect(() =>
+      finalizeProviderSendObservation(f.port, observed, f.reservation, f.finalRequest, f.scope),
+    ).toThrow(RuntimeMisconfiguredError);
+    consumeProviderSendObservation(f.port, observed, f.reservation, f.finalRequest, f.scope);
+    expect(() =>
+      consumeProviderSendObservation(f.port, observed, f.reservation, f.finalRequest, f.scope),
+    ).toThrow(RuntimeMisconfiguredError);
+    const next = await observeProviderSendPreparation(f.port, f.request, {
+      ...f.scope,
+      providerAttempt: '2',
+    });
+    expect(() =>
+      finalizeProviderSendObservation(f.port, next, f.reservation, f.finalRequest, {
+        ...f.scope,
+        providerAttempt: '2',
+      }),
+    ).toThrow(RuntimeMisconfiguredError);
+    expect(f.port.reserve).not.toHaveBeenCalled();
+    expect(f.port.settle).not.toHaveBeenCalled();
+  });
+
+  it.each(['output', 'grant', 'call'] as const)(
+    'binds the final %s into unverified content identity',
+    async (kind) => {
+      const f = fixture();
+      const first = await observeProviderSendPreparation(f.port, f.request, f.scope);
+      const baseline = finalizeProviderSendObservation(
+        f.port,
+        first,
+        f.reservation,
+        f.finalRequest,
+        f.scope,
+      );
+      const second = await observeProviderSendPreparation(f.port, f.request, f.scope);
+      const reservation = {
+        ...f.reservation,
+        ...(kind === 'grant' ? { authorizedTokens: '1023' } : {}),
+        ...(kind === 'call' ? { callId: 'call.other' } : {}),
+      };
+      const request = {
+        ...f.finalRequest,
+        ...(kind === 'output'
+          ? {
+              requestBytes: JSON.stringify({
+                ...JSON.parse(f.request.requestBytes),
+                max_tokens: 23,
+              }),
+            }
+          : {}),
+      };
+      const changed = finalizeProviderSendObservation(
+        f.port,
+        second,
+        reservation,
+        request,
+        f.scope,
+      );
+      expect(changed.observationHash).not.toBe(baseline.observationHash);
+      expect(f.port.reserve).not.toHaveBeenCalled();
+      expect(f.port.settle).not.toHaveBeenCalled();
+    },
+  );
+
+  it('cannot mint an observation through an unknown production-style host veto', async () => {
+    const f = fixture();
+    bindProviderSendPreparation(f.port, async () => {
+      throw new RuntimeMisconfiguredError('SEND_TOTAL_TOKEN_UNVERIFIED');
+    });
+    const admission = vi.fn();
+    bindProviderSendAdmission(f.port, admission);
+    await expect(observeProviderSendPreparation(f.port, f.request, f.scope)).rejects.toThrow(
+      'SEND_TOTAL_TOKEN_UNVERIFIED',
+    );
+    expect(f.port.reserve).not.toHaveBeenCalled();
+    expect(f.port.settle).not.toHaveBeenCalled();
+    expect(admission).not.toHaveBeenCalled();
+  });
+});
 
 describe('OpenAI-compatible agent runtime', () => {
   let root: string;
@@ -596,6 +875,69 @@ describe('OpenAI-compatible agent runtime', () => {
         server.closeAllConnections();
         await new Promise<void>((resolve) => server.close(() => resolve()));
       }
+    },
+  );
+
+  it.each(['reservationId', 'callId', 'authorizedTokens'] as const)(
+    'rejects returned %s accessors before adapter reads or synthetic settlement',
+    async (field) => {
+      const { context } = createContext(root);
+      let reads = 0;
+      const reserved = {
+        reservationId: 'reservation.accessor',
+        callId: 'call.accessor',
+        authorizedTokens: '100',
+      };
+      Object.defineProperty(reserved, field, {
+        enumerable: true,
+        get: () => {
+          reads++;
+          throw new Error('accessor fixture executed');
+        },
+      });
+      const port: ProviderAttemptPort = { reserve: vi.fn(async () => reserved), settle: vi.fn() };
+      const admission = vi.fn(async () => {});
+      bindProviderSendAdmission(port, admission);
+      const transport = vi.fn();
+      await expect(
+        adapter(transport as typeof fetch, {
+          providerAttemptBoundary: createProviderAttemptBoundary(port),
+        }).execute(context),
+      ).rejects.toBeInstanceOf(RuntimeMisconfiguredError);
+      expect(reads).toBe(0);
+      expect(port.reserve).toHaveBeenCalledOnce();
+      expect(port.settle).not.toHaveBeenCalled();
+      expect(admission).not.toHaveBeenCalled();
+      expect(transport).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(['reservationId', 'callId', 'authorizedTokens'] as const)(
+    'refuses retained %s mutation after host admission without synthetic settlement',
+    async (field) => {
+      const { context } = createContext(root);
+      const reserved = {
+        reservationId: 'reservation.retained',
+        callId: 'call.retained',
+        authorizedTokens: '100',
+      };
+      const port: ProviderAttemptPort = { reserve: vi.fn(async () => reserved), settle: vi.fn() };
+      const admission = vi.fn(async () => {
+        Object.assign(reserved, {
+          [field]: field === 'authorizedTokens' ? '99' : 'identity.changed',
+        });
+      });
+      bindProviderSendAdmission(port, admission);
+      const transport = vi.fn();
+      await expect(
+        adapter(transport as typeof fetch, {
+          providerAttemptBoundary: createProviderAttemptBoundary(port),
+        }).execute(context),
+      ).rejects.toBeInstanceOf(RuntimeMisconfiguredError);
+      expect(admission).toHaveBeenCalledOnce();
+      expect(port.reserve).toHaveBeenCalledOnce();
+      expect(port.settle).not.toHaveBeenCalled();
+      expect(transport).not.toHaveBeenCalled();
     },
   );
 

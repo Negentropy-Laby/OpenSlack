@@ -31,10 +31,17 @@ import type { ProviderAttemptReservation } from './provider-attempt-port.js';
 import {
   reserveProviderAttempt,
   prepareProviderAttemptSend,
+  finalizeProviderAttemptSend,
+  consumeProviderAttemptSend,
   admitProviderAttemptSend,
   settleProviderAttempt,
   type ProviderAttemptBoundary,
 } from './internal/provider-attempt-boundary.js';
+import {
+  snapshotProviderAttemptReservation,
+  type ProviderSendPreparationObservation,
+  type ProviderSendPreparationScope,
+} from './internal/provider-send-admission.js';
 
 export interface OpenAICompatibleRuntimeConfig {
   providerId: 'openai-compatible';
@@ -231,6 +238,8 @@ export class OpenAICompatibleExecutionAdapter implements AgentExecutionAdapter {
       let receiptRecorded = false;
       let reportedUsage: ProviderTokenUsage | null = null;
       let reservation: ProviderAttemptReservation | undefined;
+      let preparation: ProviderSendPreparationObservation | undefined;
+      let preparationScope: ProviderSendPreparationScope | undefined;
       let sendAdmissionFailed = false;
       try {
         throwIfAborted(signal);
@@ -261,13 +270,23 @@ export class OpenAICompatibleExecutionAdapter implements AgentExecutionAdapter {
           max_tokens: maxTokens,
         });
         if (options.providerAttemptBoundary) {
-          await prepareProviderAttemptSend(options.providerAttemptBoundary, {
-            providerId: options.providerId,
-            modelId,
-            requestBytes: preparedRequestBytes,
-            transportEvidence,
-            signal,
+          preparationScope = Object.freeze({
+            providerRunId: runId,
+            providerAttempt: String(turn + 1),
+            requestedTokens: String(requestedTotalTokens),
+            expiresAt: startedAt + options.timeoutMs,
           });
+          preparation = await prepareProviderAttemptSend(
+            options.providerAttemptBoundary,
+            {
+              providerId: options.providerId,
+              modelId,
+              requestBytes: preparedRequestBytes,
+              transportEvidence,
+              signal,
+            },
+            preparationScope,
+          );
           throwIfAborted(signal);
           if (Date.now() - startedAt >= options.timeoutMs) throw new ProviderTimeoutError();
           reservation = await reserveProviderAttempt(options.providerAttemptBoundary, {
@@ -280,16 +299,25 @@ export class OpenAICompatibleExecutionAdapter implements AgentExecutionAdapter {
             // provider output cap below.
             requestedTokens: String(requestedTotalTokens),
           });
+          let authorization: Readonly<ProviderAttemptReservation>;
+          try {
+            // Inspect own data descriptors before any field access. Keep the
+            // original object for host authority; malformed replies stay open.
+            authorization = snapshotProviderAttemptReservation(reservation);
+          } catch (error) {
+            sendAdmissionFailed = true;
+            throw error;
+          }
           if (
-            !/^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$/u.test(reservation.reservationId) ||
-            !/^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$/u.test(reservation.callId) ||
-            !/^(?:0|[1-9][0-9]*)$/u.test(reservation.authorizedTokens)
+            !/^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$/u.test(authorization.reservationId) ||
+            !/^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$/u.test(authorization.callId) ||
+            !/^(?:0|[1-9][0-9]*)$/u.test(authorization.authorizedTokens)
           ) {
             throw new RuntimeMisconfiguredError(
               'Provider attempt reservation returned an invalid authorization.',
             );
           }
-          const authorizedTokens = Number(reservation.authorizedTokens);
+          const authorizedTokens = Number(authorization.authorizedTokens);
           if (
             !Number.isSafeInteger(authorizedTokens) ||
             authorizedTokens < 1 ||
@@ -306,13 +334,34 @@ export class OpenAICompatibleExecutionAdapter implements AgentExecutionAdapter {
         requestBody = JSON.stringify(preparedRequest);
         if (options.providerAttemptBoundary && reservation) {
           try {
-            await admitProviderAttemptSend(options.providerAttemptBoundary, reservation, {
+            if (!preparation || !preparationScope)
+              throw new RuntimeMisconfiguredError('Provider request preparation is missing.');
+            const finalRequest = Object.freeze({
               providerId: options.providerId,
               modelId,
               requestBytes: requestBody,
               transportEvidence,
               signal,
             });
+            finalizeProviderAttemptSend(
+              options.providerAttemptBoundary,
+              preparation,
+              reservation,
+              finalRequest,
+              preparationScope,
+            );
+            await admitProviderAttemptSend(
+              options.providerAttemptBoundary,
+              reservation,
+              finalRequest,
+            );
+            consumeProviderAttemptSend(
+              options.providerAttemptBoundary,
+              preparation,
+              reservation,
+              finalRequest,
+              preparationScope,
+            );
           } catch (error) {
             sendAdmissionFailed = true;
             throw error;
