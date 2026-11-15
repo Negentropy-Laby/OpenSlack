@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi, type TestContext } from 'vitest';
 import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
@@ -19,7 +19,122 @@ import { createConfiguredHarnessTaskHost } from '../harness-deployment.js';
 import { readTranscript } from '../transcript.js';
 
 const roots: string[] = [];
-afterEach(() => { vi.restoreAllMocks(); for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
+const nullDataCaseName = 'retains an explicit null data value and refuses a missing data field';
+interface NullDataFixture {
+  roots: Set<string>;
+  fixtures: ReturnType<typeof setup>[];
+  started: Set<ReturnType<typeof setup>>;
+  work?: Promise<void>;
+  stage: string;
+  steps: { name: string; outcome: 'fulfilled' | 'rejected'; milliseconds: number }[];
+  firstFailure?: { kind: string; code: string };
+}
+const nullDataFixtures = new WeakMap<TestContext['task'], NullDataFixture>();
+function nullDataFacts(error: unknown) {
+  const data = (value: unknown, key: string): unknown => {
+    if (!value || typeof value !== 'object' || nodeTypes.isProxy(value)) return undefined;
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    return descriptor && 'value' in descriptor ? descriptor.value : undefined;
+  };
+  const kind = data(error, 'kind'), code = data(error, 'code') ?? data(data(error, 'cause'), 'code');
+  return { kind: typeof kind === 'string' && ['handshake_failed', 'session_unavailable', 'timeout', 'envelope_malformed',
+    'permission_denied', 'worktree_boundary_violation', 'protocol_version_mismatch', 'process_crash', 'unknown'].includes(kind) ? kind : 'UNKNOWN',
+    code: typeof code === 'string' && ['EACCES', 'EPERM', 'EIO', 'ENOENT', 'ETIMEDOUT', 'RUN_STATE_BUSY', 'RUN_OBSERVATION_TIMEOUT'].includes(code) ? code : 'UNKNOWN' };
+}
+function publishNullDataFacts(context: TestContext, owned: NullDataFixture, retained = true) {
+  Object.assign(context.task.meta, { bridgeNullDataFixture: { stage: owned.stage,
+    steps: owned.steps.map(step => ({ ...step })), firstFailure: owned.firstFailure ?? null,
+    confirmedChildCloseReceipts: [...owned.started].filter(fixture => fixture.adapter.processExitReceipt !== null).length,
+    retainedRoots: retained ? owned.roots.size : 0 } });
+}
+async function nullDataStep<T>(context: TestContext, owned: NullDataFixture, name: string, operation: () => Promise<T>): Promise<T> {
+  const began = performance.now();
+  let outcome: 'fulfilled' | 'rejected' = 'rejected';
+  try { const result = await operation(); outcome = 'fulfilled'; return result; }
+  catch (error) { owned.firstFailure ??= nullDataFacts(error); throw error; }
+  finally { owned.steps.push({ name, outcome, milliseconds: performance.now() - began }); publishNullDataFacts(context, owned); }
+}
+function ownNullDataCase(context: TestContext, operation: (owned: NullDataFixture) => Promise<void>) {
+  const owned = nullDataFixtures.get(context.task)!;
+  owned.stage = 'tested_protocol';
+  const work = Promise.resolve().then(() => operation(owned)).catch(error => {
+    owned.firstFailure ??= nullDataFacts(error); throw error;
+  });
+  owned.work = work;
+  void work.catch(() => undefined);
+  return work;
+}
+async function joinNullDataWork<T>(work: Promise<T>, deadline: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([work, new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error('BRIDGE_NULL_DATA_WORK_UNCONFIRMED')), Math.max(0, deadline - performance.now()));
+    })]);
+  } finally { clearTimeout(timer); }
+}
+beforeEach(context => {
+  if (context.task.name !== nullDataCaseName) return;
+  const owned: NullDataFixture = { roots: new Set(), fixtures: [], started: new Set(), stage: 'preparing', steps: [] };
+  nullDataFixtures.set(context.task, owned);
+  const ownRoot = (root: string) => { owned.roots.add(root); const index = roots.indexOf(root); if (index >= 0) roots.splice(index, 1); };
+  for (const [name, payload] of [['prepare_valid', '{ data: null }'], ['prepare_missing', "{ result: 'not data' }"]] as const) {
+    const began = performance.now();
+    let outcome: 'fulfilled' | 'rejected' = 'rejected';
+    try { owned.fixtures.push(setup(prefix + `reply(frame, 'complete', ${payload});` + suffix, 2_000, {}, ownRoot)); outcome = 'fulfilled'; }
+    catch (error) { owned.firstFailure ??= nullDataFacts(error); throw error; }
+    finally { owned.steps.push({ name, outcome, milliseconds: performance.now() - began }); publishNullDataFacts(context, owned); }
+  }
+}, 5_000);
+afterEach(async context => {
+  const owned = nullDataFixtures.get(context.task);
+  let primaryFailed = context.task.result?.state === 'fail';
+  let cleanupFailures = 0;
+  if (owned) {
+    nullDataFixtures.delete(context.task);
+    owned.stage = 'waiting_owned_work'; publishNullDataFacts(context, owned);
+    const deadline = performance.now() + 5_000;
+    try {
+      const work = await joinNullDataWork(Promise.allSettled(owned.work ? [owned.work] : []), deadline);
+      if (work.some(result => result.status === 'rejected')) primaryFailed = true;
+      const unclosed = [...owned.started].filter(fixture => fixture.adapter.processExitReceipt === null);
+      await joinNullDataWork(Promise.allSettled(unclosed.map(fixture =>
+        fixture.adapter.closeSession(`bridge-${fixture.context.runId}`))), deadline);
+      // Expected protocol refusals may cache a rejected close promise. Only the
+      // actual child close receipt proves that its work has ended.
+      if ([...owned.started].some(fixture => fixture.adapter.processExitReceipt === null)) {
+        throw new Error('BRIDGE_NULL_DATA_WORK_UNCONFIRMED');
+      }
+    } catch {
+      owned.stage = 'ownership_unconfirmed'; publishNullDataFacts(context, owned);
+      if (!primaryFailed) throw new Error('BRIDGE_NULL_DATA_CLEANUP_UNCONFIRMED');
+      return;
+    }
+    owned.stage = 'owned_work_drained'; publishNullDataFacts(context, owned);
+  }
+  const ordinaryRoots = roots.splice(0);
+  try { vi.restoreAllMocks(); }
+  catch {
+    if (owned) { owned.stage = 'cleanup_failed'; publishNullDataFacts(context, owned); }
+    Object.assign(context.task.meta, { bridgeCleanup: { error: 'SPY_RESTORE_FAILED', retainedOrdinaryRoots: ordinaryRoots.length } });
+    if (!primaryFailed) throw new Error('HARNESS_BRIDGE_TEST_SPY_RESTORE_FAILED');
+    return;
+  }
+  const removable = [...ordinaryRoots, ...(owned && !primaryFailed ? [...owned.roots] : [])];
+  for (const [index, root] of removable.entries()) {
+    try { rmSync(root, { recursive: true, force: true }); owned?.roots.delete(root); }
+    catch (error) {
+      cleanupFailures += 1;
+      Object.assign(context.task.meta, { bridgeCleanup: { error: 'ROOT_REMOVAL_UNCONFIRMED',
+        code: nullDataFacts(error).code, cleanupFailures,
+        unconfirmedRemovals: 1, unattemptedRemovals: removable.length - index - 1 } });
+      // Preserve the remaining directories after any removal error, including
+      // EIO. Report cleanup separately without replacing a primary failure.
+      break;
+    }
+  }
+  if (owned) { owned.stage = cleanupFailures ? 'cleanup_failed' : primaryFailed ? 'failed_fixture_retained' : 'removed'; publishNullDataFacts(context, owned, primaryFailed || cleanupFailures > 0); }
+  if (cleanupFailures && !primaryFailed) throw new Error('HARNESS_BRIDGE_TEST_CLEANUP_FAILED');
+});
 
 function setup(source: string, timeoutMs = 2_000, extra: Partial<BridgeProcessAdapterOptions> = {}, onCreated?: (root: string) => void) {
   const root = mkdtempSync(join(tmpdir(), 'harness-bridge-'));
@@ -425,12 +540,15 @@ describe('Harness bridge ownership', () => {
     });
   });
 
-  it('retains an explicit null data value and refuses a missing data field', async () => {
-    const valid = setup(prefix + `reply(frame, 'complete', { data: null });` + suffix);
-    expect((await valid.adapter.execute(valid.context)).data).toBeNull();
-    const missing = setup(prefix + `reply(frame, 'complete', { result: 'not data' });` + suffix);
-    await expect(missing.adapter.execute(missing.context)).rejects.toThrow(/data/);
-  });
+  it('retains an explicit null data value and refuses a missing data field', context => ownNullDataCase(context, async owned => {
+    const [valid, missing] = owned.fixtures;
+    owned.started.add(valid!);
+    expect((await nullDataStep(context, owned, 'execute_valid', () => valid!.adapter.execute(valid!.context))).data).toBeNull();
+    owned.started.add(missing!);
+    await nullDataStep(context, owned, 'execute_missing', async () => {
+      await expect(missing!.adapter.execute(missing!.context)).rejects.toThrow(/data/);
+    });
+  }));
 
   it('rejects duplicate terminal frames even when the first complete would otherwise be valid', async () => {
     const { adapter, context } = setup(prefix + `reply(frame, 'complete', { data: 1 }); reply(frame, 'complete', { data: 2 });` + suffix);
