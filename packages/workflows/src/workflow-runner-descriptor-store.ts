@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process';
+import { execFile, execFileSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import { constants as fsConstants, type BigIntStats } from 'node:fs';
 import { chmod, link, lstat, mkdir, open, readdir, realpath, rm, unlink } from 'node:fs/promises';
@@ -131,30 +131,24 @@ function parseWindowsAcl(value: string): {
 
 function currentWindowsSid(): string {
   if (cachedWindowsSid) return cachedWindowsSid;
-  const output = execFileSync(
-    'powershell.exe',
-    [
-      '-NoLogo',
-      '-NoProfile',
-      '-NonInteractive',
-      '-Command',
-      '[System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value',
-    ],
-    { encoding: 'utf8', timeout: 20_000, windowsHide: true },
-  )
-    .trim()
-    .toUpperCase();
-  if (!WINDOWS_SID.test(output)) {
+  const output = execFileSync('whoami.exe', ['/user', '/fo', 'csv', '/nh'], {
+    encoding: 'utf8',
+    timeout: 20_000,
+    windowsHide: true,
+    maxBuffer: 16 * 1024,
+  }).trim();
+  const match = /^"(?:""|[^"])*","(S-\d(?:-\d+)+)"$/iu.exec(output);
+  if (!match || !WINDOWS_SID.test(match[1]!.toUpperCase())) {
     return storeFail(
       'WORKFLOW_RUNNER_DESCRIPTOR_STORE_PERMISSION_DENIED',
       'Current Windows SID is unavailable.',
     );
   }
-  cachedWindowsSid = output;
+  cachedWindowsSid = match[1]!.toUpperCase();
   return cachedWindowsSid;
 }
 
-function inspectWindowsAcl(path: string): ReturnType<typeof parseWindowsAcl> {
+async function inspectWindowsAcl(path: string): Promise<ReturnType<typeof parseWindowsAcl>> {
   const script = [
     '$ErrorActionPreference = "Stop"',
     WINDOWS_SECURITY_MODULE_IMPORT,
@@ -167,16 +161,24 @@ function inspectWindowsAcl(path: string): ReturnType<typeof parseWindowsAcl> {
     '$reparse = [bool]($item.Attributes -band [IO.FileAttributes]::ReparsePoint)',
     '[pscustomobject]@{ owner=$owner; protected=$acl.AreAccessRulesProtected; reparse=$reparse; allow=$allow; deny=$deny } | ConvertTo-Json -Compress -Depth 4',
   ].join('; ');
-  const output = execFileSync(
-    'powershell.exe',
-    ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', script],
-    {
-      encoding: 'utf8',
-      timeout: 20_000,
-      windowsHide: true,
-      env: { ...process.env, OPENSLACK_WORKFLOW_RUNNER_PATH: path },
-    },
-  );
+  // ACL inspection is read-only. Await the native process without blocking
+  // unrelated approval/observer work on this worker's event loop.
+  const output = await new Promise<string>((resolveOutput, reject) => {
+    execFile(
+      'powershell.exe',
+      ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', script],
+      {
+        encoding: 'utf8',
+        timeout: 20_000,
+        windowsHide: true,
+        env: { ...process.env, OPENSLACK_WORKFLOW_RUNNER_PATH: path },
+      },
+      (error, stdout) => {
+        if (error) reject(error);
+        else resolveOutput(stdout);
+      },
+    );
+  });
   return parseWindowsAcl(output);
 }
 
@@ -230,7 +232,7 @@ export function createWorkflowRunnerDescriptorPathSecurity(
         );
       }
       if (platform === 'win32') {
-        const acl = inspectWindowsAcl(path);
+        const acl = await inspectWindowsAcl(path);
         const allowed = new Set([windowsSid!, SYSTEM_SID]);
         if (
           acl.reparse ||

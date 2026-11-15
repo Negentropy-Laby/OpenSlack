@@ -20,14 +20,14 @@ BINDINGS = {'target': 'OpenSlack-Cleanup-Qual',
  'workspaceId': 'openslack-self',
  'repository': 'Negentropy-Laby/openslack-cleanup-qualification-public',
  'repositoryId': '1381124543'}
-BROKER_UID = 44180
-BROKER_GID = 44180
+BROKER_UID = 24001
+BROKER_GID = 24001
 BROKER_ID = 'cleanup-broker-pr418'
-AGENT_UID = 44181
-AGENT_GID = 44181
+AGENT_UID = 24002
+AGENT_GID = 24002
 AGENT_ID = 'cleanup_qualification_pr418'
-EXPECTED_IDENTITIES = {'broker': ('openslack-cleanup-broker', 44180, 44180),
- 'agent': ('openslack-cleanup-agent', 44181, 44181)}
+EXPECTED_IDENTITIES = {'broker': ('openslack-cleanup-broker', 24001, 24001),
+ 'agent': ('openslack-cleanup-agent', 24002, 24002)}
 LAYOUT = {'/usr/lib/openslack-cleanup/cleanup-broker': (67108864, 493),
  '/usr/lib/openslack-cleanup/executor.mjs': (67108864, 420),
  '/usr/lib/openslack-cleanup/node': (536870912, 493),
@@ -41,7 +41,7 @@ RUNTIME_BINDING = {'agent_id': 'cleanup_qualification_pr418',
  'workspace_id': 'openslack-self'}
 TASK_STATES = ('pending', 'claimed', 'in-progress', 'completed', 'released')
 TASK_LIMIT = 4096
-REGISTRY_SHA256 = '33a9b46866fedd768cb859abfd36341159fc0f3a3e306462575f1f34af7e7ebc'
+REGISTRY_SHA256 = 'afbf25479de2851aa88c03533e6870e6ba1a45c27e4e88c45d52659e9bea4f42'
 # END GENERATED ADMINISTRATION CONTRACT
 ACTIVE = ('/etc/openslack-cleanup', '/usr/lib/openslack-cleanup',
     '/var/lib/openslack-cleanup', '/run/openslack-cleanup')

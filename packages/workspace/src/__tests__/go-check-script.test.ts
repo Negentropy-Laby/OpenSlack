@@ -1227,14 +1227,14 @@ describeOnBashHosts('reviewed Go module verifier', () => {
     );
 
     await waitForPath(marker);
-    const signalStartedAt = Date.now();
+    const signalStartedAt = performance.now();
     process.kill(running.pid!, 'SIGTERM');
     const status = await new Promise<number | null>((resolveStatus) => {
       running.once('close', resolveStatus);
     });
 
     expect(status).not.toBe(0);
-    expect(Date.now() - signalStartedAt).toBeLessThan(2_000);
+    expect(performance.now() - signalStartedAt).toBeLessThan(2_000);
     expect(readFileSync(fixture.dockerLog, 'utf8')).toContain(' rm -f ');
   });
 });

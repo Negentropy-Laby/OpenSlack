@@ -193,6 +193,116 @@ describe('WatchDeliveryQueueV2', () => {
     expect(validateQueueSchema(JSON.parse(readFileSync(store.statePath, 'utf8')))).toBe(true);
   });
 
+  it.each(['direct', 'notification_service'] as const)(
+    'accepts later %s observations without moving original persistence or deadline',
+    (backend) => {
+      const store = queueV2();
+      const event = toPersistableRepositoryEvent(issueEvent());
+      const inputs =
+        backend === 'direct'
+          ? [{ route: directRoute }]
+          : [{ route: serviceRoute, blob, watchConfigDigest }];
+      const first = store.enqueueRoutes(event, inputs);
+      if (first.outcome === 'conflict') throw new Error('Expected enqueue');
+      const original = first.routes[0]!;
+      // First isolate queue time, then observation time with queue time unchanged.
+      now = new Date(now.getTime() + 1);
+      expect(queueV2().enqueueRoutes(event, inputs)).toMatchObject({ outcome: 'duplicate' });
+      const replay = { ...event, observedAt: now.toISOString(), deliveryId: 'later-delivery' };
+      expect(queueV2().enqueueRoutes(replay, inputs)).toMatchObject({ outcome: 'duplicate' });
+      const persisted = queueV2().getRoute(original.id)!;
+      expect(persisted).toEqual({
+        ...original,
+        deliveryIds: [...original.deliveryIds, replay.deliveryId],
+        updatedAt: now.toISOString(),
+      });
+      expect(validateQueueSchema(JSON.parse(readFileSync(store.statePath, 'utf8')))).toBe(true);
+    },
+  );
+
+  it.each(['direct', 'notification_service'] as const)(
+    'preserves %s retry and terminal progress across redelivery and restart',
+    (backend) => {
+      const store = queueV2();
+      const event = toPersistableRepositoryEvent(issueEvent());
+      const inputs =
+        backend === 'direct'
+          ? [{ route: directRoute }]
+          : [{ route: serviceRoute, blob, watchConfigDigest }];
+      const first = store.enqueueRoutes(event, inputs);
+      if (first.outcome === 'conflict') throw new Error('Expected enqueue');
+      const id = first.routes[0]!.id;
+      const claim = store.claimNext('worker', backend)!;
+      store.markRetryable(id, claim.lease.token, { code: 'RETRY', message: 'Retry.' });
+      const retry = queueV2().getRoute(id)!;
+      now = new Date(Date.parse(retry.availableAt) - 1);
+      expect(
+        queueV2().enqueueRoutes({ ...event, observedAt: now.toISOString() }, inputs),
+      ).toMatchObject({ outcome: 'duplicate' });
+      expect(queueV2().getRoute(id)).toEqual(retry);
+      expect(queueV2().claimNext('too-early', backend)).toBeNull();
+      now = new Date(retry.availableAt);
+      const next = queueV2().claimNext('worker', backend)!;
+      expect(next.route.attemptCount).toBe(2);
+      if (backend === 'direct') store.markDirectCompleted(id, next.lease.token);
+      else
+        store.markRejected(id, next.lease.token, 'deterministic_rejection', {
+          code: 'UNAUTHORIZED',
+          message: 'Rejected.',
+        });
+      const terminal = queueV2().getRoute(id)!;
+      const bytes = readFileSync(store.statePath);
+      now = new Date(now.getTime() + 1);
+      expect(
+        queueV2().enqueueRoutes({ ...event, observedAt: now.toISOString() }, inputs),
+      ).toMatchObject({ outcome: 'duplicate' });
+      expect(queueV2().getRoute(id)).toEqual(terminal);
+      expect(queueV2().claimNext('must-not-resend', backend)).toBeNull();
+      // Mutations can update the state-level observation time, never the record's progress.
+      expect(JSON.parse(readFileSync(store.statePath, 'utf8')).routes).toEqual(
+        JSON.parse(bytes.toString()).routes,
+      );
+    },
+  );
+
+  it('still rejects changed route, epoch, vendor, blob, config and event identity on replay', () => {
+    const { store, record, event } = enqueueService();
+    if (event.kind !== 'issue') throw new Error('Expected issue event');
+    now = new Date(now.getTime() + 1);
+    const changed = [
+      { route: { ...serviceRoute, channel: '#different' }, blob, watchConfigDigest },
+      {
+        route: { ...serviceRoute, delivery: { ...serviceRoute.delivery, routing_epoch: 2 } },
+        blob,
+        watchConfigDigest,
+      },
+      {
+        route: {
+          ...serviceRoute,
+          delivery: { ...serviceRoute.delivery, vendor_id: 'different-vendor' },
+        },
+        blob,
+        watchConfigDigest,
+      },
+      { route: serviceRoute, blob: { ...blob, size: blob.size + 1 }, watchConfigDigest },
+      { route: serviceRoute, blob, watchConfigDigest: `sha256:${'d'.repeat(64)}` as const },
+    ];
+    const bytes = readFileSync(store.statePath);
+    for (const input of changed) {
+      expect(() =>
+        store.enqueueRoutes({ ...event, observedAt: now.toISOString() }, [input]),
+      ).toThrowError(expect.objectContaining({ code: 'QUEUE_IMMUTABLE_CONFLICT' }));
+      expect(readFileSync(store.statePath)).toEqual(bytes);
+    }
+    expect(() =>
+      store.enqueueRoutes({ ...event, source: 'poll' }, [
+        { route: serviceRoute, blob, watchConfigDigest },
+      ]),
+    ).toThrowError(expect.objectContaining({ code: 'QUEUE_IMMUTABLE_CONFLICT' }));
+    expect(queueV2().getRoute(record.id)).toEqual(record);
+    expect(readFileSync(store.statePath)).toEqual(bytes);
+  });
+
   it('publishes a closed queue JSON schema', () => {
     const { store } = enqueueService();
     const state = JSON.parse(readFileSync(store.statePath, 'utf8')) as Record<string, unknown>;
@@ -497,6 +607,16 @@ describe('WatchDeliveryQueueV2', () => {
     expect(queueV2().recoverAcceptedReceipts(receiptStore)).toBe(1);
     expect(queueV2().getRoute(record.id)).toMatchObject({ receiptLedger: 'committed' });
     expect(receiptStore.read(record.id)).toEqual(receipt);
+    const accepted = queueV2().getRoute(record.id)!;
+    now = new Date(now.getTime() + 1);
+    expect(
+      queueV2().enqueueRoutes({ ...accepted.event, observedAt: now.toISOString() }, [
+        { route: serviceRoute, blob, watchConfigDigest },
+      ]),
+    ).toMatchObject({ outcome: 'duplicate' });
+    expect(queueV2().getRoute(record.id)).toEqual(accepted);
+    expect(queueV2().claimNext('must-not-resend', 'notification_service')).toBeNull();
+    expect(receiptStore.read(record.id)).toEqual(receipt);
   });
 
   it('uses one timestamp for all writes in an accepted transaction', () => {
@@ -617,6 +737,13 @@ describe('WatchDeliveryQueueV2', () => {
         },
       ],
     });
+    now = new Date(now.getTime() + 1);
+    expect(
+      queueV2().enqueueRoutes({ ...recovered.event, observedAt: now.toISOString() }, [
+        { route: serviceRoute, blob, watchConfigDigest },
+      ]),
+    ).toMatchObject({ outcome: 'duplicate' });
+    expect(queueV2().getRoute(record.id)).toEqual(recovered);
   });
 
   it('serializes governed recovery and Blob GC under queue-v2 then Blob locks', () => {

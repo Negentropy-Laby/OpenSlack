@@ -12,6 +12,7 @@ from unittest.mock import patch
 BASE = Path(__file__).parent
 sys.path.insert(0, str(BASE))
 from _test_runner import PortableTests, LinuxTests, run as run_tests
+from _safety import AGENT_GID, AGENT_UID, BROKER_GID, BROKER_UID
 
 def load(name):
     spec = importlib.util.spec_from_file_location('test_' + name.replace('-', '_'), BASE / (name + '.py'))
@@ -73,8 +74,8 @@ class AdministrationBehaviorTests(LinuxTests):
 
     def test_post_start_cannot_pass_with_missing_runtime_objects(self):
         isolation = load('isolation')
-        report = isolation.evaluate('post-start', identities={'broker':{'uid':44180,'gid':44180,'groupIds':[44180],'shell':'/usr/sbin/nologin'},
-                'agent':{'uid':44181,'gid':44181,'groupIds':[44181],'shell':'/usr/sbin/nologin'}},
+        report = isolation.evaluate('post-start', identities={'broker':{'uid':BROKER_UID,'gid':BROKER_GID,'groupIds':[BROKER_GID],'shell':'/usr/sbin/nologin'},
+                'agent':{'uid':AGENT_UID,'gid':AGENT_GID,'groupIds':[AGENT_GID],'shell':'/usr/sbin/nologin'}},
             probes=[{'id':item['id'],'expected':item['expected'],'observed':'missing'}
                     for item in isolation.PROBES],
             privilege={'verified':True, 'blockingReasons':[]})
@@ -552,8 +553,8 @@ class SafetyFixtureTests(LinuxTests):
 class IsolationFixtureTests(LinuxTests):
     def setUp(self):
         self.tool = load('isolation')
-        self.ids = {'broker':{'uid':44180,'gid':44180,'groupIds':[44180],'shell':'/usr/sbin/nologin'},
-            'agent':{'uid':44181,'gid':44181,'groupIds':[44181],'shell':'/usr/sbin/nologin'}}
+        self.ids = {'broker':{'uid':BROKER_UID,'gid':BROKER_GID,'groupIds':[BROKER_GID],'shell':'/usr/sbin/nologin'},
+            'agent':{'uid':AGENT_UID,'gid':AGENT_GID,'groupIds':[AGENT_GID],'shell':'/usr/sbin/nologin'}}
 
     def rows(self, phase):
         return [{'id':item['id'],'expected':item['expected'],
@@ -581,13 +582,22 @@ class IsolationFixtureTests(LinuxTests):
         self.assertIn('REQUIRED_OBJECT_MISSING', report['blockingReasons'])
 
     def test_privileged_or_unknown_groups_and_sudo_scope_block(self):
-        for problem in ['broker-group','sudo-group','unknown-scope']:
+        for problem in ['broker-group','sudo-group','unknown-scope',
+                'broker-uid','broker-gid','agent-uid','agent-gid',
+                'broker-shell','agent-shell','old-broker','old-agent']:
             with self.subTest(problem=problem):
                 ids = json.loads(json.dumps(self.ids))
                 privilege = {'verified':True,'blockingReasons':[]}
-                if problem == 'broker-group': ids['agent']['groupIds'].append(44180)
+                if problem == 'broker-group': ids['agent']['groupIds'].append(BROKER_GID)
                 elif problem == 'sudo-group': ids['agent']['groupIds'].append(27)
-                else: privilege = {'verified':False,'blockingReasons':['SUDO_SCOPE_UNKNOWN']}
+                elif problem == 'unknown-scope': privilege = {'verified':False,'blockingReasons':['SUDO_SCOPE_UNKNOWN']}
+                elif problem.startswith('old-'):
+                    role = problem.removeprefix('old-')
+                    old_id = 44180 if role == 'broker' else 44181
+                    ids[role].update(uid=old_id,gid=old_id,groupIds=[old_id])
+                else:
+                    role, field = problem.split('-')
+                    ids[role][field] = '/bin/sh' if field == 'shell' else ids[role][field] + 1
                 report = self.tool.evaluate('post-start', identities=ids, probes=self.rows('post-start'), privilege=privilege)
                 self.assertEqual(report['result'], 'BLOCKED')
 
@@ -597,7 +607,7 @@ class IsolationFixtureTests(LinuxTests):
             counter[0] += 1
             return {'state':'present', 'path':spec['path'], 'ino':str(counter[0])}
         def access(paths):
-            return {'uid':[44181]*4,'gid':[44181]*4,'supplementaryGroups':[],
+            return {'uid':[AGENT_UID]*4,'gid':[AGENT_GID]*4,'supplementaryGroups':[],
                 'access':{key:False for key,_,_ in paths}}
         report = self.tool.observe('post-start', identity_source=lambda:self.ids,
             access=access, metadata_source=metadata,
@@ -660,7 +670,7 @@ class InstanceFixtureTests(LinuxTests):
             instance.write_text(json.dumps(self.record))
             instance.chmod(0o600)
             digest = __import__('hashlib').sha256(broker.read_bytes()).hexdigest()
-            proof = dict(pid=123,uid=[44180]*4,gid=[44180]*4,executable=self.tool.BROKER,comm='cleanup-broker',
+            proof = dict(pid=123,uid=[BROKER_UID]*4,gid=[BROKER_GID]*4,executable=self.tool.BROKER,comm='cleanup-broker',
                 startTicks='10', startedAtUtc='2026-10-11T11:59:59.980000+00:00',
                 startTimeUpperUtc='2026-10-11T11:59:59.990000+00:00', bootEpochLowerNs='100',
                 bootEpochUpperNs='200', clockTicksPerSecond=100,
@@ -689,7 +699,7 @@ class InstanceFixtureTests(LinuxTests):
             self.assertEqual(ambiguous['result'], 'BLOCKED')
             self.assertIsNone(ambiguous['realNonce'])
             self.assertIn('INSTANCE_PROCESS_START_AMBIGUOUS', ambiguous['blockingReasons'])
-            wrong = {**proof,'uid':[44180,0,44180,44180]}
+            wrong = {**proof,'uid':[BROKER_UID,0,BROKER_UID,BROKER_UID]}
             report = self.tool.inspect(123,digest,root=root,owner=(os.geteuid(),os.getegid()),
                 broker_owner=(os.geteuid(),os.getegid()),process_reader=lambda *_,**__:wrong,
                 executable_reader=executable,pidfd_factory=reader,pidfd_alive=lambda _:True)
@@ -805,20 +815,22 @@ class MoreBoundaryTests(LinuxTests):
             proc.mkdir(parents=True,mode=0o755)
             (proc/'comm').write_text('cleanup-broker\n')
             (proc/'exe').symlink_to(tool.BROKER)
-            status='Uid:\t44180 44180 44180 44180\nGid:\t44180 44180 44180 44180\nGroups:\t44180\nCapEff:\t0\nCapPrm:\t0\nCapAmb:\t0\n'
+            status=(f'Uid:\t{BROKER_UID} {BROKER_UID} {BROKER_UID} {BROKER_UID}\n'
+                f'Gid:\t{BROKER_GID} {BROKER_GID} {BROKER_GID} {BROKER_GID}\n'
+                f'Groups:\t{BROKER_GID}\nCapEff:\t0\nCapPrm:\t0\nCapAmb:\t0\n')
             (proc/'status').write_text(status)
             (proc/'stat').write_text('123 (cleanup-broker) '+' '.join(['S']+['0']*18+['100']+['0']*12))
             (root/'proc/stat').write_text('cpu 1 2 3\nbtime 1791720000\n')
             value=tool.process_record(123,root=root)
-            self.assertEqual(value['uid'],[44180]*4)
-            self.assertEqual(value['gid'],[44180]*4)
+            self.assertEqual(value['uid'],[BROKER_UID]*4)
+            self.assertEqual(value['gid'],[BROKER_GID]*4)
             for key in ('Uid','Gid'):
-                for position in range(4):
-                    with self.subTest(key=key,position=position):
+                for position, refused in ((slot, value) for slot in range(4) for value in ('0','44180')):
+                    with self.subTest(key=key,position=position,refused=refused):
                         altered=status.splitlines()
                         index=0 if key=='Uid' else 1
-                        fields=['44180']*4
-                        fields[position]='0'
+                        fields=[str(BROKER_UID if key=='Uid' else BROKER_GID)]*4
+                        fields[position]=refused
                         altered[index]=key+': '+ ' '.join(fields)
                         (proc/'status').write_text('\n'.join(altered)+'\n')
                         with self.assertRaisesRegex(tool.common.Refusal,'PROCESS_UID_GID_MISMATCH'):
@@ -861,8 +873,8 @@ class PortableLogicTests(PortableTests):
 
     def test_isolation_future_files_are_not_a_poststart_pass(self):
         tool=load('isolation')
-        ids={'broker':{'uid':44180,'gid':44180,'groupIds':[44180],'shell':'/usr/sbin/nologin'},
-             'agent':{'uid':44181,'gid':44181,'groupIds':[44181],'shell':'/usr/sbin/nologin'}}
+        ids={'broker':{'uid':BROKER_UID,'gid':BROKER_GID,'groupIds':[BROKER_GID],'shell':'/usr/sbin/nologin'},
+             'agent':{'uid':AGENT_UID,'gid':AGENT_GID,'groupIds':[AGENT_GID],'shell':'/usr/sbin/nologin'}}
         rows=[{'id':item['id'],'expected':item['expected'],'observed':'missing' if item['id'] in tool.RUNTIME_IDS
             else item['expected']} for item in tool.PROBES]
         privilege={'verified':True,'blockingReasons':[]}

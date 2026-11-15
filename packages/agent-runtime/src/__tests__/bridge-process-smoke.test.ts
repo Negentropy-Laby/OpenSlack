@@ -1,4 +1,6 @@
-import { describe, expect, it, beforeEach, afterEach } from 'vitest';
+import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
+import { ChildProcess } from 'node:child_process';
+import { channel } from 'node:diagnostics_channel';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -8,6 +10,7 @@ import {
   createRunStore,
 } from '../index.js';
 import { readTranscript } from '../transcript.js';
+import { requestAgentRunCancellation } from '../control.js';
 import { resolveTestBunExecutable } from './test-executable.js';
 
 const BUN = resolveTestBunExecutable();
@@ -16,12 +19,50 @@ function makeTempRoot(): string {
   return mkdtempSync(join(tmpdir(), 'bridge-process-smoke-test-'));
 }
 
-function cleanup(root: string): void {
+async function waitForOwnedWork<T>(work: Promise<T>, deadline = performance.now() + 5_000): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
   try {
-    rmSync(root, { recursive: true, force: true });
-  } catch {
-    /* ignore */
-  }
+    return await Promise.race([work, new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error('BRIDGE_SMOKE_OWNED_WORK_UNCONFIRMED')), Math.max(0, deadline - performance.now()));
+    })]);
+  } finally { clearTimeout(timer); }
+}
+
+/** Observe the exact fixture process; launcher completion never fabricates a close receipt. */
+type TestChildObservationChannel = Pick<ReturnType<typeof channel>, 'subscribe' | 'unsubscribe'>;
+function observeBridgeChild(args: readonly string[], diagnostic: TestChildObservationChannel = channel('child_process')) {
+  const pending = new Map<ChildProcess, () => void>();
+  const constructions = new Set<Promise<void>>();
+  const matched = new Map<ChildProcess, { ended: Promise<void>; exit?: number | null; close?: number | null }>();
+  const observe = (value: unknown) => {
+    if (!value || typeof value !== 'object' || !('process' in value) || !(value.process instanceof ChildProcess)) return;
+    const child = value.process;
+    const finished = Promise.withResolvers<void>();
+    constructions.add(finished.promise);
+    const spawned = () => {
+      pending.delete(child);
+      if (child.spawnfile !== BUN || child.spawnargs.length !== args.length + 1 ||
+        !args.every((arg, index) => child.spawnargs[index + 1] === arg)) return;
+      const entry: { ended: Promise<void>; exit?: number | null; close?: number | null } = { ended: finished.promise };
+      matched.set(child, entry);
+      child.once('exit', code => { entry.exit = code; });
+      child.once('close', code => { entry.close = code; });
+    };
+    pending.set(child, spawned); child.once('spawn', spawned);
+    child.once('close', () => {
+      pending.delete(child); child.removeListener('spawn', spawned); finished.resolve();
+    });
+  };
+  diagnostic.subscribe(observe);
+  return {
+    snapshot: () => [...matched.values()].map(({ exit, close }) => ({ exit, close })),
+    join: (deadline?: number) => waitForOwnedWork(Promise.all([...constructions]), deadline),
+    release: () => {
+      diagnostic.unsubscribe(observe);
+      for (const [child, spawned] of pending) child.removeListener('spawn', spawned);
+      pending.clear();
+    },
+  };
 }
 
 function createFakeAbyRoot(root: string): string {
@@ -77,16 +118,16 @@ function createFakeAbyRoot(root: string): string {
 
 describe('Aby process bridge smoke', () => {
   let root: string;
+  let store: ReturnType<typeof createRunStore>;
+  let launcher: ReturnType<typeof createOpenSlackAgentLauncher>;
+  let observation: ReturnType<typeof observeBridgeChild> | undefined;
+  let running: Promise<unknown> | undefined;
+  const runId = 'RUN-BRIDGE-SMOKE-FIXTURE';
 
   beforeEach(() => {
     root = makeTempRoot();
-  });
-
-  afterEach(() => {
-    cleanup(root);
-  });
-
-  it('runs a generic run_request through a fake Aby root and records transcript evidence', async () => {
+    running = undefined;
+    observation = undefined;
     const abyRoot = createFakeAbyRoot(root);
     mkdirSync(join(root, '.openslack.local'), { recursive: true });
     writeFileSync(
@@ -105,22 +146,46 @@ describe('Aby process bridge smoke', () => {
       'utf-8',
     );
 
-    const store = createRunStore(root);
-    const launcher = createOpenSlackAgentLauncher({
+    store = createRunStore(root);
+    launcher = createOpenSlackAgentLauncher({
       runStore: store,
       rootDir: root,
       availableMcpServers: ['github'],
       bridgeRuntimeResolver: createBridgeRuntimeResolver({ rootDir: root, env: {} }),
     });
 
+    observation = observeBridgeChild([
+      join(abyRoot, 'src', 'sidecar', 'entrypoints', 'runEntrypoint.ts'),
+      join(abyRoot, 'src', 'sidecar', 'entrypoints', 'agentRunBridge.ts'),
+    ]);
+  });
+
+  afterEach(async context => {
+    const cleanupDeadline = performance.now() + 5_000;
+    try {
+      if (running) {
+        requestAgentRunCancellation(runId, 'Owned bridge smoke fixture teardown');
+        await waitForOwnedWork(running, cleanupDeadline);
+      }
+      await observation?.join(cleanupDeadline);
+      // Delete only after both the owned launcher and actual process are finished.
+      rmSync(root, { recursive: true, force: true });
+    } catch (error) {
+      if (context.task.result?.state === 'fail') console.error('BRIDGE_SMOKE_CLEANUP_FAILED_FIXTURE_RETAINED', error);
+      else throw error;
+    } finally { observation?.release(); }
+  });
+
+  it('runs a generic run_request through a fake Aby root and records transcript evidence', async () => {
     let result;
     try {
-      result = await launcher<{
+      const launched = launcher<{
         response: string;
         payload: Record<string, unknown>;
         envAudit: { safeRunner?: string; unsafePresent: boolean };
       }>('inspect README', {
         label: 'anthropic_architect_aby',
+        agentRunId: runId,
         phase: 'conversation',
         resolvedAgentConfig: {
           agentId: 'anthropic_architect_aby',
@@ -133,6 +198,10 @@ describe('Aby process bridge smoke', () => {
         threadId: 'CONV-20260603-ABCDEFGH',
         correlationId: 'CONV-20260603-ABCDEFGH',
       });
+      running = launched.then(() => undefined, () => undefined);
+      result = await launched;
+      await observation!.join();
+      expect(observation!.snapshot()).toEqual([{ exit: 0, close: 0 }]);
     } catch (error) {
       const stderr = (error as { stderrSummary?: string }).stderrSummary;
       throw new Error(`${error instanceof Error ? error.message : String(error)}\n${stderr ?? ''}`);
@@ -176,5 +245,45 @@ describe('Aby process bridge smoke', () => {
 
     const run = store.getRun(result.runId);
     expect(run?.status).toBe('completed');
+  });
+});
+
+
+describe('bridge smoke construction ownership', () => {
+  it.each(['pending-spawn', 'error-before-spawn'] as const)('does not treat %s as confirmed process termination', async mode => {
+    let notify: Parameters<TestChildObservationChannel['subscribe']>[0] | undefined;
+    const subscribe = vi.fn<TestChildObservationChannel['subscribe']>(listener => { notify = listener; });
+    const unsubscribe = vi.fn<TestChildObservationChannel['unsubscribe']>(() => true);
+    const observation = observeBridgeChild([], { subscribe, unsubscribe });
+    // Inert event emitter only: no OS child or actual-close evidence is fabricated.
+    const child = new ChildProcess();
+    child.on('error', () => undefined); // Existing runtime error consumer, not a close receipt.
+    notify!({ process: child }, 'child_process');
+    const joined = observation.join();
+    let ended = false; void joined.then(() => { ended = true; }, () => { ended = true; });
+    try {
+      if (mode === 'error-before-spawn') child.emit('error', new Error('Controlled fixture spawn failure'));
+      await new Promise<void>(resolve => setImmediate(resolve));
+      expect(ended).toBe(false);
+      expect(observation.snapshot()).toEqual([]);
+    } finally { child.emit('close', null, null); await joined; observation.release(); }
+    expect(unsubscribe).toHaveBeenCalledTimes(1);
+  });
+
+  it('refuses an unclosed construction at the original observation deadline', async () => {
+    let notify: Parameters<TestChildObservationChannel['subscribe']>[0] | undefined;
+    const subscribe = vi.fn<TestChildObservationChannel['subscribe']>(listener => { notify = listener; });
+    const unsubscribe = vi.fn<TestChildObservationChannel['unsubscribe']>(() => true);
+    const observation = observeBridgeChild([], { subscribe, unsubscribe });
+    const child = new ChildProcess();
+    notify!({ process: child }, 'child_process');
+    vi.useFakeTimers();
+    try {
+      const assertion = expect(observation.join()).rejects.toThrow('BRIDGE_SMOKE_OWNED_WORK_UNCONFIRMED');
+      await vi.advanceTimersByTimeAsync(5_000);
+      await assertion;
+      expect(observation.snapshot()).toEqual([]);
+    } finally { observation.release(); vi.useRealTimers(); }
+    expect(unsubscribe).toHaveBeenCalledTimes(1);
   });
 });

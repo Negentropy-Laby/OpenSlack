@@ -1076,3 +1076,300 @@ separate evidence directory `/var/tmp/openslack-439-watch-lock.F4VtaAQV` and the
 existing PR. Current-head CI, human approval and merge remain unestablished
 at this appendix's authoring point. No permission expansion, human-auth fallback,
 real provider call, remote cleanup or merge is authorized by this repair.
+
+## PR #441 scope-enabled Git and Watch repair — 2026-11-12
+
+This appendix is an additive local repair record, not completion of #441,
+#411, Cleanup qualification, Claim v2 or release. The original post-merge
+Windows Effect Shadow failure remains a historical failure with its precise
+cause unconfirmed. The previously recorded root full-suite result remains
+9,427 passed / 31 failed / 25 skipped; selected later successes do not rewrite it.
+
+### Authority and source boundary
+
+At `2026-11-12T01:03:13.639+08:00`, production principal resolution read back
+the administrator-applied registry SHA-256
+`a961cf2308c1889f8196a42c45127d55c717dd12d80c26cd1da16af749fe63da`.
+All 14 approved additional paths were allowed and the protected deny rules,
+Yellow ceiling, run binding and approval/merge prohibitions were preserved.
+Issue #440 (`TASK-2026-904630`) had the matching 26-path scope. The real claim
+was renewed through the supported heartbeat path; this is legacy ownership
+evidence, not Claim v2. The administrator's local registry change is retained
+in the primary checkout and is **not** part of this repair delivery. The agent
+did not edit, stage or publish its own registry or substitute another identity.
+
+The only delivery remains Draft PR
+[#441](https://github.com/Negentropy-Laby/OpenSlack/pull/441), on
+`fix/workflow-qualification-closeout-20261111`. This work began at
+`4eb9254dadc9730005c547acc29b4ac3ce5a93db`, tree
+`6d31dcdef97e365a786a4214a39667380a37446b`; the additional working inputs are
+identified independently in `/var/tmp/openslack-441-scope-enabled.REvHrYrW`.
+The eventual delivery commit/tree and current-head checks are recorded outside
+the frozen source in that evidence directory and the same PR, not inherited
+from the old head. Other worktrees, stash and historical evidence are preserved.
+
+### Necessary narrow repairs
+
+- Git 2.34.1 rejects `worktree list --porcelain -z`. Discovery now proves the
+  conventional primary and this exact linked registration with reciprocal
+  `.git`, `gitdir` and `commondir` evidence instead of parsing ambiguous newline
+  porcelain or traversing unrelated missing registrations. Stable-file bounds,
+  command cancellation, local overrides and foreign-primary rejection remain.
+  Filesystem traversal/return preserves case; comparison normalization does not
+  alter returned Windows paths. Unprovable layouts keep their own local state.
+- Watch replay comparison no longer treats a newly observed timestamp or newly
+  generated persistence/deadline clock as a changed input. Stored original
+  event, persistence time, deadline, attempts, availability, receipt, authority
+  and recovery history are retained. Route, epoch, vendor, Blob, config and
+  substantive event conflicts still reject. No queue shape, retry budget,
+  timeout, lock or fsync policy was changed.
+- The formal inventory generator records **9,492 declared cases in 607 files**,
+  including the three earlier Effect Shadow additions and nine Git/Watch cases.
+  The existing status generator produced its matching projection. Inventory is
+  not an executed-test count. No count was hand-filled and no source-binding
+  set was expanded.
+
+Both changes are local repairs of existing membership/replay contracts, with
+no new public authorization, durable protocol or authority. Independent static
+security and QA reviews found and followed up Windows path case preservation,
+a negative fixture that could stop too early at ENOENT, and missing replay
+assertions after accepted receipts and governed recovery. The final four-file
+review records contain complete input hashes; neither review ran tests or
+conferred human approval, architectural acceptance or qualification.
+
+### Measured evidence and outstanding layers
+
+| Layer | Result and scope |
+| --- | --- |
+| First Git/Watch RED | 43 passed / 7 failed; original unsupported-Git and new replay failures retained. |
+| Git/Watch GREEN-B | 50 passed, zero failed/skipped; real temporary Git and persistent queues. |
+| Modern Git observation | Git 2.45.2 client file: 22 passed; Linux only, not Windows evidence. |
+| Related final local subset | 91 passed, zero failed/skipped across client, both queues, v2 router and Effect Shadow; overlaps the 50 above and is not added to it. |
+| Build/checks | Full typecheck/build preparation, affected-file lint, formal inventory verification, generated status verification and documentation checks passed locally. |
+| Source bindings | Six tracked manifest/schema files, 261 recognized bindings, zero missing/drift and no changed bound input after applying the service-relative Notification base. The initial root-only probe is retained as an invalid diagnostic, not a source defect. |
+| Nonroot complete suite A | 9,443 passed / 24 failed / 25 skipped on unchanged copied code and fresh formal Harness witness. Nineteen failures stopped on absent pnpm/cache/HOME prerequisites; five Go/shadow failures remained unconfirmed. |
+| Nonroot complete suite B | After explicit tool/cache/account-environment preparation: 9,459 passed / 8 failed / 25 skipped, exit 1. All 31 historical root failing titles passed in both complete runs. This remains a complete-suite FAIL, not a waiver or qualification. |
+| Native platforms/current-head CI | Not established for the additional candidate at this appendix's authoring point. |
+
+The isolated setup preserves its missing nested MCP dependency, missing vendor
+declaration and Go download timeout failures separately. Corrections copy only
+installed dependencies/builds and locked verified module caches into the owned
+test fixture; the original Harness source, checks and deployment eligibility are
+unchanged. A missing witness cannot be bypassed. Run B adds the actual nobody
+home spelling `/nonexistent`, a private npm cache and a real Harness-pinned pnpm
+installation; no system home, global registry, proxy, CA or credential is changed.
+Tests run as existing UID/GID 65534, not as the Broker qualification identity;
+local nonroot execution does not establish installed UID isolation.
+
+Run B's eight failures are retained individually: three SDK/composition cases
+cannot read their expected logs and one Harness task deadline expires. Watch
+daemon, Cleanup fixture, effect authorization and Go account-framing cases
+serialize `STACK_TRACE_ERROR` near their time bounds; their precise failure
+mechanisms remain unconfirmed. These are not all classified as
+environment failures. The keyless SDK summaries report terminal-complete and
+exit zero but absent expected durable logs; exit zero is not substituted for
+those missing assertions. No source repair outside the approved path/task
+intersection is attempted. Further diagnosis and current-head CI remain open;
+there is no automatic repeat-until-green, timeout increase, skip or weakened
+assertion. The exact test reports, commands, identity/toolchain, witness and
+unchanged-code readbacks are retained externally. This appendix was added
+after the copied-code executions and is not represented as an executed input.
+
+Provider proof remains **BLOCKED**: the designated OpenCode Go endpoint/model
+does not by itself prove complete input, cache/reasoning, enforced output and
+gateway-attempt bounds. `SEND_TOTAL_TOKEN_UNVERIFIED` remains fail-closed and
+no model request or budget reset occurred. Cleanup's administrator-reviewed
+UID/public-repository/pin differences remain outstanding; none of the three
+conditional administration-contract paths is changed. No installation,
+activation, Permit consumption, real deletion, approval, merge or release is
+claimed. These unresolved obligations keep the single PR Draft.
+
+## 2026-11-12: scoped transport repair and remaining-failure diagnosis
+
+This is an additive execution record for existing Draft #441, based on parent
+`7b37d4c1a0a0e5be36caf2de5c50f431a7b60431`. It does not replace the failures
+above, grant an identity or task scope, or claim the whole repair plan complete.
+The eventual commit/tree and later platform/Hosted observations are indexed in
+the external evidence directory, without repeatedly committing check results.
+
+Evidence root: `/var/tmp/openslack-441-exec-f.0rXaaHQD`. The acting principal
+remains `codex_runtime_source-repair`, run `RUN-20260919113827-kv682q`, task #440
+(`TASK-2026-904630`). Production readback in `preflight.json` confirms the
+administrator's existing registry digest
+`a961cf2308c1889f8196a42c45127d55c717dd12d80c26cd1da16af749fe63da`, the three
+runtime paths and inventory/status/ledger path intersection, protected denials,
+and the formally renewed legacy claim. This is not Claim v2 evidence. The primary
+checkout's administrator change is preserved outside this repair delivery.
+
+### Narrow repair, not a Provider total-token authorization
+
+The adapter now captures options, model, run ID and cancellation signal before
+awaiting. Reservation, host veto, encoded request, credential, endpoint and
+settlement retain the same launch binding. A retained mutable options object
+cannot swap the opaque boundary after reservation or change the settlement port.
+Controlled OpenAI-compatible requests carry optional, frozen internal transport
+evidence and use `redirect: 'error'`; unchanged transports do not receive invented
+defaults. This evidence describes local adapter retry behavior only, never
+gateway/upstream physical attempts or a token-count guarantee. The post-admission
+deadline check rejects before POST instead of starting a new one-millisecond
+transport after the total deadline has already expired.
+
+The reviewed source identities are raw SHA-256 and byte sizes:
+
+| Input | Bytes | SHA-256 |
+| --- | ---: | --- |
+| `packages/agent-runtime/src/openai-compatible-runtime.ts` | 28399 | `c54156d3e5f0c331bd09cb49621090c73887c9b76ca763f542eeebb67d3221c1` |
+| `packages/agent-runtime/src/internal/provider-send-admission.ts` | 1710 | `82fc9b754d5119f5cbca631c276e513ae184554e5db6ba077b46df48707759fd` |
+| `packages/agent-runtime/src/__tests__/openai-compatible-runtime.test.ts` | 55951 | `8750fb8927ddb01f0c605d8bbf510fc2590ecdb5fccbb6bd0882b9f792341655` |
+
+| Layer | Observed result and limitation |
+| --- | --- |
+| Final-test baseline RED | The final 40-case test file on the unchanged parent implementation produced 29 passed / 11 failed. Exact baseline implementation and test digests are in `red-final-local.json`; no source rollback was performed in the repair worktree. |
+| Focused GREEN | Runtime 40 passed and Workflow send-admission 18 passed, 0 failed/skipped. These 58 overlap earlier focused results and are not added to them. Five real loopback HTTP redirect cases verify one source POST and zero redirected requests. Veto, cancellation and expired-admission cases verify zero fetch calls. |
+| Earlier deadline RED | `provider-deadline-red.json` preserves two real expired-admission failures and one incorrect test expectation for the cancellation error class. The latter was corrected to the exact original abort reason; it is not counted as a third production defect. |
+| Repository checks | `checks-final-local.json`: typecheck, build, affected ESLint, formal inventory, documentation verify/migration/Notification verify, status verify, workspace validate, Cleanup Broker race tests and vet all exited 0. This local build/check execution as UID 0 is not nonroot isolation qualification. |
+| Inventory and bindings | Formal producer updated and verified 9,502 declared cases / 607 files. Six manifest/schema files contain 261 recognized bindings, with no missing/drift/affected entries; no source-lock digest or binding set was changed. |
+| Independent review | `provider-security-final.md` and `provider-qa-final.md` read the exact three source/test identities above; no blocking finding remained. They read producer results, did not independently rerun them, and confer no human approval or merge readiness. |
+| Final complete suite/platform/Hosted | Pending at this appendix's authoring point. Parent-head CI has 11 successful checks and the normal skipped publish job; it is historical evidence for the parent, not for the additional repair. |
+
+The check receipt above binds the five code/inventory/status inputs and predates
+this additive appendix. Final appendix documentation verification is recorded
+separately in `docs-after-append-final-local.json`; it is not inferred from those
+earlier checks or from the unchanged runtime source hashes.
+
+The total-token guard still returns `SEND_TOTAL_TOKEN_UNVERIFIED`. Official
+model availability and a generated-token ceiling do not prove the frozen
+OpenCode gateway's complete input, cache/reasoning, transformation and retry
+bounds. No supplied secret was used or persisted; all model responses in these
+tests are synthetic or loopback fixtures. No live campaign, provider attempt,
+budget refund/reset or supplier/endpoint fallback occurred.
+
+### Local Harness prerequisites and unresolved failures
+
+The first unchanged seven-file diagnostic produced 254 passed / 4 failed /
+1 skipped. Three SDK/MCP failures repeated the missing-log condition. The
+retained test-copy script had omitted `native/system` runtime artifacts and
+resolution links from the otherwise built original Harness. The JSONL plugin
+therefore could not import its file-lock dependency; optional persistence did
+not stop keyless SDK completion. Independent log assertions correctly failed.
+
+The isolated copy was repaired with the exact original native outputs and
+relative links, not changes to Harness source or the tests. The complete copy
+inventory and checksums are in `harness-native-closure.json`; native import and
+formal witness preparation exited 0 as UID/GID 65534. Original Harness remains
+unchanged at `22ddee3792402c3e70ec5f86a63c3e3e895a2f60`. A first root Git probe
+was correctly rejected for dubious ownership before copying; the corrected
+probe ran as the clone owner, without changing global Git configuration.
+
+After that prerequisite correction, the same seven unmodified test files
+produced 257 passed / 1 failed / 1 skipped (`remaining-eight-closure-b.json`).
+All three durable Session cases passed. This subset is not a complete-suite
+PASS and does not erase the eight-failure full run. The current witness does
+not enumerate the native subtree; its separate artifact closure is retained
+rather than claiming the witness alone detected or covered the omission.
+
+The remaining subset failure is the real Go account-framing case. Verbose
+output confirms its original 30-second test-budget expiry; separate unchanged
+builds took approximately 30.7 seconds and 30.4 seconds. Installed Vitest's
+timeout stack replacement explains the generic `STACK_TRACE_ERROR` marker,
+but does not by itself identify every historical slow phase. Static review
+also finds build/startup cleanup outside `finally` and kill without observed
+closure. No test deadline or Go/VCS check was relaxed. That test file is outside
+the current task scope and has not been edited.
+
+The 100-request Harness case passes this subset, but static review confirms
+duplicate admission performs an unnecessary temporary write/fsync before reading
+the existing route. Its contribution to the earlier full-run deadline failure
+is not independently established. A safe strict-read fast path and deterministic
+zero-write replay regression remain proposed, not implemented; its implementation
+path is outside the current principal/task intersection. Watch, Cleanup fixture
+and effect-expiry cases passed this subset, not a replacement full-load proof.
+
+### Still blocked; no completion promotion
+
+- A minimum further repair scope can reuse the already allowed state-repair test
+  for Harness regression: only `packages/agent-runtime/src/harness-admission.ts`
+  needs new principal and task coverage; the Go framing test needs task coverage.
+  An authorized scope owner must make that exact amendment. `task.sync` proposes
+  a PR and is not evidence of Issue-definition-edit authority. No self-grant,
+  Issue body edit or new action was used to bypass this gap.
+- Provider total-bound proof remains missing; production admission stays denied.
+- Cleanup still needs administrator-accepted existing UID 24001/24002 mapping
+  against contract 44180/44181, public-repository registry scope and a reviewed
+  new pin. The unchanged current pin correctly binds the old private-only
+  registry; reading it does not approve a replacement. The existing never-started
+  backup route is not used on started or unknown-history state.
+- Final nonroot complete execution, native platforms, new-head Hosted checks,
+  current-candidate review, valid human approval and LIVE PRMS remain separate.
+  The PR stays Draft. No installation, activation, Permit, real deletion, Claim
+  C1–C7, #411 external qualification, merge, release or production claim follows.
+
+## 2026-11-12: recovered test lifecycle repair and bounded validation scope
+
+This additive continuation starts at published PR #441 head
+`b6bc44ca63e588e31cc648870d4f124678f04b4f`. It preserves the preceding failures,
+the recovery package's original patch/index, the administrator's primary-checkout
+changes and all other worktrees. The three recovered source snapshots match that
+parent. The recovery package could not preserve two historical EIO-affected
+artifacts; their absence remains recorded, not repaired by replacement evidence.
+
+The execution record is
+`.openslack/tasks/workflow-qualification-closeout-20261111.json`. Its evidence
+directory is
+`/mnt/d/Users/WSMAN/Desktop/Coding Task/openslack-441-execution-20261112.lyaifdb7`.
+The existing principal and #440 claim were revalidated through production
+authorization and the supported bot heartbeat. No identity or administrator
+registry was copied into the isolated execution worktree.
+
+The Operator fixture owns each test's gates, producers, observers, spy and roots.
+Teardown releases gates, waits for producers, flushes observers, restores the
+owned spy, then removes roots only after quiescence is established. Publisher
+entry is observed before the hung-publisher assertion; cancellation cannot stand
+in for that observation. Cleanup errors remain separate from a prior assertion
+failure. Required-checks and staged-path refusal now prepare and clean their real
+filesystem/Git fixtures in lifecycle hooks. Both malformed-rule rejection modes,
+the zero-publication assertion, HEAD and existing staged contents remain checked.
+No test timeout, worker count, skip or production guard was weakened.
+
+| Layer | Observation and limit |
+| --- | --- |
+| Focused regression | `focused-tests-final.json` and its raw Vitest result: 55 passed, zero failed/skipped across the final three repaired files. This is not a full-suite result. |
+| Go framing | `go-framing-preparation.json` records normal checksum-verified preparation with explicit writable GOPATH/GOCACHE/GOMODCACHE and unchanged module/source inputs. `go-framing-test.json` runs the original selected real Go handler/TypeScript two-read case under its original deadline. No Go framing source change was needed. |
+| Affected static checks | `bootstrap-build-b.json` and `affected-lint.json` exit zero. The first typecheck failure is retained as `bootstrap-build.json`; the owned-spy function comparison was corrected before the successful build. |
+| Declared inventory | Formal `verify-test-counts.mjs --update` collects 9,503 declared cases in 607 files, including platform-skipped declarations. The extra declaration separates the publisher failure variants; inventory is not a pass count. |
+| Cleanup failure diagnostics | `fixture-lifecycle-diagnostic-result.json` exercises the verbatim final fixture function with controlled dependency failures and real temporary directories. All six scenarios pass: normal order, unentered-gate cancellation, flush failure, primary assertion plus flush failure, restoration failure, and observer creation failure. This diagnostic does not replace real integration execution. |
+| Independent test review | `review-test-repairs.md` and additive `review-test-repairs-final.md` statically review the exact final source, including Operator SHA-256 `162768d743ce8ff7d1ce5f63c3d3ce30293e1643b2a775541ae58faa53e66ba0` and Runtime SHA-256 `1088a2513735aee7ac2ee35e42c7fef3da9935d85c37600416c470c4eb5e416b`; no remaining finding. The reviewer did not independently rerun tests or approve the whole PR. |
+| Original Harness preparation | The network partial-clone failure is retained. A fresh private checkout at the required original commit was reconstructed from complete local Git objects without modifying the original Harness checkout. Its normal frozen install/build and the formal compatibility witness producer are required for complete execution. |
+| Final candidate/platform/Hosted | Results are indexed externally against the actual commit/tree after this source change is frozen. Old-head checks and local focused passes are not inherited by the new candidate. |
+
+The human-approved #440 amendment fixes the Wanmol endpoint and
+`deepseek-v4.1-flash`, with a separate allowance of four generation attempts,
+8,192 input-plus-output tokens per attempt and 32,768 aggregate tokens. This
+does not consume or reset #411's history or budget. The supplied credential was
+used only in protected transport memory for a non-generating model-list GET;
+no value was retained in source or evidence. The endpoint advertises the exact
+alias, but supplies no input-count, output/reasoning or hidden-retry bound in that
+metadata. Public discovery responses are retained in
+`gateway-public-discovery.json`. Generation POST count remains zero.
+
+Independent Provider review is recorded in `review-provider-boundary.md`.
+Serialized request identity, no local retry and a generated-output limit alone
+cannot establish the gateway's complete physical consumption. Production
+`SEND_TOTAL_TOKEN_UNVERIFIED` therefore remains in force. Obtaining vendor
+documents is not imposed as an external prerequisite on the requester; the
+unproven technical properties remain a concrete safety failure, not PASS.
+
+The independently reviewed Cleanup draft is
+`cleanup-administrator-proposed.patch`, with its exact ten-path follow-up scope
+in `cleanup-administrator-handoff.md`. It retains the existing 24001/24002
+accounts and public target, updates the canonical contract and registry pin, and
+uses the existing generator. It has not been accepted or applied. Production
+authorization denies the repair principal's registry/contract contribution;
+no self-grant, registry write, account change, install, activation, Permit or
+real deletion was performed. The current contracts and frozen historical
+private-target fixtures retain their original identities.
+
+PR #441 remains Draft while these mandatory Provider and administrator items
+are incomplete. Current-head Hosted checks, complete candidate review, valid
+human approval and LIVE PRMS remain separate delivery gates. No #411,
+production, merge or release status is promoted by this continuation.

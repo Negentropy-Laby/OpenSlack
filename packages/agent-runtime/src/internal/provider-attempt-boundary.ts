@@ -5,7 +5,15 @@ import type {
   ProviderAttemptReserveInput,
 } from '../provider-attempt-port.js';
 import type { ProviderUsageReceipt } from '../provider-usage-evidence.js';
-import { admitProviderSend, type ProviderSendRequest } from './provider-send-admission.js';
+import {
+  admitProviderSend,
+  observeProviderSendPreparation,
+  finalizeProviderSendObservation,
+  consumeProviderSendObservation,
+  type ProviderSendRequest,
+  type ProviderSendPreparationScope,
+  type ProviderSendPreparationObservation,
+} from './provider-send-admission.js';
 
 /** Opaque capability minted by the launcher host and consumed only by adapters. */
 export interface ProviderAttemptBoundary {
@@ -45,6 +53,34 @@ export function reserveProviderAttempt(
   input: ProviderAttemptReserveInput,
 ): Promise<ProviderAttemptReservation> {
   return port(boundary).reserve(input);
+}
+
+export function prepareProviderAttemptSend(
+  boundary: ProviderAttemptBoundary,
+  request: ProviderSendRequest,
+  scope: ProviderSendPreparationScope,
+): Promise<ProviderSendPreparationObservation> {
+  return observeProviderSendPreparation(port(boundary), request, scope);
+}
+
+export function finalizeProviderAttemptSend(
+  boundary: ProviderAttemptBoundary,
+  observation: ProviderSendPreparationObservation,
+  reservation: ProviderAttemptReservation,
+  request: ProviderSendRequest,
+  scope: ProviderSendPreparationScope,
+) {
+  return finalizeProviderSendObservation(port(boundary), observation, reservation, request, scope);
+}
+
+export function consumeProviderAttemptSend(
+  boundary: ProviderAttemptBoundary,
+  observation: ProviderSendPreparationObservation,
+  reservation: ProviderAttemptReservation,
+  request: ProviderSendRequest,
+  scope: ProviderSendPreparationScope,
+): void {
+  consumeProviderSendObservation(port(boundary), observation, reservation, request, scope);
 }
 
 export function settleProviderAttempt(

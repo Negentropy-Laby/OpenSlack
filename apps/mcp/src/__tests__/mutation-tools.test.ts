@@ -1,9 +1,11 @@
 import { callGovernedMutationTool } from '../tools/mutations.js';
+import * as mutationTools from '../tools/mutations.js';
 import { safeToolError } from '../errors.js';
 import { createHash } from 'node:crypto';
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { types as nodeTypes } from 'node:util';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -39,16 +41,123 @@ import {
 import { OpenSlackMcpCore } from '../core.js';
 
 const roots: string[] = [];
+interface DeadlineCaseResources {
+  roots: string[];
+  releases: (() => void)[];
+  lateWork: Promise<unknown>[];
+  producers: Promise<unknown>[];
+  expectedProducers: number;
+  settlements: Promise<void>[];
+  settlementObserved: boolean;
+  settlement?: { failed: boolean; aborted: boolean; failureCode: string; recordState: string };
+  auditPhases: { name: string; outcome: string; code: string; milliseconds: number; wallMilliseconds: number }[];
+  confirmationResult?: { status: string; blocker: string; state: string; executionObserved: boolean; milliseconds: number; wallMilliseconds: number };
+}
+let ownedDeadlineCase: { resources: DeadlineCaseResources; work: Promise<void> } | undefined;
+function trackDeadlineCase(operation: (owned: DeadlineCaseResources) => Promise<void>) {
+  const resources: DeadlineCaseResources = { roots: [], releases: [], lateWork: [], producers: [], expectedProducers: 0,
+    settlements: [], settlementObserved: false, auditPhases: [] };
+  const work = Promise.resolve().then(() => operation(resources));
+  void work.catch(() => undefined);
+  ownedDeadlineCase = { resources, work };
+  return work;
+}
 
-afterEach(() => {
-  vi.useRealTimers();
-  vi.restoreAllMocks();
-  for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
+function mutationCleanupCode(error: unknown) {
+  if (!error || typeof error !== 'object' || nodeTypes.isProxy(error)) return 'UNKNOWN';
+  const descriptor = Object.getOwnPropertyDescriptor(error, 'code');
+  const code = descriptor && 'value' in descriptor ? descriptor.value : undefined;
+  return typeof code === 'string' && ['EACCES', 'EPERM', 'EIO', 'ENOENT', 'ETIMEDOUT'].includes(code) ? code : 'UNKNOWN';
+}
+
+async function joinDeadlineCaseWork<T>(work: Promise<T>, deadline: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const value = await Promise.race([work, new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error('MCP_MUTATION_TEST_WORK_UNCONFIRMED')), Math.max(0, deadline - performance.now()));
+    })]);
+    if (performance.now() >= deadline) throw new Error('MCP_MUTATION_TEST_WORK_UNCONFIRMED');
+    return value;
+  } finally { clearTimeout(timer); }
+}
+
+afterEach(async (context) => {
+  const phase = ownedDeadlineCase;
+  ownedDeadlineCase = undefined;
+  const ordinaryRoots = roots.splice(0);
+  const ordinaryRemaining = new Set(ordinaryRoots);
+  let primaryFailed = context.task.result?.state === 'fail';
+  const publish = (stage: string) => Object.assign(context.task.meta, { mutationDeadlineFixture: { stage,
+    confirmationExpected: (phase?.resources.settlements.length ?? 0) > 0,
+    expectedProducers: phase?.resources.expectedProducers ?? 0, observedProducers: phase?.resources.producers.length ?? 0,
+    settlementObserved: phase?.resources.settlementObserved ?? null,
+    confirmationResult: phase?.resources.confirmationResult ?? null,
+    settlement: phase?.resources.settlement ?? null, auditPhases: phase?.resources.auditPhases ?? [],
+    retainedRoots: phase?.resources.roots.length ?? 0, retainedOrdinaryRoots: ordinaryRemaining.size } });
+  if (phase) {
+    publish('waiting_owned_work');
+    const deadline = performance.now() + 5_000;
+    let releaseFailures = 0;
+    for (const release of phase.resources.releases) {
+      try { release(); }
+      catch { releaseFailures += 1; }
+    }
+    try {
+      const work = await joinDeadlineCaseWork(Promise.allSettled([phase.work]), deadline);
+      if (work.some((result) => result.status === 'rejected')) primaryFailed = true;
+      if (phase.resources.producers.length < phase.resources.expectedProducers) {
+        throw new Error('MCP_MUTATION_TEST_WORK_UNCONFIRMED');
+      }
+      await joinDeadlineCaseWork(Promise.allSettled(phase.resources.producers), deadline);
+      await joinDeadlineCaseWork(Promise.allSettled(phase.resources.lateWork), deadline);
+      await joinDeadlineCaseWork(Promise.allSettled(phase.resources.settlements), deadline);
+    } catch {
+      publish('ownership_unconfirmed');
+      Object.assign(context.task.meta, { mutationCleanup: { error: 'OWNED_WORK_UNCONFIRMED', releaseFailures } });
+      if (!primaryFailed) throw new Error('MCP_MUTATION_TEST_WORK_UNCONFIRMED');
+      return;
+    }
+    if (releaseFailures) {
+      publish('cleanup_failed');
+      Object.assign(context.task.meta, { mutationCleanup: { error: 'GATE_RELEASE_FAILED', releaseFailures } });
+      if (!primaryFailed) throw new Error('MCP_MUTATION_TEST_RELEASE_FAILED');
+      return;
+    }
+    if (phase.resources.settlements.length > 0 && !phase.resources.settlementObserved) {
+      publish('ownership_unconfirmed');
+      if (!primaryFailed) throw new Error('MCP_MUTATION_TEST_SETTLEMENT_UNCONFIRMED');
+      return;
+    }
+  }
+  try { vi.useRealTimers(); vi.restoreAllMocks(); }
+  catch {
+    publish('cleanup_failed');
+    Object.assign(context.task.meta, { mutationCleanup: { error: 'SPY_RESTORE_FAILED' } });
+    if (!primaryFailed) throw new Error('MCP_MUTATION_TEST_SPY_RESTORE_FAILED');
+    return;
+  }
+  let cleanupFailures = 0;
+  const removable = [...ordinaryRoots, ...(!primaryFailed ? phase?.resources.roots ?? [] : [])];
+  for (const [index, path] of removable.entries()) {
+    try {
+      rmSync(path, { recursive: true, force: true }); ordinaryRemaining.delete(path);
+      const ownedIndex = phase?.resources.roots.indexOf(path) ?? -1;
+      if (ownedIndex >= 0) phase!.resources.roots.splice(ownedIndex, 1);
+    } catch (error) {
+      cleanupFailures += 1;
+      Object.assign(context.task.meta, { mutationCleanup: { error: 'ROOT_REMOVAL_UNCONFIRMED',
+        code: mutationCleanupCode(error), cleanupFailures, unconfirmedRemovals: 1,
+        unattemptedRemovals: removable.length - index - 1 } });
+      break;
+    }
+  }
+  publish(cleanupFailures ? 'cleanup_failed' : primaryFailed ? 'failed_fixture_retained' : 'removed');
+  if (cleanupFailures && !primaryFailed) throw new Error('MCP_MUTATION_TEST_CLEANUP_FAILED');
 });
 
-function root(): string {
+function root(ownedRoots = roots): string {
   const value = mkdtempSync(join(tmpdir(), 'openslack-mcp-mutation-'));
-  roots.push(value);
+  ownedRoots.push(value);
   return value;
 }
 
@@ -59,7 +168,10 @@ function operator(): OperatorApplicationContextPort {
 function harness(
   workspaceRoot: string,
   definitions?: readonly GovernedActionExecutorDefinition[],
-  options: { beforeExecute?: () => Promise<void>; timeoutMs?: number } = {},
+  options: { beforeExecute?: () => Promise<void>; timeoutMs?: number;
+    onConfirmationSettled?: Parameters<typeof createOpenSlackGovernedMutationPort>[0]['onConfirmationSettled'];
+    onAuditObservation?: (name: string, state: string) => void;
+  } = {},
 ) {
   const { timeoutMs = 10_000 } = options;
   const execute = vi.fn(async () => {
@@ -91,17 +203,19 @@ function harness(
   );
   const service = createGovernedPlanService({
     store: new LocalGovernedPlanStore(join(workspaceRoot, 'governed-plans')),
+
     registry,
     getBindingSnapshot: () => ({
       sourceVersions: { scenarioLockHash: 'a'.repeat(64), githubHead: 'b'.repeat(40) },
       permissionSnapshot: { capabilities: ['scenario.project.instantiate'] },
       buildNonce: 'qg5-test-build-nonce-0123456789',
     }),
-    audit: async () => undefined,
+    audit: async event => { options.onAuditObservation?.(event.type, event.state); },
     executionTimeoutMs: timeoutMs,
   });
   const mutations = createOpenSlackGovernedMutationPort({
     service,
+    ...(options.onConfirmationSettled === undefined ? {} : { onConfirmationSettled: options.onConfirmationSettled }),
     authority: {
       actorId: 'qoder.human.interviewer',
       workspaceId: 'workspace.contract-demo',
@@ -480,19 +594,29 @@ describe('governed MCP mutation profile', () => {
     ).toBe(true);
   }, 40_000);
 
-  it('returns reconciliation_required on a claimed execution deadline and ignores late success', async () => {
-    const workspaceRoot = root();
+  it('returns reconciliation_required on a claimed execution deadline and ignores late success', () => trackDeadlineCase(async (owned) => {
+    const actualMutationTool = mutationTools.callGovernedMutationTool;
+    vi.spyOn(mutationTools, 'callGovernedMutationTool').mockImplementation((...args) => {
+      const work = actualMutationTool(...args);
+      owned.producers.push(work);
+      void work.catch(() => undefined);
+      return work;
+    });
+    const workspaceRoot = root(owned.roots);
+    const settled = Promise.withResolvers<void>();
     let release!: () => void;
     const delayed = new Promise<void>((resolve) => {
       release = resolve;
     });
-    const execute = vi.fn(async () => {
-      await delayed;
-      return {
-        status: 'succeeded' as const,
-        summary: 'Late success must not overwrite reconciliation.',
-        evidenceRefs: [],
-      };
+    owned.releases.push(release);
+    const execute = vi.fn(() => {
+      const work = (async () => {
+        await delayed;
+        return { status: 'succeeded' as const, summary: 'Late success must not overwrite reconciliation.', evidenceRefs: [] };
+      })();
+      owned.lateWork.push(work);
+      void work.catch(() => undefined);
+      return work;
     });
     const { core, mutations } = harness(workspaceRoot, [
       {
@@ -509,7 +633,19 @@ describe('governed MCP mutation profile', () => {
         description: 'Delayed Workflow mutation.',
         execute,
       },
-    ]);
+    ], { onConfirmationSettled: (_planId, outcome) => {
+      if (outcome.operation === 'confirm') {
+        const failures = new Set(['GOVERNED_PLAN_STORE_BUSY', 'GOVERNED_PLAN_STORE_CAS_MISMATCH',
+          'GOVERNED_PLAN_STORE_TRANSITION_INVALID', 'GOVERNED_PLAN_EXECUTION_ABORTED',
+          'GOVERNED_PLAN_EXECUTION_UNCERTAIN', 'GOVERNED_PLAN_BINDING_CHANGED', 'GOVERNED_PLAN_CONFIGURATION_INVALID',
+          'EIO', 'EACCES', 'EPERM', 'ENOENT', 'ETIMEDOUT']);
+        owned.settlement = { failed: outcome.failed, aborted: outcome.aborted,
+          failureCode: outcome.failed && outcome.failureCode && failures.has(outcome.failureCode) ? outcome.failureCode : 'UNKNOWN',
+          recordState: !outcome.failed ? outcome.record.state : 'UNKNOWN' };
+        owned.settlementObserved = true; settled.resolve();
+      }
+    }, onAuditObservation: (name, state) => { if (owned.auditPhases.length < 32) owned.auditPhases.push({ name: name + ':' + state,
+      outcome: 'audit_sink_observed', code: 'NONE', milliseconds: performance.now(), wallMilliseconds: Date.now() }); } });
     const deadlineCore = new OpenSlackMcpCore(
       createOpenSlackMcpContext({
         workspaceRoot,
@@ -518,15 +654,27 @@ describe('governed MCP mutation profile', () => {
       }),
       { timeoutMs: 1_000 },
     );
+    owned.expectedProducers += 1;
     const preview = await deadlineCore.callTool('openslack_preview_scenario', {
       scenarioId: 'software-delivery',
       input: {},
     });
     const planId = String(preview.structuredContent.planId);
+    // This request may outlive the core deadline; its actual settlement stays owned.
+    owned.settlements.push(settled.promise);
+    owned.expectedProducers += 1;
+    const confirmationBegan = performance.now(), confirmationWallBegan = Date.now();
     const result = await deadlineCore.callTool('openslack_confirm_plan', {
       planId,
       confirmationToken: String(preview.structuredContent.confirmationToken),
     });
+    const facts = result.structuredContent;
+    const code = (value: unknown) => typeof value === 'string' && /^[A-Za-z_]{1,96}$/.test(value) ? value : 'UNKNOWN';
+    const governance = facts.governance && typeof facts.governance === 'object' ? facts.governance as Record<string, unknown> : {};
+    owned.confirmationResult = { status: code(facts.status), blocker: code(governance.blocker),
+      state: code(facts.data && typeof facts.data === 'object' ? (facts.data as Record<string, unknown>).state : undefined),
+      executionObserved: execute.mock.calls.length > 0, milliseconds: performance.now() - confirmationBegan,
+      wallMilliseconds: Date.now() - confirmationWallBegan };
     expect(result.structuredContent).toMatchObject({
       status: 'blocked',
       planId,
@@ -534,11 +682,13 @@ describe('governed MCP mutation profile', () => {
       data: { state: 'reconciliation_required' },
     });
     release();
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    await Promise.all(owned.lateWork);
+    await settled.promise;
+    expect(owned.producers).toHaveLength(2);
     expect((await mutations.get(planId))?.state).toBe('reconciliation_required');
     expect(execute).toHaveBeenCalledOnce();
     expect(core.listTools()).toHaveLength(16);
-  });
+  }));
 
   it('exposes the seventeenth tool only with per-decision human attestation and preserves business correlation', async () => {
     const workspaceRoot = root();

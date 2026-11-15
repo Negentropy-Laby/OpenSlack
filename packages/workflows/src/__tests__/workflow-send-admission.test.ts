@@ -22,7 +22,10 @@ import {
   type SendCampaignBinding,
 } from '../internal/workflow-send-admission.js';
 import { buildProviderUsageReceipt } from '@openslack/agent-runtime';
-import { admitProviderSend } from '@openslack/agent-runtime/internal/provider-send-admission';
+import {
+  admitProviderSend,
+  prepareProviderSend,
+} from '@openslack/agent-runtime/internal/provider-send-admission';
 import { canonicalWorkflowControlAuthorityJson as canonical } from '../workflow-control-authority-contract.js';
 import { createWorkflowRunnerDescriptorPathSecurity } from '../workflow-runner-descriptor-store.js';
 
@@ -342,6 +345,34 @@ it(
     await expect(
       registerWorkflowSendCampaign(other, { readIfExists: async () => ({}) as never }),
     ).rejects.toThrow('SEND_ADMISSION_INVALID');
+  },
+  platformTestTimeout(5_000),
+);
+it.each([
+  ['default', 'SEND_TOTAL_TOKEN_UNVERIFIED'],
+  ['unreviewed-model', 'SEND_ADMISSION_INVALID'],
+])(
+  'refuses preparation for %s without a Go reservation or a campaign mutation',
+  async (modelId, code) => {
+    const { root, b, digest, port, go } = await fixture();
+    const before = await readWorkflowSendCampaign(root, b.runId, digest);
+    const body = JSON.stringify({
+      model: modelId,
+      messages: [{ role: 'user', content: '检查🧪' }],
+      tools: [{ type: 'function', function: { name: 'read', parameters: { type: 'object' } } }],
+      max_tokens: 8192,
+    });
+    await expect(
+      prepareProviderSend(port, {
+        providerId: b.providerId,
+        modelId,
+        requestBytes: body,
+      }),
+    ).rejects.toThrow(code);
+    expect(go.reserve).not.toHaveBeenCalled();
+    expect(go.settle).not.toHaveBeenCalled();
+    expect(await readWorkflowSendCampaign(root, b.runId, digest)).toEqual(before);
+    expect(before.entries).toEqual([]);
   },
   platformTestTimeout(5_000),
 );

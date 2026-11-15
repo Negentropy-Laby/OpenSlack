@@ -13,6 +13,7 @@ import { lstatSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { performance } from 'node:perf_hooks';
+import { types as utilTypes } from 'node:util';
 import { isCode } from './io-errors.js';
 import { assertHarnessTaskReport, HARNESS_STATE_EVIDENCE_LIMIT } from './harness-task-contracts.js';
 
@@ -61,11 +62,53 @@ interface OwnedAdmission {
   dispatchEligibility?: HarnessTaskEligibility;
   localDeadline: number;
   stopReason?: HarnessStopIntent['reason'];
+  phase: HarnessFailurePhase;
+  failure?: Readonly<{ phase: HarnessFailurePhase; errorCode: string }>;
   cancelTimer?: () => void;
 }
+type HarnessFailurePhase = 'admission' | 'publication' | 'visibility' | 'confirmation' |
+  'execute_authorization' | 'prepare' | 'execution_start' | 'execution' |
+  'acceptance_authorization' | 'acceptance' | 'completion';
 type HarnessHostRole = Readonly<{ mode: 'worker'; runId: string } | { mode: 'initiator' }>;
 
 const event = (type: AgentRunEvent['type'], data: Record<string, unknown>): AgentRunEvent => ({ timestamp: new Date().toISOString(), type, data });
+
+const SAFE_FAILURE_CODES = new Set(['EACCES', 'EPERM', 'ENOENT', 'ENOTDIR', 'EISDIR', 'EEXIST',
+  'EBUSY', 'ENOSPC', 'EIO', 'ETIMEDOUT', 'ECANCELED', 'EMFILE', 'ENFILE', 'EROFS',
+  'CONFLICT', 'INDETERMINATE', 'BUSY', 'IN_PROGRESS', 'HARNESS_ROOT_UNSAFE', 'HARNESS_INPUT_INVALID',
+  'RUN_STATE_SNAPSHOT_CHANGED', 'RUN_STATE_INVALID', 'RUN_STATE_BUSY', 'RUN_TRANSACTION_REENTRY',
+  'RUN_PERSISTENCE_INDETERMINATE', 'RUN_INITIALIZATION_INCOMPLETE', 'RUN_MAINTENANCE_REQUIRED',
+  'RUN_TRANSCRIPT_LIMIT', 'RUN_STORAGE_LIMIT']);
+const SAFE_FAILURE_MESSAGES = new Map([
+  ['Harness verifier or deployment does not match the approved task', 'HARNESS_DEPLOYMENT_MISMATCH'],
+  ['Harness runtime artifacts differ from the approved task build', 'HARNESS_RUNTIME_MISMATCH'],
+  ['Harness plugin or Node differs from its approved deployment', 'HARNESS_DEPLOYMENT_MISMATCH'],
+  ['Fresh task worktree is not clean', 'HARNESS_WORKTREE_DIRTY'],
+  ['Harness worktree or branch already exists; preserve and reconcile without reuse', 'HARNESS_WORKTREE_EXISTS'],
+  ['Required token/cost/turn/effort constraints are unsupported; no process was started', 'HARNESS_LIMITS_UNSUPPORTED'],
+  ['Harness preparation cannot fit the required cleanup within the total deadline', 'HARNESS_PREPARATION_DEADLINE'],
+  ['Canonical pending Harness run is missing', 'HARNESS_RUN_MISSING'],
+  ['Harness admission deadline changed during preparation', 'HARNESS_DEADLINE_CHANGED'],
+  ['Task input or principal binding changed', 'HARNESS_TASK_BINDING_CHANGED'],
+  ['Harness eligibility observation is missing, mismatched or its lease expired', 'HARNESS_ELIGIBILITY_INVALID'],
+  ['Execution lacks durable confirmation', 'HARNESS_CONFIRMATION_MISSING'],
+]);
+
+/** Preserve only closed diagnostic codes, never exception messages, paths or headers. */
+function safeFailureCode(error: unknown, reason: HarnessStopIntent['reason']): string {
+  try {
+    if (utilTypes.isProxy(error)) return 'UNKNOWN';
+    if (error && typeof error === 'object') {
+      const code = Object.getOwnPropertyDescriptor(error, 'code')?.value;
+      if (typeof code === 'string' && SAFE_FAILURE_CODES.has(code)) return code;
+      const message = Object.getOwnPropertyDescriptor(error, 'message')?.value;
+      if (typeof message === 'string' && SAFE_FAILURE_MESSAGES.has(message)) return SAFE_FAILURE_MESSAGES.get(message)!;
+      const status = Object.getOwnPropertyDescriptor(error, 'status')?.value;
+      if (Number.isInteger(status) && status > 0 && status <= 255) return 'CHILD_PROCESS_FAILED';
+    }
+  } catch { /* An exception getter/proxy is not a diagnostic authority. */ }
+  return reason === 'deadline' ? 'DEADLINE' : 'UNKNOWN';
+}
 
 /** Keep one absolute budget; Node turns an overflowing timer into a 1 ms timer. */
 function scheduleDeadline(remaining: () => number, expired: () => void): () => void {
@@ -135,7 +178,7 @@ export class HarnessTaskHost {
     const gate = Promise.withResolvers<void>();
     const route = admission.record;
     const owned: OwnedAdmission = { task, route, ready, work: done.promise, release: gate.resolve, controller: new AbortController(),
-      started: false, exitConfirmed: false, localDeadline: performance.now() + task.timeoutMs, ...(governed ? { governed: structuredClone(governed) } : {}),
+      started: false, exitConfirmed: false, phase: 'admission', localDeadline: performance.now() + task.timeoutMs, ...(governed ? { governed: structuredClone(governed) } : {}),
       ...(eligibility ? { dispatchEligibility: eligibility } : {}),
     };
     // Register before create/publish can throw or await. close owns the entire acceptance, not only execute.
@@ -174,7 +217,7 @@ export class HarnessTaskHost {
         return { patch: { harnessExecution: { ...binding, lifecycle: { ...lifecycle, phase: 'authorized' } } }, beforePublish: () => { this.checkOwned(owned, current); checkEligibility(); } };
       });
       setImmediate(owned.release);
-    } catch { this.failOwned(owned, 'confirmation_failed'); }
+    } catch (error) { this.failOwned(owned, 'confirmation_failed', error); }
   }
 
   private async ownAdmission(owned: OwnedAdmission, gate: Promise<void>, governed: boolean, publicationUnconfirmed: boolean): Promise<void> {
@@ -198,12 +241,15 @@ export class HarnessTaskHost {
         });
       }
       this.checkOwned(owned, state);
+      owned.phase = 'publication';
       await this.options.publish(state);
       this.checkOwned(owned);
+      owned.phase = 'visibility';
       const visible = await this.transact(owned, current => {
         this.checkOwned(owned, this.boundState(current, task));
         return { patch: { harnessExecution: { ...current.harnessExecution!, visible: true } } };
       });
+      owned.phase = 'confirmation';
       owned.ready.resolve(this.receipt(task.taskId, visible));
       // Compatibility is deliberately confined to a trusted fixture host whose
       // configuration and task have no production principal binding.
@@ -213,7 +259,7 @@ export class HarnessTaskHost {
       await this.execute(owned);
     } catch (error) {
       owned.ready.reject(error);
-      this.failOwned(owned, owned.stopReason ?? 'execution_failed');
+      this.failOwned(owned, owned.stopReason ?? 'execution_failed', error);
     }
   }
 
@@ -296,8 +342,11 @@ export class HarnessTaskHost {
     else if (readHarnessStopIntent(this.options.identityRoot, owned.route.runId)) throw new Error('Harness stop requested');
   }
 
-  private failOwned(owned: OwnedAdmission, reason: HarnessStopIntent['reason']): void {
+  private failOwned(owned: OwnedAdmission, reason: HarnessStopIntent['reason'], error?: unknown): void {
     owned.stopReason ??= reason;
+    owned.failure ??= Object.freeze({ phase: owned.phase, errorCode: safeFailureCode(error, owned.stopReason) });
+    const failure = owned.failure;
+    const summary = `Harness task did not reach verified acceptance (${failure.phase}: ${failure.errorCode})`;
     owned.controller.abort(new Error('Harness execution stopped; preserve and reconcile'));
     owned.release();
     if (owned.started && !owned.exitConfirmed) this.unknownExits.add(owned.route.runId);
@@ -313,26 +362,30 @@ export class HarnessTaskHost {
           ownerGeneration: owned.route.ownerGeneration!, reason: owned.stopReason!, requestedAt: new Date().toISOString(),
         });
         return { patch: { status: 'failed', completedAt: new Date().toISOString(), failureCode: 'EXECUTION_FAILED',
-          errorSummary: 'Harness task did not reach verified acceptance', error: 'Harness task did not reach verified acceptance', harnessExecution: { ...binding,
+          errorSummary: summary, error: summary, harnessExecution: { ...binding,
             acceptance: binding.acceptance === 'pending' ? 'indeterminate' : binding.acceptance, stopRequestedAt: new Date().toISOString(),
             summary: 'Execution stopped without verified acceptance; preserve artifacts and reconcile without replay.',
             ...(binding.lifecycle ? { lifecycle: { ...binding.lifecycle, phase: owned.started ? 'indeterminate' as const : 'stopped_before_start' as const } } : {}),
-          } }, events: [event('fail', { failureCode: 'EXECUTION_FAILED', reason })] };
+          } }, events: [event('fail', { failureCode: 'EXECUTION_FAILED', reason, ...failure })] };
       });
     } catch { this.uncertainPersistence.add(owned.route.runId); }
   }
 
   private async execute(owned: OwnedAdmission): Promise<void> {
     const { task, route, controller } = owned;
+    owned.phase = 'execute_authorization';
     const preparationEligibility = await this.options.authorize(structuredClone(task), 'execute');
     this.checkOwned(owned);
     await this.rebind(route.runId, task);
     this.eligibility(preparationEligibility, task, 'execute')();
+    owned.phase = 'prepare';
     const execution = await this.options.prepare(structuredClone(task), route.runId, controller.signal);
+    owned.phase = 'execute_authorization';
     const startEligibility = await this.options.authorize(structuredClone(task), 'execute');
     const checkStartEligibility = this.eligibility(startEligibility, task, 'execute');
     await this.rebind(route.runId, task);
     this.checkOwned(owned);
+    owned.phase = 'execution_start';
     await this.transact(owned, state => {
       this.boundState(state, task); this.checkOwned(owned, state);
       checkStartEligibility();
@@ -345,17 +398,21 @@ export class HarnessTaskHost {
     this.checkOwned(owned);
     checkStartEligibility();
     owned.started = true;
+    owned.phase = 'execution';
     const result = await execution.execute(controller.signal, startEligibility || undefined);
     if (result.exitConfirmed !== true) throw new Error('Harness process exit is unconfirmed');
     owned.exitConfirmed = true;
     await this.transact(owned, state => ({ patch: { harnessExecution: { ...this.boundState(state, task).harnessExecution!, processExit: 'confirmed' } } }));
     this.checkOwned(owned);
     assertAgentResultSchema(result.data, task.outputSchema);
+    owned.phase = 'acceptance_authorization';
     const acceptanceEligibility = await this.options.authorize(structuredClone(task), 'accept');
     await this.rebind(route.runId, task);
     this.checkOwned(owned);
     this.eligibility(acceptanceEligibility, task, 'accept')();
+    owned.phase = 'acceptance';
     const acceptance = await execution.accept(result.data, controller.signal, acceptanceEligibility || undefined);
+    owned.phase = 'completion';
     const completionEligibility = await this.options.authorize(structuredClone(task), 'accept');
     const checkCompletionEligibility = this.eligibility(completionEligibility, task, 'accept');
     await this.rebind(route.runId, task);

@@ -10,18 +10,18 @@ const contract = {
   "identities": {
     "broker": {
       "name": "openslack-cleanup-broker",
-      "uid": 44180,
-      "gid": 44180,
+      "uid": 24001,
+      "gid": 24001,
       "id": "cleanup-broker-pr418"
     },
     "agent": {
       "name": "openslack-cleanup-agent",
-      "uid": 44181,
-      "gid": 44181,
+      "uid": 24002,
+      "gid": 24002,
       "id": "cleanup_qualification_pr418"
     }
   },
-  "registrySHA256": "33a9b46866fedd768cb859abfd36341159fc0f3a3e306462575f1f34af7e7ebc",
+  "registrySHA256": "afbf25479de2851aa88c03533e6870e6ba1a45c27e4e88c45d52659e9bea4f42",
   "taskStates": [
     "pending",
     "claimed",
