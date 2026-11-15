@@ -25,6 +25,8 @@ interface NullDataFixture {
   fixtures: ReturnType<typeof setup>[];
   started: Set<ReturnType<typeof setup>>;
   work?: Promise<void>;
+  children: Map<ChildProcess, { ended: Promise<void>; exitSeen: boolean; closeSeen: boolean }>;
+  unsubscribe?: () => void;
   stage: string;
   steps: { name: string; outcome: 'fulfilled' | 'rejected'; milliseconds: number }[];
   firstFailure?: { kind: string; code: string };
@@ -44,6 +46,9 @@ function nullDataFacts(error: unknown) {
 function publishNullDataFacts(context: TestContext, owned: NullDataFixture, retained = true) {
   Object.assign(context.task.meta, { bridgeNullDataFixture: { stage: owned.stage,
     steps: owned.steps.map(step => ({ ...step })), firstFailure: owned.firstFailure ?? null,
+    observedChildren: owned.children.size,
+    childExitEvents: [...owned.children.values()].filter(child => child.exitSeen).length,
+    childCloseEvents: [...owned.children.values()].filter(child => child.closeSeen).length,
     confirmedChildCloseReceipts: [...owned.started].filter(fixture => fixture.adapter.processExitReceipt !== null).length,
     retainedRoots: retained ? owned.roots.size : 0 } });
 }
@@ -57,6 +62,28 @@ async function nullDataStep<T>(context: TestContext, owned: NullDataFixture, nam
 function ownNullDataCase(context: TestContext, operation: (owned: NullDataFixture) => Promise<void>) {
   const owned = nullDataFixtures.get(context.task)!;
   owned.stage = 'tested_protocol';
+  const diagnostic = channel('child_process');
+  const disposers = new Set<() => void>();
+  const capture = (value: unknown) => {
+    if (!value || typeof value !== 'object' || !('process' in value) || !(value.process instanceof ChildProcess)) return;
+    const child = value.process;
+    const spawned = () => {
+      disposeSpawn();
+      if (child.spawnfile !== process.execPath || ![...owned.started].some(fixture =>
+        JSON.stringify(child.spawnargs.slice(1)) === JSON.stringify(['--input-type=module', '-e', fixture.source]))) return;
+      const closed = Promise.withResolvers<void>();
+      const fact = { ended: closed.promise, exitSeen: false, closeSeen: false };
+      owned.children.set(child, fact);
+      const exited = () => { fact.exitSeen = true; publishNullDataFacts(context, owned); };
+      const ended = () => { fact.closeSeen = true; closed.resolve(); disposeEvents(); publishNullDataFacts(context, owned); };
+      const disposeEvents = () => { child.removeListener('exit', exited); child.removeListener('close', ended); disposers.delete(disposeEvents); };
+      child.once('exit', exited); child.once('close', ended); disposers.add(disposeEvents);
+    };
+    const disposeSpawn = () => { child.removeListener('spawn', spawned); disposers.delete(disposeSpawn); };
+    child.once('spawn', spawned); disposers.add(disposeSpawn);
+  };
+  diagnostic.subscribe(capture);
+  owned.unsubscribe = () => { diagnostic.unsubscribe(capture); for (const dispose of disposers) dispose(); };
   const work = Promise.resolve().then(() => operation(owned)).catch(error => {
     owned.firstFailure ??= nullDataFacts(error); throw error;
   });
@@ -74,7 +101,7 @@ async function joinNullDataWork<T>(work: Promise<T>, deadline: number): Promise<
 }
 beforeEach(context => {
   if (context.task.name !== nullDataCaseName) return;
-  const owned: NullDataFixture = { roots: new Set(), fixtures: [], started: new Set(), stage: 'preparing', steps: [] };
+  const owned: NullDataFixture = { roots: new Set(), fixtures: [], started: new Set(), children: new Map(), stage: 'preparing', steps: [] };
   nullDataFixtures.set(context.task, owned);
   const ownRoot = (root: string) => { owned.roots.add(root); const index = roots.indexOf(root); if (index >= 0) roots.splice(index, 1); };
   for (const [name, payload] of [['prepare_valid', '{ data: null }'], ['prepare_missing', "{ result: 'not data' }"]] as const) {
@@ -99,6 +126,12 @@ afterEach(async context => {
       const unclosed = [...owned.started].filter(fixture => fixture.adapter.processExitReceipt === null);
       await joinNullDataWork(Promise.allSettled(unclosed.map(fixture =>
         fixture.adapter.closeSession(`bridge-${fixture.context.runId}`))), deadline);
+      // A cached rejected session-close promise may settle before the actual
+      // child closes. Join the observed OS close events within the same bound.
+      await joinNullDataWork(Promise.all([...owned.children.values()].map(child => child.ended)), deadline);
+      if (owned.children.size < owned.started.size || [...owned.children.values()].some(child => !child.closeSeen)) {
+        throw new Error('BRIDGE_NULL_DATA_WORK_UNCONFIRMED');
+      }
       // Expected protocol refusals may cache a rejected close promise. Only the
       // actual child close receipt proves that its work has ended.
       if ([...owned.started].some(fixture => fixture.adapter.processExitReceipt === null)) {
@@ -108,7 +141,7 @@ afterEach(async context => {
       owned.stage = 'ownership_unconfirmed'; publishNullDataFacts(context, owned);
       if (!primaryFailed) throw new Error('BRIDGE_NULL_DATA_CLEANUP_UNCONFIRMED');
       return;
-    }
+    } finally { owned.unsubscribe?.(); }
     owned.stage = 'owned_work_drained'; publishNullDataFacts(context, owned);
   }
   const ordinaryRoots = roots.splice(0);
@@ -156,7 +189,7 @@ function setup(source: string, timeoutMs = 2_000, extra: Partial<BridgeProcessAd
     recorder, runState: state, toolGuard,
     toolExecutor: new RepositoryToolExecutor({ rootPath: root, recorder, runId, toolGuard }),
   };
-  return { root, adapter, context };
+  return { root, adapter, context, source };
 }
 
 const prefix = `

@@ -49,11 +49,14 @@ interface DeadlineCaseResources {
   expectedProducers: number;
   settlements: Promise<void>[];
   settlementObserved: boolean;
+  settlement?: { failed: boolean; aborted: boolean; failureCode: string; recordState: string };
+  auditPhases: { name: string; outcome: string; code: string; milliseconds: number; wallMilliseconds: number }[];
+  confirmationResult?: { status: string; blocker: string; state: string; executionObserved: boolean; milliseconds: number; wallMilliseconds: number };
 }
 let ownedDeadlineCase: { resources: DeadlineCaseResources; work: Promise<void> } | undefined;
 function trackDeadlineCase(operation: (owned: DeadlineCaseResources) => Promise<void>) {
   const resources: DeadlineCaseResources = { roots: [], releases: [], lateWork: [], producers: [], expectedProducers: 0,
-    settlements: [], settlementObserved: false };
+    settlements: [], settlementObserved: false, auditPhases: [] };
   const work = Promise.resolve().then(() => operation(resources));
   void work.catch(() => undefined);
   ownedDeadlineCase = { resources, work };
@@ -88,6 +91,8 @@ afterEach(async (context) => {
     confirmationExpected: (phase?.resources.settlements.length ?? 0) > 0,
     expectedProducers: phase?.resources.expectedProducers ?? 0, observedProducers: phase?.resources.producers.length ?? 0,
     settlementObserved: phase?.resources.settlementObserved ?? null,
+    confirmationResult: phase?.resources.confirmationResult ?? null,
+    settlement: phase?.resources.settlement ?? null, auditPhases: phase?.resources.auditPhases ?? [],
     retainedRoots: phase?.resources.roots.length ?? 0, retainedOrdinaryRoots: ordinaryRemaining.size } });
   if (phase) {
     publish('waiting_owned_work');
@@ -165,6 +170,7 @@ function harness(
   definitions?: readonly GovernedActionExecutorDefinition[],
   options: { beforeExecute?: () => Promise<void>; timeoutMs?: number;
     onConfirmationSettled?: Parameters<typeof createOpenSlackGovernedMutationPort>[0]['onConfirmationSettled'];
+    onAuditObservation?: (name: string, state: string) => void;
   } = {},
 ) {
   const { timeoutMs = 10_000 } = options;
@@ -197,13 +203,14 @@ function harness(
   );
   const service = createGovernedPlanService({
     store: new LocalGovernedPlanStore(join(workspaceRoot, 'governed-plans')),
+
     registry,
     getBindingSnapshot: () => ({
       sourceVersions: { scenarioLockHash: 'a'.repeat(64), githubHead: 'b'.repeat(40) },
       permissionSnapshot: { capabilities: ['scenario.project.instantiate'] },
       buildNonce: 'qg5-test-build-nonce-0123456789',
     }),
-    audit: async () => undefined,
+    audit: async event => { options.onAuditObservation?.(event.type, event.state); },
     executionTimeoutMs: timeoutMs,
   });
   const mutations = createOpenSlackGovernedMutationPort({
@@ -627,8 +634,18 @@ describe('governed MCP mutation profile', () => {
         execute,
       },
     ], { onConfirmationSettled: (_planId, outcome) => {
-      if (outcome.operation === 'confirm') { owned.settlementObserved = true; settled.resolve(); }
-    } });
+      if (outcome.operation === 'confirm') {
+        const failures = new Set(['GOVERNED_PLAN_STORE_BUSY', 'GOVERNED_PLAN_STORE_CAS_MISMATCH',
+          'GOVERNED_PLAN_STORE_TRANSITION_INVALID', 'GOVERNED_PLAN_EXECUTION_ABORTED',
+          'GOVERNED_PLAN_EXECUTION_UNCERTAIN', 'GOVERNED_PLAN_BINDING_CHANGED', 'GOVERNED_PLAN_CONFIGURATION_INVALID',
+          'EIO', 'EACCES', 'EPERM', 'ENOENT', 'ETIMEDOUT']);
+        owned.settlement = { failed: outcome.failed, aborted: outcome.aborted,
+          failureCode: outcome.failed && outcome.failureCode && failures.has(outcome.failureCode) ? outcome.failureCode : 'UNKNOWN',
+          recordState: !outcome.failed ? outcome.record.state : 'UNKNOWN' };
+        owned.settlementObserved = true; settled.resolve();
+      }
+    }, onAuditObservation: (name, state) => { if (owned.auditPhases.length < 32) owned.auditPhases.push({ name: name + ':' + state,
+      outcome: 'audit_sink_observed', code: 'NONE', milliseconds: performance.now(), wallMilliseconds: Date.now() }); } });
     const deadlineCore = new OpenSlackMcpCore(
       createOpenSlackMcpContext({
         workspaceRoot,
@@ -646,10 +663,18 @@ describe('governed MCP mutation profile', () => {
     // This request may outlive the core deadline; its actual settlement stays owned.
     owned.settlements.push(settled.promise);
     owned.expectedProducers += 1;
+    const confirmationBegan = performance.now(), confirmationWallBegan = Date.now();
     const result = await deadlineCore.callTool('openslack_confirm_plan', {
       planId,
       confirmationToken: String(preview.structuredContent.confirmationToken),
     });
+    const facts = result.structuredContent;
+    const code = (value: unknown) => typeof value === 'string' && /^[A-Za-z_]{1,96}$/.test(value) ? value : 'UNKNOWN';
+    const governance = facts.governance && typeof facts.governance === 'object' ? facts.governance as Record<string, unknown> : {};
+    owned.confirmationResult = { status: code(facts.status), blocker: code(governance.blocker),
+      state: code(facts.data && typeof facts.data === 'object' ? (facts.data as Record<string, unknown>).state : undefined),
+      executionObserved: execute.mock.calls.length > 0, milliseconds: performance.now() - confirmationBegan,
+      wallMilliseconds: Date.now() - confirmationWallBegan };
     expect(result.structuredContent).toMatchObject({
       status: 'blocked',
       planId,
