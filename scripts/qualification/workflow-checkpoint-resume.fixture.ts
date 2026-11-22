@@ -4,7 +4,10 @@ import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { loadWorkflowFile } from '../../packages/workflows/src/internal/workflow-file-loader.js';
 import { executeWorkflowThroughRunnerWithRuntime } from '../../packages/workflows/src/workflow-runner-execution-client.js';
-import { WorkflowRunnerStatusClient } from '../../packages/workflows/src/workflow-runner-control-client.js';
+import {
+  WorkflowRunnerControlError,
+  WorkflowRunnerStatusClient,
+} from '../../packages/workflows/src/workflow-runner-control-client.js';
 import {
   createWorkflowRunRoutingExecutionContext,
   WORKFLOW_RUN_ROUTING_MODE_GO,
@@ -31,14 +34,17 @@ const config = JSON.parse(await readFile(process.argv[2]!, 'utf8')) as {
   runnerBuild: string;
   authorityBuild: string;
   localProviderOrigin?: string;
+  resumeProviderOrigin?: string;
+  failureProviderOrigin?: string;
 };
 const runId = 'run.checkpoint.worker';
 const correlationId = 'correlation.checkpoint.worker';
 const loopbackProvider = config.localProviderOrigin;
+const failingProvider = config.failureProviderOrigin;
 const agentId = 'fixture-budget-agent';
-if (loopbackProvider) {
-  const origin = new URL(loopbackProvider);
-  assert.equal(origin.hostname, '127.0.0.1');
+const failedRunId = 'run.provider.failure';
+const initialProvider = loopbackProvider ?? failingProvider;
+if (initialProvider) {
   const registry = join(config.root, '.openslack/agents/registry');
   await mkdir(registry, { recursive: true });
   await writeFile(
@@ -51,6 +57,13 @@ if (loopbackProvider) {
       '  model: fixture-budget-model',
     ].join('\n') + '\n',
   );
+  await setProviderOrigin(initialProvider);
+}
+
+async function setProviderOrigin(providerOrigin: string) {
+  const origin = new URL(providerOrigin);
+  assert.equal(origin.hostname, '127.0.0.1');
+  assert.equal(origin.protocol, 'http:');
   await writeFile(
     join(config.root, '.openslack.local', 'agent-runtime.json'),
     JSON.stringify({
@@ -66,8 +79,7 @@ if (loopbackProvider) {
     }),
   );
 }
-const call = loopbackProvider
-  ? `
+const call = `
 async function call(ctx, phase) {
   const result = await ctx.agent('Budget fixture ' + phase, {
     agentType: ${JSON.stringify(agentId)}, label: 'budget:' + phase,
@@ -75,15 +87,17 @@ async function call(ctx, phase) {
     schema: { type: 'object', properties: { phase: { type: 'string' } }, required: ['phase'] },
   });
   if (result.phase !== phase) throw new Error('Unexpected loopback provider result.');
-}`
-  : '';
-const source = `export const meta={name:'checkpoint-worker',version:'1.0.0',description:'Offline checkpoint qualification',phases:[{title:'First',detail:'First'},{title:'Approval',detail:'Approval'},{title:'Done',detail:'Done'}],permissions:{openslack:['governance.audit']},sideEffects:['openslack.governance.audit'],risk:'medium',isolationPolicy:{'${agentId}':'none'}};${call}
+}`;
+const source = `export const meta={name:'checkpoint-worker',version:'1.0.0',description:'Offline checkpoint qualification',phases:[{title:'First',detail:'First'},{title:'Approval',detail:'Approval'},{title:'Done',detail:'Done'}],permissions:{openslack:['governance.audit']},sideEffects:['openslack.governance.audit'],risk:'medium',isolationPolicy:{'${agentId}':'none'}};${loopbackProvider ? call : ''}
 export async function run(ctx){ctx.phase('First');${loopbackProvider ? "await call(ctx, 'First');" : ''}const replay=await ctx.checkpoint.commit({artifact:new TextEncoder().encode('first')});ctx.phase('Approval');await ctx.openslack.governance.audit('checkpoint-worker-fixture');await ctx.checkpoint.commit({artifact:new TextEncoder().encode('approved')});ctx.phase('Done');${loopbackProvider ? "await call(ctx, 'Done');" : ''}await ctx.checkpoint.commit({artifact:new TextEncoder().encode('done')});return {status:'completed',replay};}`;
 const directory = join(config.root, '.openslack/workflows');
 await mkdir(directory, { recursive: true });
 const path = join(directory, 'checkpoint-worker.mjs');
 await writeFile(path, source);
 const workflow = await loadWorkflowFile(path);
+const failedSource = `export const meta={name:'provider-failure-worker',version:'1.0.0',description:'Offline provider failure qualification',phases:[{title:'First',detail:'First'}],permissions:{},sideEffects:[],risk:'low',isolationPolicy:{'${agentId}':'none'}};
+${call}
+export async function run(ctx){ctx.phase('First');await call(ctx, 'First');return {status:'completed'};}`;
 const runner = {
   origin: config.runnerOrigin,
   workspaceId: config.workspaceId,
@@ -103,7 +117,9 @@ const routing = createWorkflowRunRoutingExecutionContext({
       routingEpoch: 1,
       authorityBuildHash: config.authorityBuild,
       qualificationEnvironmentId: 'checkpoint.fixture',
-      workflowAllowlist: [workflow.meta.name],
+      workflowAllowlist: failingProvider
+        ? [workflow.meta.name, 'provider-failure-worker']
+        : [workflow.meta.name],
       runAllowlist: [],
       expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
     }),
@@ -125,19 +141,19 @@ const routing = createWorkflowRunRoutingExecutionContext({
     fingerprint: 'c'.repeat(64),
   },
 });
-const execute = () =>
+const execute = (id = runId, target = workflow, bytes = source) =>
   executeWorkflowThroughRunnerWithRuntime({
     workspaceRoot: config.root,
-    workflowRunId: runId,
-    correlationId,
+    workflowRunId: id,
+    correlationId: id === runId ? correlationId : 'correlation.provider.failure',
     workflowSource: 'openslack-project',
-    workflowSourceBytes: Buffer.from(source),
-    sourceSnapshot: workflow.sourceSnapshot,
-    manifest: workflow.meta,
+    workflowSourceBytes: Buffer.from(bytes),
+    sourceSnapshot: target.sourceSnapshot,
+    manifest: target.meta,
     confirmationPolicy: {
       mode: 'unattended-explicit',
       actorId: 'qualification-host',
-      runId,
+      runId: id,
       allowUnattended: true,
       onUnexpectedEffect: 'fail',
     },
@@ -146,41 +162,57 @@ const execute = () =>
     now: () => new Date(),
     routing,
   });
-const initial = await execute();
-assert.equal(initial.status, 'paused_waiting_approval');
 const connection = (origin: string, bearerToken: string) => ({
   origin,
   bearerToken,
   callerId: 'workflow-runner-v2',
   buildHash: config.authorityBuild,
 });
+const route = {
+  backend: 'go',
+  authority: 'workflow-control',
+  routingEpoch: 1,
+  authorityBuildHash: config.authorityBuild,
+} as const;
+const authorityClient = new WorkflowControlAuthorityHttpClient({
+  origin: config.authorityOrigin,
+  workspaceId: config.workspaceId,
+  callerId: 'workflow-runner-v2',
+  bearerToken: config.authorityToken,
+  expectedBuildHash: config.authorityBuild,
+});
 const drain = createWorkflowDrainObserver({
   workspaceRoot: config.root,
   workspaceId: config.workspaceId,
-  route: {
-    backend: 'go',
-    authority: 'workflow-control',
-    routingEpoch: 1,
-    authorityBuildHash: config.authorityBuild,
-  },
+  route,
   authority: connection(config.authorityOrigin, config.authorityToken),
   runner: connection(config.runnerOrigin, config.runnerToken),
   budget: connection(config.budgetOrigin, config.budgetToken),
-  authorityClient: new WorkflowControlAuthorityHttpClient({
-    origin: config.authorityOrigin,
-    workspaceId: config.workspaceId,
-    callerId: 'workflow-runner-v2',
-    bearerToken: config.authorityToken,
-    expectedBuildHash: config.authorityBuild,
-  }),
+  authorityClient,
 });
+if (failingProvider) {
+  const failedPath = join(directory, 'provider-failure-worker.mjs');
+  await writeFile(failedPath, failedSource);
+  const failedWorkflow = await loadWorkflowFile(failedPath);
+  await assert.rejects(
+    execute(failedRunId, failedWorkflow, failedSource),
+    (error: unknown) =>
+      error instanceof WorkflowRunnerControlError &&
+      error.code === 'WORKFLOW_RUNNER_CONTROL_RECONCILIATION_REQUIRED',
+  );
+  assert.equal((await authorityClient.read(failedRunId, route)).state, 'reconciliation_required');
+}
+const initial = await execute();
+assert.equal(initial.status, 'paused_waiting_approval');
 // The initial reservation must already be settled at the approval boundary.
-const pausedDrain = await drain.read(new AbortController().signal);
-assert.equal(pausedDrain.activeRuns, 1);
-assert.equal(pausedDrain.pendingEffects, 1);
-assert.equal(pausedDrain.openReservations, 0);
-assert.equal(pausedDrain.outboxDrained, false);
-assert.equal(pausedDrain.admissionClosed, false);
+const pausedDrain = failingProvider ? undefined : await drain.read(new AbortController().signal);
+if (pausedDrain) {
+  assert.equal(pausedDrain.activeRuns, 1);
+  assert.equal(pausedDrain.pendingEffects, 1);
+  assert.equal(pausedDrain.openReservations, 0);
+  assert.equal(pausedDrain.outboxDrained, false);
+  assert.equal(pausedDrain.admissionClosed, false);
+}
 const reader = new RunStore({
   baseDir: resolveWorkflowRunProjectionRoot(config.root, 'go'),
   access: 'read-only',
@@ -223,6 +255,11 @@ await store.decide({
   reasonHash: '5'.repeat(64),
   binding,
 });
+if (loopbackProvider) {
+  assert.ok(config.resumeProviderOrigin);
+  assert.notEqual(config.resumeProviderOrigin, loopbackProvider);
+  await setProviderOrigin(config.resumeProviderOrigin);
+}
 const resumed = await execute();
 assert.equal(resumed.status, 'completed');
 const final = (await reader.loadCheckpointControl(runId))!;
@@ -230,12 +267,18 @@ assert.equal(final.resumeGeneration, 1);
 assert.equal(final.checkpoints.length, 3);
 assert.deepEqual(final.checkpoints[0], original!.checkpoints[0]);
 assert.equal((await reader.readAuditRecords(runId)).length, 1);
-const completedDrain = await drain.read(new AbortController().signal);
-assert.equal(completedDrain.activeRuns, 0);
-assert.equal(completedDrain.pendingEffects, 0);
-assert.equal(completedDrain.runnerDrained, true);
-assert.equal(completedDrain.openReservations, 0);
-assert.equal(completedDrain.outboxDrained, false); // Real durable outbox remains unpublished.
+const completedDrain = failingProvider ? undefined : await drain.read(new AbortController().signal);
+if (completedDrain) {
+  assert.equal(completedDrain.activeRuns, 0);
+  assert.equal(completedDrain.pendingEffects, 0);
+  assert.equal(completedDrain.runnerDrained, true);
+  assert.equal(completedDrain.openReservations, 0);
+  assert.equal(completedDrain.outboxDrained, false); // Real durable outbox remains unpublished.
+}
+if (failingProvider) {
+  assert.equal((await authorityClient.read(runId, route)).state, 'completed');
+  assert.equal((await authorityClient.read(failedRunId, route)).state, 'reconciliation_required');
+}
 process.stdout.write(
   JSON.stringify({
     status: 'PASS',
@@ -244,6 +287,7 @@ process.stdout.write(
     checkpointCount: final.checkpoints.length,
     originalCheckpoint: final.checkpoints[0],
     auditEffects: 1,
+    ...(failingProvider ? { failureIsolated: true } : {}),
     pausedDrain,
     completedDrain,
     drainEvidence: drain.evidence(),

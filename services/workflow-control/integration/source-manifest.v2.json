@@ -90,11 +90,11 @@
     },
     "runnerSealedCheckpointResumeTest": {
       "path": "services/workflow-control/cmd/runner-server/gs9f2_checkpoint_worker_test.go",
-      "sha256": "3d739d5a84b56d1e2cfa84f82430ee3d37140319281fd11474f37af2395f984a"
+      "sha256": "6c8d541a3fbbd72d14970600706a21d9a37d81f10f64a9b56ff903480a8ad6a1"
     },
     "runnerSealedCheckpointResumeFixture": {
       "path": "scripts/qualification/workflow-checkpoint-resume.fixture.ts",
-      "sha256": "b6a46ed5d716396061e1d780c145da5d663ffb40b1ba4af70f89ecf35a62b804"
+      "sha256": "695ff80661e6a14078c909adc98e8fa79323225468827bf15d1cf90b20b26bc4"
     },
     "budgetAuthorityMigrationUp": {
       "path": "services/workflow-control/migrations/000006_create_workflow_control_budget_authority.up.sql",
@@ -350,7 +350,7 @@
     },
     "workflowRunnerWorkerSource": {
       "path": "packages/workflows/src/workflow-runner-worker.ts",
-      "sha256": "fad35c324f848e2c9370f385c3841e8d24eeb96f45336184365f0e636dc9747f"
+      "sha256": "51894fd6e826018ff366b4a69d72d040b9eb5285ac957502eab8f1847cd73239"
     },
     "workflowRunRoutingTest": {
       "path": "packages/workflows/src/__tests__/workflow-run-routing.test.ts",

@@ -42,14 +42,14 @@ import (
 // Uses the actual sealed Node worker, HTTP services and isolated PostgreSQL schema.
 // The existing host PostgreSQL gate runs this cross-language integration explicitly;
 // the Go-only container gate continues to require only its pinned Go toolchain.
-// Each scenario uses one fixture-human audit decision. The budget variant confines
-// provider requests to the local stub.
+// The budget and failure scenarios confine provider requests to loopback.
 func TestGS9F2SealedCheckpointResume(t *testing.T) {
-	t.Run("checkpoint", func(t *testing.T) { testGS9F2SealedCheckpointResume(t, false) })
-	t.Run("budget", func(t *testing.T) { testGS9F2SealedCheckpointResume(t, true) })
+	for _, scenario := range []string{"checkpoint", "budget", "provider_failure_isolated"} {
+		t.Run(scenario, func(t *testing.T) { testGS9F2SealedCheckpointResume(t, scenario) })
+	}
 }
 
-func testGS9F2SealedCheckpointResume(t *testing.T, withBudget bool) {
+func testGS9F2SealedCheckpointResume(t *testing.T, scenario string) {
 	if strings.TrimSpace(os.Getenv("DATABASE_URL")) == "" {
 		t.Fatal("sealed checkpoint qualification requires DATABASE_URL")
 	}
@@ -162,9 +162,12 @@ func testGS9F2SealedCheckpointResume(t *testing.T, withBudget bool) {
 		}
 	}()
 	driverConfig := map[string]string{"root": workspaceRoot, "descriptorRoot": descriptorRoot, "runnerOrigin": runnerHTTP.URL, "authorityOrigin": authorityHTTP.URL, "budgetOrigin": budgetHTTP.URL, "budgetToken": budgetToken, "workspaceId": workspace, "runnerToken": runnerToken, "authorityToken": authorityToken, "runnerBuild": runnerBuild, "authorityBuild": authorityBuild}
-	const runID = "run.checkpoint.worker"
-	var providerCalls atomic.Int32
-	if withBudget {
+	const (
+		runID       = "run.checkpoint.worker"
+		failedRunID = "run.provider.failure"
+	)
+	startProvider := func(targetRunID, phase, reserved, settled string, status int) (string, *atomic.Int32) {
+		calls := new(atomic.Int32)
 		provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			var body struct {
@@ -181,18 +184,21 @@ func testGS9F2SealedCheckpointResume(t *testing.T, withBudget bool) {
 				http.Error(w, "invalid fixture request", http.StatusBadRequest)
 				return
 			}
-			call := providerCalls.Add(1)
-			phase, reserved, settled := "First", "1", "0"
-			if call == 2 {
-				phase, reserved, settled = "Done", "2", "1"
-			}
-			account, err := budgetRepository.ReadAccount(req.Context(), workspace, runID)
-			if call > 2 || body.Messages[1].Content != "Budget fixture "+phase ||
+			call := calls.Add(1)
+			account, err := budgetRepository.ReadAccount(req.Context(), workspace, targetRunID)
+			if call != 1 || body.Messages[1].Content != "Budget fixture "+phase ||
 				err != nil || account.Value["accountId"] != "checkpoint.fixture" ||
 				account.Value["reserved"].(budgetcontract.Record)["calls"] != reserved ||
 				account.Value["settled"].(budgetcontract.Record)["calls"] != settled {
-				t.Errorf("loopback call %d has no matching budget reservation: %v", call, err)
+				t.Errorf("loopback %s call %d has no matching budget reservation: %v", phase, call, err)
 				http.Error(w, "fixture reservation mismatch", http.StatusBadRequest)
+				return
+			}
+			if status == http.StatusServiceUnavailable {
+				w.WriteHeader(status)
+				if _, err := w.Write([]byte(`{"error":{"message":"fixture gateway unavailable"}}`)); err != nil {
+					t.Error(err)
+				}
 				return
 			}
 			if err := json.NewEncoder(w).Encode(map[string]any{
@@ -202,8 +208,16 @@ func testGS9F2SealedCheckpointResume(t *testing.T, withBudget bool) {
 				t.Error(err)
 			}
 		}))
-		defer provider.Close()
-		driverConfig["localProviderOrigin"] = provider.URL
+		t.Cleanup(provider.Close)
+		return provider.URL, calls
+	}
+	var initialCalls, resumeCalls, failureCalls *atomic.Int32
+	switch scenario {
+	case "budget":
+		driverConfig["localProviderOrigin"], initialCalls = startProvider(runID, "First", "1", "0", http.StatusOK)
+		driverConfig["resumeProviderOrigin"], resumeCalls = startProvider(runID, "Done", "2", "1", http.StatusOK)
+	case "provider_failure_isolated":
+		driverConfig["failureProviderOrigin"], failureCalls = startProvider(failedRunID, "First", "1", "0", http.StatusServiceUnavailable)
 	}
 	encoded, err := json.Marshal(driverConfig)
 	if err != nil {
@@ -234,9 +248,29 @@ func testGS9F2SealedCheckpointResume(t *testing.T, withBudget bool) {
 		t.Fatalf("sealed checkpoint resume: %v\n%s", err, output)
 	}
 	t.Logf("sealed checkpoint resume: %s", output)
-	if withBudget {
-		if calls := providerCalls.Load(); calls != 2 {
-			t.Fatalf("expected one local provider call in each generation, got %d", calls)
+	if scenario == "provider_failure_isolated" {
+		if calls := failureCalls.Load(); calls != 1 {
+			t.Fatalf("expected one failing provider POST, got %d", calls)
+		}
+		var state string
+		var openReservations, providerReconciliations, healthyBudgetAccounts int
+		if err := pool.QueryRow(t.Context(), `
+SELECT state,
+    (SELECT count(*) FROM workflow_control_budget_reservations WHERE workspace_id=$1 AND run_id=$2 AND status='open'),
+    (SELECT count(*) FROM workflow_control_budget_reconciliations WHERE workspace_id=$1 AND run_id=$2 AND evidence_type='provider_outcome'),
+    (SELECT count(*) FROM workflow_control_budget_accounts WHERE workspace_id=$1 AND run_id=$3)
+FROM workflow_control_runs WHERE workspace_id=$1 AND run_id=$2`, workspace, failedRunID, runID).Scan(
+			&state, &openReservations, &providerReconciliations, &healthyBudgetAccounts); err != nil {
+			t.Fatal(err)
+		}
+		if state != "reconciliation_required" || openReservations != 1 || providerReconciliations != 1 || healthyBudgetAccounts != 0 {
+			t.Fatalf("unexpected isolation facts: failed state=%s, open=%d, provider outcomes=%d, healthy accounts=%d",
+				state, openReservations, providerReconciliations, healthyBudgetAccounts)
+		}
+	}
+	if scenario == "budget" {
+		if initial, resume := initialCalls.Load(), resumeCalls.Load(); initial != 1 || resume != 1 {
+			t.Fatalf("expected one POST on each loopback origin: initial=%d resume=%d", initial, resume)
 		}
 		var continuations int
 		if err := pool.QueryRow(t.Context(), `SELECT count(*) FROM workflow_control_budget_resume_continuations WHERE workspace_id=$1 AND run_id=$2`,

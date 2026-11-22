@@ -1129,6 +1129,9 @@ export function createWorkflowRunnerV2ProviderAttemptPort(
             reservationId: reservation.reservationId,
             callId: reservation.callId,
             ...folded.payload,
+            // An attempted dispatch stays in the exact Provider receipt. F2
+            // reports only accounted usage, which is zero without token evidence.
+            actualCalls: usage.status === 'reported' ? usage.calls : '0',
           },
           sourceFor('budget_settle', preparedRequest),
         );
