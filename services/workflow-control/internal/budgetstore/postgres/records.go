@@ -21,6 +21,7 @@ import (
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/authoritystore"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/budgetstore"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/canonicaljson"
+	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/runnerbindingcontract"
 )
 
 type runHead struct {
@@ -84,19 +85,102 @@ func validateRunBinding(run runHead, request budgetcontract.Record, serviceBuild
 	if record.State != authoritycontract.RunRunning {
 		return budgetstore.Failure(budgetstore.ErrorConflict, "workflow budget mutation requires a running non-reconciling run", nil)
 	}
-	// GS9-E2 has no Runner-v2 request field that can bind an expected resume
-	// generation. Qualification therefore admits only the initial generation;
-	// GS9-F must deliver the versioned runner binding before resumed attempts can
-	// use this authority. Accepting a non-zero generation here would let a stale
-	// attempt present only the current run revision.
-	if record.ResumeGeneration != 0 {
-		return budgetstore.Failure(budgetstore.ErrorConflict, "workflow budget qualification requires resume generation zero", nil)
+	if record.ResumeGeneration > 1 {
+		return budgetstore.Failure(budgetstore.ErrorConflict, "workflow budget qualification supports at most one resume generation", nil)
 	}
 	route := request["route"].(budgetcontract.Record)
 	if request["workspaceId"] != record.WorkspaceID || request["runId"] != record.RunID || request["expectedRunRevision"] != record.Revision ||
 		route["backend"] != record.Route.Backend || route["authority"] != record.Route.Authority || route["routingEpoch"] != record.Route.RoutingEpoch ||
 		route["authorityBuildHash"] != record.Route.AuthorityBuildHash || serviceBuildHash != record.Route.AuthorityBuildHash {
 		return budgetstore.Failure(budgetstore.ErrorConflict, "workflow budget request run, route, revision, or policy binding drifted", nil)
+	}
+	return nil
+}
+
+// A resumed budget mutation is authorized by Runner F2's committed resolution
+// for the exact E1 request. Both run and attempt remain locked until the write.
+func readResumeBudgetBinding(ctx context.Context, tx pgx.Tx, run runHead, prepared budgetcontract.PreparedRequest, request budgetcontract.Record) (string, error) {
+	if run.record.ResumeGeneration == 0 {
+		return "", nil
+	}
+	var installed bool
+	if err := tx.QueryRow(ctx, resumeBudgetSchemaSQL).Scan(&installed); err != nil {
+		return "", databaseFailure("check workflow budget continuation schema", err)
+	}
+	if !installed {
+		return "", budgetstore.Failure(budgetstore.ErrorConflict, "workflow budget resume generation requires schema 12", nil)
+	}
+	rows, err := tx.Query(ctx, resumeBudgetBindingSQL, run.record.WorkspaceID, run.record.RunID, "budget_"+prepared.Operation,
+		mustDecodeHash(prepared.RequestHash), recordInt64(request, "expectedAccountRevision"), run.record.ResumeGeneration,
+		run.record.Route.RoutingEpoch, mustDecodeHash(run.record.Route.AuthorityBuildHash))
+	if err != nil {
+		return "", databaseFailure("lock workflow runner budget binding", err)
+	}
+	defer rows.Close()
+	proof, err := pgx.CollectExactlyOneRow(rows, func(row pgx.CollectableRow) (resumeBudgetProof, error) {
+		var proof resumeBudgetProof
+		err := row.Scan(&proof.bindingID, &proof.stage, &proof.stageReceipt, &proof.resolution, &proof.resolutionReceipt)
+		return proof, err
+	})
+	if errors.Is(err, pgx.ErrNoRows) || errors.Is(err, pgx.ErrTooManyRows) {
+		return "", budgetstore.Failure(budgetstore.ErrorConflict, "workflow budget resume requires one active, resolved Runner F2 binding", err)
+	}
+	if err != nil {
+		return "", databaseFailure("read workflow runner budget binding", err)
+	}
+	boundRequest, err := proof.preparedRequest()
+	if err != nil {
+		return "", err
+	}
+	if boundRequest != prepared {
+		return "", budgetstore.Failure(budgetstore.ErrorConflict, "Runner F2 budget binding does not authorize the exact resumed request", nil)
+	}
+	return proof.bindingID, nil
+}
+
+type resumeBudgetProof struct {
+	bindingID                                          string
+	stage, stageReceipt, resolution, resolutionReceipt []byte
+}
+
+func (proof resumeBudgetProof) preparedRequest() (budgetcontract.PreparedRequest, error) {
+	stage, err := runnerbindingcontract.ParseStageBytes(proof.stage)
+	if err != nil {
+		return budgetcontract.PreparedRequest{}, budgetstore.Failure(budgetstore.ErrorIntegrity, "read exact Runner F2 budget stage", err)
+	}
+	stageReceipt, err := runnerbindingcontract.ParseReceiptBytes(proof.stageReceipt)
+	if err != nil {
+		return budgetcontract.PreparedRequest{}, budgetstore.Failure(budgetstore.ErrorIntegrity, "read exact Runner F2 budget stage receipt", err)
+	}
+	resolution, err := runnerbindingcontract.ParseResolutionBytes(proof.resolution)
+	if err != nil {
+		return budgetcontract.PreparedRequest{}, budgetstore.Failure(budgetstore.ErrorIntegrity, "read exact Runner F2 budget resolution", err)
+	}
+	receipt, err := runnerbindingcontract.ParseReceiptBytes(proof.resolutionReceipt)
+	if err != nil {
+		return budgetcontract.PreparedRequest{}, budgetstore.Failure(budgetstore.ErrorIntegrity, "read exact Runner F2 budget resolution receipt", err)
+	}
+	if _, err := runnerbindingcontract.ValidateResolutionReceipt(receipt, resolution, stage, stageReceipt); err != nil {
+		return budgetcontract.PreparedRequest{}, budgetstore.Failure(budgetstore.ErrorIntegrity, "verify exact Runner F2 budget binding", err)
+	}
+	evidence := resolution["evidence"].(runnerbindingcontract.Record)
+	source := evidence["sourceAuthority"].(runnerbindingcontract.Record)
+	boundRequest, ok := evidence["preparedRequest"].(budgetcontract.PreparedRequest)
+	if !ok || stage["bindingId"] != proof.bindingID ||
+		source["expectedResumeGeneration"] != int64(1) || source["acceptedResumeGeneration"] != int64(1) ||
+		receipt["status"] != "accepted" {
+		return budgetcontract.PreparedRequest{}, budgetstore.Failure(budgetstore.ErrorIntegrity, "stored Runner F2 budget resolution does not prove an accepted resumed request", nil)
+	}
+	return boundRequest, nil
+}
+
+func requireBudgetContinuation(ctx context.Context, tx pgx.Tx, account budgetcontract.Record, accountRevision int64) error {
+	var exists bool
+	if err := tx.QueryRow(ctx, resumeContinuationExistsSQL, account["workspaceId"], account["runId"], account["accountId"], accountRevision).Scan(&exists); err != nil {
+		return databaseFailure("read workflow budget account continuation", err)
+	}
+	if !exists {
+		return budgetstore.Failure(budgetstore.ErrorConflict, "budget account revision predates workflow budget continuation", nil)
 	}
 	return nil
 }
@@ -125,7 +209,7 @@ func initialAccountFromSeed(run runHead, request budgetcontract.Record, seed bud
 	return budgetstore.Account{Value: validated, Durable: outer, ExactBytes: bytes, RecordHash: hash, UpdatedAt: run.updatedAt}, nil
 }
 
-func validateAccountRunBinding(account budgetcontract.Record, run runHead, seed budgetstore.QualificationSeed) error {
+func validateAccountRunBinding(account budgetcontract.Record, run runHead, seed budgetstore.QualificationSeed, continuing bool) error {
 	limit := account["limit"].(budgetcontract.Record)
 	route := account["route"].(budgetcontract.Record)
 	if account["workspaceId"] != run.record.WorkspaceID || account["runId"] != run.record.RunID ||
@@ -134,7 +218,7 @@ func validateAccountRunBinding(account budgetcontract.Record, run runHead, seed 
 		limit["tokens"] != seed.Limit.Tokens || limit["nanoUsd"] != seed.Limit.NanoUSD || limit["calls"] != seed.Limit.Calls {
 		return budgetstore.Failure(budgetstore.ErrorIntegrity, "budget account does not match the workflow run and qualification seed", nil)
 	}
-	if account["runRevision"] != run.record.Revision {
+	if !continuing && account["runRevision"] != run.record.Revision {
 		return budgetstore.Failure(budgetstore.ErrorConflict, "workflow budget account revision does not match the workflow run revision", nil)
 	}
 	return nil
@@ -200,12 +284,12 @@ func readAccountRow(_ context.Context, row rowScanner, workspaceID, runID string
 func readAccountStateRow(row rowScanner, workspaceID, runID string) (budgetstore.Account, budgetstore.Account, error) {
 	var accountID, backend, authority string
 	var policyHash, buildHash, genesisHash, genesisExact, accountHash, exact []byte
-	var routingEpoch, accountRevision, runRevision int64
+	var routingEpoch, accountRevision, runRevision, resumeRunRevisionDelta int64
 	var limitTokens, limitNanoUSD, limitCalls, reservedTokens, reservedNanoUSD, reservedCalls, settledTokens, settledNanoUSD, settledCalls int64
 	var updatedAt time.Time
 	if err := row.Scan(&accountID, &policyHash, &backend, &authority, &routingEpoch, &buildHash, &accountRevision, &runRevision,
 		&limitTokens, &limitNanoUSD, &limitCalls, &reservedTokens, &reservedNanoUSD, &reservedCalls,
-		&settledTokens, &settledNanoUSD, &settledCalls, &genesisHash, &genesisExact, &accountHash, &exact, &updatedAt); errors.Is(err, pgx.ErrNoRows) {
+		&settledTokens, &settledNanoUSD, &settledCalls, &genesisHash, &genesisExact, &accountHash, &exact, &updatedAt, &resumeRunRevisionDelta); errors.Is(err, pgx.ErrNoRows) {
 		return budgetstore.Account{}, budgetstore.Account{}, budgetstore.Failure(budgetstore.ErrorNotFound, "workflow budget account not found", err)
 	} else if err != nil {
 		return budgetstore.Account{}, budgetstore.Account{}, databaseFailure("read workflow budget account", err)
@@ -237,7 +321,7 @@ func readAccountStateRow(row rowScanner, workspaceID, runID string) (budgetstore
 		genesisOuter.AuthorityBuildHash != hex.EncodeToString(buildHash) ||
 		genesis["workspaceId"] != workspaceID || genesis["runId"] != runID || genesis["accountId"] != accountID ||
 		genesis["policyHash"] != hex.EncodeToString(policyHash) || recordInt64(genesis, "accountRevision") != 0 ||
-		recordInt64(genesis, "runRevision") < 1 || runRevision-recordInt64(genesis, "runRevision") != accountRevision ||
+		recordInt64(genesis, "runRevision") < 1 || runRevision-recordInt64(genesis, "runRevision")-accountRevision != resumeRunRevisionDelta || resumeRunRevisionDelta < 0 ||
 		genesisUpdatedAt.After(updatedAt) ||
 		!routeColumnsMatch(genesis["route"].(budgetcontract.Record), backend, authority, routingEpoch, buildHash) ||
 		!quantityColumnsMatch(genesis["limit"].(budgetcontract.Record), limitTokens, limitNanoUSD, limitCalls) ||

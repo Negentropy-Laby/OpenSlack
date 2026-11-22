@@ -7,15 +7,20 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/budgetcontract"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/authorityapp"
 	authoritypostgres "github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/authoritystore/postgres"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/budgetapp"
@@ -37,14 +42,23 @@ import (
 // Uses the actual sealed Node worker, HTTP services and isolated PostgreSQL schema.
 // The existing host PostgreSQL gate runs this cross-language integration explicitly;
 // the Go-only container gate continues to require only its pinned Go toolchain.
-// The workflow has one fixture-human D2 audit decision and no provider request.
+// Each scenario uses one fixture-human audit decision. The budget variant confines
+// provider requests to the local stub.
 func TestGS9F2SealedCheckpointResume(t *testing.T) {
+	t.Run("checkpoint", func(t *testing.T) { testGS9F2SealedCheckpointResume(t, false) })
+	t.Run("budget", func(t *testing.T) { testGS9F2SealedCheckpointResume(t, true) })
+}
+
+func testGS9F2SealedCheckpointResume(t *testing.T, withBudget bool) {
 	if strings.TrimSpace(os.Getenv("DATABASE_URL")) == "" {
 		t.Fatal("sealed checkpoint qualification requires DATABASE_URL")
 	}
 	pool := testsupport.OpenPostgres(t)
 	version := databaseready.CurrentSchemaVersion
-	if _, err := pool.Exec(t.Context(), "CREATE TABLE schema_migrations(version BIGINT PRIMARY KEY,dirty BOOLEAN NOT NULL); INSERT INTO schema_migrations VALUES($1,false)", version); err != nil {
+	if _, err := pool.Exec(t.Context(), "CREATE TABLE schema_migrations(version BIGINT PRIMARY KEY,dirty BOOLEAN NOT NULL)"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(t.Context(), "INSERT INTO schema_migrations VALUES($1,false)", version); err != nil {
 		t.Fatal(err)
 	}
 	_, file, _, _ := runtime.Caller(0)
@@ -108,7 +122,8 @@ func TestGS9F2SealedCheckpointResume(t *testing.T) {
 	runnerHTTP := httptest.NewServer(runner.Handler())
 	defer runnerHTTP.Close()
 	budgetToken := strings.Repeat("b", 48)
-	budget, err := budgetapp.New(budgetapp.Options{Repository: budgetpostgres.New(pool), QualificationMode: true, BuildSHA: authorityBuild,
+	budgetRepository := budgetpostgres.New(pool)
+	budget, err := budgetapp.New(budgetapp.Options{Repository: budgetRepository, QualificationMode: true, BuildSHA: authorityBuild,
 		WorkspaceID: workspace, CallerID: caller, RoutingEpoch: 1, BearerTokenSHA256: hash(budgetToken),
 		Seed: budgetstore.QualificationSeed{PolicyHash: strings.Repeat("b", 64), Limit: budgetstore.Quantities{Tokens: "1000", NanoUSD: "1000", Calls: "2"}}})
 	if err != nil {
@@ -147,6 +162,49 @@ func TestGS9F2SealedCheckpointResume(t *testing.T) {
 		}
 	}()
 	driverConfig := map[string]string{"root": workspaceRoot, "descriptorRoot": descriptorRoot, "runnerOrigin": runnerHTTP.URL, "authorityOrigin": authorityHTTP.URL, "budgetOrigin": budgetHTTP.URL, "budgetToken": budgetToken, "workspaceId": workspace, "runnerToken": runnerToken, "authorityToken": authorityToken, "runnerBuild": runnerBuild, "authorityBuild": authorityBuild}
+	const runID = "run.checkpoint.worker"
+	var providerCalls atomic.Int32
+	if withBudget {
+		provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			var body struct {
+				Model    string "json:\"model\""
+				Messages []struct {
+					Content string "json:\"content\""
+				} "json:\"messages\""
+			}
+			if req.Method != http.MethodPost || req.URL.Path != "/chat/completions" ||
+				req.Header.Get("Authorization") != "Bearer "+budgetToken ||
+				json.NewDecoder(http.MaxBytesReader(w, req.Body, 64*1024)).Decode(&body) != nil ||
+				body.Model != "fixture-budget-model" || len(body.Messages) != 2 {
+				t.Error("invalid loopback budget provider request")
+				http.Error(w, "invalid fixture request", http.StatusBadRequest)
+				return
+			}
+			call := providerCalls.Add(1)
+			phase, reserved, settled := "First", "1", "0"
+			if call == 2 {
+				phase, reserved, settled = "Done", "2", "1"
+			}
+			account, err := budgetRepository.ReadAccount(req.Context(), workspace, runID)
+			if call > 2 || body.Messages[1].Content != "Budget fixture "+phase ||
+				err != nil || account.Value["accountId"] != "checkpoint.fixture" ||
+				account.Value["reserved"].(budgetcontract.Record)["calls"] != reserved ||
+				account.Value["settled"].(budgetcontract.Record)["calls"] != settled {
+				t.Errorf("loopback call %d has no matching budget reservation: %v", call, err)
+				http.Error(w, "fixture reservation mismatch", http.StatusBadRequest)
+				return
+			}
+			if err := json.NewEncoder(w).Encode(map[string]any{
+				"choices": []any{map[string]any{"message": map[string]any{"content": "{\"phase\":\"" + phase + "\"}"}}},
+				"usage":   map[string]int{"prompt_tokens": 12, "completion_tokens": 5, "total_tokens": 17},
+			}); err != nil {
+				t.Error(err)
+			}
+		}))
+		defer provider.Close()
+		driverConfig["localProviderOrigin"] = provider.URL
+	}
 	encoded, err := json.Marshal(driverConfig)
 	if err != nil {
 		t.Fatal(err)
@@ -176,6 +234,52 @@ func TestGS9F2SealedCheckpointResume(t *testing.T) {
 		t.Fatalf("sealed checkpoint resume: %v\n%s", err, output)
 	}
 	t.Logf("sealed checkpoint resume: %s", output)
+	if withBudget {
+		if calls := providerCalls.Load(); calls != 2 {
+			t.Fatalf("expected one local provider call in each generation, got %d", calls)
+		}
+		var continuations int
+		if err := pool.QueryRow(t.Context(), `SELECT count(*) FROM workflow_control_budget_resume_continuations WHERE workspace_id=$1 AND run_id=$2`,
+			workspace, runID).Scan(&continuations); err != nil || continuations != 1 {
+			t.Fatalf("budget continuation: count=%d err=%v", continuations, err)
+		}
+		reopenedPool, err := pgxpool.NewWithConfig(t.Context(), pool.Config())
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer reopenedPool.Close()
+		restartedBudget := budgetpostgres.New(reopenedPool)
+		rebuilt, err := restartedBudget.RebuildAccount(t.Context(), workspace, runID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		settled := rebuilt.Value["settled"].(budgetcontract.Record)
+		if rebuilt.Value["accountId"] != "checkpoint.fixture" || rebuilt.Value["accountRevision"] != int64(4) ||
+			settled["calls"] != "2" || settled["tokens"] != "34" || settled["nanoUsd"] != "34" {
+			t.Fatalf("unexpected rebuilt budget account: %v", rebuilt.Value)
+		}
+		pointRead, err := restartedBudget.ReadAccount(t.Context(), workspace, runID)
+		if err != nil || pointRead.RecordHash != rebuilt.RecordHash || string(pointRead.ExactBytes) != string(rebuilt.ExactBytes) {
+			t.Fatalf("budget account point read differs from restarted ledger rebuild: %v", err)
+		}
+		// A completed continuation must survive an attempted downgrade.
+		down, err := os.ReadFile(filepath.Join(repositoryRoot, "services/workflow-control/migrations/000012_bind_workflow_budget_resume_continuation.down.sql"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		conn, err := reopenedPool.Acquire(t.Context())
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer conn.Release()
+		_, err = conn.Exec(t.Context(), string(down))
+		if _, rollbackErr := conn.Exec(t.Context(), "ROLLBACK"); rollbackErr != nil {
+			t.Fatal(rollbackErr)
+		}
+		if err == nil || !strings.Contains(err.Error(), "resume continuations are required") {
+			t.Fatalf("downgrade must preserve the resumed ledger: %v", err)
+		}
+	}
 }
 
 type checkpointFixtureLauncher struct {

@@ -15,9 +15,10 @@ Go.
   production policy source.
 - Go owns only qualification records in `workflow_control_budget_*` and advances the existing
   GS9-B run head under the same immutable route and expected-run-revision CAS.
-- The GS8 runner job, attempt, lease, and fence tables and the GS9-C/D shadow tables are not reused
-  for budget ownership.
-- Runner protocol v1 is unchanged. Runner v2 is neither negotiated nor delivered.
+- Runner F2 supplies the durable evidence for an active resumed lease. The budget service
+  owns the account, reservation, ledger, and settlement in PostgreSQL.
+- The budget HTTP contract is unchanged. The generation-one binding is verified inside Go
+  against the Workflow Control run and the persisted F2 stage and resolution.
 - No production client, routing epoch activation, canary, fallback, migration of an existing run,
   or writer cutover is introduced.
 
@@ -43,10 +44,15 @@ Ledger, receipt, and any known provider reconciliation commit in the same transa
 receipt, and reconciliation rows are append-only, and the down migration refuses to remove the
 namespace while evidence exists.
 
-If another authority advances the run while its E2 account remains at an older revision, a fresh
-budget mutation returns a conflict and does not report stored-data corruption or rebase the
-account. E2 remains fail-closed in that state. GS9-F must coordinate any new running-to-running
-writer with the budget account revision; E2 does not invent that recovery protocol.
+Ordinary mutations conflict if the run advances past the account revision. With schema 12, a
+generation-one reserve can advance an existing, fully settled account across that gap. The service
+requires a committed F2 resume transition, a live lease and fence, and the resolved F2 binding for
+the exact reserve request. It records the preceding account hash, run revision and hash, and
+binding identity in an append-only continuation attached to the reserve ledger entry. The
+account identity, limits, counters and historical hashes carry forward. A resumed settlement
+requires its own exact F2 binding and a reservation opened under the continued account.
+Generation zero retains the original behavior. Older schemas and later generations fail closed
+for resumed mutations. The down migration refuses while any continuation is needed for replay.
 
 Every exact durable value uses a Go-owned companion envelope with these closed fields:
 
@@ -71,11 +77,11 @@ Every mutation follows one closed order:
 2. acquire ordered advisory locks for the idempotency key and workspace/run;
 3. point-read an existing exact receipt;
 4. reject an open database-commit reconciliation for the run;
-5. lock the GS9-B run head;
+5. lock the GS9-B run head and, for generation one, verify and lock its current F2 binding;
 6. lock account and reservation rows in stable order;
 7. validate immutable route, running state, resume generation, run/account revisions, policy, and
    limits;
-8. transition the reservation and append the ledger entry;
+8. transition the reservation and append the ledger entry and any resume continuation;
 9. CAS the account and run head;
 10. persist an exact companion-envelope receipt and response bytes;
 11. commit.
@@ -98,12 +104,11 @@ cache hit performs no reserve, settlement, account, ledger, receipt, or reconcil
 Provider execution may begin only after a durable reserve and a cache entry cannot become visible
 until durable settlement in the qualification harness. These orderings are qualification
 properties, not production client wiring.
-The E2 qualification boundary accepts only `resumeGeneration=0`; nonzero generations fail closed
-without budget mutation because Runner v2 resume delivery is not part of this stage.
 
 Account recovery starts from the immutable genesis account and folds every accepted, rejected,
 settled, and provider-reconciliation ledger kind in revision order. The reconstructed exact bytes
-and hash must equal the current account; anchor, chain, or fold drift fails closed. Each rebuilt
+and hash must equal the current account; anchor, chain, or fold drift fails closed. A gap in the run
+revision chain must match its immutable continuation and the exact F2 reserve proof. Each rebuilt
 provider-attempt ledger entry must also bind the same attempt as its exact provider-usage receipt.
 A settled
 reservation binds its `closedAt` to its terminal ledger `recordedAt`. Because budget and GS9-B

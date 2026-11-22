@@ -50,8 +50,9 @@ SELECT account_id, policy_hash, backend, authority, routing_epoch,
        reserved_tokens, reserved_nano_usd, reserved_calls,
        settled_tokens, settled_nano_usd, settled_calls,
        genesis_account_hash, canonical_genesis_account_bytes,
-       account_hash, canonical_account_bytes, updated_at
-FROM workflow_control_budget_accounts
+       account_hash, canonical_account_bytes, updated_at,
+       COALESCE((to_jsonb(account)->>'resume_run_revision_delta')::bigint,0)
+FROM workflow_control_budget_accounts AS account
 WHERE workspace_id=$1 AND run_id=$2
 FOR UPDATE`
 
@@ -78,6 +79,59 @@ INSERT INTO workflow_control_budget_accounts (
 ) VALUES (
     $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24
 )`
+
+	resumeBudgetSchemaSQL = `
+SELECT to_regclass('workflow_control_budget_resume_continuations') IS NOT NULL`
+
+	resumeBudgetBindingSQL = `
+SELECT f.binding_id, f.exact_stage_bytes, f.exact_stage_receipt_bytes,
+       f.exact_resolution_bytes, f.exact_resolution_receipt_bytes
+FROM workflow_runner_authority_bindings f
+JOIN workflow_runner_jobs j ON j.workspace_id=f.workspace_id AND j.job_id=f.job_id
+JOIN workflow_runner_attempts a ON a.attempt_id=j.current_attempt_id AND a.attempt_id=f.attempt_id
+JOIN workflow_runner_leases l ON l.lease_id=f.lease_id AND l.attempt_id=a.attempt_id
+JOIN workflow_runner_v2_attempt_bindings b ON b.attempt_id=a.attempt_id
+WHERE f.workspace_id=$1 AND f.run_id=$2 AND j.workflow_run_id=f.run_id
+  AND f.operation=$3 AND f.state='resolved' AND f.source_evidence_state='prepared'
+  AND f.source_request_hash=$4 AND f.source_expected_revision=$5
+  AND f.expected_resume_generation=$6 AND f.accepted_resume_generation=$6
+  AND f.source_expected_resume_generation=$6 AND f.source_accepted_resume_generation=$6
+  AND f.routing_epoch=$7 AND f.authority_build_hash=$8
+  AND j.authority_backend=f.authority_backend AND j.workflow_authority=f.workflow_authority
+  AND j.routing_epoch=f.routing_epoch AND j.authority_build_hash=f.authority_build_hash
+  AND j.state='running' AND a.state IN ('accepted','running')
+  AND a.fencing_token=f.fencing_token AND l.fencing_token=f.fencing_token
+  AND l.state='active' AND l.lease_expires_at>clock_timestamp()
+  AND b.current_run_revision=f.expected_run_revision AND b.current_resume_generation=$6
+  AND EXISTS (
+      SELECT 1 FROM workflow_runner_authority_bindings r
+      WHERE r.workspace_id=f.workspace_id AND r.run_id=f.run_id AND r.operation='resume_advance'
+        AND r.state IN ('runner_committed','completed')
+        AND r.expected_resume_generation=0 AND r.accepted_resume_generation=$6
+        AND r.routing_epoch=f.routing_epoch AND r.authority_build_hash=f.authority_build_hash
+        AND r.accepted_run_revision<=f.expected_run_revision)
+FOR SHARE OF f,j,a,l,b`
+
+	resumeContinuationInsertSQL = `
+INSERT INTO workflow_control_budget_resume_continuations (
+    workspace_id, run_id, account_id, account_revision, previous_run_revision,
+    expected_run_revision, previous_account_hash, binding_id, request_hash, run_record_hash
+) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`
+
+	resumeContinuationReadSQL = `
+SELECT w.account_id, w.previous_run_revision, w.expected_run_revision, w.previous_account_hash,
+       w.request_hash, f.binding_id, f.exact_stage_bytes, f.exact_stage_receipt_bytes,
+       f.exact_resolution_bytes, f.exact_resolution_receipt_bytes
+FROM workflow_control_budget_resume_continuations w
+JOIN workflow_runner_authority_bindings f ON f.binding_id=w.binding_id
+WHERE w.workspace_id=$1 AND w.run_id=$2 AND w.account_revision=$3
+  AND f.workspace_id=w.workspace_id AND f.run_id=w.run_id AND f.operation='budget_reserve'
+  AND f.source_expected_revision=w.account_revision-1 AND f.source_request_hash=w.request_hash
+  AND f.source_expected_resume_generation=1 AND f.source_accepted_resume_generation=1`
+
+	resumeContinuationExistsSQL = `
+SELECT EXISTS (SELECT 1 FROM workflow_control_budget_resume_continuations
+WHERE workspace_id=$1 AND run_id=$2 AND account_id=$3 AND account_revision<=$4)`
 
 	accountCASUpdateSQL = `
 UPDATE workflow_control_budget_accounts
@@ -144,8 +198,9 @@ SELECT account_id, policy_hash, backend, authority, routing_epoch,
        reserved_tokens, reserved_nano_usd, reserved_calls,
        settled_tokens, settled_nano_usd, settled_calls,
        genesis_account_hash, canonical_genesis_account_bytes,
-       account_hash, canonical_account_bytes, updated_at
-FROM workflow_control_budget_accounts
+       account_hash, canonical_account_bytes, updated_at,
+       COALESCE((to_jsonb(account)->>'resume_run_revision_delta')::bigint,0)
+FROM workflow_control_budget_accounts AS account
 WHERE workspace_id=$1 AND run_id=$2`
 
 	ledgerRebuildSQL = `

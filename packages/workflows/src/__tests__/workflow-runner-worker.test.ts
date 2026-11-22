@@ -264,7 +264,7 @@ describe('GS8-B workflow runner worker', () => {
     }
   });
 
-  it('stamps first-resume budget evidence with accepted generation 1 rather than offer generation 0', async () => {
+  it('uses the current Go run revision and the existing account revision for a resumed reserve', async () => {
     const base = v2Descriptor(0);
     const sealed = {
       ...base,
@@ -276,6 +276,7 @@ describe('GS8-B workflow runner worker', () => {
       },
     };
     let observedGeneration: number | undefined;
+    let observedRequest: WorkflowBudgetReserveRequest | undefined;
     const stop = new Error('generation captured');
     const context = {
       resumeOffer: { resumeGeneration: 0, payload: { newResumeGeneration: 1 } },
@@ -294,6 +295,9 @@ describe('GS8-B workflow runner worker', () => {
           throw new Error('prepared reserve evidence unavailable');
         }
         observedGeneration = probe.evidence.sourceAuthority.expectedResumeGeneration;
+        observedRequest = parseWorkflowBudgetAuthorityBytes(
+          Buffer.from(probe.evidence.preparedRequest.body, 'utf8'),
+        ) as WorkflowBudgetReserveRequest;
         throw stop;
       },
     } as unknown as WorkflowRunnerV2ExecutionContext;
@@ -318,7 +322,16 @@ describe('GS8-B workflow runner worker', () => {
       },
       now: () => '2026-08-22T00:00:00.000Z',
     };
-    const port = createWorkflowRunnerV2ProviderAttemptPort(sealed, context, budgetAuthority);
+    const runAuthority = readOnlyRunAuthority(
+      workflowControlRunHead(sealed, { revision: 8, resumeGeneration: 1 }),
+    );
+    const read = vi.spyOn(runAuthority, 'read');
+    const port = createWorkflowRunnerV2ProviderAttemptPort(
+      sealed,
+      context,
+      budgetAuthority,
+      runAuthority,
+    );
     await expect(
       port.reserve({
         providerId: 'provider.one',
@@ -328,11 +341,17 @@ describe('GS8-B workflow runner worker', () => {
         requestedTokens: '100',
       }),
     ).rejects.toBe(stop);
+    expect(read).toHaveBeenCalledOnce();
     expect(observedGeneration).toBe(1);
+    expect(observedRequest).toMatchObject({
+      accountId: account.accountId,
+      expectedAccountRevision: 2,
+      expectedRunRevision: 8,
+    });
   });
 
   it.each([0, 1])(
-    'seeds the first durable budget account from the current Workflow Control revision at generation %i',
+    'seeds a missing budget account only at generation zero (generation %i)',
     async (resumeGeneration) => {
       const base = v2Descriptor(0);
       const sealed = {
@@ -395,17 +414,24 @@ describe('GS8-B workflow runner worker', () => {
         budgetAuthority,
         runAuthority,
       );
-      await expect(
-        port.reserve({
-          providerId: 'aby',
-          modelId: 'default',
-          providerRunId: 'provider-run.fresh',
-          providerAttempt: '1',
-          requestedTokens: '100',
-        }),
-      ).rejects.toBe(stop);
-      expect(expectedRunRevision).toBe(5);
-      expect(expectedGeneration).toBe(resumeGeneration);
+      const reserve = port.reserve({
+        providerId: 'aby',
+        modelId: 'default',
+        providerRunId: 'provider-run.fresh',
+        providerAttempt: '1',
+        requestedTokens: '100',
+      });
+      if (resumeGeneration === 0) {
+        await expect(reserve).rejects.toBe(stop);
+        expect(expectedRunRevision).toBe(5);
+        expect(expectedGeneration).toBe(0);
+      } else {
+        await expect(reserve).rejects.toMatchObject({
+          code: 'WORKFLOW_RUNNER_V2_BUDGET_RECONCILIATION_REQUIRED',
+        });
+        expect(expectedRunRevision).toBeUndefined();
+        expect(expectedGeneration).toBeUndefined();
+      }
     },
   );
 

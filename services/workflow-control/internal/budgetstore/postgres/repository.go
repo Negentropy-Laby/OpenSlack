@@ -102,12 +102,21 @@ func (repository *Repository) mutate(ctx context.Context, operation string, inpu
 		return budgetstore.MutationResult{}, err
 	}
 
+	resumeBindingID, err := readResumeBudgetBinding(ctx, tx, run, prepared, request)
+	if err != nil {
+		return budgetstore.MutationResult{}, err
+	}
 	account, err := readAccountRow(ctx, tx.QueryRow(ctx, accountForUpdateSQL, workspaceID, runID), workspaceID, runID)
 	accountExists := err == nil
 	if !accountExists && !budgetstore.IsCode(err, budgetstore.ErrorNotFound) {
 		return budgetstore.MutationResult{}, err
 	}
+	continuing := resumeBindingID != "" && accountExists && operation == "reserve" &&
+		recordInt64(account.Value, "runRevision") < run.record.Revision
 	if !accountExists {
+		if resumeBindingID != "" {
+			return budgetstore.MutationResult{}, budgetstore.Failure(budgetstore.ErrorConflict, "a resumed budget mutation requires an existing account", nil)
+		}
 		if operation != "reserve" || recordInt64(request, "expectedAccountRevision") != 0 {
 			return budgetstore.MutationResult{}, budgetstore.Failure(budgetstore.ErrorNotFound, "workflow budget account was not found", nil)
 		}
@@ -115,8 +124,21 @@ func (repository *Repository) mutate(ctx context.Context, operation string, inpu
 		if err != nil {
 			return budgetstore.MutationResult{}, err
 		}
-	} else if err := validateAccountRunBinding(account.Value, run, input.Seed); err != nil {
+	} else if err := validateAccountRunBinding(account.Value, run, input.Seed, continuing); err != nil {
 		return budgetstore.MutationResult{}, err
+	}
+
+	if resumeBindingID != "" && !continuing && operation == "reserve" {
+		if err := requireBudgetContinuation(ctx, tx, account.Value, recordInt64(account.Value, "accountRevision")); err != nil {
+			return budgetstore.MutationResult{}, err
+		}
+	}
+	if continuing {
+		reserved := account.Value["reserved"].(budgetcontract.Record)
+		settled := account.Value["settled"].(budgetcontract.Record)
+		if reserved["calls"] != settled["calls"] || reserved["tokens"] != settled["tokens"] || reserved["nanoUsd"] != settled["nanoUsd"] {
+			return budgetstore.MutationResult{}, budgetstore.Failure(budgetstore.ErrorConflict, "budget continuation requires all prior reservations to be settled", nil)
+		}
 	}
 
 	var reservation budgetstore.Reservation
@@ -128,6 +150,11 @@ func (repository *Repository) mutate(ctx context.Context, operation string, inpu
 		if reservation.Status != "open" {
 			return budgetstore.MutationResult{}, budgetstore.Failure(budgetstore.ErrorConflict, "workflow budget reservation is not open", nil)
 		}
+		if resumeBindingID != "" {
+			if err := requireBudgetContinuation(ctx, tx, account.Value, recordInt64(reservation.Value, "openedAccountRevision")); err != nil {
+				return budgetstore.MutationResult{}, err
+			}
+		}
 	}
 
 	var committedAt time.Time
@@ -138,7 +165,13 @@ func (repository *Repository) mutate(ctx context.Context, operation string, inpu
 
 	var record, ledger, reconciliation, createdReservation budgetcontract.Record
 	if operation == "reserve" {
-		evaluation, evaluateErr := budgetcontract.EvaluateReserve(account.Value, request, committedText)
+		evaluate := budgetcontract.EvaluateReserve
+		if continuing {
+			evaluate = func(account, request, committedAt any) (budgetcontract.ReserveEvaluation, error) {
+				return budgetcontract.EvaluateResumedReserve(account, request, committedAt, run.record.Revision)
+			}
+		}
+		evaluation, evaluateErr := evaluate(account.Value, request, committedText)
 		if evaluateErr != nil {
 			return budgetstore.MutationResult{}, mapContractFailure("evaluate workflow budget reserve", evaluateErr)
 		}
@@ -212,6 +245,13 @@ func (repository *Repository) mutate(ctx context.Context, operation string, inpu
 	}
 	if err := insertLedger(ctx, tx, ledger, ledgerBytes, ledgerHash, request); err != nil {
 		return budgetstore.MutationResult{}, err
+	}
+	if continuing {
+		if _, err := tx.Exec(ctx, resumeContinuationInsertSQL, workspaceID, runID, afterAccount["accountId"],
+			afterAccount["accountRevision"], account.Value["runRevision"], run.record.Revision, mustDecodeHash(account.RecordHash),
+			resumeBindingID, mustDecodeHash(prepared.RequestHash), mustDecodeHash(run.recordHash)); err != nil {
+			return budgetstore.MutationResult{}, mapWriteFailure("record workflow budget resume continuation", err)
+		}
 	}
 	if err := persistAccount(ctx, tx, account, accountExists, afterAccount); err != nil {
 		return budgetstore.MutationResult{}, err

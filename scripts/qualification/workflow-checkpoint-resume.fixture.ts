@@ -1,4 +1,4 @@
-/** Offline fixture driven by TestGS9F2SealedCheckpointResume; no provider or external effect. */
+/** Sealed-worker checkpoint fixture. Optional provider calls stay on the Go test's loopback stub. */
 import assert from 'node:assert/strict';
 import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -30,11 +30,55 @@ const config = JSON.parse(await readFile(process.argv[2]!, 'utf8')) as {
   budgetToken: string;
   runnerBuild: string;
   authorityBuild: string;
+  localProviderOrigin?: string;
 };
 const runId = 'run.checkpoint.worker';
 const correlationId = 'correlation.checkpoint.worker';
-const source = `export const meta={name:'checkpoint-worker',version:'1.0.0',description:'Offline checkpoint qualification',phases:[{title:'First',detail:'First'},{title:'Approval',detail:'Approval'},{title:'Done',detail:'Done'}],permissions:{openslack:['governance.audit']},sideEffects:['openslack.governance.audit'],risk:'medium'};
-export async function run(ctx){ctx.phase('First');const replay=await ctx.checkpoint.commit({artifact:new TextEncoder().encode('first')});ctx.phase('Approval');await ctx.openslack.governance.audit('checkpoint-worker-fixture');await ctx.checkpoint.commit({artifact:new TextEncoder().encode('approved')});ctx.phase('Done');await ctx.checkpoint.commit({artifact:new TextEncoder().encode('done')});return {status:'completed',replay};}`;
+const loopbackProvider = config.localProviderOrigin;
+const agentId = 'fixture-budget-agent';
+if (loopbackProvider) {
+  const origin = new URL(loopbackProvider);
+  assert.equal(origin.hostname, '127.0.0.1');
+  const registry = join(config.root, '.openslack/agents/registry');
+  await mkdir(registry, { recursive: true });
+  await writeFile(
+    join(registry, agentId + '.yaml'),
+    [
+      'schema: openslack.agent_registry.v1',
+      'agent_id: ' + agentId,
+      'vendor:',
+      '  runtime_provider: openai-compatible',
+      '  model: fixture-budget-model',
+    ].join('\n') + '\n',
+  );
+  await writeFile(
+    join(config.root, '.openslack.local', 'agent-runtime.json'),
+    JSON.stringify({
+      providers: {
+        'openai-compatible': {
+          baseUrl: origin.href,
+          model: 'fixture-budget-model',
+          credentialRef: 'env:OPENSLACK_WORKFLOW_RUNNER_V2_BUDGET_BEARER_TOKEN',
+          maxTurns: 1,
+          maxOutputTokens: 32,
+        },
+      },
+    }),
+  );
+}
+const call = loopbackProvider
+  ? `
+async function call(ctx, phase) {
+  const result = await ctx.agent('Budget fixture ' + phase, {
+    agentType: ${JSON.stringify(agentId)}, label: 'budget:' + phase,
+    phase, isolation: 'none', budget: { tokens: 120 },
+    schema: { type: 'object', properties: { phase: { type: 'string' } }, required: ['phase'] },
+  });
+  if (result.phase !== phase) throw new Error('Unexpected loopback provider result.');
+}`
+  : '';
+const source = `export const meta={name:'checkpoint-worker',version:'1.0.0',description:'Offline checkpoint qualification',phases:[{title:'First',detail:'First'},{title:'Approval',detail:'Approval'},{title:'Done',detail:'Done'}],permissions:{openslack:['governance.audit']},sideEffects:['openslack.governance.audit'],risk:'medium',isolationPolicy:{'${agentId}':'none'}};${call}
+export async function run(ctx){ctx.phase('First');${loopbackProvider ? "await call(ctx, 'First');" : ''}const replay=await ctx.checkpoint.commit({artifact:new TextEncoder().encode('first')});ctx.phase('Approval');await ctx.openslack.governance.audit('checkpoint-worker-fixture');await ctx.checkpoint.commit({artifact:new TextEncoder().encode('approved')});ctx.phase('Done');${loopbackProvider ? "await call(ctx, 'Done');" : ''}await ctx.checkpoint.commit({artifact:new TextEncoder().encode('done')});return {status:'completed',replay};}`;
 const directory = join(config.root, '.openslack/workflows');
 await mkdir(directory, { recursive: true });
 const path = join(directory, 'checkpoint-worker.mjs');
@@ -130,9 +174,11 @@ const drain = createWorkflowDrainObserver({
     expectedBuildHash: config.authorityBuild,
   }),
 });
+// The initial reservation must already be settled at the approval boundary.
 const pausedDrain = await drain.read(new AbortController().signal);
 assert.equal(pausedDrain.activeRuns, 1);
 assert.equal(pausedDrain.pendingEffects, 1);
+assert.equal(pausedDrain.openReservations, 0);
 assert.equal(pausedDrain.outboxDrained, false);
 assert.equal(pausedDrain.admissionClosed, false);
 const reader = new RunStore({

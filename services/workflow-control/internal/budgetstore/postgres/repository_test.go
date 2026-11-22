@@ -366,17 +366,30 @@ func TestBudgetStoreCacheHitHasZeroMutation(t *testing.T) {
 	}
 }
 
+// The legacy gate invokes this test by name. Unproven nonzero generations still fail closed.
 func TestBudgetStoreRejectsNonzeroResumeGeneration(t *testing.T) {
-	pool := openBudgetPostgres(t)
-	seedRunWithGeneration(t, pool, 4, 1)
-	if _, err := New(pool).Reserve(context.Background(), reserveInput(t, testSeed, 0, 4, "1", "100")); !budgetstore.IsCode(err, budgetstore.ErrorConflict) {
-		t.Fatalf("non-zero resume generation entered the E2 qualification authority: %v", err)
+	for _, test := range []struct {
+		name       string
+		schema     int
+		generation int64
+	}{
+		{"legacy", 6, 1},
+		{"missing_binding", 12, 1},
+		{"unsupported_generation", 12, 2},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			pool := testsupport.OpenPostgresAtSchema(t, test.schema)
+			seedRunWithGeneration(t, pool, 4, test.generation)
+			if _, err := New(pool).Reserve(t.Context(), reserveInput(t, testSeed, 0, 4, "1", "100")); !budgetstore.IsCode(err, budgetstore.ErrorConflict) {
+				t.Fatalf("unproven resume entered budget authority: %v", err)
+			}
+			statistics, err := New(pool).Statistics(t.Context())
+			if err != nil || statistics != (budgetstore.Statistics{}) {
+				t.Fatalf("resume refusal mutated budget evidence: %#v err=%v", statistics, err)
+			}
+			assertRunRecord(t, pool, 4, authoritycontract.RunRunning)
+		})
 	}
-	statistics, err := New(pool).Statistics(context.Background())
-	if err != nil || statistics != (budgetstore.Statistics{}) {
-		t.Fatalf("resume-generation refusal mutated budget evidence: %#v err=%v", statistics, err)
-	}
-	assertRunRecord(t, pool, 4, authoritycontract.RunRunning)
 }
 
 func TestBudgetStoreRouteEpochAndBuildDriftConflictWithoutMutation(t *testing.T) {

@@ -15,7 +15,7 @@ type Range struct {
 	Maximum int64
 }
 
-const CurrentSchemaVersion int64 = 11
+const CurrentSchemaVersion int64 = 12
 
 var (
 	ShadowProfile                  = Range{Minimum: 1, Maximum: CurrentSchemaVersion}

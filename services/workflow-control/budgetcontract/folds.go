@@ -106,15 +106,26 @@ func deriveSettlementDisposition(reservation, request Record) (settlementDisposi
 	}, nil
 }
 
-func nextAccount(before, reserved, settled Record, committedAt string) (Record, error) {
+func nextAccount(before, reserved, settled Record, runRevision int64, committedAt string) (Record, error) {
 	next := copyRecord(before)
 	next["accountRevision"] = before["accountRevision"].(int64) + 1
-	next["runRevision"] = before["runRevision"].(int64) + 1
+	next["runRevision"] = runRevision + 1
 	next["reserved"], next["settled"], next["updatedAt"] = reserved, settled, committedAt
 	return ValidateAccount(next)
 }
 
 func EvaluateReserve(accountValue, requestValue, committedAtValue any) (ReserveEvaluation, error) {
+	return evaluateReserve(accountValue, requestValue, committedAtValue, 0)
+}
+
+// EvaluateResumedReserve folds a reserve after the repository has verified a
+// durable resume binding to the authoritative run revision. Ledger hashes still
+// refer to the actual preceding account.
+func EvaluateResumedReserve(accountValue, requestValue, committedAtValue any, verifiedRunRevision int64) (ReserveEvaluation, error) {
+	return evaluateReserve(accountValue, requestValue, committedAtValue, verifiedRunRevision)
+}
+
+func evaluateReserve(accountValue, requestValue, committedAtValue any, verifiedRunRevision int64) (ReserveEvaluation, error) {
 	account, err := ValidateAccount(accountValue)
 	if err != nil {
 		return ReserveEvaluation{}, err
@@ -130,7 +141,14 @@ func EvaluateReserve(accountValue, requestValue, committedAtValue any) (ReserveE
 	if err := assertBaseIdentity(account, request); err != nil {
 		return ReserveEvaluation{}, err
 	}
-	if request["expectedAccountRevision"] != account["accountRevision"] || request["expectedRunRevision"] != account["runRevision"] {
+	expectedRunRevision := account["runRevision"].(int64)
+	if verifiedRunRevision != 0 {
+		if verifiedRunRevision <= expectedRunRevision {
+			return ReserveEvaluation{}, failure(ErrorStaleRevision, "$/expectedRunRevision", "Resume must advance the budget run revision.")
+		}
+		expectedRunRevision = verifiedRunRevision
+	}
+	if request["expectedAccountRevision"] != account["accountRevision"] || request["expectedRunRevision"] != expectedRunRevision {
 		return ReserveEvaluation{}, failure(ErrorStaleRevision, "$/expectedAccountRevision", "Reserve revision is stale.")
 	}
 	current, limit, requested := quantitiesBig(account["reserved"].(Record)), quantitiesBig(account["limit"].(Record)), quantitiesBig(request["requested"].(Record))
@@ -151,7 +169,7 @@ func EvaluateReserve(accountValue, requestValue, committedAtValue any) (ReserveE
 			return ReserveEvaluation{}, err
 		}
 	}
-	after, err := nextAccount(account, nextReserved, account["settled"].(Record), committedAt)
+	after, err := nextAccount(account, nextReserved, account["settled"].(Record), expectedRunRevision, committedAt)
 	if err != nil {
 		return ReserveEvaluation{}, err
 	}
@@ -247,7 +265,7 @@ func EvaluateSettlement(accountValue, reservationValue, requestValue, committedA
 			return SettlementEvaluation{}, err
 		}
 	}
-	after, err := nextAccount(account, nextReserved, nextSettled, committedAt)
+	after, err := nextAccount(account, nextReserved, nextSettled, account["runRevision"].(int64), committedAt)
 	if err != nil {
 		return SettlementEvaluation{}, err
 	}

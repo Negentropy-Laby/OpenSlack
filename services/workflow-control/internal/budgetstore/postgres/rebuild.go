@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/hex"
+	"errors"
 	"math/big"
 	"strconv"
 	"time"
@@ -63,7 +64,7 @@ func (repository *Repository) RebuildAccount(ctx context.Context, workspaceID, r
 	if err := validateLedgerReceiptBindings(entries); err != nil {
 		return budgetstore.Account{}, err
 	}
-	rebuilt, err := rebuildAccountFromLedger(genesis, head, entries)
+	rebuilt, err := rebuildAccountFromLedger(ctx, tx, genesis, head, entries)
 	if err != nil {
 		return budgetstore.Account{}, err
 	}
@@ -187,7 +188,7 @@ func validateLedgerReceiptBindings(entries []ledgerRebuildEntry) error {
 	return nil
 }
 
-func rebuildAccountFromLedger(genesis, head budgetstore.Account, entries []ledgerRebuildEntry) (budgetstore.Account, error) {
+func rebuildAccountFromLedger(ctx context.Context, tx pgx.Tx, genesis, head budgetstore.Account, entries []ledgerRebuildEntry) (budgetstore.Account, error) {
 	if recordInt64(genesis.Value, "accountRevision") != 0 || len(entries) == 0 || int64(len(entries)) != recordInt64(head.Value, "accountRevision") {
 		return budgetstore.Account{}, budgetstore.Failure(budgetstore.ErrorIntegrity, "workflow budget rebuild ledger length does not cover the account head", nil)
 	}
@@ -196,6 +197,13 @@ func rebuildAccountFromLedger(genesis, head budgetstore.Account, entries []ledge
 		ledger := entry.value
 		expectedAccountRevision := recordInt64(current.Value, "accountRevision") + 1
 		expectedRunRevision := recordInt64(current.Value, "runRevision") + 1
+		if recordInt64(ledger, "runRevision") > expectedRunRevision {
+			var err error
+			expectedRunRevision, err = validateRebuildContinuation(ctx, tx, current, entry)
+			if err != nil {
+				return budgetstore.Account{}, err
+			}
+		}
 		if entry.durable.AuthorityBuildHash != genesis.Durable.AuthorityBuildHash ||
 			ledger["workspaceId"] != current.Value["workspaceId"] || ledger["runId"] != current.Value["runId"] || ledger["accountId"] != current.Value["accountId"] ||
 			recordInt64(ledger, "accountRevision") != expectedAccountRevision || recordInt64(ledger, "runRevision") != expectedRunRevision ||
@@ -229,6 +237,50 @@ func rebuildAccountFromLedger(genesis, head budgetstore.Account, entries []ledge
 		return budgetstore.Account{}, budgetstore.Failure(budgetstore.ErrorIntegrity, "workflow budget rebuilt account differs from materialized head", nil)
 	}
 	return current, nil
+}
+
+// The ledger itself proves an account increment. A gap in run revisions also
+// needs the immutable witness and its exact Runner F2 reserve authorization.
+func validateRebuildContinuation(ctx context.Context, tx pgx.Tx, account budgetstore.Account, entry ledgerRebuildEntry) (int64, error) {
+	var installed bool
+	if err := tx.QueryRow(ctx, resumeBudgetSchemaSQL).Scan(&installed); err != nil {
+		return 0, databaseFailure("check workflow budget rebuild continuation schema", err)
+	}
+	if !installed {
+		return 0, budgetstore.Failure(budgetstore.ErrorIntegrity, "workflow budget ledger has a run revision gap without continuation schema", nil)
+	}
+	var accountID string
+	var previousRunRevision, expectedRunRevision int64
+	var previousHash, requestHash []byte
+	var proof resumeBudgetProof
+	err := tx.QueryRow(ctx, resumeContinuationReadSQL, account.Value["workspaceId"], account.Value["runId"], entry.value["accountRevision"]).Scan(
+		&accountID, &previousRunRevision, &expectedRunRevision, &previousHash, &requestHash,
+		&proof.bindingID, &proof.stage, &proof.stageReceipt, &proof.resolution, &proof.resolutionReceipt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return 0, budgetstore.Failure(budgetstore.ErrorIntegrity, "workflow budget ledger run revision gap lacks its resume continuation", err)
+	}
+	if err != nil {
+		return 0, databaseFailure("read workflow budget rebuild continuation", err)
+	}
+	_, receipt, response, err := decodeReceiptAndResponse(entry.exactReceipt, entry.exactResponse)
+	if err != nil {
+		return 0, budgetstore.Failure(budgetstore.ErrorIntegrity, "read workflow budget continuation reserve receipt", err)
+	}
+	prepared, err := proof.preparedRequest()
+	if err != nil {
+		return 0, err
+	}
+	if entry.receiptOperation != "reserve" || prepared.Operation != "reserve" || response.Record == nil ||
+		accountID != account.Value["accountId"] || previousRunRevision != account.Value["runRevision"] ||
+		!bytes.Equal(previousHash, mustDecodeHash(account.RecordHash)) ||
+		expectedRunRevision+1 != entry.value["runRevision"] || expectedRunRevision != receipt["expectedRunRevision"] ||
+		!bytes.Equal(requestHash, mustDecodeHash(prepared.RequestHash)) {
+		return 0, budgetstore.Failure(budgetstore.ErrorIntegrity, "workflow budget ledger resume continuation does not match account and reserve", nil)
+	}
+	if _, err := budgetcontract.ValidateReceiptForRequest(receipt, prepared); err != nil {
+		return 0, budgetstore.Failure(budgetstore.ErrorIntegrity, "workflow budget continuation differs from the exact reserve receipt", err)
+	}
+	return expectedRunRevision + 1, nil
 }
 
 func foldLedgerQuantities(account, ledger budgetcontract.Record) (budgetcontract.Record, budgetcontract.Record, error) {

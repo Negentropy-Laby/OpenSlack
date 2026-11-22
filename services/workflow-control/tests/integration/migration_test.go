@@ -48,6 +48,7 @@ ORDER BY table_name`)
 		"workflow_control_budget_receipts",
 		"workflow_control_budget_reconciliations",
 		"workflow_control_budget_reservations",
+		"workflow_control_budget_resume_continuations",
 		"workflow_control_checkpoint_shadow_heads",
 		"workflow_control_checkpoint_shadow_observations",
 		"workflow_control_checkpoint_shadow_receipts",
@@ -115,6 +116,7 @@ WHERE trigger_schema = current_schema()
           'workflow_control_recovery_pauses',
           'workflow_runner_binding_settlements',
 	      'workflow_control_budget_accounts',
+	      'workflow_control_budget_resume_continuations',
 	      'workflow_control_budget_reservations',
 	      'workflow_control_budget_ledger',
 	      'workflow_control_budget_receipts',
@@ -147,8 +149,8 @@ WHERE trigger_schema = current_schema()
   AND event_manipulation IN ('UPDATE','DELETE')`).Scan(&triggerEvents); err != nil {
 		t.Fatalf("count immutable trigger events: %v", err)
 	}
-	if triggerEvents != 69 {
-		t.Fatalf("immutable trigger coverage = %d, want 69 event rows", triggerEvents)
+	if triggerEvents != 71 {
+		t.Fatalf("immutable trigger coverage = %d, want 71 event rows", triggerEvents)
 	}
 }
 
@@ -211,7 +213,8 @@ func TestBudgetAuthorityMigrationLocksSemanticIndexInventory(t *testing.T) {
 	rows, err := pool.Query(context.Background(), `
 SELECT indexname
 FROM pg_indexes
-WHERE schemaname=current_schema() AND tablename LIKE 'workflow_control_budget_%'
+WHERE schemaname=current_schema() AND (tablename LIKE 'workflow_control_budget_%'
+  OR indexname='workflow_runner_resumed_budget_request_idx')
 ORDER BY indexname`)
 	if err != nil {
 		t.Fatal(err)
@@ -250,6 +253,9 @@ ORDER BY indexname`)
 		"workflow_control_budget_reservations_call_attempt_key",
 		"workflow_control_budget_reservations_open_idx",
 		"workflow_control_budget_reservations_pkey",
+		"workflow_control_budget_resume_continuations_binding_id_key",
+		"workflow_control_budget_resume_continuations_pkey",
+		"workflow_runner_resumed_budget_request_idx",
 	}
 	if len(got) != len(want) {
 		t.Fatalf("budget index inventory got=%v want=%v", got, want)
@@ -263,7 +269,7 @@ ORDER BY indexname`)
 
 func TestBudgetAuthorityDownMigrationIsIsolatedAndRefusesEvidence(t *testing.T) {
 	t.Run("empty namespace is independently removable", func(t *testing.T) {
-		pool := testsupport.OpenPostgres(t)
+		pool := testsupport.OpenPostgresAtSchema(t, 6)
 		if _, err := pool.Exec(context.Background(), budgetAuthorityDownMigration(t)); err != nil {
 			t.Fatal(err)
 		}
@@ -279,7 +285,7 @@ func TestBudgetAuthorityDownMigrationIsIsolatedAndRefusesEvidence(t *testing.T) 
 		}
 	})
 	t.Run("evidence prevents destructive rollback", func(t *testing.T) {
-		pool := testsupport.OpenPostgres(t)
+		pool := testsupport.OpenPostgresAtSchema(t, 6)
 		ctx := context.Background()
 		genesisHash, genesisBytes := budgetMigrationAccount(t, 0)
 		accountHash, accountBytes := budgetMigrationAccount(t, 1)

@@ -125,15 +125,7 @@ func TestGS9BAuthorityReadyUsesLightweightProbe(t *testing.T) {
 }
 
 func TestGS9BAuthorityMutationRemainsCompatibleWithoutBudgetNamespace(t *testing.T) {
-	pool := openAuthorityPostgres(t)
-	if _, err := pool.Exec(context.Background(), `
-DROP TABLE workflow_control_budget_reconciliations;
-DROP TABLE workflow_control_budget_receipts;
-DROP TABLE workflow_control_budget_reservations;
-DROP TABLE workflow_control_budget_ledger;
-DROP TABLE workflow_control_budget_accounts;`); err != nil {
-		t.Fatalf("remove empty later budget namespace: %v", err)
-	}
+	pool := testsupport.OpenPostgresAtSchema(t, 3)
 	repository := New(pool, 3)
 	accept := mutationInput(t, authoritystore.OperationAccept, nil, authoritycontract.RunCreated, 0)
 	if _, err := repository.Mutate(context.Background(), accept); err != nil {
