@@ -871,7 +871,7 @@ func TestSourceManifestBindsOnlyUnreleasedGS9IInputs(t *testing.T) {
 		},
 		"runnerBindingReconciliationPostgresTests": {
 			Path:   "services/workflow-control/internal/runnerstore/postgres/binding_reconciliation_integration_test.go",
-			SHA256: "64c0a2179d1641280a3730615c53b1ed4659d55ea061626bc539038ed4bf515c",
+			SHA256: "9be266456644708776b435c1a6650749b1b72c8feded8e8216ef31908a29679a",
 		},
 		"runnerReconciliationRestartTests": {
 			Path:   "services/workflow-control/internal/runnerstore/postgres/reconciliation_restart_integration_test.go",

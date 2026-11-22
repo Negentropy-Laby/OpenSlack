@@ -94,12 +94,16 @@ func TestBindingReconciliationRejectsClonedDatabaseLockDomain(t *testing.T) {
 	pool := open(name)
 	defer pool.Close()
 	// Clone only this test's freshly created database, never the configured database.
-	migrations, err := filepath.Glob(filepath.Join(filepath.Dir(v2MigrationPath(t, "000010_reconcile_workflow_runner_bindings.up.sql")), "*.up.sql"))
-	if err != nil || len(migrations) != 11 {
-		pool.Close()
-		t.Fatal("migration inventory changed", err)
+	const schemaVersion = 10
+	lastMigration := v2MigrationPath(t, "000010_reconcile_workflow_runner_bindings.up.sql")
+	migrations, err := filepath.Glob(filepath.Join(filepath.Dir(lastMigration), "*.up.sql"))
+	if err != nil {
+		t.Fatal(err)
 	}
-	for _, path := range migrations {
+	if len(migrations) < schemaVersion || migrations[schemaVersion-1] != lastMigration {
+		t.Fatal("migration inventory does not reach schema 10 in order")
+	}
+	for _, path := range migrations[:schemaVersion] {
 		raw, err := os.ReadFile(path)
 		if err != nil {
 			pool.Close()
@@ -110,7 +114,7 @@ func TestBindingReconciliationRejectsClonedDatabaseLockDomain(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	_, _, v, _ := reconciliationFixtureInPool(t, pool, 10, runnerbindingcontract.OperationResumeAdvance, "staged")
+	_, _, v, _ := reconciliationFixtureInPool(t, pool, schemaVersion, runnerbindingcontract.OperationResumeAdvance, "staged")
 	expireReconciliationLease(t, pool, v)
 	pool.Close()
 	if _, err := admin.Exec(ctx, "CREATE DATABASE "+pgx.Identifier{clone}.Sanitize()+" TEMPLATE "+pgx.Identifier{name}.Sanitize()); err != nil {
@@ -119,14 +123,14 @@ func TestBindingReconciliationRejectsClonedDatabaseLockDomain(t *testing.T) {
 	local, remote := open(name), open(clone)
 	defer local.Close()
 	defer remote.Close()
-	writer := authoritypostgres.New(remote, 10)
+	writer := authoritypostgres.New(remote, schemaVersion)
 	checked := false
 	repo := NewForV2RuntimeDelivery(local, runnerstore.V2AuthorityPorts{}).WithReconciliationWriter(func(ctx context.Context, c storageproof.Challenge, _ int64) (storageproof.Answer, error) {
 		a, err := writer.ProveStorage(ctx, c)
 		if err != nil {
 			return a, err
 		}
-		original, err := authoritypostgres.New(local, 10).ProveStorage(ctx, c)
+		original, err := authoritypostgres.New(local, schemaVersion).ProveStorage(ctx, c)
 		if err != nil || !reflect.DeepEqual(original.Relations, a.Relations) || original.DatabaseOID == a.DatabaseOID || !original.LockObserved || a.LockObserved {
 			t.Fatal("clone did not exercise identical relation OIDs and distinct database lock domains", err)
 		}
