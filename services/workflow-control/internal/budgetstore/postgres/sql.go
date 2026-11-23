@@ -80,37 +80,47 @@ INSERT INTO workflow_control_budget_accounts (
     $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24
 )`
 
+	lockBudgetContinuationSchemaSQL = `LOCK TABLE workflow_control_budget_accounts IN ROW EXCLUSIVE MODE`
+
 	resumeBudgetSchemaSQL = `
 SELECT to_regclass('workflow_control_budget_resume_continuations') IS NOT NULL`
 
+	// The outer clock check runs after the locked row is returned. The lease can
+	// expire while the inner query waits to acquire a row lock.
 	resumeBudgetBindingSQL = `
-SELECT f.binding_id, f.exact_stage_bytes, f.exact_stage_receipt_bytes,
-       f.exact_resolution_bytes, f.exact_resolution_receipt_bytes
-FROM workflow_runner_authority_bindings f
-JOIN workflow_runner_jobs j ON j.workspace_id=f.workspace_id AND j.job_id=f.job_id
-JOIN workflow_runner_attempts a ON a.attempt_id=j.current_attempt_id AND a.attempt_id=f.attempt_id
-JOIN workflow_runner_leases l ON l.lease_id=f.lease_id AND l.attempt_id=a.attempt_id
-JOIN workflow_runner_v2_attempt_bindings b ON b.attempt_id=a.attempt_id
-WHERE f.workspace_id=$1 AND f.run_id=$2 AND j.workflow_run_id=f.run_id
-  AND f.operation=$3 AND f.state='resolved' AND f.source_evidence_state='prepared'
-  AND f.source_request_hash=$4 AND f.source_expected_revision=$5
-  AND f.expected_resume_generation=$6 AND f.accepted_resume_generation=$6
-  AND f.source_expected_resume_generation=$6 AND f.source_accepted_resume_generation=$6
-  AND f.routing_epoch=$7 AND f.authority_build_hash=$8
-  AND j.authority_backend=f.authority_backend AND j.workflow_authority=f.workflow_authority
-  AND j.routing_epoch=f.routing_epoch AND j.authority_build_hash=f.authority_build_hash
-  AND j.state='running' AND a.state IN ('accepted','running')
-  AND a.fencing_token=f.fencing_token AND l.fencing_token=f.fencing_token
-  AND l.state='active' AND l.lease_expires_at>clock_timestamp()
-  AND b.current_run_revision=f.expected_run_revision AND b.current_resume_generation=$6
-  AND EXISTS (
-      SELECT 1 FROM workflow_runner_authority_bindings r
-      WHERE r.workspace_id=f.workspace_id AND r.run_id=f.run_id AND r.operation='resume_advance'
-        AND r.state IN ('runner_committed','completed')
-        AND r.expected_resume_generation=0 AND r.accepted_resume_generation=$6
-        AND r.routing_epoch=f.routing_epoch AND r.authority_build_hash=f.authority_build_hash
-        AND r.accepted_run_revision<=f.expected_run_revision)
-FOR SHARE OF f,j,a,l,b`
+WITH locked_binding AS MATERIALIZED (
+    SELECT f.binding_id, f.exact_stage_bytes, f.exact_stage_receipt_bytes,
+           f.exact_resolution_bytes, f.exact_resolution_receipt_bytes, l.lease_expires_at
+    FROM workflow_runner_authority_bindings f
+    JOIN workflow_runner_jobs j ON j.workspace_id=f.workspace_id AND j.job_id=f.job_id
+    JOIN workflow_runner_attempts a ON a.attempt_id=j.current_attempt_id AND a.attempt_id=f.attempt_id
+    JOIN workflow_runner_leases l ON l.lease_id=f.lease_id AND l.attempt_id=a.attempt_id
+    JOIN workflow_runner_v2_attempt_bindings b ON b.attempt_id=a.attempt_id
+    WHERE f.workspace_id=$1 AND f.run_id=$2 AND j.workflow_run_id=f.run_id
+      AND f.operation=$3 AND f.state='resolved' AND f.source_evidence_state='prepared'
+      AND f.source_request_hash=$4 AND f.source_expected_revision=$5
+      AND f.expected_resume_generation=$6 AND f.accepted_resume_generation=$6
+      AND f.source_expected_resume_generation=$6 AND f.source_accepted_resume_generation=$6
+      AND f.routing_epoch=$7 AND f.authority_build_hash=$8
+      AND j.authority_backend=f.authority_backend AND j.workflow_authority=f.workflow_authority
+      AND j.routing_epoch=f.routing_epoch AND j.authority_build_hash=f.authority_build_hash
+      AND j.state='running' AND a.state IN ('accepted','running')
+      AND a.fencing_token=f.fencing_token AND l.fencing_token=f.fencing_token
+      AND l.state='active' AND l.lease_expires_at>clock_timestamp()
+      AND b.current_run_revision=f.expected_run_revision AND b.current_resume_generation=$6
+      AND EXISTS (
+          SELECT 1 FROM workflow_runner_authority_bindings r
+          WHERE r.workspace_id=f.workspace_id AND r.run_id=f.run_id AND r.operation='resume_advance'
+            AND r.state IN ('runner_committed','completed')
+            AND r.expected_resume_generation=0 AND r.accepted_resume_generation=$6
+            AND r.routing_epoch=f.routing_epoch AND r.authority_build_hash=f.authority_build_hash
+            AND r.accepted_run_revision<=f.expected_run_revision)
+    FOR SHARE OF f,j,a,l,b
+)
+SELECT binding_id, exact_stage_bytes, exact_stage_receipt_bytes,
+       exact_resolution_bytes, exact_resolution_receipt_bytes, lease_expires_at
+FROM locked_binding
+WHERE lease_expires_at>clock_timestamp()`
 
 	resumeContinuationInsertSQL = `
 INSERT INTO workflow_control_budget_resume_continuations (

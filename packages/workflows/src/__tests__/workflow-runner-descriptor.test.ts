@@ -177,7 +177,11 @@ function v2Descriptor() {
   });
 }
 
+let finishHeldFixture: (() => Promise<void>) | undefined;
+
 afterEach(async () => {
+  await finishHeldFixture?.();
+  finishHeldFixture = undefined;
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
 
@@ -480,25 +484,36 @@ describe('GS8-B sealed execution descriptor', () => {
     const reader = new WorkflowRunnerDescriptorStore(root, security);
     const value = descriptor();
     const creation = writer.create(value);
-    await Promise.race([entered.promise, creation]);
-    const enqueue = keyedSerialQueue.enqueueByKey;
-    const spy = vi.spyOn(keyedSerialQueue, 'enqueueByKey').mockImplementation((...args) => {
-      const result = enqueue(...args);
-      queued.resolve();
-      return result;
-    });
-    const reading = reader.read(value.descriptorRef);
+    let reading: ReturnType<typeof reader.read> | undefined;
+    let restoreSpy: (() => void) | undefined;
+    let closed = false;
+    const finish = async () => {
+      closed = true;
+      release.resolve();
+      await Promise.allSettled([creation, reading]);
+      restoreSpy?.();
+    };
+    finishHeldFixture = finish;
     try {
+      await Promise.race([entered.promise, creation]);
+      if (closed) return;
+      const enqueue = keyedSerialQueue.enqueueByKey;
+      const spy = vi.spyOn(keyedSerialQueue, 'enqueueByKey').mockImplementation((...args) => {
+        const result = enqueue(...args);
+        queued.resolve();
+        return result;
+      });
+      restoreSpy = () => spy.mockRestore();
+      reading = reader.read(value.descriptorRef);
       const wasQueued = await Promise.race([queued.promise.then(() => true), reading.then(() => false)]);
+      if (closed) return;
       expect(wasQueued).toBe(true);
       expect((await readdir(join(root, 'descriptors'))).filter((name) => name.startsWith('.tmp-'))).toHaveLength(1);
       release.resolve();
       await expect(creation).resolves.toMatchObject({ duplicate: false });
       await expect(reading).resolves.toEqual(value);
     } finally {
-      release.resolve();
-      await Promise.allSettled([creation, reading]);
-      spy.mockRestore();
+      await finish();
     }
   });
 

@@ -16,6 +16,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { WorkflowControlObservationError } from '../workflow-control-observation.js';
 import {
   WORKFLOW_CONTROL_SHADOW_RECEIPT_SCHEMA,
+  WORKFLOW_CONTROL_SHADOW_POLICY,
+  OwnerDirectoryWaitTimeoutError,
   acquireOwnerJournalLock,
   assertOwnerDirectory,
   withOwnerDirectoryEntryMutation,
@@ -34,12 +36,15 @@ import {
 import { shadowObservation } from './workflow-control-shadow-fixtures.js';
 
 const roots: string[] = [];
+let finishHeldFixture: (() => Promise<void>) | undefined;
 const WINDOWS_OWNER_SID = 'S-1-5-21-1000-1001-1002-1003';
 const WINDOWS_SYSTEM_SID = 'S-1-5-18';
 // Hosted windows-2022 runs have reached 17.8s and each ACL subprocess remains bounded at 20s.
 const DURABLE_JOURNAL_TIMEOUT_MS = process.platform === 'win32' ? 45_000 : 5_000;
 
 afterEach(async () => {
+  await finishHeldFixture?.();
+  finishHeldFixture = undefined;
   const { rm } = await import('node:fs/promises');
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
@@ -129,29 +134,108 @@ describe('Workflow Control GS7-B durable observation journal', () => {
       },
     });
     const verification = assertOwnerDirectory(root, security);
-    await Promise.race([entered.promise, verification]);
-    expect(checks).toBe(2);
-    const queue = await import('../internal/keyed-serial-queue.js');
-    const enqueue = queue.enqueueByKey;
-    const spy = vi.spyOn(queue, 'enqueueByKey').mockImplementation((...args) => {
-      const result = enqueue(...args);
-      queued.resolve();
-      return result;
-    });
-    const child = join(root, 'child');
-    const write = vi.fn(() => writeFile(child, 'fixture', { flag: 'wx' }));
-    const mutation = withOwnerDirectoryEntryMutation([child], security, write);
+    let mutation: Promise<void> | undefined;
+    let restoreSpy: (() => void) | undefined;
+    let closed = false;
+    const finish = async () => {
+      closed = true;
+      release.resolve();
+      await Promise.allSettled([verification, mutation]);
+      restoreSpy?.();
+    };
+    finishHeldFixture = finish;
     try {
+      await Promise.race([entered.promise, verification]);
+      if (closed) return;
+      expect(checks).toBe(2);
+      const queue = await import('../internal/keyed-serial-queue.js');
+      if (closed) return;
+      const enqueue = queue.enqueueByKey;
+      const spy = vi.spyOn(queue, 'enqueueByKey').mockImplementation((...args) => {
+        const result = enqueue(...args);
+        queued.resolve();
+        return result;
+      });
+      restoreSpy = () => spy.mockRestore();
+      const child = join(root, 'child');
+      const write = vi.fn(() => writeFile(child, 'fixture', { flag: 'wx' }));
+      mutation = withOwnerDirectoryEntryMutation([child], security, write);
       await Promise.race([queued.promise, mutation]);
+      if (closed) return;
       expect(write).not.toHaveBeenCalled();
       release.resolve();
       await expect(verification).resolves.toBe(await realpath(root));
       await expect(mutation).resolves.toBeUndefined();
       expect(await readFile(child, 'utf8')).toBe('fixture');
     } finally {
-      release.resolve();
-      await Promise.allSettled([verification, mutation]);
-      spy.mockRestore();
+      await finish();
+    }
+  });
+
+  it('releases an owned Windows journal lock after the new-mutation wait deadline', async () => {
+    const root = await journalRoot('workflow-shadow-windows-lock-release');
+    const security = windowsSecurity();
+    await ensureOwnerDirectory(root, security);
+    const hash = 'c'.repeat(64);
+    const release = await acquireOwnerJournalLock(root, hash, security);
+    const lockedEntries = await readdir(root);
+    expect(lockedEntries).toHaveLength(1);
+
+    const entered = Promise.withResolvers<void>();
+    const unblock = Promise.withResolvers<void>();
+    const blocked = withOwnerDirectoryEntryMutation([join(root, 'entry')], security, async () => {
+      entered.resolve();
+      await unblock.promise;
+    });
+    const released = vi.fn();
+    let releasing: Promise<unknown> | undefined;
+    let timedOut: Promise<unknown> | undefined;
+    let restoreClock: (() => void) | undefined;
+    let closed = false;
+    const finish = async () => {
+      closed = true;
+      unblock.resolve();
+      releasing ??= release().then(released, released);
+      await Promise.allSettled([blocked, releasing, timedOut]);
+      restoreClock?.();
+    };
+    finishHeldFixture = finish;
+    try {
+      await Promise.race([entered.promise, blocked]);
+      if (closed) return;
+      const queue = await import('../internal/keyed-serial-queue.js');
+      if (closed) return;
+      const enqueue = queue.enqueueByKey;
+      const waiting = Promise.withResolvers<void>();
+      let waiterCount = 0;
+      const spy = vi.spyOn(queue, 'enqueueByKey').mockImplementation((...args) => {
+        const result = enqueue(...args);
+        if (++waiterCount === 2) waiting.resolve();
+        return result;
+      });
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+      restoreClock = () => {
+        spy.mockRestore();
+        vi.useRealTimers();
+      };
+      releasing = release().then(released, released);
+      const write = vi.fn(async () => undefined);
+      timedOut = withOwnerDirectoryEntryMutation([join(root, 'entry')], security, write)
+        .catch((error: unknown) => error);
+      await waiting.promise;
+      if (closed) return;
+      await vi.advanceTimersByTimeAsync(WORKFLOW_CONTROL_SHADOW_POLICY.maxTimeoutMs);
+      expect(await timedOut).toBeInstanceOf(OwnerDirectoryWaitTimeoutError);
+      expect(released).not.toHaveBeenCalled();
+      expect(await readdir(root)).toEqual(lockedEntries);
+
+      unblock.resolve();
+      await releasing;
+      expect(released).toHaveBeenCalledExactlyOnceWith(undefined);
+      expect(await readdir(root)).toEqual([]);
+      expect(write).not.toHaveBeenCalled();
+    } finally {
+      await finish();
     }
   });
 

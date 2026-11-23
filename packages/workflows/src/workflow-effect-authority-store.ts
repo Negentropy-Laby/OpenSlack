@@ -13,6 +13,7 @@ import type {
   WorkflowEffectLeaseBinding,
 } from './internal/workflow-effect-lease-authority.js';
 import {
+  OwnerDirectoryWaitTimeoutError,
   WORKFLOW_CONTROL_SHADOW_POLICY,
   workflowDirectoryCoordinationKey,
   withOwnerDirectoryEntryMutation,
@@ -260,6 +261,12 @@ function fail(
   );
 }
 
+function refuseAuthorityDirectoryWait(error: unknown): void {
+  if (error instanceof OwnerDirectoryWaitTimeoutError) {
+    fail('WORKFLOW_EFFECT_AUTHORITY_BUSY', 'Authority directory coordination deadline exceeded.', error);
+  }
+}
+
 function authorityRoot(approvalStoreRoot: string): string | undefined {
   if (!isAbsolute(approvalStoreRoot) || resolve(approvalStoreRoot) !== approvalStoreRoot) {
     return fail('WORKFLOW_EFFECT_AUTHORITY_PATH_UNSAFE', 'Approval store root is unsafe.');
@@ -317,6 +324,7 @@ async function preparePathsUncached(
   try {
     canonicalRoot = await ensureOwnerDirectory(root, JOURNAL_SECURITY);
   } catch (error) {
+    refuseAuthorityDirectoryWait(error);
     return fail('WORKFLOW_EFFECT_AUTHORITY_PATH_UNSAFE', 'Authority root is unsafe.', error);
   }
   if ((await workflowDirectoryCoordinationKey(canonicalRoot, JOURNAL_SECURITY)) !== coordinationKey) {
@@ -341,6 +349,7 @@ async function preparePathsUncached(
     try {
       await ensureOwnerDirectory(path, JOURNAL_SECURITY, canonicalRoot);
     } catch (error) {
+      refuseAuthorityDirectoryWait(error);
       return fail(
         'WORKFLOW_EFFECT_AUTHORITY_PATH_UNSAFE',
         'Authority child directory is unsafe.',
@@ -414,6 +423,7 @@ async function preparePaths(approvalStoreRoot: string, create: boolean): Promise
         }
       } catch (error) {
         if (error instanceof WorkflowEffectAuthorityStoreError) throw error;
+        refuseAuthorityDirectoryWait(error);
         return fail('WORKFLOW_EFFECT_AUTHORITY_PATH_UNSAFE', 'Authority root alias is unsafe.', error);
       }
     }
@@ -443,7 +453,8 @@ async function preparePaths(approvalStoreRoot: string, create: boolean): Promise
         // Drain them before fallback can create or harden the same directories.
         for (const check of checked) if (check.status === 'rejected') throw check.reason;
         return cached;
-      } catch {
+      } catch (error) {
+        refuseAuthorityDirectoryWait(error);
         authorityPathsCache.delete(key);
         authorityTreeCache.delete(key);
         // Re-run the complete initialization path after any identity drift. It
@@ -711,6 +722,7 @@ async function persistOccurrenceAnchor(paths: StorePaths, record: AuthorityRecor
     );
     await syncDirectory(paths.anchors);
   } catch (error) {
+    refuseAuthorityDirectoryWait(error);
     const observed = await readBounded(path, paths.anchors, MAX_ANCHOR_BYTES).catch(
       () => undefined,
     );
@@ -1008,6 +1020,13 @@ async function atomicWrite(
     const body = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
     await atomicWriteOwnerFile(path, body, JOURNAL_SECURITY);
   } catch (error) {
+    if (error instanceof OwnerDirectoryWaitTimeoutError) {
+      return fail(
+        'WORKFLOW_EFFECT_RECONCILIATION_REQUIRED',
+        'Authority publication was deferred after an earlier step may have committed.',
+        error,
+      );
+    }
     return fail('WORKFLOW_EFFECT_AUTHORITY_FILE_UNSAFE', 'Authority record write failed.', error);
   }
 }

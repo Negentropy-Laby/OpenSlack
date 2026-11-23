@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import { types as nodeTypes } from 'node:util';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import {
   createGovernedActionExecutionRegistry,
   createGovernedPlanService,
@@ -596,12 +596,13 @@ describe('governed MCP mutation profile', () => {
 
   it('returns reconciliation_required on a claimed execution deadline and ignores late success', () => trackDeadlineCase(async (owned) => {
     const actualMutationTool = mutationTools.callGovernedMutationTool;
-    vi.spyOn(mutationTools, 'callGovernedMutationTool').mockImplementation((...args) => {
+    const mutationSpy = vi.spyOn(mutationTools, 'callGovernedMutationTool').mockImplementation((...args) => {
       const work = actualMutationTool(...args);
       owned.producers.push(work);
       void work.catch(() => undefined);
       return work;
     });
+    onTestFinished(() => { mutationSpy.mockRestore(); });
     const workspaceRoot = root(owned.roots);
     const settled = Promise.withResolvers<void>();
     let release!: () => void;

@@ -229,15 +229,15 @@ func TestSourceManifestBindsOnlyUnreleasedGS9IInputs(t *testing.T) {
 		},
 		"budgetAuthorityPostgresRecords": {
 			Path:   "services/workflow-control/internal/budgetstore/postgres/records.go",
-			SHA256: "7d1f415f1db4b300ece666e0d54021ea984516cb8a7f3ee740d6b6fb4b638f35",
+			SHA256: "70b3de7b53717ea0f09bc5e025c97a955e6656538f07df117b531bdc9ee475d6",
 		},
 		"budgetAuthorityPostgresRepository": {
 			Path:   "services/workflow-control/internal/budgetstore/postgres/repository.go",
-			SHA256: "20b4f8543af9d287aac894870523eded9cbb60cef9148e61b41eb293230f287a",
+			SHA256: "38fbc9735591ee352c954f4df7fa007b80e6b5426056b98bcd4a6c451817bcb6",
 		},
 		"budgetAuthorityPostgresQueries": {
 			Path:   "services/workflow-control/internal/budgetstore/postgres/sql.go",
-			SHA256: "9c78b789345cd6df2e0b0133578205b0bbae48ab021bd0db2ebb0b444d776eb8",
+			SHA256: "5ba662d54fc8adf2782ceb72adc6d8e506c21fed1a6b8e568fec3abc4a7a70fb",
 		},
 		"budgetAuthorityPostgresRecovery": {
 			Path:   "services/workflow-control/internal/budgetstore/postgres/recovery.go",
@@ -253,7 +253,7 @@ func TestSourceManifestBindsOnlyUnreleasedGS9IInputs(t *testing.T) {
 		},
 		"runnerSealedCheckpointResumeTest": {
 			Path:   "services/workflow-control/cmd/runner-server/gs9f2_checkpoint_worker_test.go",
-			SHA256: "c6ede8ad13d98ad60b7e1cdcc5d012f5bb83b066f63d1a9b24376b96be35acf2",
+			SHA256: "72d1d9281dd874aa90ac03c0a9405445129543e05b3ea3db6556a833e2a0bb09",
 		},
 		"runnerSealedCheckpointResumeFixture": {
 			Path:   "scripts/qualification/workflow-checkpoint-resume.fixture.ts",
@@ -743,7 +743,7 @@ func TestSourceManifestBindsOnlyUnreleasedGS9IInputs(t *testing.T) {
 		},
 		"workflowOwnerFileSecurity": {
 			Path:   "packages/workflows/src/workflow-control-shadow.ts",
-			SHA256: "4d9bcfc35b00c13514391962a79ff0f5e2dfed8fa572d96fc2d046d850e4bfbd",
+			SHA256: "852b2088a994164716b0478f1c3c6db92168bbccca553f53683ac95d2ee50222",
 		},
 		"workflowRunnerAuthorityClient": {
 			Path:   "packages/workflows/src/workflow-runner-authority-binding-client.ts",

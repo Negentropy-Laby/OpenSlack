@@ -1489,8 +1489,12 @@ describe('production agent-bound governed mutation composition', () => {
           return { task: input, allowedPaths: [], forbiddenPaths: [], claimRequired: false, sourceDigest: 'c'.repeat(64) };
         } } });
       const publication = Promise.withResolvers<void>();
-      owned.release = publication.resolve;
       const started = Promise.withResolvers<string>();
+      void started.promise.catch(() => {});
+      owned.release = () => {
+        publication.resolve();
+        started.reject(new Error('MCP visibility fixture closed before publication started'));
+      };
       const execute = vi.fn(async () => ({ data: {}, exitConfirmed: true as const }));
       const host = new HarnessTaskHost({ identityRoot: workspaceRoot, workspaceId: WORKSPACE_ID, store: createRunStore(workspaceRoot), ...authority,
         prepare: async () => ({ execute, accept: async () => ({ outcome: 'verified', summary: 'fixture', evidenceRefs: [] }) }),
@@ -1506,6 +1510,20 @@ describe('production agent-bound governed mutation composition', () => {
       const composition = await createOpenSlackAgentBoundMutationComposition({ workspaceRoot, principalRef: PRINCIPAL_REF, harnessTaskHost: host });
       const core = new OpenSlackMcpCore(context(workspaceRoot, composition.governedMutations));
       return { workspaceRoot, task, publication, started, execute, host, core };
+    }
+
+    function waitForVisibilityPublication(
+      started: Promise<string>,
+      first: ReturnType<OpenSlackMcpCore['callTool']>,
+    ): Promise<string> {
+      return Promise.race([
+        started,
+        first.then((result) => {
+          throw new Error(
+            'MCP confirmation finished before publication (' + result.structuredContent.status + ')',
+          );
+        }),
+      ]);
     }
 
     beforeEach(() => {
@@ -1566,6 +1584,24 @@ describe('production agent-bound governed mutation composition', () => {
       expect(existsSync(root)).toBe(false);
     });
 
+    it('joins visibility work and removes the fixture after a confirmation fails before publication', async () => {
+      const owned = phase;
+      if (!prepared) throw new Error('MCP visibility fixture was not prepared');
+      const { core, started, workspaceRoot, execute } = prepared;
+      const first = own(owned, core.callTool('openslack_confirm_plan', {
+        planId: 'missing-plan',
+        confirmationToken: 'x'.repeat(32),
+      }));
+      await expect(waitForVisibilityPublication(started.promise, first)).rejects.toThrow(
+        'MCP confirmation finished before publication',
+      );
+      const unentered = own(owned, started.promise);
+      await closeVisibilityPhase(owned);
+      await expect(unentered).rejects.toThrow('MCP visibility fixture closed before publication started');
+      expect(execute).not.toHaveBeenCalled();
+      expect(existsSync(workspaceRoot)).toBe(false);
+    });
+
     it('preserves the exact admission route through governed MCP when visibility publication takes longer than the duplicate wait', () => {
       const owned = phase;
       return own(owned, measured('protocol', async () => {
@@ -1578,7 +1614,7 @@ describe('production agent-bound governed mutation composition', () => {
           return { planId: metadata.planId, confirmationToken: metadata.confirmationToken };
         };
         const first = own(owned, core.callTool('openslack_confirm_plan', await preview('first')));
-        const runId = await measured('wait', () => started.promise);
+        const runId = await measured('wait', () => waitForVisibilityPublication(started.promise, first));
         const duplicate = await core.callTool('openslack_confirm_plan', await preview('second'));
         expect(duplicate.structuredContent.status).toBe('blocked');
         expect(duplicate.structuredContent.data).toMatchObject({ outcomes: [{ data: { taskId: task.taskId,

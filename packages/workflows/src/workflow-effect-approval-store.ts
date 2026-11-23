@@ -23,6 +23,7 @@ import {
   productionJournalSecurity,
   type WorkflowControlObservationPort,
   withOwnerDirectoryEntryMutation,
+  withOwnedDirectoryEntryCleanup,
 } from './workflow-control-shadow.js';
 import {
   applyWorkflowEffectApprovalDecision,
@@ -818,6 +819,7 @@ async function acquireLock(prepared: PreparedStore): Promise<AcquiredLock> {
       0o600,
     ));
     let handleClosed = false;
+    let linkedStat: Stats | undefined;
     try {
       if (hasWorkflowEffectAuthorityRoot(prepared.root)) {
         AUTHORITY_STORE_SECURITY.hardenPath(temporaryPath, false);
@@ -845,9 +847,10 @@ async function acquireLock(prepared: PreparedStore): Promise<AcquiredLock> {
       }
       try {
         await withOwnerDirectoryEntryMutation([temporaryPath], AUTHORITY_STORE_SECURITY, () => link(temporaryPath, path));
+        linkedStat = temporaryStat;
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
-        await withOwnerDirectoryEntryMutation([temporaryPath], AUTHORITY_STORE_SECURITY, () => rm(temporaryPath));
+        await withOwnedDirectoryEntryCleanup(temporaryPath, AUTHORITY_STORE_SECURITY, () => rm(temporaryPath));
         let observed: Awaited<ReturnType<typeof readLock>>;
         try {
           observed = await readLock(prepared, path);
@@ -882,12 +885,21 @@ async function acquireLock(prepared: PreparedStore): Promise<AcquiredLock> {
       if (hasWorkflowEffectAuthorityRoot(prepared.root)) {
         await assertOwnerFile(path, AUTHORITY_STORE_SECURITY);
       }
-      await withOwnerDirectoryEntryMutation([temporaryPath], AUTHORITY_STORE_SECURITY, () => rm(temporaryPath));
+      await withOwnedDirectoryEntryCleanup(temporaryPath, AUTHORITY_STORE_SECURITY, () => rm(temporaryPath));
       await syncDirectory(prepared.locks);
       return { path, stat: await lstat(path) };
     } catch (error) {
-      if (!handleClosed) await handle.close().catch(() => undefined);
-      await withOwnerDirectoryEntryMutation([temporaryPath], AUTHORITY_STORE_SECURITY, () => rm(temporaryPath, { force: true }).catch(() => undefined));
+      const cleanupErrors: unknown[] = [];
+      if (!handleClosed) await handle.close().catch((cause) => cleanupErrors.push(cause));
+      await withOwnedDirectoryEntryCleanup(temporaryPath, AUTHORITY_STORE_SECURITY, () =>
+        rm(temporaryPath, { force: true }),
+      ).catch((cause) => cleanupErrors.push(cause));
+      if (linkedStat) {
+        await releaseLock({ path, stat: linkedStat }).catch((cause) => cleanupErrors.push(cause));
+      }
+      if (cleanupErrors.length > 0) {
+        throw new AggregateError([error, ...cleanupErrors], 'Approval-store lock publication and cleanup failed.');
+      }
       throw error;
     }
   }
@@ -899,7 +911,7 @@ async function acquireLock(prepared: PreparedStore): Promise<AcquiredLock> {
 }
 
 async function releaseLock(lock: AcquiredLock): Promise<void> {
-  return withOwnerDirectoryEntryMutation([lock.path], AUTHORITY_STORE_SECURITY, async () => {
+  return withOwnedDirectoryEntryCleanup(lock.path, AUTHORITY_STORE_SECURITY, async () => {
     const current = await lstatIfPresent(lock.path);
     const resolved = current ? await realpath(lock.path) : undefined;
     if (

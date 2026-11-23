@@ -8,6 +8,9 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -20,6 +23,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/budgetcontract"
@@ -131,7 +135,24 @@ func testGS9F2SealedCheckpointResume(t *testing.T, scenario string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	budgetHTTP := httptest.NewServer(budget.Handler())
+	budgetHandler := budget.Handler()
+	var expiryProbe atomic.Bool
+	var reserveRequests atomic.Uint32
+	budgetHTTP := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		if request.Method == http.MethodPost && request.URL.Path == budgetapp.RouteReserve {
+			reserve := reserveRequests.Add(1)
+			waitOnAccount := scenario == "budget" && reserve == 2
+			if waitOnAccount || (scenario == "first_budget_on_resume" && reserve == 1) {
+				expiryProbe.Store(true)
+				if err := checkExpiredResumeBudgetLease(request, budgetHandler, pool, budgetRepository, workspace, waitOnAccount); err != nil {
+					t.Error(err)
+					http.Error(w, "resumed budget lease probe failed", http.StatusInternalServerError)
+					return
+				}
+			}
+		}
+		budgetHandler.ServeHTTP(w, request)
+	}))
 	defer budgetHTTP.Close()
 	registry, err := workerregistry.Load(bundleRoot, hash(string(raw)), workerregistry.Runtime{
 		WorkspaceID: workspace, WorkspaceRoot: workspaceRoot, DescriptorRoot: descriptorRoot,
@@ -289,6 +310,9 @@ FROM workflow_control_runs WHERE workspace_id=$1 AND run_id=$2`, workspace, fail
 		}
 	}
 	if scenario == "first_budget_on_resume" {
+		if !expiryProbe.Load() {
+			t.Fatal("the first resumed reservation did not exercise lease expiry")
+		}
 		if got := resumeCalls.Load(); got != 1 {
 			t.Fatalf("expected one POST after approval, got %d", got)
 		}
@@ -328,6 +352,9 @@ FROM workflow_control_runs WHERE workspace_id=$1 AND run_id=$2`, workspace, fail
 		}
 	}
 	if scenario == "budget" {
+		if !expiryProbe.Load() {
+			t.Fatal("the resumed reserve did not exercise expiry while waiting on the account")
+		}
 		if initial, resume := initialCalls.Load(), resumeCalls.Load(); initial != 1 || resume != 1 {
 			t.Fatalf("expected one POST on each loopback origin: initial=%d resume=%d", initial, resume)
 		}
@@ -373,6 +400,150 @@ FROM workflow_control_runs WHERE workspace_id=$1 AND run_id=$2`, workspace, fail
 			t.Fatalf("downgrade must preserve the resumed ledger: %v", err)
 		}
 	}
+}
+
+// Exercise the exact E1 request and F2 proof from the sealed Worker. Restore
+// the synthetic lease only after the expired attempt is refused without writes.
+func checkExpiredResumeBudgetLease(request *http.Request, handler http.Handler, pool *pgxpool.Pool, repository *budgetpostgres.Repository, workspace string, waitOnAccount bool) error {
+	ctx, cancel := context.WithTimeout(request.Context(), 10*time.Second)
+	defer cancel()
+	body, err := io.ReadAll(request.Body)
+	if err != nil {
+		return err
+	}
+	request.Body = io.NopCloser(bytes.NewReader(body))
+	probe := request.Clone(ctx)
+	probe.Body = io.NopCloser(bytes.NewReader(body))
+
+	var leaseID, runID string
+	var offerExpires, originalExpiry time.Time
+	if err := pool.QueryRow(ctx, `
+SELECT l.lease_id, f.run_id, l.offer_expires_at, l.lease_expires_at
+FROM workflow_runner_authority_bindings f JOIN workflow_runner_leases l USING (lease_id)
+WHERE f.workspace_id=$1 AND f.operation='budget_reserve' AND f.state='resolved'
+AND f.accepted_resume_generation=1 AND l.state='active'`, workspace).Scan(&leaseID, &runID, &offerExpires, &originalExpiry); err != nil {
+		return fmt.Errorf("find the active resumed reserve lease: %w", err)
+	}
+	before, err := repository.Statistics(ctx)
+	if err != nil {
+		return err
+	}
+	const runHashSQL = `SELECT record_hash FROM workflow_control_runs WHERE workspace_id=$1 AND run_id=$2`
+	var runHash []byte
+	if err := pool.QueryRow(ctx, runHashSQL, workspace, runID).Scan(&runHash); err != nil {
+		return err
+	}
+	var expiry time.Time
+	if err := pool.QueryRow(ctx, `
+UPDATE workflow_runner_leases
+SET offer_expires_at=LEAST(offer_expires_at, statement_timestamp()+interval '2 seconds'),
+    lease_expires_at=statement_timestamp()+interval '2 seconds'
+WHERE lease_id=$1 RETURNING lease_expires_at`, leaseID).Scan(&expiry); err != nil {
+		return fmt.Errorf("shorten the isolated lease for the lock wait: %w", err)
+	}
+	locker, err := pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer locker.Rollback(context.Background())
+	var lockerPID int32
+	var expectedQuery string
+	if waitOnAccount {
+		expectedQuery = "%FROM workflow_control_budget_accounts%"
+		err = locker.QueryRow(ctx, `
+SELECT pg_backend_pid() FROM workflow_control_budget_accounts WHERE workspace_id=$1 AND run_id=$2 FOR UPDATE`, workspace, runID).Scan(&lockerPID)
+	} else {
+		expectedQuery = "%FROM workflow_runner_authority_bindings f%"
+		err = locker.QueryRow(ctx, `
+SELECT pg_backend_pid() FROM workflow_runner_leases WHERE lease_id=$1 FOR UPDATE`, leaseID).Scan(&lockerPID)
+	}
+	if err != nil {
+		return err
+	}
+	result := httptest.NewRecorder()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		handler.ServeHTTP(result, probe)
+	}()
+	defer func() {
+		cancel()
+		_ = locker.Rollback(context.Background())
+		<-done
+	}()
+
+	tick := time.NewTicker(10 * time.Millisecond)
+	defer tick.Stop()
+	for {
+		var blocked, expired bool
+		if err := pool.QueryRow(ctx, `
+SELECT EXISTS (
+  SELECT 1 FROM pg_stat_activity
+  WHERE $1=ANY(pg_blocking_pids(pid)) AND query LIKE $3
+), clock_timestamp()>=$2`, lockerPID, expiry, expectedQuery).Scan(&blocked, &expired); err != nil {
+			return err
+		}
+		if expired {
+			return fmt.Errorf("resumed reserve never reached the expected lock before expiry")
+		}
+		if blocked {
+			break
+		}
+		select {
+		case <-done:
+			return fmt.Errorf("resumed reserve finished without waiting on the expected lock: HTTP %d", result.Code)
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-tick.C:
+		}
+	}
+	if !waitOnAccount {
+		// Migration 12 takes ACCESS EXCLUSIVE on accounts before changing either
+		// relation. The reserve must pin this schema even before an account exists.
+		downgrade, err := pool.Begin(ctx)
+		if err != nil {
+			return err
+		}
+		_, lockErr := downgrade.Exec(ctx, `LOCK TABLE workflow_control_budget_accounts IN ACCESS EXCLUSIVE MODE NOWAIT`)
+		_ = downgrade.Rollback(ctx)
+		var pgErr *pgconn.PgError
+		if !errors.As(lockErr, &pgErr) || pgErr.Code != "55P03" {
+			return fmt.Errorf("the in-flight reserve did not exclude a schema 12 downgrade: %v", lockErr)
+		}
+	}
+	if _, err := locker.Exec(ctx, `
+SELECT pg_sleep(GREATEST(0, EXTRACT(EPOCH FROM $1::timestamptz - clock_timestamp())))`, expiry); err != nil {
+		return err
+	}
+	if err := locker.Commit(ctx); err != nil {
+		return err
+	}
+	select {
+	case <-done:
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	if result.Code != http.StatusConflict {
+		return fmt.Errorf("expired resumed reserve returned HTTP %d, want 409", result.Code)
+	}
+	stats, err := repository.Statistics(ctx)
+	if err != nil {
+		return err
+	}
+	if stats != before {
+		return fmt.Errorf("expired resumed reserve changed budget evidence: before=%+v after=%+v", before, stats)
+	}
+	var finalRunHash []byte
+	if err := pool.QueryRow(ctx, runHashSQL, workspace, runID).Scan(&finalRunHash); err != nil {
+		return err
+	}
+	if !bytes.Equal(finalRunHash, runHash) {
+		return fmt.Errorf("expired resumed reserve advanced the run")
+	}
+	_, err = pool.Exec(ctx, `
+UPDATE workflow_runner_leases SET offer_expires_at=$1, lease_expires_at=$2 WHERE lease_id=$3`,
+		offerExpires, originalExpiry, leaseID)
+	return err
 }
 
 type checkpointFixtureLauncher struct {

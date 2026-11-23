@@ -15,6 +15,7 @@ import {
 import { LocalWorkflowEffectApprovalStore } from '../workflow-effect-approval-store.js';
 import { createRuntimeWithHostAuthorities } from '../runtime.js';
 import type { RunStore } from '../run-store.js';
+import * as shadowFilesystem from '../workflow-control-shadow.js';
 import { productionJournalSecurity, writeExclusive } from '../workflow-control-shadow.js';
 import { canonicalWorkflowEffectControlJson } from '../workflow-effect-control-contract.js';
 import {
@@ -769,6 +770,33 @@ describe('workflow effect D2 authorization', () => {
       ).toEqual([]);
     });
   }));
+
+  it.each([
+    ['ensureOwnerDirectory', WorkflowEffectAuthorizationBusyError],
+    ['writeExclusive', WorkflowEffectAuthorizationBusyError],
+    ['atomicWrite', WorkflowEffectReconciliationRequiredError],
+  ] as const)(
+    'classifies a queued %s refusal according to the durable publication stage',
+    async (operation, errorClass) => {
+      const value = await fixture();
+      const port = value.makePort();
+      const wait = vi.spyOn(shadowFilesystem, operation)
+        .mockRejectedValueOnce(new shadowFilesystem.OwnerDirectoryWaitTimeoutError());
+      try {
+        await expect(createPending(port)).rejects.toBeInstanceOf(errorClass);
+        expect(wait).toHaveBeenCalled();
+      } finally {
+        wait.mockRestore();
+      }
+      if (operation === 'atomicWrite') {
+        await expect(createPending(port)).rejects.toBeInstanceOf(WorkflowEffectReconciliationRequiredError);
+      } else {
+        await expect(createPending(port)).resolves.toMatchObject({
+          pending: expect.any(WorkflowEffectApprovalPendingError),
+        });
+      }
+    },
+  );
 
   it('fails closed on workflow, input, correlation, and effect identity drift', async () => {
     const value = await fixture();

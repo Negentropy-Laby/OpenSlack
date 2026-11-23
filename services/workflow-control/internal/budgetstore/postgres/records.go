@@ -97,49 +97,60 @@ func validateRunBinding(run runHead, request budgetcontract.Record, serviceBuild
 	return nil
 }
 
+type resumeBudgetBinding struct {
+	id             string
+	leaseExpiresAt time.Time
+}
+
 // A resumed budget mutation is authorized by Runner F2's committed resolution
 // for the exact E1 request. Both run and attempt remain locked until the write.
-func readResumeBudgetBinding(ctx context.Context, tx pgx.Tx, run runHead, prepared budgetcontract.PreparedRequest, request budgetcontract.Record) (string, error) {
+func readResumeBudgetBinding(ctx context.Context, tx pgx.Tx, run runHead, prepared budgetcontract.PreparedRequest, request budgetcontract.Record) (resumeBudgetBinding, error) {
 	if run.record.ResumeGeneration == 0 {
-		return "", nil
+		return resumeBudgetBinding{}, nil
+	}
+	// Migration 12 locks the account table before changing its continuation
+	// schema. Keep the lock mode needed for writes until this transaction ends.
+	if _, err := tx.Exec(ctx, lockBudgetContinuationSchemaSQL); err != nil {
+		return resumeBudgetBinding{}, databaseFailure("lock workflow budget continuation schema", err)
 	}
 	var installed bool
 	if err := tx.QueryRow(ctx, resumeBudgetSchemaSQL).Scan(&installed); err != nil {
-		return "", databaseFailure("check workflow budget continuation schema", err)
+		return resumeBudgetBinding{}, databaseFailure("check workflow budget continuation schema", err)
 	}
 	if !installed {
-		return "", budgetstore.Failure(budgetstore.ErrorConflict, "workflow budget resume generation requires schema 12", nil)
+		return resumeBudgetBinding{}, budgetstore.Failure(budgetstore.ErrorConflict, "workflow budget resume generation requires schema 12", nil)
 	}
 	rows, err := tx.Query(ctx, resumeBudgetBindingSQL, run.record.WorkspaceID, run.record.RunID, "budget_"+prepared.Operation,
 		mustDecodeHash(prepared.RequestHash), recordInt64(request, "expectedAccountRevision"), run.record.ResumeGeneration,
 		run.record.Route.RoutingEpoch, mustDecodeHash(run.record.Route.AuthorityBuildHash))
 	if err != nil {
-		return "", databaseFailure("lock workflow runner budget binding", err)
+		return resumeBudgetBinding{}, databaseFailure("lock workflow runner budget binding", err)
 	}
 	defer rows.Close()
 	proof, err := pgx.CollectExactlyOneRow(rows, func(row pgx.CollectableRow) (resumeBudgetProof, error) {
 		var proof resumeBudgetProof
-		err := row.Scan(&proof.bindingID, &proof.stage, &proof.stageReceipt, &proof.resolution, &proof.resolutionReceipt)
+		err := row.Scan(&proof.bindingID, &proof.stage, &proof.stageReceipt, &proof.resolution, &proof.resolutionReceipt, &proof.leaseExpiresAt)
 		return proof, err
 	})
 	if errors.Is(err, pgx.ErrNoRows) || errors.Is(err, pgx.ErrTooManyRows) {
-		return "", budgetstore.Failure(budgetstore.ErrorConflict, "workflow budget resume requires one active, resolved Runner F2 binding", err)
+		return resumeBudgetBinding{}, budgetstore.Failure(budgetstore.ErrorConflict, "workflow budget resume requires one active, resolved Runner F2 binding", err)
 	}
 	if err != nil {
-		return "", databaseFailure("read workflow runner budget binding", err)
+		return resumeBudgetBinding{}, databaseFailure("read workflow runner budget binding", err)
 	}
 	boundRequest, err := proof.preparedRequest()
 	if err != nil {
-		return "", err
+		return resumeBudgetBinding{}, err
 	}
 	if boundRequest != prepared {
-		return "", budgetstore.Failure(budgetstore.ErrorConflict, "Runner F2 budget binding does not authorize the exact resumed request", nil)
+		return resumeBudgetBinding{}, budgetstore.Failure(budgetstore.ErrorConflict, "Runner F2 budget binding does not authorize the exact resumed request", nil)
 	}
-	return proof.bindingID, nil
+	return resumeBudgetBinding{id: proof.bindingID, leaseExpiresAt: proof.leaseExpiresAt}, nil
 }
 
 type resumeBudgetProof struct {
 	bindingID                                          string
+	leaseExpiresAt                                     time.Time
 	stage, stageReceipt, resolution, resolutionReceipt []byte
 }
 

@@ -460,6 +460,12 @@ export async function workflowDirectoryCoordinationKey(
   }
 }
 
+export class OwnerDirectoryWaitTimeoutError extends TypeError {
+  constructor() {
+    super('Workflow Control directory coordination deadline exceeded.');
+  }
+}
+
 const ownerDirectoryOperations = new Map<string, Promise<unknown>>();
 
 async function withOwnerDirectoryOperations<T>(
@@ -471,7 +477,7 @@ async function withOwnerDirectoryOperations<T>(
   const keys = [...new Set(await Promise.all(
     directories.map((directory) => workflowDirectoryCoordinationKey(directory, security)),
   ))].sort();
-  const deadlineError = new TypeError('Workflow Control directory coordination deadline exceeded.');
+  const deadlineError = new OwnerDirectoryWaitTimeoutError();
   let expired = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
   const waiting = new Promise<never>((_, reject) => {
@@ -502,6 +508,17 @@ export function withOwnerDirectoryEntryMutation<T>(
   operation: () => Promise<T>,
 ): Promise<T> {
   return withOwnerDirectoryOperations(paths.map((path) => dirname(path)), security, operation);
+}
+
+/** Join cleanup of an already-owned entry even when new mutations would time out. */
+export async function withOwnedDirectoryEntryCleanup<T>(
+  path: string,
+  security: WorkflowControlShadowJournalSecurityDependencies,
+  cleanup: () => Promise<T>,
+): Promise<T> {
+  if (security.platform !== 'win32') return cleanup();
+  const key = await workflowDirectoryCoordinationKey(dirname(path), security);
+  return enqueueByKey(ownerDirectoryOperations, key, cleanup);
 }
 
 function sameCanonicalPath(
@@ -1036,16 +1053,34 @@ export async function atomicWrite(
   security: WorkflowControlShadowJournalSecurityDependencies,
 ): Promise<void> {
   const temporary = join(dirname(path), `.${sha256(path)}.${process.pid}.${randomUUID()}.tmp`);
-  await writeExclusiveWithIdentity(temporary, body, security);
-  await withOwnerDirectoryEntryMutation([path], security, async () => {
+  const owned = await writeExclusiveWithIdentity(temporary, body, security);
+  try {
+    await withOwnerDirectoryEntryMutation([path], security, async () => {
+      try {
+        await rename(temporary, path);
+        await assertOwnerFile(path, security);
+        await syncDirectory(dirname(path));
+      } finally {
+        await rm(temporary, { force: true }).catch(() => undefined);
+      }
+    });
+  } catch (error) {
+    if (!(error instanceof OwnerDirectoryWaitTimeoutError)) throw error;
     try {
-      await rename(temporary, path);
-      await assertOwnerFile(path, security);
-      await syncDirectory(dirname(path));
-    } finally {
-      await rm(temporary, { force: true }).catch(() => undefined);
+      await withOwnedDirectoryEntryCleanup(temporary, security, async () => {
+        const current = await lstat(temporary, { bigint: true });
+        if (!sameFilesystemObject(owned, current)) {
+          throw new TypeError('Workflow Control temporary file changed before cleanup.');
+        }
+        await unlink(temporary);
+      });
+    } catch (cleanupError) {
+      if ((cleanupError as NodeJS.ErrnoException).code !== 'ENOENT') {
+        throw new AggregateError([error, cleanupError], 'Workflow Control temporary cleanup failed.');
+      }
     }
-  });
+    throw error;
+  }
 }
 
 async function readCanonical(
@@ -1287,7 +1322,7 @@ async function publishOwnerLock(
               bytes.subarray(0, bytesRead).equals(expected) &&
               sameIdentity(current, await lstat(path, { bigint: true }))
             ) {
-              await withOwnerDirectoryEntryMutation([path], security, async () => {
+              await withOwnedDirectoryEntryCleanup(path, security, async () => {
                 if (sameIdentity(current, await lstat(path, { bigint: true }))) {
                   await unlink(path);
                   await syncDirectory(dirname(path));
@@ -1311,7 +1346,7 @@ async function publishOwnerLock(
   return result!;
 
   async function removeOwnedTemporary(): Promise<void> {
-    await withOwnerDirectoryEntryMutation([temporary], security, async () => {
+    await withOwnedDirectoryEntryCleanup(temporary, security, async () => {
       let current: BigIntStats;
       try {
         current = await lstat(temporary, { bigint: true });
@@ -1376,7 +1411,7 @@ async function acquireStreamLock(
         return async () => {
           let entered = false;
           try {
-            await withOwnerDirectoryEntryMutation([path], directories.security, async () => {
+            await withOwnedDirectoryEntryCleanup(path, directories.security, async () => {
               entered = true;
               let releaseError: unknown;
               try {
@@ -1407,7 +1442,7 @@ async function acquireStreamLock(
         if (created) {
           const expected = created;
           try {
-            await withOwnerDirectoryEntryMutation([path], directories.security, async () => {
+            await withOwnedDirectoryEntryCleanup(path, directories.security, async () => {
               const current = await lstat(path, { bigint: true });
               if (sameIdentity(expected, current)) {
                 await unlink(path);
