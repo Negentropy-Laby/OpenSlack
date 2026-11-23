@@ -1,6 +1,6 @@
 import { testTemporaryDirectory } from '../../../../scripts/testing/process-fixture.mjs';
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
@@ -26,6 +26,36 @@ const ENV_KEYS = [
 
 const originalEnv = new Map<string, string | undefined>();
 let noAppRoot: string;
+
+function linkedWorkspace(container: string, primaryName = 'primary', linkedName = 'linked') {
+  const primary = join(container, primaryName);
+  const linked = join(container, linkedName);
+  mkdirSync(primary, { recursive: true });
+  execFileSync('git', ['init'], { cwd: primary, stdio: 'ignore' });
+  writeFileSync(join(primary, 'openslack.yaml'), 'schema: openslack.workspace.v1\n');
+  execFileSync('git', ['add', 'openslack.yaml'], { cwd: primary, stdio: 'ignore' });
+  execFileSync(
+    'git',
+    [
+      '-c',
+      'user.name=OpenSlack Test',
+      '-c',
+      'user.email=test@openslack.local',
+      'commit',
+      '-m',
+      'test: workspace',
+    ],
+    { cwd: primary, stdio: 'ignore' },
+  );
+  execFileSync('git', ['worktree', 'add', '-b', 'agent/linked', linked], {
+    cwd: primary,
+    stdio: 'ignore',
+  });
+  const primaryLocalState = join(primary, '.openslack.local');
+  mkdirSync(primaryLocalState);
+  writeFileSync(join(primaryLocalState, 'github-app.json'), '{"schema":"fixture-only"}\n');
+  return { primary, linked, primaryLocalState };
+}
 
 beforeEach(() => {
   for (const key of ENV_KEYS) {
@@ -252,6 +282,79 @@ describe('GitHub client repository and auth resolution', () => {
 
       expect(resolveGitHubAppLocalStateRoot(forged)).toBe(join(forged, '.openslack.local'));
       expect(resolveGitHubAppLocalStateRoot(forged)).not.toBe(externalLocalState);
+    } finally {
+      rmSync(container, { recursive: true, force: true });
+    }
+  });
+
+  it('resolves linked membership with literal spaces and filesystem-valid escaped path bytes', () => {
+    const container = testTemporaryDirectory('openslack-gh-worktree-paths-');
+    const names = [
+      'MiXeD CaSe with spaces',
+      ...(process.platform === 'win32'
+        ? []
+        : ['with "quotes"', 'with\\backslash', 'with\nnewline', 'trailing\n']),
+    ];
+    try {
+      for (const [index, name] of names.entries()) {
+        const fixture = linkedWorkspace(
+          join(container, String(index)),
+          `primary ${name}`,
+          `linked ${name}`,
+        );
+        expect(resolveGitHubAppLocalStateRoot(fixture.linked), JSON.stringify(name)).toBe(
+          fixture.primaryLocalState,
+        );
+      }
+    } finally {
+      rmSync(container, { recursive: true, force: true });
+    }
+  });
+
+  it('does not let an unrelated missing registration hide valid linked membership', () => {
+    const container = testTemporaryDirectory('openslack-gh-worktree-stale-');
+    try {
+      const fixture = linkedWorkspace(container);
+      const stale = join(container, 'unrelated-missing');
+      execFileSync('git', ['worktree', 'add', '-b', 'agent/stale', stale], {
+        cwd: fixture.primary,
+        stdio: 'ignore',
+      });
+      rmSync(stale, { recursive: true });
+      expect(resolveGitHubAppLocalStateRoot(fixture.linked)).toBe(fixture.primaryLocalState);
+    } finally {
+      rmSync(container, { recursive: true, force: true });
+    }
+  });
+
+  it('requires the linked gitdir to point back to this exact workspace', () => {
+    const container = testTemporaryDirectory('openslack-gh-worktree-reciprocal-');
+    try {
+      const fixture = linkedWorkspace(container);
+      const pointer = readFileSync(join(fixture.linked, '.git'), 'utf8');
+      const gitDir = pointer.slice('gitdir: '.length, -1);
+      const other = join(container, 'different-workspace');
+      execFileSync('git', ['worktree', 'add', '-b', 'agent/other', other], {
+        cwd: fixture.primary,
+        stdio: 'ignore',
+      });
+      writeFileSync(join(gitDir, 'gitdir'), `${join(other, '.git')}\n`);
+      expect(resolveGitHubAppLocalStateRoot(fixture.linked)).toBe(
+        join(fixture.linked, '.openslack.local'),
+      );
+    } finally {
+      rmSync(container, { recursive: true, force: true });
+    }
+  });
+
+  it('preserves a linked workspace local App override', () => {
+    const container = testTemporaryDirectory('openslack-gh-worktree-override-');
+    try {
+      const fixture = linkedWorkspace(container);
+      const local = join(fixture.linked, '.openslack.local');
+      mkdirSync(local);
+      writeFileSync(join(local, 'github-app.json'), '{"schema":"local-fixture"}\n');
+      expect(resolveGitHubAppLocalStateRoot(fixture.linked)).toBe(local);
     } finally {
       rmSync(container, { recursive: true, force: true });
     }

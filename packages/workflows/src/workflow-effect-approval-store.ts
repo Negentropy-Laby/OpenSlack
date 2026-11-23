@@ -22,6 +22,8 @@ import {
   isWorkflowControlObservationPort,
   productionJournalSecurity,
   type WorkflowControlObservationPort,
+  withOwnerDirectoryEntryMutation,
+  withOwnedDirectoryEntryCleanup,
 } from './workflow-control-shadow.js';
 import {
   applyWorkflowEffectApprovalDecision,
@@ -120,7 +122,7 @@ export async function persistWorkflowEffectApprovalPending(
     if (hasWorkflowEffectAuthorityRoot(root)) {
       await ensureOwnerDirectory(root, AUTHORITY_STORE_SECURITY);
     } else {
-      await mkdir(root, { recursive: false, mode: 0o700 });
+      await withOwnerDirectoryEntryMutation([root], AUTHORITY_STORE_SECURITY, () => mkdir(root, { recursive: false, mode: 0o700 }));
     }
   }
   const record = createPendingWorkflowEffectApproval(input);
@@ -315,7 +317,7 @@ async function assertAuthorityDirectory(
 
 async function ensureFixedChild(parentReal: string, path: string): Promise<void> {
   const existing = await lstatIfPresent(path);
-  if (!existing) await mkdir(path, { recursive: false, mode: 0o700 });
+  if (!existing) await withOwnerDirectoryEntryMutation([path], AUTHORITY_STORE_SECURITY, () => mkdir(path, { recursive: false, mode: 0o700 }));
   const child = await assertDirectory(path);
   if (!contained(parentReal, child.real)) {
     fail(
@@ -709,22 +711,24 @@ async function removeStaleLock(
   observed: Awaited<ReturnType<typeof readLock>>,
 ): Promise<boolean> {
   if (!ownerIsProvablyDead(observed.owner)) return false;
-  const repeated = await lstat(path);
-  const resolved = await realpath(path);
-  if (
-    !stableIdentity(observed.stat, repeated) ||
-    !samePath(path, resolved) ||
-    !contained(prepared.locksReal, resolved)
-  ) {
-    return fail(
-      'WORKFLOW_EFFECT_APPROVAL_STORE_FILE_CHANGED',
-      'Approval-store lock changed before stale recovery.',
-      path,
-    );
-  }
-  await rm(path);
-  await syncDirectory(prepared.locks);
-  return true;
+  return withOwnerDirectoryEntryMutation([path], AUTHORITY_STORE_SECURITY, async () => {
+    const repeated = await lstat(path);
+    const resolved = await realpath(path);
+    if (
+      !stableIdentity(observed.stat, repeated) ||
+      !samePath(path, resolved) ||
+      !contained(prepared.locksReal, resolved)
+    ) {
+      return fail(
+        'WORKFLOW_EFFECT_APPROVAL_STORE_FILE_CHANGED',
+        'Approval-store lock changed before stale recovery.',
+        path,
+      );
+    }
+    await rm(path);
+    await syncDirectory(prepared.locks);
+    return true;
+  });
 }
 
 function ownerFromTemporaryName(name: string): Pick<LockOwner, 'pid'> | undefined {
@@ -777,7 +781,7 @@ async function recoverTemporaryLocks(prepared: PreparedStore): Promise<boolean> 
         path,
       );
     }
-    await rm(path);
+    await withOwnerDirectoryEntryMutation([path], AUTHORITY_STORE_SECURITY, () => rm(path));
     removed = true;
   }
   if (removed) await syncDirectory(prepared.locks);
@@ -787,6 +791,23 @@ async function recoverTemporaryLocks(prepared: PreparedStore): Promise<boolean> 
 async function delay(milliseconds: number): Promise<void> {
   await new Promise<void>((resolveDelay) => {
     setTimeout(resolveDelay, milliseconds);
+  });
+}
+
+async function removeOwnedStoreTemporary(path: string, directory: string, owned: Stats): Promise<void> {
+  await withOwnedDirectoryEntryCleanup(path, AUTHORITY_STORE_SECURITY, async () => {
+    const current = await lstatIfPresent(path);
+    if (!current) return;
+    const resolved = await realpath(path);
+    if (!current.isFile() || !sameIdentity(owned, current) ||
+        !samePath(path, resolved) || !contained(directory, resolved)) {
+      return fail(
+        'WORKFLOW_EFFECT_APPROVAL_STORE_FILE_CHANGED',
+        'Approval-store temporary no longer matches its owner.',
+        path,
+      );
+    }
+    await rm(path);
   });
 }
 
@@ -809,13 +830,16 @@ async function acquireLock(prepared: PreparedStore): Promise<AcquiredLock> {
       prepared.locks,
       `.decision.${owner.pid}.${owner.sessionId}.${owner.threadId}.${owner.nonce}.tmp`,
     );
-    const handle = await open(
+    const handle = await withOwnerDirectoryEntryMutation([temporaryPath], AUTHORITY_STORE_SECURITY, () => open(
       temporaryPath,
       fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_EXCL | NO_FOLLOW,
       0o600,
-    );
+    ));
     let handleClosed = false;
+    let linkedStat: Stats | undefined;
+    let ownedTemporary: Stats | undefined;
     try {
+      ownedTemporary = await handle.stat();
       if (hasWorkflowEffectAuthorityRoot(prepared.root)) {
         AUTHORITY_STORE_SECURITY.hardenPath(temporaryPath, false);
         await assertOwnerFile(temporaryPath, AUTHORITY_STORE_SECURITY);
@@ -841,10 +865,12 @@ async function acquireLock(prepared: PreparedStore): Promise<AcquiredLock> {
         );
       }
       try {
-        await link(temporaryPath, path);
+        await withOwnerDirectoryEntryMutation([temporaryPath], AUTHORITY_STORE_SECURITY, () => link(temporaryPath, path));
+        linkedStat = temporaryStat;
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
-        await rm(temporaryPath);
+        await removeOwnedStoreTemporary(temporaryPath, prepared.locksReal, temporaryStat);
+        ownedTemporary = undefined;
         let observed: Awaited<ReturnType<typeof readLock>>;
         try {
           observed = await readLock(prepared, path);
@@ -879,12 +905,23 @@ async function acquireLock(prepared: PreparedStore): Promise<AcquiredLock> {
       if (hasWorkflowEffectAuthorityRoot(prepared.root)) {
         await assertOwnerFile(path, AUTHORITY_STORE_SECURITY);
       }
-      await rm(temporaryPath);
+      await removeOwnedStoreTemporary(temporaryPath, prepared.locksReal, temporaryStat);
+      ownedTemporary = undefined;
       await syncDirectory(prepared.locks);
       return { path, stat: await lstat(path) };
     } catch (error) {
-      if (!handleClosed) await handle.close().catch(() => undefined);
-      await rm(temporaryPath, { force: true }).catch(() => undefined);
+      const cleanupErrors: unknown[] = [];
+      if (!handleClosed) await handle.close().catch((cause) => cleanupErrors.push(cause));
+      if (ownedTemporary) {
+        await removeOwnedStoreTemporary(temporaryPath, prepared.locksReal, ownedTemporary)
+          .catch((cause) => cleanupErrors.push(cause));
+      }
+      if (linkedStat) {
+        await releaseLock({ path, stat: linkedStat }).catch((cause) => cleanupErrors.push(cause));
+      }
+      if (cleanupErrors.length > 0) {
+        throw new AggregateError([error, ...cleanupErrors], 'Approval-store lock publication and cleanup failed.');
+      }
       throw error;
     }
   }
@@ -896,22 +933,24 @@ async function acquireLock(prepared: PreparedStore): Promise<AcquiredLock> {
 }
 
 async function releaseLock(lock: AcquiredLock): Promise<void> {
-  const current = await lstatIfPresent(lock.path);
-  const resolved = current ? await realpath(lock.path) : undefined;
-  if (
-    !current ||
-    !sameIdentity(lock.stat, current) ||
-    !resolved ||
-    !samePath(lock.path, resolved)
-  ) {
-    return fail(
-      'WORKFLOW_EFFECT_APPROVAL_STORE_FILE_CHANGED',
-      'Approval-store lock changed before release.',
-      lock.path,
-    );
-  }
-  await rm(lock.path);
-  await syncDirectory(dirname(lock.path));
+  return withOwnedDirectoryEntryCleanup(lock.path, AUTHORITY_STORE_SECURITY, async () => {
+    const current = await lstatIfPresent(lock.path);
+    const resolved = current ? await realpath(lock.path) : undefined;
+    if (
+      !current ||
+      !sameIdentity(lock.stat, current) ||
+      !resolved ||
+      !samePath(lock.path, resolved)
+    ) {
+      return fail(
+        'WORKFLOW_EFFECT_APPROVAL_STORE_FILE_CHANGED',
+        'Approval-store lock changed before release.',
+        lock.path,
+      );
+    }
+    await rm(lock.path);
+    await syncDirectory(dirname(lock.path));
+  });
 }
 
 async function recoverRecordTemporaries(prepared: PreparedStore): Promise<void> {
@@ -944,7 +983,7 @@ async function recoverRecordTemporaries(prepared: PreparedStore): Promise<void> 
         path,
       );
     }
-    await rm(path);
+    await withOwnerDirectoryEntryMutation([path], AUTHORITY_STORE_SECURITY, () => rm(path));
     removed = true;
   }
   if (removed) await syncDirectory(prepared.records);
@@ -1103,22 +1142,31 @@ async function atomicWrite(
   const key = recordKey(runId, approvalId);
   const path = recordPath(prepared, runId, approvalId);
   const temporaryPath = join(prepared.records, `.${key}.${process.pid}.${randomUUID()}.tmp`);
-  const handle = await open(
+  const handle = await withOwnerDirectoryEntryMutation([temporaryPath], AUTHORITY_STORE_SECURITY, () => open(
     temporaryPath,
     fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_EXCL | NO_FOLLOW,
     0o600,
-  );
+  ));
   let handleClosed = false;
+  let ownedTemporary: Stats | undefined;
+  let publicationFailure: { cause: unknown } | undefined;
   try {
+    ownedTemporary = await handle.stat();
     if (hasWorkflowEffectAuthorityRoot(prepared.root)) {
       AUTHORITY_STORE_SECURITY.hardenPath(temporaryPath, false);
       await assertOwnerFile(temporaryPath, AUTHORITY_STORE_SECURITY);
     }
     await writeAll(handle, bytes);
     await handle.sync();
+    const synced = await handle.stat();
+    // Close before publication on every platform. Windows and WSL drvfs
+    // otherwise delay visibility of a renamed file.
+    await handle.close();
+    handleClosed = true;
     const temporaryStat = await lstat(temporaryPath);
     const temporaryReal = await realpath(temporaryPath);
     if (
+      !stableIdentity(synced, temporaryStat) ||
       temporaryStat.size !== bytes.length ||
       !samePath(temporaryPath, temporaryReal) ||
       !contained(prepared.recordsReal, temporaryReal)
@@ -1129,10 +1177,22 @@ async function atomicWrite(
         temporaryPath,
       );
     }
+    const assertExactTemporary = async () => {
+      if (!stableIdentity(temporaryStat, await lstat(temporaryPath))) {
+        return fail(
+          'WORKFLOW_EFFECT_APPROVAL_STORE_FILE_CHANGED',
+          'Workflow effect approval temporary changed before publication.',
+          temporaryPath,
+        );
+      }
+    };
     await assertPreparedStable(prepared);
     if (expected === null) {
       try {
-        await link(temporaryPath, path);
+        await withOwnerDirectoryEntryMutation([temporaryPath], AUTHORITY_STORE_SECURITY, async () => {
+          await assertExactTemporary();
+          await link(temporaryPath, path);
+        });
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code === 'EEXIST') {
           return fail(
@@ -1143,34 +1203,26 @@ async function atomicWrite(
         }
         throw error;
       }
-      await rm(temporaryPath);
+      await removeOwnedStoreTemporary(temporaryPath, prepared.recordsReal, ownedTemporary);
+      ownedTemporary = undefined;
     } else {
-      const current = await assertRecordFile(path, prepared.recordsReal);
-      if (!stableIdentity(expected, current)) {
-        return fail(
-          'WORKFLOW_EFFECT_APPROVAL_STORE_FILE_CHANGED',
-          'Workflow effect approval changed before atomic update.',
-          path,
-        );
-      }
-      // Windows and WSL drvfs delay visibility of a renamed file until the
-      // source handle closes. Revalidate the exact temporary after closing so
-      // publication remains fail-closed on every supported filesystem.
-      await handle.close();
-      handleClosed = true;
-      const repeatedTemporary = await lstat(temporaryPath);
-      if (!stableIdentity(temporaryStat, repeatedTemporary)) {
-        return fail(
-          'WORKFLOW_EFFECT_APPROVAL_STORE_FILE_CHANGED',
-          'Workflow effect approval temporary changed before atomic update.',
-          temporaryPath,
-        );
-      }
-      await rename(temporaryPath, path);
+      await withOwnerDirectoryEntryMutation([temporaryPath, path], AUTHORITY_STORE_SECURITY, async () => {
+        const current = await assertRecordFile(path, prepared.recordsReal);
+        if (!stableIdentity(expected, current)) {
+          return fail(
+            'WORKFLOW_EFFECT_APPROVAL_STORE_FILE_CHANGED',
+            'Workflow effect approval changed before atomic update.',
+            path,
+          );
+        }
+        await assertExactTemporary();
+        await rename(temporaryPath, path);
+      });
+      ownedTemporary = undefined;
     }
     await syncDirectory(prepared.records);
     const final = await assertRecordFile(path, prepared.recordsReal);
-    if (final.size !== bytes.length) {
+    if (!sameIdentity(temporaryStat, final) || final.size !== bytes.length) {
       return fail(
         'WORKFLOW_EFFECT_APPROVAL_STORE_FILE_CHANGED',
         'Workflow effect approval changed after atomic update.',
@@ -1178,9 +1230,23 @@ async function atomicWrite(
       );
     }
     await assertPreparedStable(prepared);
+  } catch (cause) {
+    publicationFailure = { cause };
+    throw cause;
   } finally {
-    if (!handleClosed) await handle.close().catch(() => undefined);
-    await rm(temporaryPath, { force: true }).catch(() => undefined);
+    const cleanupErrors: unknown[] = [];
+    if (!handleClosed) await handle.close().catch((cause) => cleanupErrors.push(cause));
+    if (ownedTemporary) {
+      await removeOwnedStoreTemporary(temporaryPath, prepared.recordsReal, ownedTemporary)
+        .catch((cause) => cleanupErrors.push(cause));
+    }
+    if (cleanupErrors.length > 0) {
+      throw new AggregateError(
+        publicationFailure ? [publicationFailure.cause, ...cleanupErrors] : cleanupErrors,
+        'Approval-store record cleanup failed.',
+        publicationFailure ? { cause: publicationFailure.cause } : undefined,
+      );
+    }
   }
 }
 

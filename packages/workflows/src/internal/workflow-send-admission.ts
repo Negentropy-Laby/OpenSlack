@@ -13,6 +13,7 @@ import {
 } from '@openslack/agent-runtime';
 import {
   bindProviderSendAdmission,
+  bindProviderSendPreparation,
   providerUsageRequestHash,
   type ProviderSendRequest,
 } from '@openslack/agent-runtime/internal/provider-send-admission';
@@ -636,6 +637,21 @@ export async function createWorkflowSendAdmissionPort(input: {
     ProviderAttemptReservation,
     { receiptHash: string; result: Promise<void> }
   >();
+  const readAvailableAttempts = async () => {
+    const state = await readWorkflowSendCampaign(input.root, input.runId, input.bindingHash);
+    const attempts = inspect(state);
+    const last = [...attempts.values()].at(-1)?.at(-1);
+    if (last && last.kind !== 'settled' && last.kind !== 'not_sent' && last.kind !== 'cache')
+      return deny('SEND_ADMISSION_FROZEN');
+    if (
+      [...attempts.values()].some((a) =>
+        a.some((f) => f.kind === 'settled' && f.totalTokens > SEND_LIMITS.tokensPerAttempt),
+      )
+    )
+      return deny('SEND_ADMISSION_FROZEN');
+    if (attempts.size >= SEND_LIMITS.attempts) return deny('SEND_ADMISSION_LIMIT');
+    return attempts;
+  };
   const port: ProviderAttemptPort = {
     async reserve(request) {
       await assertWorkflowSendGoFrontier(
@@ -644,18 +660,7 @@ export async function createWorkflowSendAdmissionPort(input: {
         input.bindingHash,
         input.goFrontier,
       );
-      const s = await readWorkflowSendCampaign(input.root, input.runId, input.bindingHash);
-      const attempts = inspect(s);
-      const last = [...attempts.values()].at(-1)?.at(-1);
-      if (last && last.kind !== 'settled' && last.kind !== 'not_sent' && last.kind !== 'cache')
-        return deny('SEND_ADMISSION_FROZEN');
-      if (
-        [...attempts.values()].some((a) =>
-          a.some((f) => f.kind === 'settled' && f.totalTokens > SEND_LIMITS.tokensPerAttempt),
-        )
-      )
-        return deny('SEND_ADMISSION_FROZEN');
-      if (attempts.size >= SEND_LIMITS.attempts) return deny('SEND_ADMISSION_LIMIT');
+      const attempts = await readAvailableAttempts();
       if (
         request.providerId !== b.providerId ||
         request.modelId !== b.modelId ||
@@ -759,6 +764,17 @@ export async function createWorkflowSendAdmissionPort(input: {
       return result;
     },
   };
+  bindProviderSendPreparation(port, async (request) => {
+    if (request.providerId !== b.providerId || request.modelId !== b.modelId)
+      return deny('SEND_ADMISSION_INVALID');
+    request.signal?.throwIfAborted();
+    await readAvailableAttempts();
+    request.signal?.throwIfAborted();
+    // No enforceable gateway counting/transform/output/physical-attempt
+    // contract is bound yet. Refuse without a Go call or campaign append.
+    // Final post-reservation admission remains an independent mandatory gate.
+    return deny('SEND_TOTAL_TOKEN_UNVERIFIED');
+  });
   bindProviderSendAdmission(port, async (reservation, request) => {
     if (
       !owned.has(reservation) ||

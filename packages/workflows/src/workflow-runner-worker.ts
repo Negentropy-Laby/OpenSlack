@@ -779,7 +779,7 @@ function assertWorkflowRunnerBudgetRunHead(
   ) {
     throw new WorkflowRunnerV2BudgetBoundaryError(
       'WORKFLOW_RUNNER_V2_BUDGET_RECONCILIATION_REQUIRED',
-      'Workflow Control run head cannot seed the durable budget account.',
+      'Workflow Control run head does not match the active budget execution.',
     );
   }
 }
@@ -878,12 +878,12 @@ export function createWorkflowRunnerV2ProviderAttemptPort(
   const readExpectedRunRevision = async (
     account: Awaited<ReturnType<typeof readBudgetHead>>,
   ): Promise<number> => {
-    if (account) return account.runRevision;
+    if (account && context.resumeGeneration === 0) return account.runRevision;
     if (!budgetAuthority) return descriptor.runRevision;
     if (!runAuthority) {
       throw new WorkflowRunnerV2BudgetBoundaryError(
         'WORKFLOW_RUNNER_V2_BUDGET_RECONCILIATION_REQUIRED',
-        'A missing durable budget account requires the Workflow Control run authority.',
+        'The budget request requires the current Workflow Control run authority head.',
       );
     }
     const head = await runAuthority.read(descriptor.workflowRunId, descriptor.authorityRoute);
@@ -1123,6 +1123,11 @@ export function createWorkflowRunnerV2ProviderAttemptPort(
             reservationId: reservation.reservationId,
             callId: reservation.callId,
             ...folded.payload,
+            // An attempted dispatch stays in the exact Provider receipt. F2
+            // reports only accounted usage, which is zero without token evidence.
+            actualCalls: usage.status === 'reported' ? usage.calls : '0',
+            // F2 binds the reported usage; Go decides whether the account can settle it.
+            settlementStatus: usage.status === 'reported' ? 'settled' : 'reconciliation_required',
           },
           sourceFor('budget_settle', preparedRequest),
         );

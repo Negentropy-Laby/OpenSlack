@@ -1,4 +1,5 @@
-import { execFileSync } from 'node:child_process';
+import { execFile, execFileSync } from 'node:child_process';
+import { readWindowsCurrentSid } from './internal/windows-current-sid.js';
 import { createHash, randomUUID } from 'node:crypto';
 import { constants as fsConstants, type BigIntStats } from 'node:fs';
 import { chmod, link, lstat, mkdir, open, readdir, realpath, rm, unlink } from 'node:fs/promises';
@@ -11,6 +12,9 @@ import {
   type WorkflowRunnerExecutionDescriptor,
 } from './workflow-runner-descriptor.js';
 import { parseWorkflowEffectJson } from './workflow-effect-json.js';
+
+import { enqueueByKey } from './internal/keyed-serial-queue.js';
+import { workflowDirectoryCoordinationKey } from './workflow-control-shadow.js';
 
 export class WorkflowRunnerDescriptorStoreError extends Error {
   constructor(
@@ -50,6 +54,9 @@ const V1_DESCRIPTOR_CODEC: WorkflowRunnerDescriptorCodec<WorkflowRunnerExecution
     canonical: canonicalWorkflowRunnerDescriptorJson,
     hash: hashWorkflowRunnerDescriptor,
   });
+
+const descriptorRootOperations = new Map<string, Promise<unknown>>();
+const DESCRIPTOR_TEMPORARY_GRACE_MS = 5 * 60 * 1_000;
 
 const SAFE_FILE = /^[0-9a-f]{64}\.json$/u;
 const TEMP_FILE = /^\.tmp-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
@@ -131,30 +138,18 @@ function parseWindowsAcl(value: string): {
 
 function currentWindowsSid(): string {
   if (cachedWindowsSid) return cachedWindowsSid;
-  const output = execFileSync(
-    'powershell.exe',
-    [
-      '-NoLogo',
-      '-NoProfile',
-      '-NonInteractive',
-      '-Command',
-      '[System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value',
-    ],
-    { encoding: 'utf8', timeout: 20_000, windowsHide: true },
-  )
-    .trim()
-    .toUpperCase();
-  if (!WINDOWS_SID.test(output)) {
+  try {
+    cachedWindowsSid = readWindowsCurrentSid(20_000);
+  } catch {
     return storeFail(
       'WORKFLOW_RUNNER_DESCRIPTOR_STORE_PERMISSION_DENIED',
       'Current Windows SID is unavailable.',
     );
   }
-  cachedWindowsSid = output;
   return cachedWindowsSid;
 }
 
-function inspectWindowsAcl(path: string): ReturnType<typeof parseWindowsAcl> {
+async function inspectWindowsAcl(path: string): Promise<ReturnType<typeof parseWindowsAcl>> {
   const script = [
     '$ErrorActionPreference = "Stop"',
     WINDOWS_SECURITY_MODULE_IMPORT,
@@ -167,16 +162,24 @@ function inspectWindowsAcl(path: string): ReturnType<typeof parseWindowsAcl> {
     '$reparse = [bool]($item.Attributes -band [IO.FileAttributes]::ReparsePoint)',
     '[pscustomobject]@{ owner=$owner; protected=$acl.AreAccessRulesProtected; reparse=$reparse; allow=$allow; deny=$deny } | ConvertTo-Json -Compress -Depth 4',
   ].join('; ');
-  const output = execFileSync(
-    'powershell.exe',
-    ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', script],
-    {
-      encoding: 'utf8',
-      timeout: 20_000,
-      windowsHide: true,
-      env: { ...process.env, OPENSLACK_WORKFLOW_RUNNER_PATH: path },
-    },
-  );
+  // ACL inspection is read-only. Await the native process without blocking
+  // unrelated approval/observer work on this worker's event loop.
+  const output = await new Promise<string>((resolveOutput, reject) => {
+    execFile(
+      'powershell.exe',
+      ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', script],
+      {
+        encoding: 'utf8',
+        timeout: 20_000,
+        windowsHide: true,
+        env: { ...process.env, OPENSLACK_WORKFLOW_RUNNER_PATH: path },
+      },
+      (error, stdout) => {
+        if (error) reject(error);
+        else resolveOutput(stdout);
+      },
+    );
+  });
   return parseWindowsAcl(output);
 }
 
@@ -230,7 +233,7 @@ export function createWorkflowRunnerDescriptorPathSecurity(
         );
       }
       if (platform === 'win32') {
-        const acl = inspectWindowsAcl(path);
+        const acl = await inspectWindowsAcl(path);
         const allowed = new Set([windowsSid!, SYSTEM_SID]);
         if (
           acl.reparse ||
@@ -475,15 +478,36 @@ export class WorkflowRunnerDescriptorStore<
     this.#codec = codec as WorkflowRunnerDescriptorCodec<TDescriptor>;
   }
 
+  async #withRootOperation<T>(operation: () => Promise<T>): Promise<T> {
+    const key = await workflowDirectoryCoordinationKey(this.#root, this.#security);
+    return enqueueByKey(descriptorRootOperations, key, operation);
+  }
+
   async initialize(): Promise<void> {
+    return this.#withRootOperation(() => this.#initialize());
+  }
+
+  async #initialize(): Promise<void> {
     await ensureDirectory(this.#root, undefined, this.#security);
     await ensureDirectory(this.#descriptors, this.#root, this.#security);
     const entries = await readdir(this.#descriptors);
     for (const entry of entries) {
       const path = join(this.#descriptors, entry);
       if (TEMP_FILE.test(entry)) {
-        await assertStablePath(path, false, this.#security);
-        await rm(path, { force: true });
+        const temporary = await lstat(path, { bigint: true }).catch((error: NodeJS.ErrnoException) => {
+          if (error.code === 'ENOENT') return undefined;
+          throw error;
+        });
+        if (!temporary) continue;
+        if (!temporary.isFile() || temporary.isSymbolicLink()) {
+          storeFail('WORKFLOW_RUNNER_DESCRIPTOR_STORE_PATH_UNSAFE', 'Descriptor temporary is unsafe.', path);
+        }
+        // A different process can still own a recent temporary or be publishing its hardlink.
+        if (temporary.nlink > 1n || Date.now() - Number(temporary.mtimeMs) < DESCRIPTOR_TEMPORARY_GRACE_MS) {
+          continue;
+        }
+        const checked = await assertStablePath(path, false, this.#security);
+        if (statIdentity(temporary) === statIdentity(checked)) await rm(path, { force: true });
         continue;
       }
       if (!SAFE_FILE.test(entry)) {
@@ -506,8 +530,16 @@ export class WorkflowRunnerDescriptorStore<
     readonly descriptorHash: string;
     readonly duplicate: boolean;
   }> {
+    return this.#withRootOperation(() => this.#create(descriptorValue));
+  }
+
+  async #create(descriptorValue: TDescriptor): Promise<{
+    readonly descriptor: TDescriptor;
+    readonly descriptorHash: string;
+    readonly duplicate: boolean;
+  }> {
     const descriptor = this.#codec.validate(descriptorValue);
-    await this.initialize();
+    await this.#initialize();
     const path = this.descriptorPath(descriptor.descriptorRef);
     const body = Buffer.from(`${this.#codec.canonical(descriptor)}\n`, 'utf8');
     const existing = await lstat(path, { bigint: true }).catch((error: NodeJS.ErrnoException) => {
@@ -578,7 +610,11 @@ export class WorkflowRunnerDescriptorStore<
   }
 
   async read(descriptorRef: string, now?: string): Promise<TDescriptor> {
-    await this.initialize();
+    return this.#withRootOperation(() => this.#read(descriptorRef, now));
+  }
+
+  async #read(descriptorRef: string, now?: string): Promise<TDescriptor> {
+    await this.#initialize();
     const path = this.descriptorPath(descriptorRef);
     const bytes = await readBoundedFile(path, this.#security).catch((error) => {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') {

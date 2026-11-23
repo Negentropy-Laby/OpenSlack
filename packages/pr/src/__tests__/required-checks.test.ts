@@ -3,7 +3,7 @@ import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parse } from 'yaml';
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { diagnosePR } from '../doctor.js';
 import { checkMergeReadiness } from '../readiness.js';
 import { loadPRReviewPolicy } from '../policy.js';
@@ -98,25 +98,38 @@ it('prints ambiguous required check producers as failure rather than PASS', () =
   expect(generateDoctorReport(result, ['@wsman'])).toContain('| Checks | fail |');
 });
 
-it.each([null, [], false, 'disabled', { enabled: false }])(
-  'refuses a malformed declared rule without an approval matrix: %j',
-  (requiredRule) => {
-    const temporary = mkdtempSync(join(tmpdir(), 'pr-required-rule-'));
-    try {
-      const path = join(temporary, '.openslack/policies');
-      mkdirSync(path, { recursive: true });
-      const review = parse(readFileSync(join(root, '.openslack/policies/pr_review.yaml'), 'utf8'));
+describe('declared-rule loader fixture', () => {
+  let temporary: string | undefined;
+  let review: ReturnType<typeof parse>;
+
+  beforeEach(() => {
+    temporary = mkdtempSync(join(tmpdir(), 'pr-required-rule-'));
+    mkdirSync(join(temporary, '.openslack/policies'), { recursive: true });
+    review = parse(readFileSync(join(root, '.openslack/policies/pr_review.yaml'), 'utf8'));
+  });
+
+  afterEach(() => {
+    if (temporary !== undefined) rmSync(temporary, { recursive: true, force: true });
+    temporary = undefined;
+  });
+
+  it.each([null, [], false, 'disabled', { enabled: false }])(
+    'refuses a malformed declared rule without an approval matrix: %j',
+    (requiredRule) => {
+      const fixtureRoot = temporary;
+      if (fixtureRoot === undefined) throw new Error('Required-rule fixture was not prepared');
       review.rules.required_checks = requiredRule;
-      writeFileSync(join(path, 'pr_review.yaml'), JSON.stringify(review));
-      expect(() => loadPRReviewPolicy(temporary, { strict: true })).toThrow(
+      writeFileSync(
+        join(fixtureRoot, '.openslack/policies/pr_review.yaml'),
+        JSON.stringify(review),
+      );
+      expect(() => loadPRReviewPolicy(fixtureRoot, { strict: true })).toThrow(
         'PR_REVIEW_POLICY_UNAVAILABLE',
       );
-      expect(() => loadPRReviewPolicy(temporary)).toThrow('PR_REVIEW_POLICY_UNAVAILABLE');
-    } finally {
-      rmSync(temporary, { recursive: true, force: true });
-    }
-  },
-);
+      expect(() => loadPRReviewPolicy(fixtureRoot)).toThrow('PR_REVIEW_POLICY_UNAVAILABLE');
+    },
+  );
+});
 
 it.each([
   'rules: [unterminated',

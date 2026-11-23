@@ -24,6 +24,7 @@ import {
   writeExclusive,
   WORKFLOW_CONTROL_SHADOW_POLICY,
   type WorkflowControlShadowJournalSecurityDependencies,
+  withOwnerDirectoryEntryMutation,
 } from './workflow-control-shadow.js';
 import {
   recoverWorkflowEffectAuthorityObservationPrefix,
@@ -629,7 +630,7 @@ class ObservationPort implements WorkflowEffectShadowObservationPort {
       );
       const inventory = await this.#loadInventory();
       const size = inventory.entries.get(path);
-      await unlink(path).catch((error: NodeJS.ErrnoException) => {
+      await withOwnerDirectoryEntryMutation([path], this.#security, () => unlink(path)).catch((error: NodeJS.ErrnoException) => {
         if (error.code !== 'ENOENT') throw error;
       });
       if (size !== undefined) {
@@ -670,7 +671,9 @@ class ObservationPort implements WorkflowEffectShadowObservationPort {
         `${hashText([basename(path), stat.dev, stat.ino, stat.size, stat.mtimeNs, stat.ctimeNs].join(':'))}.json`,
       );
       const inventory = await this.#loadInventory();
-      await rename(path, target);
+      await withOwnerDirectoryEntryMutation([path, target], this.#security, () =>
+        rename(path, target),
+      );
       await Promise.all([syncDirectory(this.#entries), syncDirectory(this.#quarantine)]);
       const size = inventory.entries.get(path) ?? Number(stat.size);
       inventory.entries.delete(path);

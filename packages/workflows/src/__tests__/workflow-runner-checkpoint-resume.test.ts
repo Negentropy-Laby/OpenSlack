@@ -1,8 +1,10 @@
 import { createHash } from 'node:crypto';
-import { createServer } from 'node:http';
+import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
+import { performance } from 'node:perf_hooks';
+import { types as nodeTypes } from 'node:util';
 import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { afterEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, expect, it, vi, type TestContext } from 'vitest';
 import type * as AgentRuntime from '@openslack/agent-runtime';
 import {
   testTemporaryDirectory,
@@ -46,18 +48,161 @@ vi.mock('@openslack/agent-runtime', async (original) => ({
   ...(await original<typeof AgentRuntime>()),
   createOpenSlackAgentLauncher: () => calls.launcher,
 }));
-const roots: string[] = [];
-afterEach(async () => {
-  vi.restoreAllMocks();
-  calls.launcher.mockReset();
-  await Promise.all(roots.splice(0).map((p) => rm(p, { recursive: true, force: true })));
+const checkpointScenarios = ['complete', 'missing-artifact', 'cancelled-head', 'missing-registration'] as const;
+type CheckpointScenario = typeof checkpointScenarios[number];
+interface CheckpointFixture {
+  context: TestContext;
+  scenario: CheckpointScenario;
+  root?: string;
+  removed: boolean;
+  cleaning: boolean;
+  body?: Promise<void>;
+  bodySettled: boolean;
+  executions: Set<Promise<unknown>>;
+  requests: Set<Promise<unknown>>;
+  controllers: Set<AbortController>;
+  server?: ReturnType<typeof createServer>;
+  serverStarted: boolean;
+  serverClosed: boolean;
+  failures: unknown[];
+  stage: string;
+  phase: string;
+  phaseBegan: number;
+  phaseLive: boolean;
+  intervals: { name: string; ending: string; milliseconds: number }[];
+  steps: { name: string; outcome: 'fulfilled' | 'rejected'; milliseconds: number }[];
+  firstFailure?: { origin: string; phase: string; code: string };
+}
+const checkpointFixtures = new WeakMap<TestContext['task'], CheckpointFixture>();
+const checkpointByScenario = new Map<CheckpointScenario, CheckpointFixture>();
+const checkpointErrorCode = (error: unknown) => {
+  if (!error || typeof error !== 'object' || nodeTypes.isProxy(error)) return 'UNKNOWN';
+  const code = Object.getOwnPropertyDescriptor(error, 'code');
+  const message = Object.getOwnPropertyDescriptor(error, 'message');
+  const timeout = message && 'value' in message && typeof message.value === 'string' ? /^Test timed out in (5000|120000)ms\b/.exec(message.value) : null;
+  if (timeout) return `TEST_TIMEOUT_${timeout[1]}`;
+  return code && 'value' in code && typeof code.value === 'string' &&
+    ['EACCES', 'EPERM', 'EIO', 'ENOENT', 'ETIMEDOUT', 'ECONNRESET', 'ABORT_ERR'].includes(code.value) ? code.value : 'UNKNOWN';
+};
+function publishCheckpointFixture(owned: CheckpointFixture) {
+  Object.assign(owned.context.task.meta, { checkpointFixture: { stage: owned.stage, phase: owned.phase,
+    steps: owned.steps.map(step => ({ ...step })), phaseIntervals: owned.intervals.map(interval => ({ ...interval })), firstFailure: owned.firstFailure ?? null,
+    executionCount: owned.executions.size, activeRequests: owned.requests.size,
+    serverStarted: owned.serverStarted, serverClosed: owned.serverClosed,
+    retainedRoots: owned.root && !owned.removed ? 1 : 0 } });
+}
+function checkpointEndPhase(owned: CheckpointFixture, ending: string) {
+  if (owned.phaseLive) {
+    owned.intervals.push({ name: owned.phase, ending, milliseconds: performance.now() - owned.phaseBegan });
+    owned.phaseLive = false;
+  }
+}
+function checkpointMark(owned: CheckpointFixture, phase: string) {
+  checkpointEndPhase(owned, 'next_phase');
+  owned.phase = phase; owned.phaseBegan = performance.now(); owned.phaseLive = true;
+  publishCheckpointFixture(owned);
+}
+async function checkpointSpan<T>(owned: CheckpointFixture, name: string, work: () => Promise<T>): Promise<T> {
+  const began = performance.now();
+  let outcome: 'fulfilled' | 'rejected' = 'rejected';
+  try { const result = await work(); outcome = 'fulfilled'; return result; }
+  finally { owned.steps.push({ name, outcome, milliseconds: performance.now() - began }); publishCheckpointFixture(owned); }
+}
+async function checkpointStep<T>(owned: CheckpointFixture, name: string, work: () => Promise<T>): Promise<T> {
+  checkpointMark(owned, name);
+  return checkpointSpan(owned, name, work);
+}
+function checkpointController(owned: CheckpointFixture) {
+  const controller = new AbortController();
+  owned.controllers.add(controller);
+  if (owned.cleaning) controller.abort(new Error('CHECKPOINT_TEST_CLEANUP'));
+  return controller;
+}
+function trackCheckpointExecution<T>(owned: CheckpointFixture, work: Promise<T>): Promise<T> {
+  owned.executions.add(work);
+  void work.catch(() => undefined);
+  return work;
+}
+function runCheckpointCase(scenario: CheckpointScenario, operation: (owned: CheckpointFixture) => Promise<void>) {
+  const owned = checkpointByScenario.get(scenario);
+  if (!owned) throw new Error('CHECKPOINT_FIXTURE_NOT_PREPARED');
+  owned.phaseBegan = performance.now(); owned.phaseLive = true;
+  const work = Promise.resolve().then(() => operation(owned)).catch(error => {
+    owned.firstFailure ??= { origin: 'body', phase: owned.phase, code: checkpointErrorCode(error) };
+    throw error;
+  });
+  owned.body = work;
+  void work.then(() => { owned.bodySettled = true; checkpointEndPhase(owned, 'body_fulfilled'); publishCheckpointFixture(owned); },
+    () => { owned.bodySettled = true; checkpointEndPhase(owned, 'body_rejected'); publishCheckpointFixture(owned); });
+  void work.catch(() => undefined);
+  return work;
+}
+async function checkpointJoin<T>(work: Promise<T>, deadline: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([work, new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error('CHECKPOINT_TEST_WORK_UNCONFIRMED')), Math.max(0, deadline - performance.now()));
+    })]);
+  } finally { clearTimeout(timer); }
+}
+beforeEach(context => {
+  const scenario = checkpointScenarios.find(value => context.task.name === `runs the real worker canonical-resume path: ${value}`);
+  if (!scenario) return;
+  const owned: CheckpointFixture = { context, scenario, removed: false, cleaning: false, bodySettled: false, executions: new Set(), requests: new Set(),
+    controllers: new Set(), serverStarted: false, serverClosed: false, failures: [], stage: 'tested_protocol', phase: 'fixture_files', phaseBegan: 0, phaseLive: false, intervals: [], steps: [] };
+  checkpointFixtures.set(context.task, owned);
+  checkpointByScenario.set(scenario, owned);
+});
+afterEach(async context => {
+  const owned = checkpointFixtures.get(context.task);
+  if (!owned) return;
+  checkpointFixtures.delete(context.task);
+  if (checkpointByScenario.get(owned.scenario) === owned) checkpointByScenario.delete(owned.scenario);
+  let primaryFailed = context.task.result?.state === 'fail' || (context.task.result?.errors?.length ?? 0) > 0;
+  if (primaryFailed) owned.firstFailure ??= { origin: 'runner', phase: owned.phase, code: checkpointErrorCode(context.task.result?.errors?.[0]) };
+  if (primaryFailed) checkpointEndPhase(owned, 'runner_failed');
+  owned.cleaning = true; owned.stage = primaryFailed || !owned.bodySettled ? 'cancelling_owned_work' : 'joining_owned_work'; publishCheckpointFixture(owned);
+  if (primaryFailed || !owned.bodySettled) for (const controller of owned.controllers) controller.abort(new Error('CHECKPOINT_TEST_CLEANUP'));
+  const deadline = performance.now() + 5_000;
+  try {
+    const body = await checkpointSpan(owned, 'cleanup_body_join', () => checkpointJoin(Promise.allSettled(owned.body ? [owned.body] : []), deadline));
+    if (body.some(result => result.status === 'rejected')) primaryFailed = true;
+    // Initial approval-pending and negative-scenario rejections are expected;
+    // these joins establish quiescence, not a new successful-outcome assertion.
+    await checkpointSpan(owned, 'cleanup_execution_join', () => checkpointJoin(Promise.allSettled([...owned.executions]), deadline));
+    await checkpointSpan(owned, 'cleanup_request_join', () => checkpointJoin(Promise.allSettled([...owned.requests]), deadline));
+    if (owned.requests.size !== 0) throw new Error('CHECKPOINT_TEST_HTTP_WORK_UNCONFIRMED');
+    if (owned.server && owned.serverStarted && !owned.serverClosed) {
+      await checkpointSpan(owned, 'cleanup_server_close', () => checkpointJoin(new Promise<void>((resolve, reject) => owned.server!.close(error => error ? reject(error) : resolve())), deadline));
+      if (!owned.serverClosed) throw new Error('CHECKPOINT_TEST_SERVER_CLOSE_UNCONFIRMED');
+    }
+  } catch {
+    owned.stage = 'ownership_unconfirmed'; publishCheckpointFixture(owned);
+    if (!primaryFailed) throw new Error('CHECKPOINT_TEST_CLEANUP_UNCONFIRMED');
+    return;
+  }
+  owned.stage = 'owned_work_drained'; publishCheckpointFixture(owned);
+  let cleanupFailed = false;
+  const restoreBegan = performance.now();
+  try { vi.restoreAllMocks(); calls.launcher.mockReset(); }
+  catch { cleanupFailed = true; }
+  owned.steps.push({ name: 'cleanup_restore', outcome: cleanupFailed ? 'rejected' : 'fulfilled', milliseconds: performance.now() - restoreBegan });
+  if (owned.failures.length > 0) cleanupFailed = true;
+  if (!primaryFailed && !cleanupFailed && owned.root) {
+    try { await checkpointSpan(owned, 'cleanup_remove', () => rm(owned.root!, { recursive: true, force: true })); owned.removed = true; }
+    catch { cleanupFailed = true; }
+  }
+  owned.stage = cleanupFailed ? 'cleanup_failed' : primaryFailed ? 'failed_fixture_retained' : 'removed';
+  publishCheckpointFixture(owned);
+  if (cleanupFailed && !primaryFailed) throw new Error('CHECKPOINT_TEST_CLEANUP_FAILED');
 });
 
 it.each(['complete', 'missing-artifact', 'cancelled-head', 'missing-registration'] as const)(
   'runs the real worker canonical-resume path: %s',
-  async (scenario) => {
+  scenario => runCheckpointCase(scenario, async owned => {
+    const setupBegan = performance.now();
     const root = testTemporaryDirectory('checkpoint-worker-resume-');
-    roots.push(root);
+    owned.root = root;
     const source = `export const meta={name:'${scenario === 'missing-registration' ? 'r-ext-go-qualification' : 'checkpoint-resume-test'}',version:'1.0.0',description:'Checkpoint resume regression',phases:[{title:'First',detail:'First'},{title:'Approval',detail:'Approval'},{title:'Second',detail:'Second'},{title:'Done',detail:'Done'}],permissions:{openslack:['governance.audit']},sideEffects:['openslack.governance.audit'],risk:'medium'};
 export async function run(ctx){ctx.phase('First');const first=await ctx.agent('first',{agentType:'unresolved-fixture',label:'first',phase:'First',budget:{tokens:100}});const replay=await ctx.checkpoint.commit({artifact:new TextEncoder().encode(JSON.stringify(first))});ctx.phase('Approval');await ctx.openslack.governance.audit('checkpoint-resume-marker');await ctx.checkpoint.commit({artifact:new TextEncoder().encode('approved')});ctx.phase('Second');await ctx.agent('second',{agentType:'unresolved-fixture',label:'second',phase:'Second',budget:{tokens:100}});await ctx.checkpoint.commit({artifact:new TextEncoder().encode('second')});ctx.phase('Done');await ctx.checkpoint.commit({artifact:new TextEncoder().encode('done')});return {status:'completed',replay};}`;
     const sourceDirectory = join(root, '.openslack', 'workflows');
@@ -85,6 +230,8 @@ export async function run(ctx){ctx.phase('First');const first=await ctx.agent('f
     });
     const loader = createSealedWorkflowRunnerV2SourceLoader(root);
     const workflow = await loader.load(await loader.prepare(descriptor), descriptor);
+    owned.steps.push({ name: 'fixture_files_and_descriptor', outcome: 'fulfilled', milliseconds: performance.now() - setupBegan });
+    checkpointMark(owned, 'http_fixture');
     let record: WorkflowControlAuthorityRunRecord = {
       schema: 'openslack.workflow_control_authority_run_record.v2',
       workspaceId: descriptor.workspaceId,
@@ -104,8 +251,8 @@ export async function run(ctx){ctx.phase('First');const first=await ctx.agent('f
     const frames: WorkflowRunRecoveryEvidence['bindings'][number][] = [];
     const receipts = new Map<string, string>();
     let activeAttempt = 'attempt.initial';
-    const failures: unknown[] = [];
-    const server = createServer(async (request, response) => {
+    const failures = owned.failures;
+    const handleRequest = async (request: IncomingMessage, response: ServerResponse) => {
       const reply = (value: unknown, status = 200) => {
         const bytes = canonical(value) + '\n';
         response.writeHead(status, {
@@ -196,9 +343,22 @@ export async function run(ctx){ctx.phase('First');const first=await ctx.agent('f
         response.writeHead(500);
         response.end();
       }
+    };
+    const server = createServer((request, response) => {
+      const work = handleRequest(request, response);
+      owned.requests.add(work);
+      void work.then(() => owned.requests.delete(work), error => { failures.push(error); owned.requests.delete(work); });
     });
-    await new Promise<void>((done) => server.listen(0, '127.0.0.1', done));
-    try {
+    owned.server = server;
+    server.once('close', () => { owned.serverClosed = true; });
+    server.on('error', error => failures.push(error));
+    await checkpointStep(owned, 'http_listen', () => new Promise<void>((done, reject) => {
+      const refused = (error: Error) => reject(error);
+      server.once('error', refused);
+      server.listen(0, '127.0.0.1', () => { server.removeListener('error', refused); owned.serverStarted = true; done(); });
+    }));
+    {
+      checkpointMark(owned, 'authority_fixture');
       const address = server.address();
       if (!address || typeof address === 'string') throw Error('No fixture address');
       const origin = `http://127.0.0.1:${address.port}`;
@@ -246,7 +406,7 @@ export async function run(ctx){ctx.phase('First');const first=await ctx.agent('f
         nextBinding: typeof binding,
         generation: number,
       ): WorkflowRunnerV2ExecutionContext => ({
-        signal: new AbortController().signal,
+        signal: checkpointController(owned).signal,
         resumeOffer: null,
         resumeGeneration: generation,
         checkpointAuthority: createWorkflowCheckpointLeaseAuthority(nextBinding),
@@ -276,9 +436,10 @@ export async function run(ctx){ctx.phase('First');const first=await ctx.agent('f
         data: { value: prompt },
         tokenUsage: 1,
       }));
+      checkpointMark(owned, 'initial_worker');
       if (scenario === 'missing-registration') {
         await expect(
-          executeWorkflowRunnerV2AuthorityJob(
+          trackCheckpointExecution(owned, executeWorkflowRunnerV2AuthorityJob(
             workflow,
             descriptor,
             context(binding, 0),
@@ -286,7 +447,7 @@ export async function run(ctx){ctx.phase('First');const first=await ctx.agent('f
             { callerId: 'workflow-runner-v2', client: {} as never },
             authority,
             recovery,
-          ),
+          )),
         ).rejects.toThrow(/registered send-campaign/);
         expect(calls.launcher).not.toHaveBeenCalled();
         expect(checkpointEvents).toBe(0);
@@ -298,7 +459,7 @@ export async function run(ctx){ctx.phase('First');const first=await ctx.agent('f
       }
       let approvalId = '';
       try {
-        await executeWorkflowRunnerV2AuthorityJob(
+        await trackCheckpointExecution(owned, executeWorkflowRunnerV2AuthorityJob(
           workflow,
           descriptor,
           context(binding, 0),
@@ -306,7 +467,7 @@ export async function run(ctx){ctx.phase('First');const first=await ctx.agent('f
           { callerId: 'workflow-runner-v2', client: {} as never },
           authority,
           recovery,
-        );
+        ));
       } catch (error) {
         if (!(error instanceof WorkflowEffectApprovalPendingError)) throw error;
         approvalId = error.approvalId;
@@ -316,6 +477,7 @@ export async function run(ctx){ctx.phase('First');const first=await ctx.agent('f
       expect(checkpointEvents).toBe(1);
       expect(auditEffects).toBe(0);
       expect(record.state).toBe('paused_waiting_approval');
+      checkpointMark(owned, 'fixture_human_decision');
       const human = createWorkflowEffectDecisionAuthority({
         workspaceId: record.workspaceId,
         humanPrincipalIds: ['fixture-human'],
@@ -379,6 +541,7 @@ export async function run(ctx){ctx.phase('First');const first=await ctx.agent('f
       const planned = recoveryFrame(prospective, 'resume_advance', target);
       const stage = JSON.parse(planned.stage);
       frames.push({ ...planned, state: 'staged', resolution: null, resolutionReceipt: null });
+      checkpointMark(owned, 'resume_commit');
       const resumed = await new WorkflowRunnerResumeSourceStore(
         root,
         JSON.parse(target.body),
@@ -390,7 +553,7 @@ export async function run(ctx){ctx.phase('First');const first=await ctx.agent('f
         await rm(reader.checkpointArtifactPath(record.runId, prior.checkpoints[0]!.artifactHash));
       const resumeContext = context(nextBinding, 1);
       if (scenario === 'cancelled-head') {
-        const controller = new AbortController();
+        const controller = checkpointController(owned);
         Object.defineProperty(resumeContext, 'signal', { value: controller.signal });
         const originalRead = authority.read.bind(authority);
         vi.spyOn(authority, 'read').mockImplementation(async (...args) => {
@@ -404,7 +567,8 @@ export async function run(ctx){ctx.phase('First');const first=await ctx.agent('f
           });
         });
       }
-      const execution = executeWorkflowRunnerV2AuthorityJob(
+      checkpointMark(owned, 'resumed_worker');
+      const execution = trackCheckpointExecution(owned, executeWorkflowRunnerV2AuthorityJob(
         workflow,
         descriptor,
         resumeContext,
@@ -412,7 +576,7 @@ export async function run(ctx){ctx.phase('First');const first=await ctx.agent('f
         { callerId: 'workflow-runner-v2', client: {} as never },
         authority,
         recovery,
-      );
+      ));
       if (scenario !== 'complete') {
         await expect(execution).rejects.toThrow(
           scenario === 'missing-artifact' ? /artifact/i : /cancelled/,
@@ -439,9 +603,7 @@ export async function run(ctx){ctx.phase('First');const first=await ctx.agent('f
       expect((await reader.loadCheckpointControl(record.runId))?.checkpoints).toHaveLength(4);
       expect(record.state).toBe('completed');
       expect(failures).toEqual([]);
-    } finally {
-      await new Promise<void>((done, reject) => server.close((e) => (e ? reject(e) : done())));
     }
-  },
+  }),
   platformTestTimeout(5_000),
 );

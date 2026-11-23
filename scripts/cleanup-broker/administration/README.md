@@ -92,10 +92,11 @@ bypass or branch deletion is provided.
 The public campaign uses only synthetic, non-sensitive fixture content. The
 previous private repository (1380965476), its plans and its operation history
 remain historical evidence; this change neither migrates nor deletes them.
-The retained registry pin still identifies the old private-repository scope.
-Until an independent administrator supplies and reviews the exact new registry
-bytes and binding, the production workspace check must remain BLOCKED for the
-public target. A correct old registry digest does not authorize the new target.
+The current source registry selects only the public target. Its exact raw bytes
+are pinned by the canonical administration contract, which retains Broker
+UID/GID 24001/24001 and Agent UID/GID 24002/24002. The generated TS/Python
+projections must match that reviewed contract. Historical private registry
+bytes fail the current pin and public-repository binding checks.
 Fresh installation scope, instance activation and single-use Permits are also
 required; old private-target Permits cannot be extended or transferred.
 
@@ -112,7 +113,9 @@ Historical regression evidence uses the complete contract and registry bytes
 from commit `44deef2651b8964448f4f0ef603114f2524eb046`, with their recorded
 digests. That frozen pairing exercises today's verifier implementation without
 authorizing the public campaign or replacing actual distinct-UID qualification.
-The current public contract with the retained private registry remains BLOCKED.
+A fixture PASS for the current public pair proves only source consistency;
+actual workspace isolation, canonical-main publication, installation,
+activation and real qualification still require their own current evidence.
 
 ```sh
 node ./qualification-fixtures.mjs plan --scratch-root /root/openslack-cleanup-fixtures-new

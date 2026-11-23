@@ -65,6 +65,9 @@ func (repository *Repository) persistDatabaseReconciliation(ctx context.Context,
 	if err := validateRunBinding(run, request, input.ServiceBuildHash); err != nil {
 		return budgetstore.MutationResult{}, budgetstore.Failure(budgetstore.ErrorCommitUnknown, "workflow run drifted before database reconciliation could be proven", errors.Join(commitErr, err))
 	}
+	if _, err := readResumeBudgetBinding(ctx, tx, run, input.Prepared, request); err != nil {
+		return budgetstore.MutationResult{}, budgetstore.Failure(budgetstore.ErrorCommitUnknown, "workflow budget resume binding drifted before database reconciliation could be proven", errors.Join(commitErr, err))
+	}
 	var observedAt time.Time
 	if err := tx.QueryRow(ctx, `SELECT date_trunc('milliseconds', clock_timestamp())`).Scan(&observedAt); err != nil {
 		return budgetstore.MutationResult{}, budgetstore.Failure(budgetstore.ErrorCommitUnknown, "read workflow budget database reconciliation timestamp", errors.Join(commitErr, err))

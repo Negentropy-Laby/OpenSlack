@@ -34,7 +34,9 @@ Required evidence includes:
 - cache-hit zero mutation and qualification ordering that makes reserve durable before provider
   execution and settlement durable before cache visibility;
 - rejection of legacy run-gate approval as reservation authority;
-- fail-closed rejection of any nonzero resume generation while Runner v2 remains undelivered;
+- generation-one continuation of a fully settled budget and first account creation after approval on
+  schema 12, with exact F2 binding and ledger rebuild;
+- rejection of resumed mutations on older schemas, later generations, or without valid F2 evidence;
 - provider reconciliation leaving its reservation open, terminal settlement time binding, safe
   non-null accepted revisions, and the cross-authority database-reconciliation gate;
 - private authentication, exact workspace/caller/route/build binding, lightweight readiness,

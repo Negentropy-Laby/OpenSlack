@@ -1353,6 +1353,8 @@
           "github:qualification-public:1381124543:public:default-main:auto-delete-false:observed:2026-11-09T14:34:19Z;not-deletion-App-installation-evidence",
           "local-host:2026-11-09:configured-UIDs-44180-44181-differ-from-observed-24001-24002;broker-binary-and-socket-absent;no-isolation-qualification",
           "registry:33a9b46866fedd768cb859abfd36341159fc0f3a3e306462575f1f34af7e7ebc:still-private-target-only;administrator-public-scope-update-required",
+          "https://github.com/Negentropy-Laby/OpenSlack/pull/441#issuecomment-6848433073",
+          "github:pr-441:cleanup-source-contribution:9031e3a9:public-target-and-retained-24001-24002",
           "production/qa/qa-ledger-dual-qualification-2026-11-03.md#cleanup-admission-gap-table"
         ],
         "last_verified_at": "2026-11-09T14:34:19Z"

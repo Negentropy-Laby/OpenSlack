@@ -22,7 +22,10 @@ import {
   type SendCampaignBinding,
 } from '../internal/workflow-send-admission.js';
 import { buildProviderUsageReceipt } from '@openslack/agent-runtime';
-import { admitProviderSend } from '@openslack/agent-runtime/internal/provider-send-admission';
+import {
+  admitProviderSend,
+  prepareProviderSend,
+} from '@openslack/agent-runtime/internal/provider-send-admission';
 import { canonicalWorkflowControlAuthorityJson as canonical } from '../workflow-control-authority-contract.js';
 import { createWorkflowRunnerDescriptorPathSecurity } from '../workflow-runner-descriptor-store.js';
 
@@ -236,6 +239,11 @@ it(
       settledFacts(`attempt-${i + 1}`, p, 8192),
     );
     await seed(root, b, digest, facts);
+    const goFrontier = vi.fn(async () => ({
+      reservedCalls: '4',
+      settledCalls: '4',
+      settledTokens: '32768',
+    }));
     const port = await createWorkflowSendAdmissionPort({
       root,
       bindingHash: digest,
@@ -246,11 +254,21 @@ it(
       route: b.route,
       purpose: 'resume',
       go,
-      goFrontier: async () => ({ reservedCalls: '4', settledCalls: '4', settledTokens: '32768' }),
+      goFrontier,
       readGoSettlement: async () => null,
       noOpenGoReservations: async () => true,
       isDefiniteGoRejection: () => false,
     });
+    const before = await readWorkflowSendCampaign(root, b.runId, digest);
+    await expect(
+      prepareProviderSend(port, {
+        providerId: b.providerId,
+        modelId: b.modelId,
+        requestBytes: '{}',
+      }),
+    ).rejects.toThrow('SEND_ADMISSION_LIMIT');
+    expect(goFrontier).not.toHaveBeenCalled();
+    expect(await readWorkflowSendCampaign(root, b.runId, digest)).toEqual(before);
     await expect(
       port.reserve({
         providerId: b.providerId,
@@ -345,6 +363,34 @@ it(
   },
   platformTestTimeout(5_000),
 );
+it.each([
+  ['default', 'SEND_TOTAL_TOKEN_UNVERIFIED'],
+  ['unreviewed-model', 'SEND_ADMISSION_INVALID'],
+])(
+  'refuses preparation for %s without a Go reservation or a campaign mutation',
+  async (modelId, code) => {
+    const { root, b, digest, port, go } = await fixture();
+    const before = await readWorkflowSendCampaign(root, b.runId, digest);
+    const body = JSON.stringify({
+      model: modelId,
+      messages: [{ role: 'user', content: '检查🧪' }],
+      tools: [{ type: 'function', function: { name: 'read', parameters: { type: 'object' } } }],
+      max_tokens: 8192,
+    });
+    await expect(
+      prepareProviderSend(port, {
+        providerId: b.providerId,
+        modelId,
+        requestBytes: body,
+      }),
+    ).rejects.toThrow(code);
+    expect(go.reserve).not.toHaveBeenCalled();
+    expect(go.settle).not.toHaveBeenCalled();
+    expect(await readWorkflowSendCampaign(root, b.runId, digest)).toEqual(before);
+    expect(before.entries).toEqual([]);
+  },
+  platformTestTimeout(5_000),
+);
 it(
   'reserves with Go once, refuses output-only caps and freezes the unresolved attempt',
   async () => {
@@ -369,6 +415,15 @@ it(
       })(),
     ).rejects.toThrow('SEND_TOTAL_TOKEN_UNVERIFIED');
     expect(transport).not.toHaveBeenCalled();
+    const before = await readWorkflowSendCampaign(root, b.runId, digest);
+    await expect(
+      prepareProviderSend(port, {
+        providerId: b.providerId,
+        modelId: b.modelId,
+        requestBytes: '{}',
+      }),
+    ).rejects.toThrow('SEND_ADMISSION_FROZEN');
+    expect(await readWorkflowSendCampaign(root, b.runId, digest)).toEqual(before);
     await expect(port.reserve(request)).rejects.toThrow('SEND_ADMISSION_FROZEN');
     expect(go.reserve).toHaveBeenCalledTimes(1);
     expect(go.settle).not.toHaveBeenCalled();

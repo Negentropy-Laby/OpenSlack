@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { describe, it, expect, vi } from 'vitest';
+import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 import { parseTaskLinkMetadata, proposeWorkspacePR, renderTaskLinkMetadata } from '../propose.js';
 import type { AgentPermissionSnapshot } from '@openslack/kernel';
 
@@ -223,9 +223,13 @@ describe('proposeWorkspacePR authorization', () => {
     }
   });
 
-  it('refuses to include paths that were already staged by another operation', async () => {
-    const root = mkdtempSync(join(tmpdir(), 'openslack-propose-staged-'));
-    try {
+  describe('existing-index ownership fixture', () => {
+    let root: string | undefined;
+    let headBefore: string;
+    let indexBefore: Buffer;
+
+    beforeEach(() => {
+      root = mkdtempSync(join(tmpdir(), 'openslack-propose-staged-'));
       execFileSync('git', ['init'], { cwd: root, stdio: 'ignore' });
       execFileSync('git', ['config', 'user.email', 'test@example.test'], { cwd: root });
       execFileSync('git', ['config', 'user.name', 'Runtime Test'], { cwd: root });
@@ -241,6 +245,21 @@ describe('proposeWorkspacePR authorization', () => {
       writeFileSync(join(root, 'work.txt'), 'after\n', 'utf-8');
       writeFileSync(join(root, 'unexpected.txt'), 'staged elsewhere\n', 'utf-8');
       execFileSync('git', ['add', 'unexpected.txt'], { cwd: root });
+      headBefore = execFileSync('git', ['rev-parse', 'HEAD'], {
+        cwd: root,
+        encoding: 'utf-8',
+      }).trim();
+      indexBefore = execFileSync('git', ['ls-files', '--stage', '-z'], { cwd: root });
+    });
+
+    afterEach(() => {
+      if (root !== undefined) rmSync(root, { recursive: true, force: true });
+      root = undefined;
+    });
+
+    it('refuses to include paths that were already staged by another operation', async () => {
+      const rootDir = root;
+      if (rootDir === undefined) throw new Error('Existing-index fixture was not prepared');
       const publish = vi.fn();
 
       const result = await proposeWorkspacePR({
@@ -248,7 +267,7 @@ describe('proposeWorkspacePR authorization', () => {
         taskId: 'TASK-8',
         runId: 'RUN-8',
         changedPaths: ['work.txt'],
-        rootDir: root,
+        rootDir,
         deliveryService: { publish },
       });
 
@@ -256,10 +275,26 @@ describe('proposeWorkspacePR authorization', () => {
       expect(result.errors[0]).toContain('already contains staged paths');
       expect(publish).not.toHaveBeenCalled();
       expect(
-        execFileSync('git', ['log', '-1', '--pretty=%s'], { cwd: root, encoding: 'utf-8' }).trim(),
+        execFileSync('git', ['rev-parse', 'HEAD'], { cwd: rootDir, encoding: 'utf-8' }).trim(),
+      ).toBe(headBefore);
+      expect(execFileSync('git', ['ls-files', '--stage', '-z'], { cwd: rootDir })).toEqual(
+        indexBefore,
+      );
+      expect(
+        execFileSync('git', ['show', ':unexpected.txt'], { cwd: rootDir, encoding: 'utf-8' }),
+      ).toBe('staged elsewhere\n');
+      expect(
+        execFileSync('git', ['log', '-1', '--pretty=%s'], {
+          cwd: rootDir,
+          encoding: 'utf-8',
+        }).trim(),
       ).toBe('test: seed workspace');
-    } finally {
-      rmSync(root, { recursive: true, force: true });
-    }
+      expect(
+        execFileSync('git', ['diff', '--cached', '--name-only'], {
+          cwd: rootDir,
+          encoding: 'utf-8',
+        }).trim(),
+      ).toBe('unexpected.txt');
+    });
   });
 });

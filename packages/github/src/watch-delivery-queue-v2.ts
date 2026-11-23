@@ -1548,7 +1548,9 @@ function immutableRoute(record: WatchRouteRecordV2): unknown {
     id: record.id,
     canonicalRepository: record.canonicalRepository,
     stableKey: record.stableKey,
-    event: { ...record.event, deliveryId: '' },
+    // Observation/redelivery clocks are not part of the logical input identity.
+    // Keep the original event and queue-owned timestamps in the stored record.
+    event: { ...record.event, deliveryId: '', observedAt: '' },
     routeId: record.routeId,
     routingEpoch: record.routingEpoch,
     backend: record.backend,
@@ -1557,8 +1559,6 @@ function immutableRoute(record: WatchRouteRecordV2): unknown {
     idempotencyKey: record.idempotencyKey,
     blob: record.blob,
     watchConfigDigest: record.watchConfigDigest,
-    firstPersistedAt: record.firstPersistedAt,
-    deadlineAt: record.deadlineAt,
   };
 }
 

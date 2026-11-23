@@ -1,5 +1,5 @@
 import type { AgentRunRequest, AgentRunState, ResolvedAgentConfig, WorktreeHandoff } from './types.js';
-import { admitProviderSend, hasProviderSendAdmission } from './internal/provider-send-admission.js';
+import { admitProviderSend, hasProviderSendAdmission, prepareProviderSend } from './internal/provider-send-admission.js';
 import {
   PermissionDeniedError,
   AgentUnavailableError,
@@ -680,6 +680,22 @@ async function executeAbyBridgeWithProviderAttempt<T>(options: {
   }
 
   const providerAttempt = '1';
+  const requestBytes = JSON.stringify({
+    schema: 'openslack.aby_bridge_provider_attempt.v1',
+    providerId: options.providerId,
+    modelId: options.modelId,
+    runId: options.context.runId,
+    attempt: providerAttempt,
+    prompt: options.context.prompt,
+  });
+  const request = Object.freeze({
+    providerId: options.providerId,
+    modelId: options.modelId,
+    requestBytes,
+    signal: options.context.signal,
+  });
+  await prepareProviderSend(options.port, request);
+  request.signal?.throwIfAborted();
   let reservation: ProviderAttemptReservation;
   try {
     reservation = await options.port.reserve({
@@ -696,22 +712,17 @@ async function executeAbyBridgeWithProviderAttempt<T>(options: {
     }));
     throw error;
   }
-  const requestBytes = JSON.stringify({
-    schema: 'openslack.aby_bridge_provider_attempt.v1',
-    providerId: options.providerId,
-    modelId: options.modelId,
-    runId: options.context.runId,
-    attempt: providerAttempt,
-    prompt: options.context.prompt,
-  });
   let settlementAttempted = false;
   let sendAdmissionFailed = false;
 
   try {
     assertProviderAttemptReservation(reservation, requestedTokens);
-    try { await admitProviderSend(options.port, reservation, {
-      providerId: options.providerId, modelId: options.modelId, requestBytes, signal: options.context.signal,
-    }); } catch(error) { sendAdmissionFailed = true; throw error; }
+    try {
+      await admitProviderSend(options.port, reservation, request);
+    } catch (error) {
+      sendAdmissionFailed = true;
+      throw error;
+    }
     const result = await options.adapter.execute<T>(options.context);
     const tokenUsage = result.tokenUsage;
     if (typeof tokenUsage !== 'number' || !Number.isSafeInteger(tokenUsage) || tokenUsage < 0) {

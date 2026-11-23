@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { lstat, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
 import type * as FsPromises from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve, sep } from 'node:path';
@@ -13,6 +13,7 @@ import {
   workflowEffectApprovalBytes,
 } from '../index.js';
 import { canonicalWorkflowEffectJson } from '../workflow-effect-json.js';
+import * as shadowFilesystem from '../workflow-control-shadow.js';
 
 const lockReadRace = vi.hoisted(() => ({
   lockPath: '',
@@ -328,6 +329,53 @@ describe('LocalWorkflowEffectApprovalStore', () => {
     expect(await readFile(join(storeRoot, 'records', recordName()), 'utf8')).not.toContain(
       'pending-approvals.json',
     );
+  });
+
+  it('cleans up published approval temporaries without another mutation admission', async () => {
+    const now = Date.now();
+    const storeRoot = await root();
+    const records = join(storeRoot, 'records');
+    const decisionAuthority = authority();
+    const store = new LocalWorkflowEffectApprovalStore(
+      storeRoot, decisionAuthority, () => new Date(now + 1_000).toISOString(),
+    );
+    const renamed = new Set<string>();
+    const mutate = shadowFilesystem.withOwnerDirectoryEntryMutation;
+    const admission = vi.spyOn(shadowFilesystem, 'withOwnerDirectoryEntryMutation')
+      .mockImplementation(async (paths, security, operation) => {
+        const temporary = paths[0];
+        if (temporary?.endsWith('.tmp') && basename(dirname(temporary)) === 'records') {
+          const entry = await lstat(temporary).catch((error: NodeJS.ErrnoException) => {
+            if (error.code !== 'ENOENT') throw error;
+          });
+          if (renamed.has(temporary) || (entry && entry.nlink > 1)) {
+            throw new shadowFilesystem.OwnerDirectoryWaitTimeoutError();
+          }
+          const result = await mutate(paths, security, operation);
+          if (paths.length === 2) renamed.add(temporary);
+          return result;
+        }
+        return mutate(paths, security, operation);
+      });
+    const cleanup = vi.spyOn(shadowFilesystem, 'withOwnedDirectoryEntryCleanup');
+    try {
+      await expect(store.createPending(pending(now))).resolves.toMatchObject({ revision: 0 });
+      expect(cleanup.mock.calls.some(([path]) => path.endsWith('.tmp') && basename(dirname(path)) === 'records')).toBe(true);
+      await expect(store.decide({
+        runId: 'run-001',
+        approvalId: 'approval-001',
+        expectedRevision: 0,
+        decision: 'approved',
+        reasonHash: approvedReasonHash,
+        binding: binding(decisionAuthority, now, 'approved', approvedReasonHash),
+      })).resolves.toMatchObject({ status: 'approved', revision: 1 });
+      expect(renamed.size).toBe(1);
+      expect(await readdir(records)).toEqual([recordName()]);
+      await expect(store.read('run-001', 'approval-001')).resolves.toMatchObject({ revision: 1 });
+    } finally {
+      cleanup.mockRestore();
+      admission.mockRestore();
+    }
   });
 
   it('uses one atomic CAS winner under concurrent opposite decisions', async () => {

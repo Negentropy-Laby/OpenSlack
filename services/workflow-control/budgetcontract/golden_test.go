@@ -339,6 +339,51 @@ func TestWorkflowBudgetAuthorityFolds(t *testing.T) {
 	}
 }
 
+func TestWorkflowBudgetAuthorityResumedReserveFold(t *testing.T) {
+	fold := loadGolden(t).Vectors.Folds["reserve"]
+	before, err := ValidateAccount(fold["before"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	beforeHash, err := HashValue("account", before)
+	if err != nil {
+		t.Fatal(err)
+	}
+	previous := before["runRevision"].(int64)
+	committedAt := fold["decision"].(map[string]any)["decidedAt"]
+	for _, tc := range []struct {
+		name      string
+		verified  int64
+		requested int64
+		stale     bool
+	}{
+		{"advanced authoritative revision", previous + 3, previous + 3, false},
+		{"verified revision did not advance", previous, previous, true},
+		{"request revision mismatches verification", previous + 3, previous + 2, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			request := copyRecord(fold["request"].(map[string]any))
+			request["expectedRunRevision"] = tc.requested
+			actual, err := EvaluateResumedReserve(before, request, committedAt, tc.verified)
+			if tc.stale {
+				if !hasCode(err, ErrorStaleRevision) {
+					t.Fatalf("expected a stale revision failure, got %v", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			after := actual.Decision["afterAccount"].(Record)
+			if after["runRevision"] != tc.verified+1 ||
+				after["accountRevision"] != before["accountRevision"].(int64)+1 ||
+				actual.LedgerEntry["previousAccountHash"] != beforeHash {
+				t.Fatalf("resumed reserve lost revision or previous account binding: after=%v ledger=%v", after, actual.LedgerEntry)
+			}
+		})
+	}
+}
+
 func assertFoldValue(t *testing.T, label string, actual, expected any) {
 	t.Helper()
 	if expected == nil {

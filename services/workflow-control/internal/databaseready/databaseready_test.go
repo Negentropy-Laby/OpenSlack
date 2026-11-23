@@ -84,16 +84,16 @@ func TestSchemaProfilesAcceptMigrationTenAndRecoveryRuntimeMinimum(t *testing.T)
 		got  Range
 		want Range
 	}{
-		{name: "shadow", got: ShadowProfile, want: Range{Minimum: 1, Maximum: 11}},
-		{name: "runner", got: RunnerRange(false, false), want: Range{Minimum: 2, Maximum: 11}},
-		{name: "authority", got: AuthorityProfile, want: Range{Minimum: 3, Maximum: 11}},
-		{name: "checkpoint", got: RunnerRange(true, false), want: Range{Minimum: 4, Maximum: 11}},
-		{name: "effect", got: RunnerRange(true, true), want: Range{Minimum: 5, Maximum: 11}},
-		{name: "budget", got: BudgetProfile, want: Range{Minimum: 6, Maximum: 11}},
-		{name: "runner-v2-foundation", got: RunnerV2FoundationProfile, want: Range{Minimum: 7, Maximum: 11}},
-		{name: "runner-v2-runtime-delivery", got: RunnerV2RuntimeDeliveryProfile, want: Range{Minimum: 10, Maximum: 11}},
+		{name: "shadow", got: ShadowProfile, want: Range{Minimum: 1, Maximum: 12}},
+		{name: "runner", got: RunnerRange(false, false), want: Range{Minimum: 2, Maximum: 12}},
+		{name: "authority", got: AuthorityProfile, want: Range{Minimum: 3, Maximum: 12}},
+		{name: "checkpoint", got: RunnerRange(true, false), want: Range{Minimum: 4, Maximum: 12}},
+		{name: "effect", got: RunnerRange(true, true), want: Range{Minimum: 5, Maximum: 12}},
+		{name: "budget", got: BudgetProfile, want: Range{Minimum: 6, Maximum: 12}},
+		{name: "runner-v2-foundation", got: RunnerV2FoundationProfile, want: Range{Minimum: 7, Maximum: 12}},
+		{name: "runner-v2-runtime-delivery", got: RunnerV2RuntimeDeliveryProfile, want: Range{Minimum: 10, Maximum: 12}},
 	}
-	if CurrentSchemaVersion != 11 {
+	if CurrentSchemaVersion != 12 {
 		t.Fatalf("current schema version = %d", CurrentSchemaVersion)
 	}
 	for _, profile := range profiles {

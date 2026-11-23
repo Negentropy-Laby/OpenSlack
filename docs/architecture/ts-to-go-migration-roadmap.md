@@ -7,7 +7,7 @@ audience:
   - contributors
   - reviewers
 owner: architecture
-updated: 2026-09-05
+updated: 2026-11-23
 sources:
   - docs/architecture/architecture.md
   - docs/architecture/adr/adr-0002-multi-go-service-workspace.md
@@ -497,8 +497,10 @@ record kind, projection, and projection domain hash; cross-spliced layers fail c
 The first qualification account uses a fixed, non-secret process `BudgetSeed` containing the
 policy hash and three canonical limits. It is not part of the HTTP wire; the production initial
 policy source remains `NOT_DELIVERED`.
-E2 accepts only generation-zero runs; any nonzero `resumeGeneration` fails closed without budget
-evidence until Runner v2 delivers the reviewed resume path.
+E2 accepts generation-zero runs. In local qualification on schema 12, Runner v2 may reserve and
+settle at `resumeGeneration=1` with exact F2 evidence and a committed resume. The service continues a
+fully settled account or seeds the first account at the validated run revision. Older schemas and
+later generations reject resumed mutations.
 
 The standalone loopback service is health-only without exact qualification configuration. A
 qualification harness proves durable reserve before provider execution, durable settlement before

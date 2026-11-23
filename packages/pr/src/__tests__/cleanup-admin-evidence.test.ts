@@ -4,7 +4,9 @@ import { declareLinuxCleanupTests } from './helpers/cleanup-platform-qualificati
 import { execFileSync, spawnSync } from 'node:child_process';
 import {
   chmodSync,
-  createReadStream,
+  closeSync,
+  openSync,
+  readSync,
   existsSync,
   linkSync,
   mkdirSync,
@@ -18,7 +20,7 @@ import {
 import type * as FileSystem from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { testExecutable } from '../../../../scripts/testing/process-fixture.mjs';
 import {
   prepareCleanupEvidenceDraft,
@@ -599,25 +601,49 @@ describe('cleanup evidence preparation', () => {
     expect(fault.openedFiles).toBe(0);
   });
   if (declareLinuxCleanupTests) {
-    it('captures a Node artifact above 256 MiB through the 512 MiB streaming contract', async () => {
-      const f = fixture(),
-        node = f.input.artifacts.find((entry) => entry.artifact === 'node')!;
-      truncateSync(node.source.path, 257 * 1024 * 1024);
-      const expected = createHash('sha256');
-      // Read all real bytes for the independent expected digest, without
-      // thousands of default 64 KiB async I/O callbacks inside the test budget.
-      for await (const block of createReadStream(node.source.path, { highWaterMark: 1024 * 1024 }))
-        expected.update(block);
-      node.source.sha256 = expected.digest('hex');
-      const result = prepareCleanupEvidenceDraft(f.input);
-      expect(result.blockingIssues).toEqual([]);
-      expect(result.published).toBe(true);
-      const manifest = JSON.parse(
-        readFileSync(result.targetEvidence!.installationManifestPath, 'utf8'),
-      );
-      expect(
-        manifest.files.find((entry: { path: string }) => entry.path.endsWith('/node')).sha256,
-      ).toBe(node.source.sha256);
+    describe('large Node artifact fixture', () => {
+      let prepared: ReturnType<typeof fixture> | undefined;
+
+      beforeEach(() => {
+        const f = fixture(),
+          node = f.input.artifacts.find((entry) => entry.artifact === 'node')!;
+        truncateSync(node.source.path, 257 * 1024 * 1024);
+        const expected = createHash('sha256');
+        // Prepare the independent expected digest before the operation's deadline.
+        // The real 257 MiB source and production streaming capture remain intact.
+        const block = Buffer.alloc(1024 * 1024),
+          descriptor = openSync(node.source.path, 'r');
+        try {
+          for (;;) {
+            const count = readSync(descriptor, block, 0, block.length, null);
+            if (count === 0) break;
+            expected.update(block.subarray(0, count));
+          }
+        } finally {
+          closeSync(descriptor);
+        }
+        node.source.sha256 = expected.digest('hex');
+        prepared = f;
+      });
+
+      afterEach(() => {
+        prepared = undefined;
+      });
+
+      it('captures a Node artifact above 256 MiB through the 512 MiB streaming contract', () => {
+        if (prepared === undefined) throw new Error('Large Node fixture was not prepared');
+        const f = prepared,
+          node = f.input.artifacts.find((entry) => entry.artifact === 'node')!;
+        const result = prepareCleanupEvidenceDraft(f.input);
+        expect(result.blockingIssues).toEqual([]);
+        expect(result.published).toBe(true);
+        const manifest = JSON.parse(
+          readFileSync(result.targetEvidence!.installationManifestPath, 'utf8'),
+        );
+        expect(
+          manifest.files.find((entry: { path: string }) => entry.path.endsWith('/node')).sha256,
+        ).toBe(node.source.sha256);
+      });
     });
     it('rejects Node above 512 MiB before publication', () => {
       const f = fixture(),

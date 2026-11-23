@@ -2,7 +2,7 @@ import { parseGitHubRepoSpec } from './repo-spec.js';
 export { parseGitHubRepoSpec } from './repo-spec.js';
 import { Octokit } from '@octokit/rest';
 import { execFileSync } from 'node:child_process';
-import { existsSync, realpathSync } from 'node:fs';
+import { existsSync, lstatSync, realpathSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import {
   requireAppInstallationToken,
@@ -238,33 +238,9 @@ export function resolveGitHubAppLocalStateRoot(
   }
 
   try {
-    const commonGitDir = runBoundedGit(
-      workspaceRoot ?? resolve(cwd),
-      ['rev-parse', '--path-format=absolute', '--git-common-dir'],
-      signal,
-    ).trim();
-    if (commonGitDir && workspaceRoot) {
-      const primaryRoot = dirname(resolve(commonGitDir));
-      const worktreeOutput = runBoundedGit(
-        workspaceRoot,
-        ['worktree', 'list', '--porcelain', '-z'],
-        signal,
-      );
-      const registered = new Set(
-        worktreeOutput
-          .split('\0')
-          .filter((field) => field.startsWith('worktree '))
-          .map((field) => normalizeRealPath(field.slice('worktree '.length))),
-      );
-      const currentPath = normalizeRealPath(workspaceRoot);
-      const primaryPath = normalizeRealPath(primaryRoot);
-      if (
-        registered.has(currentPath) &&
-        registered.has(primaryPath) &&
-        readStableLocalUtf8(join(primaryRoot, 'openslack.yaml'), LOCAL_METADATA_MAX_BYTES) !== null
-      ) {
-        return join(primaryRoot, '.openslack.local');
-      }
+    if (workspaceRoot) {
+      const primary = registeredPrimaryWorkspace(workspaceRoot, signal);
+      if (primary) return join(primary, '.openslack.local');
     }
   } catch (error) {
     if (isAbortError(error)) throw error;
@@ -272,6 +248,64 @@ export function resolveGitHubAppLocalStateRoot(
   }
   assertNotAborted(signal);
   return workspaceLocalState;
+}
+
+function gitPathLine(value: string): string {
+  // Git appends one LF. Trimming whitespace would corrupt valid Unix paths.
+  if (!value.endsWith('\n') || value.includes('\0')) throw new Error('GIT_PATH_INVALID');
+  const path = value.slice(0, -1);
+  if (!path) throw new Error('GIT_PATH_INVALID');
+  return path;
+}
+
+function registeredPrimaryWorkspace(workspace: string, signal?: AbortSignal): string | null {
+  const common = realpathSync.native(
+    gitPathLine(
+      runBoundedGit(workspace, ['rev-parse', '--path-format=absolute', '--git-common-dir'], signal),
+    ),
+  );
+  const gitDir = realpathSync.native(
+    gitPathLine(runBoundedGit(workspace, ['rev-parse', '--absolute-git-dir'], signal)),
+  );
+  const primary = dirname(common);
+  // Only the conventional primary layout is provable here. A separate gitdir
+  // or a forged pointer must not borrow some other workspace's App state.
+  if (!lstatSync(join(primary, '.git')).isDirectory()) return null;
+  if (normalizeRealPath(join(primary, '.git')) !== normalizeRealPath(common)) return null;
+  if (
+    normalizeRealPath(
+      gitPathLine(runBoundedGit(primary, ['rev-parse', '--show-toplevel'], signal)),
+    ) !== normalizeRealPath(primary)
+  )
+    return null;
+  if (readStableLocalUtf8(join(primary, 'openslack.yaml'), LOCAL_METADATA_MAX_BYTES) === null)
+    return null;
+  if (normalizeRealPath(gitDir) === normalizeRealPath(common))
+    return normalizeRealPath(workspace) === normalizeRealPath(primary) ? primary : null;
+
+  // Reciprocal Git administration links prove this exact registration without
+  // depending on `worktree list -z` (Git >=2.36), ambiguous newline porcelain,
+  // or the existence of any unrelated registered worktree.
+  if (normalizeRealPath(dirname(gitDir)) !== normalizeRealPath(join(common, 'worktrees')))
+    return null;
+  const pointer = readStableLocalUtf8(join(workspace, '.git'), LOCAL_METADATA_MAX_BYTES);
+  const backPointer = readStableLocalUtf8(join(gitDir, 'gitdir'), LOCAL_METADATA_MAX_BYTES);
+  const commonPointer = readStableLocalUtf8(join(gitDir, 'commondir'), LOCAL_METADATA_MAX_BYTES);
+  if (!pointer?.startsWith('gitdir: ') || !backPointer || !commonPointer) return null;
+  if (
+    normalizeRealPath(resolve(workspace, gitPathLine(pointer.slice('gitdir: '.length)))) !==
+    normalizeRealPath(gitDir)
+  )
+    return null;
+  if (
+    normalizeRealPath(resolve(gitDir, gitPathLine(backPointer))) !==
+    normalizeRealPath(join(workspace, '.git'))
+  )
+    return null;
+  if (normalizeRealPath(resolve(gitDir, gitPathLine(commonPointer))) !== normalizeRealPath(common))
+    return null;
+  assertNotAborted(signal);
+  return primary;
 }
 
 function normalizeRealPath(path: string): string {
