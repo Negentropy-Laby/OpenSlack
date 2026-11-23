@@ -880,12 +880,6 @@ export function createWorkflowRunnerV2ProviderAttemptPort(
   ): Promise<number> => {
     if (account && context.resumeGeneration === 0) return account.runRevision;
     if (!budgetAuthority) return descriptor.runRevision;
-    if (!account && context.resumeGeneration !== 0) {
-      throw new WorkflowRunnerV2BudgetBoundaryError(
-        'WORKFLOW_RUNNER_V2_BUDGET_RECONCILIATION_REQUIRED',
-        'A resumed budget request requires an existing durable budget account.',
-      );
-    }
     if (!runAuthority) {
       throw new WorkflowRunnerV2BudgetBoundaryError(
         'WORKFLOW_RUNNER_V2_BUDGET_RECONCILIATION_REQUIRED',
@@ -1132,6 +1126,8 @@ export function createWorkflowRunnerV2ProviderAttemptPort(
             // An attempted dispatch stays in the exact Provider receipt. F2
             // reports only accounted usage, which is zero without token evidence.
             actualCalls: usage.status === 'reported' ? usage.calls : '0',
+            // F2 binds the reported usage; Go decides whether the account can settle it.
+            settlementStatus: usage.status === 'reported' ? 'settled' : 'reconciliation_required',
           },
           sourceFor('budget_settle', preparedRequest),
         );

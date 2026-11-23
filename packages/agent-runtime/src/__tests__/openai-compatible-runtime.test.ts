@@ -981,6 +981,45 @@ describe('OpenAI-compatible agent runtime', () => {
     expect(transport).not.toHaveBeenCalled();
   });
 
+  it('records unreported usage when reservation consumes the remaining send deadline', async () => {
+    const { context } = createContext(root);
+    let now = Date.now();
+    const clock = vi.spyOn(Date, 'now').mockImplementation(() => now);
+    const port: ProviderAttemptPort = {
+      reserve: vi.fn(async () => {
+        now += 2_000;
+        return {
+          reservationId: 'reservation.finalize-deadline',
+          callId: 'call.finalize-deadline',
+          authorizedTokens: '100',
+        };
+      }),
+      settle: vi.fn(async () => {}),
+    };
+    const admission = vi.fn(async () => {});
+    bindProviderSendAdmission(port, admission);
+    const transport = vi.fn();
+    try {
+      const error = await adapter(transport as typeof fetch, {
+        providerAttemptBoundary: createProviderAttemptBoundary(port),
+      })
+        .execute(context)
+        .catch((error: unknown) => error);
+
+      expect(error).toBeInstanceOf(ProviderTimeoutError);
+      expect(port.reserve).toHaveBeenCalledOnce();
+      expect(admission).not.toHaveBeenCalled();
+      expect(transport).not.toHaveBeenCalled();
+      expect(port.settle).toHaveBeenCalledOnce();
+      expect(vi.mocked(port.settle).mock.calls[0]?.[1]).toMatchObject({
+        outcome: 'provider_attempt_failed',
+        status: 'unreported',
+      });
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
   it.each([2_000, 2_001])(
     'does not send when admission uses %i ms of the total deadline',
     async (elapsed) => {

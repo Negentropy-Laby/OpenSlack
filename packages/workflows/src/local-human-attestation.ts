@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process';
+import { readWindowsCurrentSid } from './internal/windows-current-sid.js';
 import { createHash, randomUUID } from 'node:crypto';
 import {
   chmodSync,
@@ -1116,20 +1117,14 @@ export function createLocalHumanAttestationProviderForTest(
 
 function resolveProductionSubject(): SubjectBinding {
   if (process.platform === 'win32') {
-    const output = execFileSync('whoami.exe', ['/user', '/fo', 'csv', '/nh'], {
-      encoding: 'utf8',
-      windowsHide: true,
-      timeout: 5_000,
-      maxBuffer: 16 * 1024,
-    }).trim();
-    const match = /^"(?:""|[^"])*","(S-\d(?:-\d+)+)"$/i.exec(output);
-    if (!match || !WINDOWS_SID.test(match[1]!)) {
+    try {
+      return Object.freeze({ canonical: 'windows-sid:' + readWindowsCurrentSid(5_000) });
+    } catch {
       return fail(
         'LOCAL_HUMAN_ATTESTATION_SUBJECT_UNAVAILABLE',
         'The current Windows SID could not be resolved.',
       );
     }
-    return Object.freeze({ canonical: `windows-sid:${match[1]!.toUpperCase()}` });
   }
   if (typeof process.getuid !== 'function') {
     return fail(

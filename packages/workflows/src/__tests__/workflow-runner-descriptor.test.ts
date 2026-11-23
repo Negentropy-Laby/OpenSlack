@@ -1,18 +1,22 @@
 import { execFileSync } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import {
   chmod,
   lstat,
   mkdir,
   mkdtemp,
   readFile,
+  readdir,
   realpath,
   rm,
   symlink,
+  utimes,
   writeFile,
 } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import * as keyedSerialQueue from '../internal/keyed-serial-queue.js';
 import {
   createWorkflowRunnerExecutionDescriptor,
   hashWorkflowRunnerDescriptor,
@@ -178,7 +182,9 @@ afterEach(async () => {
 });
 
 describe('Windows descriptor identity query', () => {
+  beforeEach(() => vi.stubEnv('SystemRoot', 'C:\\Windows'));
   afterEach(() => {
+    vi.unstubAllEnvs();
     vi.doUnmock('node:child_process');
     vi.resetModules();
   });
@@ -195,7 +201,7 @@ describe('Windows descriptor identity query', () => {
     expect(createWorkflowRunnerDescriptorPathSecurity('win32').platform).toBe('win32');
     expect(createWorkflowRunnerDescriptorPathSecurity('win32').platform).toBe('win32');
     expect(query).toHaveBeenCalledTimes(1);
-    expect(query).toHaveBeenCalledWith('whoami.exe', ['/user', '/fo', 'csv', '/nh'], {
+    expect(query).toHaveBeenCalledWith('C:\\Windows\\System32\\whoami.exe', ['/user', '/fo', 'csv', '/nh'], {
       encoding: 'utf8',
       timeout: 20_000,
       windowsHide: true,
@@ -217,7 +223,7 @@ describe('Windows descriptor identity query', () => {
     expect(query).toHaveBeenCalledTimes(1);
   });
 
-  it('propagates a failed identity query without fallback or caching its result', async () => {
+  it('reports a permission error without fallback or caching its result', async () => {
     const failure = new Error('owned current-user query failed');
     const query = vi
       .fn()
@@ -226,7 +232,9 @@ describe('Windows descriptor identity query', () => {
       })
       .mockReturnValue('"domain\\worker","S-1-5-21-42-1001"');
     const { createWorkflowRunnerDescriptorPathSecurity } = await securityModule(query);
-    expect(() => createWorkflowRunnerDescriptorPathSecurity('win32')).toThrow(failure);
+    expect(() => createWorkflowRunnerDescriptorPathSecurity('win32')).toThrow(
+      expect.objectContaining({ code: 'WORKFLOW_RUNNER_DESCRIPTOR_STORE_PERMISSION_DENIED' }),
+    );
     expect(query).toHaveBeenCalledTimes(1);
     expect(createWorkflowRunnerDescriptorPathSecurity('win32').platform).toBe('win32');
     expect(query).toHaveBeenCalledTimes(2);
@@ -429,6 +437,69 @@ describe('GS8-B sealed execution descriptor', () => {
     );
     // Prove the test did not replace or rewrite the immutable descriptor.
     expect((await readFile(path)).length).toBeGreaterThan(0);
+  });
+
+  it('keeps a recent temporary while removing an older owner-only temporary', async () => {
+    if (process.platform === 'win32') return;
+    const root = await mkdtemp('/tmp/openslack-descriptor-temporary-');
+    roots.push(root);
+    const store = new WorkflowRunnerDescriptorStore(root);
+    await store.initialize();
+    const directory = join(root, 'descriptors');
+    const recent = join(directory, '.tmp-' + randomUUID());
+    const stale = join(directory, '.tmp-' + randomUUID());
+    await Promise.all([
+      writeFile(recent, 'in progress', { mode: 0o600 }),
+      writeFile(stale, 'orphan', { mode: 0o600 }),
+    ]);
+    const past = new Date(Date.now() - 10 * 60 * 1_000);
+    await utimes(stale, past, past);
+    await store.initialize();
+    expect(await readdir(directory)).toEqual([recent.slice(directory.length + 1)]);
+  });
+
+  it('serializes descriptor creation across instances of the same root', async () => {
+    const root = await mkdtemp(join(await realpath(tmpdir()), 'openslack-descriptor-shared-root-'));
+    roots.push(root);
+    const entered = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const queued = Promise.withResolvers<void>();
+    const releaseSpy = vi.fn(async (path: string, directory: boolean) => {
+      await chmod(path, directory ? 0o700 : 0o600);
+      if (!directory && path.includes('.tmp-')) {
+        entered.resolve();
+        await release.promise;
+      }
+    });
+    const security: WorkflowRunnerDescriptorPathSecurity = {
+      platform: process.platform,
+      harden: releaseSpy,
+      assertOwnerOnly: async () => {},
+    };
+    const writer = new WorkflowRunnerDescriptorStore(root, security);
+    const reader = new WorkflowRunnerDescriptorStore(root, security);
+    const value = descriptor();
+    const creation = writer.create(value);
+    await Promise.race([entered.promise, creation]);
+    const enqueue = keyedSerialQueue.enqueueByKey;
+    const spy = vi.spyOn(keyedSerialQueue, 'enqueueByKey').mockImplementation((...args) => {
+      const result = enqueue(...args);
+      queued.resolve();
+      return result;
+    });
+    const reading = reader.read(value.descriptorRef);
+    try {
+      const wasQueued = await Promise.race([queued.promise.then(() => true), reading.then(() => false)]);
+      expect(wasQueued).toBe(true);
+      expect((await readdir(join(root, 'descriptors'))).filter((name) => name.startsWith('.tmp-'))).toHaveLength(1);
+      release.resolve();
+      await expect(creation).resolves.toMatchObject({ duplicate: false });
+      await expect(reading).resolves.toEqual(value);
+    } finally {
+      release.resolve();
+      await Promise.allSettled([creation, reading]);
+      spy.mockRestore();
+    }
   });
 
   it('hardens and verifies a newly created Windows descriptor store', async () => {

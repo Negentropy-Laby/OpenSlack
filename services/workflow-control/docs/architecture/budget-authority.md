@@ -49,10 +49,16 @@ generation-one reserve can advance an existing, fully settled account across tha
 requires a committed F2 resume transition, a live lease and fence, and the resolved F2 binding for
 the exact reserve request. It records the preceding account hash, run revision and hash, and
 binding identity in an append-only continuation attached to the reserve ledger entry. The
-account identity, limits, counters and historical hashes carry forward. A resumed settlement
-requires its own exact F2 binding and a reservation opened under the continued account.
+account identity, limits, counters and historical hashes carry forward. If approval precedes the
+first reserve, the same resume and F2 checks authorize genesis at the current run revision. The
+first E1 ledger entry and receipt link that genesis to the exact F2 reserve resolution. A resumed
+settlement requires its own exact F2 binding and uses either the existing continuation or the
+verified generation-one genesis for the opened reservation.
+
 Generation zero retains the original behavior. Older schemas and later generations fail closed
-for resumed mutations. The down migration refuses while any continuation is needed for replay.
+for resumed mutations. Schema 12 down refuses when continuation or generation-one genesis
+evidence exists. On an empty schema, remove the schema 12 continuation before removing the budget
+authority objects from schema 6.
 
 Every exact durable value uses a Go-owned companion envelope with these closed fields:
 

@@ -26,6 +26,7 @@ import {
   readOwnerFile,
   syncDirectory,
   type WorkflowControlShadowJournalSecurityDependencies,
+  withOwnerDirectoryEntryMutation,
 } from './workflow-control-shadow.js';
 import { canonicalWorkflowEffectJson, parseWorkflowEffectJson } from './workflow-effect-json.js';
 
@@ -786,7 +787,9 @@ export class WorkflowRunRouteJournal {
         this.#security,
         this.#closed,
       );
-      await rename(activePath, closedPath);
+      await withOwnerDirectoryEntryMutation([activePath, closedPath], this.#security, () =>
+        rename(activePath, closedPath),
+      );
       await Promise.all([
         syncDirectory(this.#active),
         syncDirectory(join(this.#closed, name.slice(0, 2))),
@@ -948,7 +951,9 @@ export class WorkflowRunRouteJournal {
               'Legacy route receipt conflicts with the partitioned journal.',
             );
           }
-          await rename(source, activeTarget);
+          await withOwnerDirectoryEntryMutation([source, activeTarget], this.#security, () =>
+        rename(source, activeTarget),
+      );
           continue;
         } catch (error) {
           if (
@@ -965,7 +970,9 @@ export class WorkflowRunRouteJournal {
               .update(`${entry.name}\0${stat.dev}\0${stat.ino}\0${stat.size}`)
               .digest('hex')}.entry`,
           );
-          await rename(source, target);
+          await withOwnerDirectoryEntryMutation([source, target], this.#security, () =>
+        rename(source, target),
+      );
           this.#quarantinedRouteNames.add(entry.name);
           continue;
         }
@@ -974,7 +981,9 @@ export class WorkflowRunRouteJournal {
         this.#quarantine,
         `unknown.${createHash('sha256').update(`${entry.name}\0${Date.now()}`).digest('hex')}.entry`,
       );
-      await rename(source, target);
+      await withOwnerDirectoryEntryMutation([source, target], this.#security, () =>
+        rename(source, target),
+      );
     }
     for (const name of await readdir(this.#quarantine)) {
       const match = /^(?<route>[0-9a-f]{64}\.json)\.[0-9a-f]{64}\.entry$/u.exec(name);
@@ -1053,7 +1062,9 @@ export class WorkflowRunRouteJournal {
       this.#quarantine,
       `${safeName}.${createHash('sha256').update(`${name}\0${stat.dev}\0${stat.ino}\0${stat.size}`).digest('hex')}.entry`,
     );
-    await rename(path, target);
+    await withOwnerDirectoryEntryMutation([path, target], this.#security, () =>
+        rename(path, target),
+      );
     if (ROUTE_FILE.test(name)) this.#quarantinedRouteNames.add(name);
     await Promise.all([syncDirectory(this.#active), syncDirectory(this.#quarantine)]);
   }

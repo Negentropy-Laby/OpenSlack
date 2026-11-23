@@ -220,8 +220,9 @@ existing GS9-B running head while keeping account revision independent; it write
 transition event and does not reuse the GS8 runner or GS9-C/D shadow tables. Same-key replay is
 byte-identical, a different fingerprint conflicts, and an unprovable commit blocks the run through
 durable reconciliation.
-Because Runner v2 and its resume delivery are not present, this E2 qualification authority accepts
-only `resumeGeneration=0`; a resumed run fails closed without creating budget evidence.
+In local qualification, schema 12 accepts `resumeGeneration=1` with a committed Runner v2
+resume and exact F2 proof. It continues a fully settled account or creates the first account at
+the current run revision. Older schemas and later generations reject resumed budget mutations.
 The account retains an immutable canonical genesis snapshot. Restart verification folds every
 closed ledger kind from that anchor and requires byte/hash equality with the current account;
 anchor or ledger drift, including a provider-attempt ledger/usage-receipt mismatch, fails closed.

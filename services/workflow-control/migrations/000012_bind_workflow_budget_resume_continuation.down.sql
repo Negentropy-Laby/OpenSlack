@@ -3,7 +3,17 @@ BEGIN;
 LOCK TABLE workflow_control_budget_accounts, workflow_control_budget_resume_continuations IN ACCESS EXCLUSIVE MODE;
 DO $$
 BEGIN
-    IF EXISTS (SELECT 1 FROM workflow_control_budget_resume_continuations) THEN
+    IF EXISTS (SELECT 1 FROM workflow_control_budget_resume_continuations)
+       OR EXISTS (
+           SELECT 1
+           FROM workflow_control_budget_receipts r
+           JOIN workflow_runner_authority_bindings f
+             ON f.workspace_id=r.workspace_id AND f.run_id=r.run_id
+            AND f.source_request_hash=r.request_hash AND f.operation='budget_reserve'
+            AND f.source_expected_resume_generation=1 AND f.source_accepted_resume_generation=1
+           WHERE r.operation='reserve' AND r.status='accepted'
+             AND r.expected_account_revision=0 AND r.accepted_account_revision=1
+       ) THEN
         RAISE EXCEPTION 'workflow budget resume continuations are required for ledger replay';
     END IF;
 END;

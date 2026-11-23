@@ -179,8 +179,54 @@ func requireBudgetContinuation(ctx context.Context, tx pgx.Tx, account budgetcon
 	if err := tx.QueryRow(ctx, resumeContinuationExistsSQL, account["workspaceId"], account["runId"], account["accountId"], accountRevision).Scan(&exists); err != nil {
 		return databaseFailure("read workflow budget account continuation", err)
 	}
-	if !exists {
+	if exists {
+		return nil
+	}
+	return requireResumedBudgetGenesis(ctx, tx, account, accountRevision)
+}
+
+// An account first used after approval has no earlier run-revision gap. Its
+// first durable E1 reserve receipt and the matching F2 resolution anchor it.
+func requireResumedBudgetGenesis(ctx context.Context, tx pgx.Tx, account budgetcontract.Record, accountRevision int64) error {
+	if accountRevision < 1 {
 		return budgetstore.Failure(budgetstore.ErrorConflict, "budget account revision predates workflow budget continuation", nil)
+	}
+	rows, err := tx.Query(ctx, resumeBudgetGenesisProofSQL, account["workspaceId"], account["runId"], account["accountId"])
+	if err != nil {
+		return databaseFailure("read resumed budget genesis proof", err)
+	}
+	defer rows.Close()
+	type genesisProof struct {
+		proof       resumeBudgetProof
+		key, hash   string
+		runRevision int64
+	}
+	genesis, err := pgx.CollectExactlyOneRow(rows, func(row pgx.CollectableRow) (genesisProof, error) {
+		var result genesisProof
+		f := &result.proof
+		err := row.Scan(&f.bindingID, &f.stage, &f.stageReceipt, &f.resolution, &f.resolutionReceipt,
+			&result.key, &result.hash, &result.runRevision)
+		return result, err
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return budgetstore.Failure(budgetstore.ErrorConflict, "budget account revision predates workflow budget continuation", nil)
+	}
+	if errors.Is(err, pgx.ErrTooManyRows) {
+		return budgetstore.Failure(budgetstore.ErrorIntegrity, "resumed budget genesis must have exactly one F2 proof", err)
+	}
+	if err != nil {
+		return databaseFailure("read exact resumed budget genesis", err)
+	}
+	prepared, err := genesis.proof.preparedRequest()
+	if err != nil {
+		return err
+	}
+	_, request, err := budgetcontract.ValidatePreparedRequestRecord(prepared)
+	if err != nil || prepared.Operation != "reserve" || prepared.IdempotencyKey != genesis.key ||
+		prepared.RequestHash != genesis.hash || request["workspaceId"] != account["workspaceId"] ||
+		request["runId"] != account["runId"] || request["accountId"] != account["accountId"] ||
+		request["expectedAccountRevision"] != int64(0) || request["expectedRunRevision"] != genesis.runRevision {
+		return budgetstore.Failure(budgetstore.ErrorIntegrity, "resumed budget genesis does not match its exact first reserve", err)
 	}
 	return nil
 }

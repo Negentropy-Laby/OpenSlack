@@ -107,8 +107,8 @@ async function stageBundle(bundleRoot: string, nodeExecutable: string): Promise<
     throw new Error('Node executable must be a regular non-symlink file.');
   }
   await requireAbsent(bundleRoot);
-  await mkdir(bundleRoot, { mode: 0o700 });
   const security = createWorkflowRunnerDescriptorPathSecurity();
+  await mkdir(bundleRoot, { mode: 0o700 });
   await security.harden(bundleRoot, true);
 
   const built = await buildBundle();

@@ -3,6 +3,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -13,6 +14,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -44,7 +46,7 @@ import (
 // the Go-only container gate continues to require only its pinned Go toolchain.
 // The budget and failure scenarios confine provider requests to loopback.
 func TestGS9F2SealedCheckpointResume(t *testing.T) {
-	for _, scenario := range []string{"checkpoint", "budget", "provider_failure_isolated"} {
+	for _, scenario := range []string{"checkpoint", "budget", "provider_failure_isolated", "reported_overrun", "first_budget_on_resume"} {
 		t.Run(scenario, func(t *testing.T) { testGS9F2SealedCheckpointResume(t, scenario) })
 	}
 }
@@ -201,9 +203,19 @@ func testGS9F2SealedCheckpointResume(t *testing.T, scenario string) {
 				}
 				return
 			}
+			totalTokens := 17
+			if scenario == "reported_overrun" {
+				reservedTokens, err := strconv.Atoi(account.Value["reserved"].(budgetcontract.Record)["tokens"].(string))
+				if err != nil || reservedTokens < 5 {
+					t.Errorf("invalid overrun fixture reservation: %d, %v", reservedTokens, err)
+					http.Error(w, "invalid overrun fixture reservation", http.StatusBadRequest)
+					return
+				}
+				totalTokens = reservedTokens + 1
+			}
 			if err := json.NewEncoder(w).Encode(map[string]any{
 				"choices": []any{map[string]any{"message": map[string]any{"content": "{\"phase\":\"" + phase + "\"}"}}},
-				"usage":   map[string]int{"prompt_tokens": 12, "completion_tokens": 5, "total_tokens": 17},
+				"usage":   map[string]int{"prompt_tokens": totalTokens - 5, "completion_tokens": 5, "total_tokens": totalTokens},
 			}); err != nil {
 				t.Error(err)
 			}
@@ -216,6 +228,10 @@ func testGS9F2SealedCheckpointResume(t *testing.T, scenario string) {
 	case "budget":
 		driverConfig["localProviderOrigin"], initialCalls = startProvider(runID, "First", "1", "0", http.StatusOK)
 		driverConfig["resumeProviderOrigin"], resumeCalls = startProvider(runID, "Done", "2", "1", http.StatusOK)
+	case "first_budget_on_resume":
+		driverConfig["resumeOnlyProviderOrigin"], resumeCalls = startProvider(runID, "Done", "1", "0", http.StatusOK)
+	case "reported_overrun":
+		driverConfig["failureProviderOrigin"], failureCalls = startProvider(failedRunID, "First", "1", "0", http.StatusOK)
 	case "provider_failure_isolated":
 		driverConfig["failureProviderOrigin"], failureCalls = startProvider(failedRunID, "First", "1", "0", http.StatusServiceUnavailable)
 	}
@@ -248,24 +264,67 @@ func testGS9F2SealedCheckpointResume(t *testing.T, scenario string) {
 		t.Fatalf("sealed checkpoint resume: %v\n%s", err, output)
 	}
 	t.Logf("sealed checkpoint resume: %s", output)
-	if scenario == "provider_failure_isolated" {
+	if failureCalls != nil {
 		if calls := failureCalls.Load(); calls != 1 {
 			t.Fatalf("expected one failing provider POST, got %d", calls)
+		}
+		wantReason := "provider_outcome_unknown"
+		if scenario == "reported_overrun" {
+			wantReason = "usage_overrun"
 		}
 		var state string
 		var openReservations, providerReconciliations, healthyBudgetAccounts int
 		if err := pool.QueryRow(t.Context(), `
 SELECT state,
     (SELECT count(*) FROM workflow_control_budget_reservations WHERE workspace_id=$1 AND run_id=$2 AND status='open'),
-    (SELECT count(*) FROM workflow_control_budget_reconciliations WHERE workspace_id=$1 AND run_id=$2 AND evidence_type='provider_outcome'),
+    (SELECT count(*) FROM workflow_control_budget_reconciliations WHERE workspace_id=$1 AND run_id=$2 AND evidence_type='provider_outcome' AND reason_code=$4),
     (SELECT count(*) FROM workflow_control_budget_accounts WHERE workspace_id=$1 AND run_id=$3)
-FROM workflow_control_runs WHERE workspace_id=$1 AND run_id=$2`, workspace, failedRunID, runID).Scan(
+FROM workflow_control_runs WHERE workspace_id=$1 AND run_id=$2`, workspace, failedRunID, runID, wantReason).Scan(
 			&state, &openReservations, &providerReconciliations, &healthyBudgetAccounts); err != nil {
 			t.Fatal(err)
 		}
 		if state != "reconciliation_required" || openReservations != 1 || providerReconciliations != 1 || healthyBudgetAccounts != 0 {
 			t.Fatalf("unexpected isolation facts: failed state=%s, open=%d, provider outcomes=%d, healthy accounts=%d",
 				state, openReservations, providerReconciliations, healthyBudgetAccounts)
+		}
+	}
+	if scenario == "first_budget_on_resume" {
+		if got := resumeCalls.Load(); got != 1 {
+			t.Fatalf("expected one POST after approval, got %d", got)
+		}
+		head, err := budgetRepository.ReadAccount(t.Context(), workspace, runID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if head.Value["accountRevision"] != int64(2) || head.Value["settled"].(budgetcontract.Record)["calls"] != "1" ||
+			head.Value["settled"].(budgetcontract.Record)["tokens"] != "17" {
+			t.Fatalf("unexpected resumed genesis head: %v", head.Value)
+		}
+		reopened, err := pgxpool.NewWithConfig(t.Context(), pool.Config())
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer reopened.Close()
+		rebuilt, err := budgetpostgres.New(reopened).RebuildAccount(t.Context(), workspace, runID)
+		if err != nil || !bytes.Equal(head.ExactBytes, rebuilt.ExactBytes) {
+			t.Fatalf("resumed genesis ledger rebuild drift: %v", err)
+		}
+		downPath := filepath.Join(repositoryRoot, "services", "workflow-control", "migrations", "000012_bind_workflow_budget_resume_continuation.down.sql")
+		down, err := os.ReadFile(downPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		conn, err := pool.Acquire(t.Context())
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer conn.Release()
+		_, downErr := conn.Exec(t.Context(), string(down))
+		if _, err := conn.Exec(t.Context(), "ROLLBACK"); err != nil {
+			t.Fatal(err)
+		}
+		if downErr == nil || !strings.Contains(downErr.Error(), "required for ledger replay") {
+			t.Fatalf("schema 12 downgrade did not protect the resumed genesis proof: %v", downErr)
 		}
 	}
 	if scenario == "budget" {

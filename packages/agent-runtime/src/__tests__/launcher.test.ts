@@ -20,6 +20,7 @@ import {
 } from '../index.js';
 import type { AdapterExecutionContext, AgentExecutionAdapter } from '../index.js';
 import { readOwnedRunIdentity } from '../launcher.js';
+import { bindProviderSendAdmission, bindProviderSendPreparation } from '../internal/provider-send-admission.js';
 
 function makeTempRoot(): string {
   return mkdtempSync(join(tmpdir(), 'agent-launcher-test-'));
@@ -439,6 +440,55 @@ describe('createOpenSlackAgentLauncher', () => {
         data: { step: 'provider_usage_evidence_invalid', source: 'adapter_result' },
       }),
     );
+  });
+
+  it('refuses an unverified Aby request before reserving or executing', async () => {
+    const executionMarker = join(root, 'bridge-started');
+    const bridge = join(root, 'preparation-bridge.mjs');
+    writeFileSync(bridge, [
+      "import { writeFileSync } from 'node:fs';",
+      'writeFileSync(' + JSON.stringify(executionMarker) + ', "started");',
+    ].join('\n'));
+    const port = {
+      reserve: vi.fn(async () => ({
+        reservationId: 'reservation.fixture.aby',
+        callId: 'call.fixture.aby',
+        authorizedTokens: '128',
+      })),
+      settle: vi.fn(),
+    };
+    const refusal = new RuntimeMisconfiguredError('SEND_TOTAL_TOKEN_UNVERIFIED');
+    const refuse = async () => { throw refusal; };
+    const preparation = vi.fn(refuse);
+    const admission = vi.fn(refuse);
+    bindProviderSendPreparation(port, preparation);
+    bindProviderSendAdmission(port, admission);
+    const launcher = createOpenSlackAgentLauncher({
+      runStore: createRunStore(root),
+      rootDir: root,
+      providerAttemptPort: port,
+      bridgeRuntimeResolver: { resolve: () => ({ command: process.execPath, args: [bridge], env: {} }) },
+    });
+
+    const error = await launcher('run through Aby', {
+      label: 'aby-agent',
+      phase: 'execute',
+      budget: { tokens: 128 },
+      resolvedAgentConfig: {
+        agentId: 'aby-agent',
+        source: 'test',
+        runtime: 'aby_assistant',
+        runtimeProvider: 'aby',
+        bridgeMode: 'process',
+        permissionMode: 'plan',
+      },
+    }).catch((error: unknown) => error);
+    expect(error).toMatchObject({ cause: refusal });
+    expect(preparation).toHaveBeenCalledOnce();
+    expect(port.reserve).not.toHaveBeenCalled();
+    expect(admission).not.toHaveBeenCalled();
+    expect(port.settle).not.toHaveBeenCalled();
+    expect(existsSync(executionMarker)).toBe(false);
   });
 
   it('reserves and settles an Aby process attempt around its reported bridge usage', async () => {

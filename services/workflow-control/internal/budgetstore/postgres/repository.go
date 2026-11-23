@@ -114,9 +114,6 @@ func (repository *Repository) mutate(ctx context.Context, operation string, inpu
 	continuing := resumeBindingID != "" && accountExists && operation == "reserve" &&
 		recordInt64(account.Value, "runRevision") < run.record.Revision
 	if !accountExists {
-		if resumeBindingID != "" {
-			return budgetstore.MutationResult{}, budgetstore.Failure(budgetstore.ErrorConflict, "a resumed budget mutation requires an existing account", nil)
-		}
 		if operation != "reserve" || recordInt64(request, "expectedAccountRevision") != 0 {
 			return budgetstore.MutationResult{}, budgetstore.Failure(budgetstore.ErrorNotFound, "workflow budget account was not found", nil)
 		}
@@ -128,7 +125,7 @@ func (repository *Repository) mutate(ctx context.Context, operation string, inpu
 		return budgetstore.MutationResult{}, err
 	}
 
-	if resumeBindingID != "" && !continuing && operation == "reserve" {
+	if resumeBindingID != "" && accountExists && !continuing && operation == "reserve" {
 		if err := requireBudgetContinuation(ctx, tx, account.Value, recordInt64(account.Value, "accountRevision")); err != nil {
 			return budgetstore.MutationResult{}, err
 		}

@@ -17,6 +17,8 @@ import { WorkflowControlObservationError } from '../workflow-control-observation
 import {
   WORKFLOW_CONTROL_SHADOW_RECEIPT_SCHEMA,
   acquireOwnerJournalLock,
+  assertOwnerDirectory,
+  withOwnerDirectoryEntryMutation,
   createWorkflowControlObservationPort,
   createWorkflowControlObservationPortForTest,
   createWorkflowControlShadowPublisherPort,
@@ -108,6 +110,49 @@ describe('Workflow Control GS7-B durable observation journal', () => {
 
     const actual = await ensureOwnerDirectory(child, security, canonicalRoot.toUpperCase());
     expect(actual).toBe(await realpath(child));
+  });
+
+  it('orders a child write after an asynchronous verification of its parent', async () => {
+    const root = await journalRoot('workflow-shadow-windows-coordination');
+    await ensureOwnerDirectory(root, windowsSecurity());
+    const entered = Promise.withResolvers<void>();
+    const queued = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    let checks = 0;
+    const security = windowsSecurity({
+      async readWindowsPathSecurity() {
+        if (++checks === 2) {
+          entered.resolve();
+          await release.promise;
+        }
+        return JSON.stringify(safeWindowsAcl());
+      },
+    });
+    const verification = assertOwnerDirectory(root, security);
+    await Promise.race([entered.promise, verification]);
+    expect(checks).toBe(2);
+    const queue = await import('../internal/keyed-serial-queue.js');
+    const enqueue = queue.enqueueByKey;
+    const spy = vi.spyOn(queue, 'enqueueByKey').mockImplementation((...args) => {
+      const result = enqueue(...args);
+      queued.resolve();
+      return result;
+    });
+    const child = join(root, 'child');
+    const write = vi.fn(() => writeFile(child, 'fixture', { flag: 'wx' }));
+    const mutation = withOwnerDirectoryEntryMutation([child], security, write);
+    try {
+      await Promise.race([queued.promise, mutation]);
+      expect(write).not.toHaveBeenCalled();
+      release.resolve();
+      await expect(verification).resolves.toBe(await realpath(root));
+      await expect(mutation).resolves.toBeUndefined();
+      expect(await readFile(child, 'utf8')).toBe('fixture');
+    } finally {
+      release.resolve();
+      await Promise.allSettled([verification, mutation]);
+      spy.mockRestore();
+    }
   });
 
   it('is default-off and requires no journal, network, or authority dependencies', async () => {

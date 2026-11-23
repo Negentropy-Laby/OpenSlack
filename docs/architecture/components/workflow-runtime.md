@@ -6,7 +6,7 @@ authority: canonical
 audience:
   - contributors
 owner: architecture
-updated: 2026-09-05
+updated: 2026-11-23
 sources:
   - docs/reference/document-path-migration-v1.yaml
 ---
@@ -1203,9 +1203,10 @@ binaries support schema heads through 6 without raising their minimums; the budg
 exactly 6. The default container entry point remains `/server`.
 
 The qualification interface proves cache-hit zero mutation, durable reserve before provider
-execution, and durable settlement before cache visibility. No production workflow code or provider
-adapter calls this service in E2. Nonzero resume generations fail closed without budget mutation;
-Runner v2 owns future resume delivery. The evidence ceiling is `GS9-E LOCAL_PASS / Go durable budget
+execution, and durable settlement before cache visibility. The sealed Runner v2 uses this authority
+in local qualification. Schema 12 accepts generation one only after committed resume with an exact
+F2 budget binding. It continues a fully settled account or opens the first account on that
+generation. Older schemas and later generations reject resumed mutations. The evidence ceiling is `GS9-E LOCAL_PASS / Go durable budget
 qualification authority / Go production Workflow budget authority NOT_CLAIMED / Runner v2
 NOT_DELIVERED / routing / canary / cutover NOT_ACTIVATED`.
 `WORKFLOW_BUDGET_PRODUCTION_INITIAL_POLICY_SOURCE NOT_DELIVERED` is explicit.

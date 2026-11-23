@@ -133,6 +133,27 @@ WHERE w.workspace_id=$1 AND w.run_id=$2 AND w.account_revision=$3
 SELECT EXISTS (SELECT 1 FROM workflow_control_budget_resume_continuations
 WHERE workspace_id=$1 AND run_id=$2 AND account_id=$3 AND account_revision<=$4)`
 
+	resumeBudgetGenesisProofSQL = `
+SELECT f.binding_id, f.exact_stage_bytes, f.exact_stage_receipt_bytes,
+       f.exact_resolution_bytes, f.exact_resolution_receipt_bytes,
+       r.idempotency_key, encode(r.request_hash, 'hex'), r.expected_run_revision
+FROM workflow_control_budget_accounts a
+JOIN workflow_control_budget_ledger e
+  ON e.workspace_id=a.workspace_id AND e.run_id=a.run_id AND e.account_id=a.account_id
+ AND e.account_revision=1 AND e.previous_account_hash=a.genesis_account_hash
+JOIN workflow_control_budget_receipts r
+  ON r.workspace_id=e.workspace_id AND r.run_id=e.run_id AND r.account_id=e.account_id
+ AND r.ledger_entry_hash=e.ledger_hash AND r.operation='reserve' AND r.status='accepted'
+ AND r.expected_account_revision=0 AND r.accepted_account_revision=e.account_revision
+ AND r.accepted_run_revision=e.run_revision
+JOIN workflow_runner_authority_bindings f
+  ON f.workspace_id=e.workspace_id AND f.run_id=e.run_id AND f.operation='budget_reserve'
+ AND f.source_request_hash=r.request_hash AND f.source_expected_revision=0
+ AND f.source_expected_resume_generation=1 AND f.source_accepted_resume_generation=1
+ AND f.state IN ('resolved','completed') AND f.source_evidence_state='prepared'
+ AND f.routing_epoch=a.routing_epoch AND f.authority_build_hash=a.authority_build_hash
+WHERE a.workspace_id=$1 AND a.run_id=$2 AND a.account_id=$3 AND a.resume_run_revision_delta=0`
+
 	accountCASUpdateSQL = `
 UPDATE workflow_control_budget_accounts
 SET account_revision=$7, run_revision=$8,

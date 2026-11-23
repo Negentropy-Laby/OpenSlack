@@ -1,3 +1,4 @@
+import { createWorkflowRunnerBudgetAuthorityClient } from '../../packages/workflows/src/workflow-runner-budget-authority-client.js';
 /** Sealed-worker checkpoint fixture. Optional provider calls stay on the Go test's loopback stub. */
 import assert from 'node:assert/strict';
 import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
@@ -36,6 +37,7 @@ const config = JSON.parse(await readFile(process.argv[2]!, 'utf8')) as {
   localProviderOrigin?: string;
   resumeProviderOrigin?: string;
   failureProviderOrigin?: string;
+  resumeOnlyProviderOrigin?: string;
 };
 const runId = 'run.checkpoint.worker';
 const correlationId = 'correlation.checkpoint.worker';
@@ -43,7 +45,8 @@ const loopbackProvider = config.localProviderOrigin;
 const failingProvider = config.failureProviderOrigin;
 const agentId = 'fixture-budget-agent';
 const failedRunId = 'run.provider.failure';
-const initialProvider = loopbackProvider ?? failingProvider;
+const resumeOnlyProvider = config.resumeOnlyProviderOrigin;
+const initialProvider = loopbackProvider ?? failingProvider ?? resumeOnlyProvider;
 if (initialProvider) {
   const registry = join(config.root, '.openslack/agents/registry');
   await mkdir(registry, { recursive: true });
@@ -88,8 +91,8 @@ async function call(ctx, phase) {
   });
   if (result.phase !== phase) throw new Error('Unexpected loopback provider result.');
 }`;
-const source = `export const meta={name:'checkpoint-worker',version:'1.0.0',description:'Offline checkpoint qualification',phases:[{title:'First',detail:'First'},{title:'Approval',detail:'Approval'},{title:'Done',detail:'Done'}],permissions:{openslack:['governance.audit']},sideEffects:['openslack.governance.audit'],risk:'medium',isolationPolicy:{'${agentId}':'none'}};${loopbackProvider ? call : ''}
-export async function run(ctx){ctx.phase('First');${loopbackProvider ? "await call(ctx, 'First');" : ''}const replay=await ctx.checkpoint.commit({artifact:new TextEncoder().encode('first')});ctx.phase('Approval');await ctx.openslack.governance.audit('checkpoint-worker-fixture');await ctx.checkpoint.commit({artifact:new TextEncoder().encode('approved')});ctx.phase('Done');${loopbackProvider ? "await call(ctx, 'Done');" : ''}await ctx.checkpoint.commit({artifact:new TextEncoder().encode('done')});return {status:'completed',replay};}`;
+const source = `export const meta={name:'checkpoint-worker',version:'1.0.0',description:'Offline checkpoint qualification',phases:[{title:'First',detail:'First'},{title:'Approval',detail:'Approval'},{title:'Done',detail:'Done'}],permissions:{openslack:['governance.audit']},sideEffects:['openslack.governance.audit'],risk:'medium',isolationPolicy:{'${agentId}':'none'}};${(loopbackProvider ?? resumeOnlyProvider) ? call : ''}
+export async function run(ctx){ctx.phase('First');${loopbackProvider ? "await call(ctx, 'First');" : ''}const replay=await ctx.checkpoint.commit({artifact:new TextEncoder().encode('first')});ctx.phase('Approval');await ctx.openslack.governance.audit('checkpoint-worker-fixture');await ctx.checkpoint.commit({artifact:new TextEncoder().encode('approved')});ctx.phase('Done');${(loopbackProvider ?? resumeOnlyProvider) ? "await call(ctx, 'Done');" : ''}await ctx.checkpoint.commit({artifact:new TextEncoder().encode('done')});return {status:'completed',replay};}`;
 const directory = join(config.root, '.openslack/workflows');
 await mkdir(directory, { recursive: true });
 const path = join(directory, 'checkpoint-worker.mjs');
@@ -259,6 +262,15 @@ if (loopbackProvider) {
   assert.ok(config.resumeProviderOrigin);
   assert.notEqual(config.resumeProviderOrigin, loopbackProvider);
   await setProviderOrigin(config.resumeProviderOrigin);
+}
+if (resumeOnlyProvider) {
+  const budget = createWorkflowRunnerBudgetAuthorityClient({
+    origin: config.budgetOrigin,
+    workspaceId: config.workspaceId,
+    bearerToken: config.budgetToken,
+    callerId: 'workflow-runner-v2',
+  });
+  assert.equal(await budget.readAccount(runId, route), null);
 }
 const resumed = await execute();
 assert.equal(resumed.status, 'completed');

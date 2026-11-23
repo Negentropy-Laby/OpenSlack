@@ -221,7 +221,7 @@ func TestSourceManifestBindsOnlyUnreleasedGS9IInputs(t *testing.T) {
 		},
 		"budgetResumeContinuationMigrationDown": {
 			Path:   "services/workflow-control/migrations/000012_bind_workflow_budget_resume_continuation.down.sql",
-			SHA256: "bc4931cda1935f672494219a61759b98ee63173c83f6585ed7add9f51aabc010",
+			SHA256: "61faba85499fed9681ab31b35812ea58368e8827b7d1869a77310ca7e8215f56",
 		},
 		"budgetAuthorityFoldSource": {
 			Path:   "services/workflow-control/budgetcontract/folds.go",
@@ -229,15 +229,15 @@ func TestSourceManifestBindsOnlyUnreleasedGS9IInputs(t *testing.T) {
 		},
 		"budgetAuthorityPostgresRecords": {
 			Path:   "services/workflow-control/internal/budgetstore/postgres/records.go",
-			SHA256: "d5092ae82e7a25b35e7d05ead22c11538f717432bc63a7953b96e5af867ff8f4",
+			SHA256: "7d1f415f1db4b300ece666e0d54021ea984516cb8a7f3ee740d6b6fb4b638f35",
 		},
 		"budgetAuthorityPostgresRepository": {
 			Path:   "services/workflow-control/internal/budgetstore/postgres/repository.go",
-			SHA256: "762b6fe73a9d65699bd27febfbfd3ab177780c08136f3e609d2d3cb7a2185442",
+			SHA256: "20b4f8543af9d287aac894870523eded9cbb60cef9148e61b41eb293230f287a",
 		},
 		"budgetAuthorityPostgresQueries": {
 			Path:   "services/workflow-control/internal/budgetstore/postgres/sql.go",
-			SHA256: "1ab430df99d8011d2e2145448dfb0db87a0a1a413932a271a798dbb5fbfd2fad",
+			SHA256: "9c78b789345cd6df2e0b0133578205b0bbae48ab021bd0db2ebb0b444d776eb8",
 		},
 		"budgetAuthorityPostgresRecovery": {
 			Path:   "services/workflow-control/internal/budgetstore/postgres/recovery.go",
@@ -253,11 +253,11 @@ func TestSourceManifestBindsOnlyUnreleasedGS9IInputs(t *testing.T) {
 		},
 		"runnerSealedCheckpointResumeTest": {
 			Path:   "services/workflow-control/cmd/runner-server/gs9f2_checkpoint_worker_test.go",
-			SHA256: "6c8d541a3fbbd72d14970600706a21d9a37d81f10f64a9b56ff903480a8ad6a1",
+			SHA256: "c6ede8ad13d98ad60b7e1cdcc5d012f5bb83b066f63d1a9b24376b96be35acf2",
 		},
 		"runnerSealedCheckpointResumeFixture": {
 			Path:   "scripts/qualification/workflow-checkpoint-resume.fixture.ts",
-			SHA256: "695ff80661e6a14078c909adc98e8fa79323225468827bf15d1cf90b20b26bc4",
+			SHA256: "000379d0e3a19171ccdd92fef742f7f317038bf856fc01ec0800de3bcdf8dc70",
 		},
 		"budgetAuthorityMigrationUp": {
 			Path:   "services/workflow-control/migrations/000006_create_workflow_control_budget_authority.up.sql",
@@ -401,7 +401,7 @@ func TestSourceManifestBindsOnlyUnreleasedGS9IInputs(t *testing.T) {
 		},
 		"workflowRunRoutingSource": {
 			Path:   "packages/workflows/src/workflow-run-routing.ts",
-			SHA256: "b92cac460e94607f6d5600542c203cbbdc4cd235ab6cab63737b80e465cadb55",
+			SHA256: "51f8a14a901b2eb16f5edfceca57a048d2c3fd9fe751450def275f7ffd9fca2b",
 		},
 		"workflowRunRoutingConfigSource": {
 			Path:   "packages/workflows/src/workflow-run-routing-config.ts",
@@ -497,7 +497,7 @@ func TestSourceManifestBindsOnlyUnreleasedGS9IInputs(t *testing.T) {
 		},
 		"workflowRunnerWorkerSource": {
 			Path:   "packages/workflows/src/workflow-runner-worker.ts",
-			SHA256: "51894fd6e826018ff366b4a69d72d040b9eb5285ac957502eab8f1847cd73239",
+			SHA256: "b165f02521519cba226349eed2b533f18a4a05fb326c6e70f942f5284d0d8217",
 		},
 		"workflowRunRoutingTest": {
 			Path:   "packages/workflows/src/__tests__/workflow-run-routing.test.ts",
@@ -513,7 +513,7 @@ func TestSourceManifestBindsOnlyUnreleasedGS9IInputs(t *testing.T) {
 		},
 		"workflowRunnerWorkerTest": {
 			Path:   "packages/workflows/src/__tests__/workflow-runner-worker.test.ts",
-			SHA256: "cb6d88aeba43d3a191af403e3dd8372dee52d3cb0169d035b659a3071e925b39",
+			SHA256: "81d06b0449f62cdde7630c789484286967e2f9b84f40276fd25cf63beb7756a1",
 		},
 		"workflowControlAuthorityConfigSource": {
 			Path:   "services/workflow-control/internal/config/authority.go",
@@ -743,7 +743,7 @@ func TestSourceManifestBindsOnlyUnreleasedGS9IInputs(t *testing.T) {
 		},
 		"workflowOwnerFileSecurity": {
 			Path:   "packages/workflows/src/workflow-control-shadow.ts",
-			SHA256: "ab9a877a04208b20882daa3afee6f3707a5fde6ba8ca8e45dc9aa6362d530f31",
+			SHA256: "5c11df103d96a397e5fa32b5214c26ddabc9e66add0ea1db4ed65be28212b742",
 		},
 		"workflowRunnerAuthorityClient": {
 			Path:   "packages/workflows/src/workflow-runner-authority-binding-client.ts",

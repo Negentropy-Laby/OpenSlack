@@ -351,7 +351,7 @@ describe('GS8-B workflow runner worker', () => {
   });
 
   it.each([0, 1])(
-    'seeds a missing budget account only at generation zero (generation %i)',
+    'binds a missing budget account to the verified run revision (generation %i)',
     async (resumeGeneration) => {
       const base = v2Descriptor(0);
       const sealed = {
@@ -421,17 +421,9 @@ describe('GS8-B workflow runner worker', () => {
         providerAttempt: '1',
         requestedTokens: '100',
       });
-      if (resumeGeneration === 0) {
-        await expect(reserve).rejects.toBe(stop);
-        expect(expectedRunRevision).toBe(5);
-        expect(expectedGeneration).toBe(0);
-      } else {
-        await expect(reserve).rejects.toMatchObject({
-          code: 'WORKFLOW_RUNNER_V2_BUDGET_RECONCILIATION_REQUIRED',
-        });
-        expect(expectedRunRevision).toBeUndefined();
-        expect(expectedGeneration).toBeUndefined();
-      }
+      await expect(reserve).rejects.toBe(stop);
+      expect(expectedRunRevision).toBe(5);
+      expect(expectedGeneration).toBe(resumeGeneration);
     },
   );
 

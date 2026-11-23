@@ -333,23 +333,23 @@ export class OpenAICompatibleExecutionAdapter implements AgentExecutionAdapter {
         preparedRequest.max_tokens = maxTokens;
         requestBody = JSON.stringify(preparedRequest);
         if (options.providerAttemptBoundary && reservation) {
+          if (!preparation || !preparationScope)
+            throw new RuntimeMisconfiguredError('Provider request preparation is missing.');
+          const finalRequest = Object.freeze({
+            providerId: options.providerId,
+            modelId,
+            requestBytes: requestBody,
+            transportEvidence,
+            signal,
+          });
+          finalizeProviderAttemptSend(
+            options.providerAttemptBoundary,
+            preparation,
+            reservation,
+            finalRequest,
+            preparationScope,
+          );
           try {
-            if (!preparation || !preparationScope)
-              throw new RuntimeMisconfiguredError('Provider request preparation is missing.');
-            const finalRequest = Object.freeze({
-              providerId: options.providerId,
-              modelId,
-              requestBytes: requestBody,
-              transportEvidence,
-              signal,
-            });
-            finalizeProviderAttemptSend(
-              options.providerAttemptBoundary,
-              preparation,
-              reservation,
-              finalRequest,
-              preparationScope,
-            );
             await admitProviderAttemptSend(
               options.providerAttemptBoundary,
               reservation,

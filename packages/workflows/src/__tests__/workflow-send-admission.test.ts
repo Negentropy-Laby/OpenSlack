@@ -239,6 +239,11 @@ it(
       settledFacts(`attempt-${i + 1}`, p, 8192),
     );
     await seed(root, b, digest, facts);
+    const goFrontier = vi.fn(async () => ({
+      reservedCalls: '4',
+      settledCalls: '4',
+      settledTokens: '32768',
+    }));
     const port = await createWorkflowSendAdmissionPort({
       root,
       bindingHash: digest,
@@ -249,11 +254,21 @@ it(
       route: b.route,
       purpose: 'resume',
       go,
-      goFrontier: async () => ({ reservedCalls: '4', settledCalls: '4', settledTokens: '32768' }),
+      goFrontier,
       readGoSettlement: async () => null,
       noOpenGoReservations: async () => true,
       isDefiniteGoRejection: () => false,
     });
+    const before = await readWorkflowSendCampaign(root, b.runId, digest);
+    await expect(
+      prepareProviderSend(port, {
+        providerId: b.providerId,
+        modelId: b.modelId,
+        requestBytes: '{}',
+      }),
+    ).rejects.toThrow('SEND_ADMISSION_LIMIT');
+    expect(goFrontier).not.toHaveBeenCalled();
+    expect(await readWorkflowSendCampaign(root, b.runId, digest)).toEqual(before);
     await expect(
       port.reserve({
         providerId: b.providerId,
@@ -400,6 +415,15 @@ it(
       })(),
     ).rejects.toThrow('SEND_TOTAL_TOKEN_UNVERIFIED');
     expect(transport).not.toHaveBeenCalled();
+    const before = await readWorkflowSendCampaign(root, b.runId, digest);
+    await expect(
+      prepareProviderSend(port, {
+        providerId: b.providerId,
+        modelId: b.modelId,
+        requestBytes: '{}',
+      }),
+    ).rejects.toThrow('SEND_ADMISSION_FROZEN');
+    expect(await readWorkflowSendCampaign(root, b.runId, digest)).toEqual(before);
     await expect(port.reserve(request)).rejects.toThrow('SEND_ADMISSION_FROZEN');
     expect(go.reserve).toHaveBeenCalledTimes(1);
     expect(go.settle).not.toHaveBeenCalled();

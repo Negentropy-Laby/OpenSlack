@@ -267,6 +267,43 @@ ORDER BY indexname`)
 	}
 }
 
+func TestResumeBudgetDownMigrationRemovesEmptyContinuation(t *testing.T) {
+	pool := testsupport.OpenPostgres(t)
+	path := filepath.Join("..", "..", "migrations", "000012_bind_workflow_budget_resume_continuation.down.sql")
+	down, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(t.Context(), string(down)); err != nil {
+		t.Fatalf("downgrade empty schema 12: %v", err)
+	}
+
+	var tableRemoved, indexRemoved, columnRemoved, triggerRestored bool
+	err = pool.QueryRow(t.Context(), `
+SELECT to_regclass('workflow_control_budget_resume_continuations') IS NULL,
+       to_regclass('workflow_runner_resumed_budget_request_idx') IS NULL,
+       NOT EXISTS (SELECT FROM information_schema.columns
+                   WHERE table_schema=current_schema() AND table_name='workflow_control_budget_accounts'
+                   AND column_name='resume_run_revision_delta'),
+       pg_get_functiondef('workflow_control_budget_account_transition()'::regprocedure)
+           LIKE '%NEW.run_revision <> OLD.run_revision + 1%'
+`).Scan(&tableRemoved, &indexRemoved, &columnRemoved, &triggerRestored)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !tableRemoved || !indexRemoved || !columnRemoved || !triggerRestored {
+		t.Fatalf("downgrade left continuation objects: table=%t index=%t column=%t trigger=%t", tableRemoved, indexRemoved, columnRemoved, triggerRestored)
+	}
+
+	if _, err := pool.Exec(t.Context(), budgetAuthorityDownMigration(t)); err != nil {
+		t.Fatalf("remove empty budget authority after continuation downgrade: %v", err)
+	}
+	var ledgerRemoved bool
+	if err := pool.QueryRow(t.Context(), "SELECT to_regclass('workflow_control_budget_ledger') IS NULL").Scan(&ledgerRemoved); err != nil || !ledgerRemoved {
+		t.Fatalf("empty budget ledger was not removed: removed=%t err=%v", ledgerRemoved, err)
+	}
+}
+
 func TestBudgetAuthorityDownMigrationIsIsolatedAndRefusesEvidence(t *testing.T) {
 	t.Run("empty namespace is independently removable", func(t *testing.T) {
 		pool := testsupport.OpenPostgresAtSchema(t, 6)

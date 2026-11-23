@@ -1,8 +1,8 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { chmod, mkdtemp, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { chmod, mkdtemp, readFile, readdir, realpath, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { basename, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { types as utilTypes } from 'node:util';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -1622,7 +1622,15 @@ describe('workflow effect D2 authorization', () => {
       const store = new LocalWorkflowEffectAuthorityStore(value.approvalRoot, value.getNow);
       const find = () => store.find(value.binding, 1, 'governance', 'occurrence', REASON_HASH);
       await expect(find()).resolves.toBeUndefined();
-      return { root: join(value.workspaceRoot, '.openslack.local', 'workflows', 'effect-authority'), approvalRoot: value.approvalRoot, find };
+      const findAt = (approvalRoot: string) =>
+        new LocalWorkflowEffectAuthorityStore(approvalRoot, value.getNow)
+          .find(value.binding, 1, 'governance', 'occurrence', REASON_HASH);
+      return {
+        root: join(value.workspaceRoot, '.openslack.local', 'workflows', 'effect-authority'),
+        approvalRoot: value.approvalRoot,
+        find,
+        findAt,
+      };
     }
 
     it('holds concurrent lookups behind the same complete directory verification and rechecks a later lookup', () => trackRevisionPhase(async ownedRoots => {
@@ -1706,6 +1714,116 @@ describe('workflow effect D2 authorization', () => {
         await expect(next).resolves.toBeUndefined();
       } catch (error) { primaryFailed = true; throw error; }
       finally { await Promise.allSettled(work); await restoreVerification(restore.reverse(), primaryFailed); }
+    }));
+
+    it.skipIf(process.platform !== 'win32')(
+      'queues an alternate Windows root spelling behind the active authority writer',
+      () => trackRevisionPhase(async (ownedRoots) => {
+        const value = await preparedStore(ownedRoots);
+        const aliasParent = dirname(value.approvalRoot).toUpperCase();
+        const aliasApproval = join(aliasParent, basename(value.approvalRoot));
+        const aliasRoot = join(aliasParent, basename(value.root));
+        expect(aliasApproval).not.toBe(value.approvalRoot);
+        expect((await realpath(aliasRoot)).toLowerCase()).toBe((await realpath(value.root)).toLowerCase());
+        const security = await import('../workflow-control-shadow.js');
+        const acquire = security.acquireOwnerJournalLock;
+        const keyFor = security.workflowDirectoryCoordinationKey;
+        const verify = security.assertOwnerDirectory;
+        const entered = Promise.withResolvers<void>();
+        const aliasKey = Promise.withResolvers<void>();
+        const release = Promise.withResolvers<void>();
+        const work: Promise<unknown>[] = [];
+        let acquiringFirst = true;
+        let active = false;
+        let aliasReads = 0;
+        let prematureReads = 0;
+        const lockSpy = vi.spyOn(security, 'acquireOwnerJournalLock').mockImplementation(async (...args) => {
+          const unlock = await acquire(...args);
+          if (acquiringFirst) {
+            acquiringFirst = false;
+            active = true;
+            entered.resolve();
+            await release.promise;
+            return async () => {
+              try { await unlock(); } finally { active = false; }
+            };
+          }
+          return unlock;
+        });
+        const keySpy = vi.spyOn(security, 'workflowDirectoryCoordinationKey').mockImplementation(async (...args) => {
+          const key = await keyFor(...args);
+          if (args[0] === aliasRoot) aliasKey.resolve();
+          return key;
+        });
+        const verifySpy = vi.spyOn(security, 'assertOwnerDirectory').mockImplementation(async (...args) => {
+          if (args[0] === aliasRoot) {
+            aliasReads += 1;
+            if (active) prematureReads += 1;
+          }
+          return verify(...args);
+        });
+        try {
+          const initial = ownVerification(work, value.find());
+          await waitForVerificationGate(entered.promise, initial);
+          const alternate = ownVerification(work, value.findAt(aliasApproval));
+          await waitForVerificationGate(aliasKey.promise, alternate);
+          await new Promise<void>((resolve) => setImmediate(resolve));
+          expect(aliasReads).toBe(0);
+          release.resolve();
+          await expect(initial).resolves.toBeUndefined();
+          await expect(alternate).resolves.toBeUndefined();
+          expect(aliasReads).toBeGreaterThan(0);
+          expect(prematureReads).toBe(0);
+        } finally {
+          release.resolve();
+          await Promise.allSettled(work);
+          verifySpy.mockRestore();
+          keySpy.mockRestore();
+          lockSpy.mockRestore();
+        }
+      }),
+      60_000,
+    );
+
+    it('times out an authority lookup without disturbing the active writer', () => trackRevisionPhase(async ownedRoots => {
+      const value = await preparedStore(ownedRoots);
+      const security = await import('../workflow-control-shadow.js');
+      const acquire = security.acquireOwnerJournalLock;
+      const entered = Promise.withResolvers<void>();
+      const release = Promise.withResolvers<void>();
+      const work: Promise<unknown>[] = [];
+      let acquisitions = 0;
+      const spy = vi.spyOn(security, 'acquireOwnerJournalLock').mockImplementation(async (...args) => {
+        const unlock = await acquire(...args);
+        acquisitions += 1;
+        if (acquisitions === 1) {
+          entered.resolve();
+          await release.promise;
+        }
+        return unlock;
+      });
+      try {
+        const active = ownVerification(work, value.find());
+        await waitForVerificationGate(entered.promise, active);
+        vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+        const waiter = ownVerification(work, value.find());
+        const refused = expect(waiter).rejects.toMatchObject({ code: 'WORKFLOW_EFFECT_AUTHORITY_BUSY' });
+        await vi.advanceTimersByTimeAsync(security.WORKFLOW_CONTROL_SHADOW_POLICY.maxTimeoutMs);
+        await refused;
+        expect(acquisitions).toBe(1);
+        vi.useRealTimers();
+
+        release.resolve();
+        await active;
+        await expect(value.find()).resolves.toBeUndefined();
+        expect(acquisitions).toBe(2);
+        expect(await readdir(join(value.root, 'locks'))).toEqual([]);
+      } finally {
+        vi.useRealTimers();
+        release.resolve();
+        await Promise.allSettled(work);
+        spy.mockRestore();
+      }
     }));
 
     it('refuses every waiting lookup after a directory replacement and retries fresh after restoration', () => trackRevisionPhase(async ownedRoots => {

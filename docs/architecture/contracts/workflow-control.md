@@ -7,7 +7,7 @@ audience:
   - contributors
   - reviewers
 owner: architecture
-updated: 2026-09-05
+updated: 2026-11-23
 sources:
   - design/cdd/workstreams/workflow-runtime/README.md
   - docs/architecture/components/workflow-runtime.md
@@ -574,8 +574,9 @@ operations. The default image entry point remains `/server`.
 The qualification harness proves that a cache hit creates no budget mutation, provider execution
 starts only after durable reserve, and cache visibility follows durable settlement. These are
 qualification invariants only: GS9-E2 adds no production budget client or provider routing.
-E2 also rejects every nonzero `resumeGeneration` without mutation; Runner v2 owns future resumed-run
-budget delivery and is not part of this authority.
+In local qualification, schema 12 accepts `resumeGeneration=1` only with the committed Runner v2
+resume and an exact F2 budget binding. It continues a fully settled account or creates the first
+account at the validated run revision. Older schemas and later generations reject resumed mutations.
 
 Its exact evidence ceiling is `GS9-E LOCAL_PASS / Go durable budget qualification authority / Go
 production Workflow budget authority NOT_CLAIMED / Runner v2 NOT_DELIVERED / routing / canary /
