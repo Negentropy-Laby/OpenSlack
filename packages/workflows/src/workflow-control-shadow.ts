@@ -1160,10 +1160,8 @@ async function publishOwnerLock(
   security: WorkflowControlShadowJournalSecurityDependencies,
 ): Promise<BigIntStats> {
   const temporary = join(dirname(path), `.${basename(path)}.${process.pid}.${randomUUID()}.tmp`);
-  let handle = await open(
-    temporary,
-    fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_EXCL | NO_FOLLOW,
-    0o600,
+  let handle = await withOwnerDirectoryEntryMutation([temporary], security, () =>
+    open(temporary, fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_EXCL | NO_FOLLOW, 0o600),
   );
   let closed = false;
   let owned: BigIntStats | undefined;
@@ -1199,7 +1197,15 @@ async function publishOwnerLock(
         'Workflow Control shadow journal lock temporary changed before publication.',
       );
     }
-    await link(temporary, path);
+    // Prepare private bytes outside the directory queue. Only entry changes
+    // exclude ACL verification, so another owner can publish while we prepare.
+    const ready = complete;
+    await withOwnerDirectoryEntryMutation([path], security, async () => {
+      if (!sameIdentity(ready, await lstat(temporary, { bigint: true }))) {
+        throw new TypeError('Workflow Control shadow journal lock temporary changed before publication.');
+      }
+      await link(temporary, path);
+    });
     linked = true;
     published = await lstat(path, { bigint: true });
     // Hardlink publication changes ctime; inode, bytes and mtime must remain stable.
@@ -1281,8 +1287,12 @@ async function publishOwnerLock(
               bytes.subarray(0, bytesRead).equals(expected) &&
               sameIdentity(current, await lstat(path, { bigint: true }))
             ) {
-              await unlink(path);
-              await syncDirectory(dirname(path));
+              await withOwnerDirectoryEntryMutation([path], security, async () => {
+                if (sameIdentity(current, await lstat(path, { bigint: true }))) {
+                  await unlink(path);
+                  await syncDirectory(dirname(path));
+                }
+              });
             }
           } finally {
             await cleanupHandle.close();
@@ -1301,17 +1311,19 @@ async function publishOwnerLock(
   return result!;
 
   async function removeOwnedTemporary(): Promise<void> {
-    let current: BigIntStats;
-    try {
-      current = await lstat(temporary, { bigint: true });
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return;
-      throw error;
-    }
-    if (!owned || !sameFilesystemObject(owned, current) || current.isSymbolicLink()) {
-      throw new TypeError('Workflow Control shadow journal lock temporary changed before cleanup.');
-    }
-    await unlink(temporary);
+    await withOwnerDirectoryEntryMutation([temporary], security, async () => {
+      let current: BigIntStats;
+      try {
+        current = await lstat(temporary, { bigint: true });
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') return;
+        throw error;
+      }
+      if (!owned || !sameFilesystemObject(owned, current) || current.isSymbolicLink()) {
+        throw new TypeError('Workflow Control shadow journal lock temporary changed before cleanup.');
+      }
+      await unlink(temporary);
+    });
   }
 }
 
@@ -1349,9 +1361,7 @@ async function acquireStreamLock(
           },
         );
         if (existing) throw Object.assign(new Error('Owner lock exists.'), { code: 'EEXIST' });
-        created = await withOwnerDirectoryEntryMutation([path], directories.security, () =>
-          publishOwnerLock(path, body, directories.security),
-        );
+        created = await publishOwnerLock(path, body, directories.security);
         await syncDirectory(directories.locks);
         handle = await open(path, fsConstants.O_RDONLY | NO_FOLLOW);
         const acquired = await handle.stat({ bigint: true });
