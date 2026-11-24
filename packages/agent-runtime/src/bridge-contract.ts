@@ -313,6 +313,13 @@ export function buildBridgeEnvelope<T>(
  * Returns validation result; does not throw.
  */
 export function validateBridgeEnvelope(envelope: unknown): { valid: boolean; error?: string } {
-  try { validateBridgeWireEnvelope(envelope); return { valid: true }; }
-  catch (error) { return { valid: false, error: error instanceof Error ? error.message : 'Invalid Bridge envelope' }; }
+  try {
+    validateBridgeWireEnvelope(envelope);
+    return { valid: true };
+  } catch (error) {
+    return {
+      valid: false,
+      error: error instanceof Error ? error.message : 'Invalid Bridge envelope',
+    };
+  }
 }

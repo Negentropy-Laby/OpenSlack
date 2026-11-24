@@ -76,22 +76,31 @@ export function createOpenSlackMcpServer(
   const input = lifecycle.input ?? process.stdin;
   let resolveClosed!: () => void;
   let rejectClosed!: (error: unknown) => void;
-  const whenClosed = new Promise<void>((resolve, reject) => { resolveClosed = resolve; rejectClosed = reject; });
+  const whenClosed = new Promise<void>((resolve, reject) => {
+    resolveClosed = resolve;
+    rejectClosed = reject;
+  });
   // Direct programmatic users may use close() without awaiting whenClosed.
   void whenClosed.catch(() => {});
   let closeTask: Promise<void> | undefined;
-  const onEnd = (): void => { void close().catch(rejectClosed); };
-  const close = (): Promise<void> => closeTask ??= (async () => {
-    input.off('end', onEnd);
-    input.off('close', onEnd);
-    input.off('error', onEnd);
-    try {
-      await lifecycle.closeOwnedResources?.();
-    } finally {
-      await sdkServer.close();
-      transport = undefined;
-    }
-  })().then(resolveClosed, error => { rejectClosed(error); throw error; });
+  const onEnd = (): void => {
+    void close().catch(rejectClosed);
+  };
+  const close = (): Promise<void> =>
+    (closeTask ??= (async () => {
+      input.off('end', onEnd);
+      input.off('close', onEnd);
+      input.off('error', onEnd);
+      try {
+        await lifecycle.closeOwnedResources?.();
+      } finally {
+        await sdkServer.close();
+        transport = undefined;
+      }
+    })().then(resolveClosed, (error) => {
+      rejectClosed(error);
+      throw error;
+    }));
   sdkServer.onclose = onEnd;
   return Object.freeze({
     core,

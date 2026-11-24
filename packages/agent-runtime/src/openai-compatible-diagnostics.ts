@@ -346,38 +346,58 @@ function buildOpenAISmokeReport(
       }
     : {};
   const observation = runId ? observeRun(runId, rootDir) : undefined;
-  let transcript: ReturnType<typeof readTranscript> = [], transcriptUnavailable = false;
-  try { if (runId && observation?.kind === 'ready') transcript = readTranscript(runId, rootDir); }
-  catch { transcriptUnavailable = true; }
+  let transcript: ReturnType<typeof readTranscript> = [],
+    transcriptUnavailable = false;
+  try {
+    if (runId && observation?.kind === 'ready') transcript = readTranscript(runId, rootDir);
+  } catch {
+    transcriptUnavailable = true;
+  }
   const checks: OpenAICompatibleRuntimeSmokeReport['checks'] = [
-      ...(observation?.kind === 'unavailable' || observation?.kind === 'missing' || transcriptUnavailable ? [{ name: 'run-storage-availability', status: 'FAIL' as const,
-        detail: `This run's evidence is unavailable: ${observation?.kind === 'unavailable' ? observation.reason : observation?.kind === 'missing' ? 'missing' : 'transcript-unavailable'}. Inspect without replay.` }] : []),
-      { name: 'doctor', status: doctor.status, detail: `Runtime is ${doctor.readiness}` },
-      {
-        name: 'terminal-event',
-        status: transcript.some((event) => event.type === 'complete' || event.type === 'fail')
+    ...(observation?.kind === 'unavailable' ||
+    observation?.kind === 'missing' ||
+    transcriptUnavailable
+      ? [
+          {
+            name: 'run-storage-availability',
+            status: 'FAIL' as const,
+            detail: `This run's evidence is unavailable: ${observation?.kind === 'unavailable' ? observation.reason : observation?.kind === 'missing' ? 'missing' : 'transcript-unavailable'}. Inspect without replay.`,
+          },
+        ]
+      : []),
+    { name: 'doctor', status: doctor.status, detail: `Runtime is ${doctor.readiness}` },
+    {
+      name: 'terminal-event',
+      status: transcript.some((event) => event.type === 'complete' || event.type === 'fail')
+        ? 'PASS'
+        : 'FAIL',
+      detail: 'Run transcript contains terminal evidence.',
+    },
+    {
+      name: 'evidence-files',
+      status:
+        evidence.runJson &&
+        evidence.metadataJson &&
+        evidence.transcriptJsonl &&
+        existsSync(evidence.runJson) &&
+        existsSync(evidence.metadataJson) &&
+        existsSync(evidence.transcriptJsonl)
           ? 'PASS'
           : 'FAIL',
-        detail: 'Run transcript contains terminal evidence.',
-      },
-      {
-        name: 'evidence-files',
-        status:
-          evidence.runJson &&
-          evidence.metadataJson &&
-          evidence.transcriptJsonl &&
-          existsSync(evidence.runJson) &&
-          existsSync(evidence.metadataJson) &&
-          existsSync(evidence.transcriptJsonl)
-            ? 'PASS'
-            : 'FAIL',
-        detail: runId ? `Run evidence recorded for ${runId}.` : 'No run was created by this invocation.',
-      },
-    ];
+      detail: runId
+        ? `Run evidence recorded for ${runId}.`
+        : 'No run was created by this invocation.',
+    },
+  ];
   return {
     provider: 'openai-compatible',
-    status: status === 'PASS' && checks.every(check => check.status !== 'FAIL') ? 'PASS' : 'FAIL',
-    doctor, runId, terminalReason, failureCode, evidence, checks,
+    status: status === 'PASS' && checks.every((check) => check.status !== 'FAIL') ? 'PASS' : 'FAIL',
+    doctor,
+    runId,
+    terminalReason,
+    failureCode,
+    evidence,
+    checks,
   };
 }
 

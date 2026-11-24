@@ -59,22 +59,43 @@ describe('native release workflow integrity', () => {
       ['openslack-tui-gate.yml', ['tui-visual-gate']],
     ]);
     const observed: string[] = [];
-    for (const name of readdirSync(join(root, '.github/workflows')).filter((name) => /\.ya?ml$/.test(name))) {
+    for (const name of readdirSync(join(root, '.github/workflows')).filter((name) =>
+      /\.ya?ml$/.test(name),
+    )) {
       const config = parse(readFileSync(join(root, '.github/workflows', name), 'utf8'));
-      for (const [jobName, job] of Object.entries(config.jobs ?? {}) as Array<[string, {
-        defaults?: { run?: { 'working-directory'?: string } };
-        steps?: Array<{ name?: string; uses?: string; run?: string; if?: string; 'continue-on-error'?: unknown; 'working-directory'?: string }>;
-      }]>) {
+      for (const [jobName, job] of Object.entries(config.jobs ?? {}) as Array<
+        [
+          string,
+          {
+            defaults?: { run?: { 'working-directory'?: string } };
+            steps?: Array<{
+              name?: string;
+              uses?: string;
+              run?: string;
+              if?: string;
+              'continue-on-error'?: unknown;
+              'working-directory'?: string;
+            }>;
+          },
+        ]
+      >) {
         const steps = job.steps ?? [];
         for (const [installIndex, install] of steps.entries()) {
-          expect(install.run ?? '', `${name}/${jobName}: unsupported bare root installation`).not.toMatch(/\bbun\s+install\b/);
+          expect(
+            install.run ?? '',
+            `${name}/${jobName}: unsupported bare root installation`,
+          ).not.toMatch(/\bbun\s+install\b/);
           if (install.run !== 'node scripts/ci/install-dependencies.mjs') continue;
           const context = `${name}/${jobName}`;
           observed.push(context);
           const nodeIndex = steps.findIndex((step) => step.uses?.startsWith('actions/setup-node@'));
-          const checkoutIndex = steps.findIndex((step) => step.uses?.startsWith('actions/checkout@'));
+          const checkoutIndex = steps.findIndex((step) =>
+            step.uses?.startsWith('actions/checkout@'),
+          );
           const bunIndex = steps.findIndex((step) => step.uses?.startsWith('oven-sh/setup-bun@'));
-          const checks = steps.filter((step) => step.name === 'Check dependency sources before installation');
+          const checks = steps.filter(
+            (step) => step.name === 'Check dependency sources before installation',
+          );
           expect(checks, context).toHaveLength(1);
           const check = checks[0];
           const checkIndex = steps.indexOf(check);
@@ -88,35 +109,72 @@ describe('native release workflow integrity', () => {
           for (const step of [check, install]) {
             expect(step.if, context).toBeUndefined();
             expect(step['continue-on-error'], context).toBeUndefined();
-            expect(step['working-directory'] ?? job.defaults?.run?.['working-directory'] ?? '.', context).toBe('.');
-            expect(step.run, context).not.toMatch(/(?:always\s*\(|\|\||\b(?:true|continue-on-error)\b|\$LASTEXITCODE)/i);
+            expect(
+              step['working-directory'] ?? job.defaults?.run?.['working-directory'] ?? '.',
+              context,
+            ).toBe('.');
+            expect(step.run, context).not.toMatch(
+              /(?:always\s*\(|\|\||\b(?:true|continue-on-error)\b|\$LASTEXITCODE)/i,
+            );
           }
         }
       }
     }
-    expect(observed.sort()).toEqual([...expected].flatMap(([name, jobs]) => jobs.map((job) => `${name}/${job}`)).sort());
+    expect(observed.sort()).toEqual(
+      [...expected].flatMap(([name, jobs]) => jobs.map((job) => `${name}/${job}`)).sort(),
+    );
     const release = parse(workflow);
-    expect(release.jobs.publish.steps.some((step: { run?: string }) => step.run?.includes('install-dependencies.mjs'))).toBe(false);
-    const isolation = release.jobs.build.steps.find((step: { name?: string }) => step.name === 'Verify official dependency installation isolation');
-    expect(isolation, 'both native release platforms must execute the new installer regressions').toBeDefined();
+    expect(
+      release.jobs.publish.steps.some((step: { run?: string }) =>
+        step.run?.includes('install-dependencies.mjs'),
+      ),
+    ).toBe(false);
+    const isolation = release.jobs.build.steps.find(
+      (step: { name?: string }) =>
+        step.name === 'Verify official dependency installation isolation',
+    );
+    expect(
+      isolation,
+      'both native release platforms must execute the new installer regressions',
+    ).toBeDefined();
     expect(isolation.if).toBeUndefined();
     expect(isolation['continue-on-error']).toBeUndefined();
-    expect(isolation.run).toBe('node node_modules/vitest/vitest.mjs run scripts/release/__tests__/dependency-install.test.ts');
-    const pluginIndex = release.jobs.build.steps.findIndex((step: { name?: string }) => step.name === 'Build the OpenSlack-owned external plugin');
-    expect(pluginIndex, 'the required Harness project must have a fresh witness before Vitest loads any project').toBeGreaterThanOrEqual(0);
+    expect(isolation.run).toBe(
+      'node node_modules/vitest/vitest.mjs run scripts/release/__tests__/dependency-install.test.ts',
+    );
+    const pluginIndex = release.jobs.build.steps.findIndex(
+      (step: { name?: string }) => step.name === 'Build the OpenSlack-owned external plugin',
+    );
+    expect(
+      pluginIndex,
+      'the required Harness project must have a fresh witness before Vitest loads any project',
+    ).toBeGreaterThanOrEqual(0);
     expect(release.jobs.build.steps.indexOf(isolation)).toBeGreaterThan(pluginIndex);
   });
 
   it('prepares pinned Go before plugin build and verifies its private module without service scaffolding', () => {
     const root = resolve(import.meta.dirname, '../../..');
-    for (const [name, job] of [['openslack-release.yml', 'build'], ['openslack-reusable-validate.yml', 'validate']] as const) {
-      const steps = parse(readFileSync(join(root, '.github/workflows', name), 'utf8')).jobs[job].steps;
-      const plugin = steps.findIndex((step: { name?: string }) => step.name === 'Build the OpenSlack-owned external plugin');
-      const go = steps.findIndex((step: { uses?: string; with?: Record<string, unknown> }) => step.uses?.startsWith('actions/setup-go@') && step.with?.['go-version'] === '1.26.5');
+    for (const [name, job] of [
+      ['openslack-release.yml', 'build'],
+      ['openslack-reusable-validate.yml', 'validate'],
+    ] as const) {
+      const steps = parse(readFileSync(join(root, '.github/workflows', name), 'utf8')).jobs[job]
+        .steps;
+      const plugin = steps.findIndex(
+        (step: { name?: string }) => step.name === 'Build the OpenSlack-owned external plugin',
+      );
+      const go = steps.findIndex(
+        (step: { uses?: string; with?: Record<string, unknown> }) =>
+          step.uses?.startsWith('actions/setup-go@') && step.with?.['go-version'] === '1.26.5',
+      );
       expect(go, name).toBeGreaterThanOrEqual(0);
       expect(go, name).toBeLessThan(plugin);
-      const verification = steps.find((step: { name?: string }) => step.name === 'Verify the private supervisor module');
-      expect(verification.workingDirectory ?? verification['working-directory']).toBe('integrations/deepseek-harness/native-supervisor');
+      const verification = steps.find(
+        (step: { name?: string }) => step.name === 'Verify the private supervisor module',
+      );
+      expect(verification.workingDirectory ?? verification['working-directory']).toBe(
+        'integrations/deepseek-harness/native-supervisor',
+      );
       expect(verification.env).toEqual({ GOWORK: 'off', GOTOOLCHAIN: 'local' });
       expect(verification.run).toContain('go test ./...');
       expect(verification.run).toContain('go vet ./...');
@@ -124,11 +182,20 @@ describe('native release workflow integrity', () => {
     }
   });
   it('keeps both required Harness compatibility preparations and dependency pins identical', () => {
-    const reusable = parse(readFileSync(resolve(import.meta.dirname, '../../../.github/workflows/openslack-reusable-validate.yml'), 'utf8'));
+    const reusable = parse(
+      readFileSync(
+        resolve(import.meta.dirname, '../../../.github/workflows/openslack-reusable-validate.yml'),
+        'utf8',
+      ),
+    );
     const release = parse(workflow);
     const jobs = [reusable.jobs.validate, release.jobs.build];
-    const preparation = jobs.map(job => job.steps.find((step: { name?: string }) =>
-      step.name === 'Prepare original Harness artifacts and public declarations'));
+    const preparation = jobs.map((job) =>
+      job.steps.find(
+        (step: { name?: string }) =>
+          step.name === 'Prepare original Harness artifacts and public declarations',
+      ),
+    );
     expect(preparation[0]).toBeDefined();
     expect(preparation[1]).toEqual(preparation[0]);
     const helperPath = resolve(import.meta.dirname, '../../ci/prepare-harness-deps.sh');
@@ -149,27 +216,46 @@ describe('native release workflow integrity', () => {
     for (const job of jobs) {
       expect(job.env.OPENSLACK_HARNESS_COMPATIBILITY).toBe('required');
       const steps = job.steps;
-      const checkout = steps.find((step: { with?: Record<string, string> }) =>
-        step.with?.repository === 'deepseek-ai/deepseek-harness');
-      expect(checkout.with).toMatchObject({ ref: HARNESS_COMPATIBILITY_SHA, 'persist-credentials': false });
+      const checkout = steps.find(
+        (step: { with?: Record<string, string> }) =>
+          step.with?.repository === 'deepseek-ai/deepseek-harness',
+      );
+      expect(checkout.with).toMatchObject({
+        ref: HARNESS_COMPATIBILITY_SHA,
+        'persist-credentials': false,
+      });
       expect(checkout.id).toBe('harness-source');
-      expect(steps.find((step: { uses?: string }) => step.uses?.startsWith('actions/setup-node@')).with['node-version']).toBe('24.18.1');
+      expect(
+        steps.find((step: { uses?: string }) => step.uses?.startsWith('actions/setup-node@')).with[
+          'node-version'
+        ],
+      ).toBe('24.18.1');
       expect(helper).toContain('pnpm@11.28.5');
       const prepareIndex = steps.indexOf(preparation[jobs.indexOf(job)]);
-      const pluginIndex = steps.findIndex((step: { name?: string }) => step.name === 'Build the OpenSlack-owned external plugin');
+      const pluginIndex = steps.findIndex(
+        (step: { name?: string }) => step.name === 'Build the OpenSlack-owned external plugin',
+      );
       expect(prepareIndex).toBeGreaterThan(steps.indexOf(checkout));
       expect(pluginIndex).toBeGreaterThan(prepareIndex);
-      expect(steps.slice(0, prepareIndex).some((step: { run?: string }) => /vitest\s+run/.test(step.run ?? ''))).toBe(false);
+      expect(
+        steps
+          .slice(0, prepareIndex)
+          .some((step: { run?: string }) => /vitest\s+run/.test(step.run ?? '')),
+      ).toBe(false);
       expect(helper).toContain('pnpm install --frozen-lockfile');
       expect(helper).toContain('pnpm run build:artifacts');
       expect(helper).toContain('pnpm run build:check');
-      const cache = steps.find((step: { name?: string }) => step.name === 'Cache original Harness downloads');
+      const cache = steps.find(
+        (step: { name?: string }) => step.name === 'Cache original Harness downloads',
+      );
       expect(cache.uses).toBe('actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306');
       expect(cache.with.path).toBe('.openslack.local/ci/pnpm-store');
       expect(cache.with['restore-keys']).toBeUndefined();
       expect(cache.with.key).toContain('${{ runner.os }}');
       expect(cache.with.key).toContain('${{ steps.harness-source.outputs.commit }}');
-      expect(cache.with.key).toContain("${{ hashFiles('.openslack.local/ci/harness-original/pnpm-lock.yaml') }}");
+      expect(cache.with.key).toContain(
+        "${{ hashFiles('.openslack.local/ci/harness-original/pnpm-lock.yaml') }}",
+      );
       expect(cache.with.key).toContain('node24.18.1-pnpm11.28.5');
       expect(cache.with.key.endsWith('-end')).toBe(true);
       expect(steps.indexOf(cache)).toBeGreaterThan(steps.indexOf(checkout));
@@ -205,7 +291,13 @@ describe('native release workflow integrity', () => {
     symlinkSync(target, alias, process.platform === 'win32' ? 'junction' : 'dir');
     const output = join(root, 'github-env');
     const result = spawnSync(process.execPath, ['--input-type=module', '-e', program!], {
-      env: { ...testProcessEnvironment(), TEMP: alias, TMP: alias, TMPDIR: alias, GITHUB_ENV: output },
+      env: {
+        ...testProcessEnvironment(),
+        TEMP: alias,
+        TMP: alias,
+        TMPDIR: alias,
+        GITHUB_ENV: output,
+      },
       encoding: 'utf8',
       timeout: 20_000,
     });
@@ -244,7 +336,11 @@ describe('native release workflow integrity', () => {
     const isolated = testTemporaryDirectory('openslack-bunfig-source-');
     onTestFinished(() => rmSync(isolated, { recursive: true, force: true }));
     const bootstrap = join(isolated, 'bootstrap.toml');
-    writeFileSync(bootstrap, '[install]\nauto = "disable"\nregistry = "https://registry.npmjs.org"\n', { mode: 0o600 });
+    writeFileSync(
+      bootstrap,
+      '[install]\nauto = "disable"\nregistry = "https://registry.npmjs.org"\n',
+      { mode: 0o600 },
+    );
     writeFileSync(join(isolated, '.npmrc'), '', { mode: 0o600 });
     writeFileSync(join(isolated, '.bunfig.toml'), '', { mode: 0o600 });
     const env = createChildEnvironment(testProcessEnvironment(), isolated);
@@ -256,7 +352,13 @@ describe('native release workflow integrity', () => {
         '-e',
         'console.log(JSON.stringify({bunVersion:Bun.version,config:Bun.TOML.parse(await Bun.stdin.text())}))',
       ],
-      { cwd: isolated, env, input: readFileSync(join(root, 'bunfig.toml'), 'utf8'), encoding: 'utf8', timeout: 20_000 },
+      {
+        cwd: isolated,
+        env,
+        input: readFileSync(join(root, 'bunfig.toml'), 'utf8'),
+        encoding: 'utf8',
+        timeout: 20_000,
+      },
     );
     expect(result.error).toBeUndefined();
     expect(result.status, 'isolated Bun TOML parser must exit successfully').toBe(0);
@@ -271,7 +373,9 @@ describe('native release workflow integrity', () => {
   });
 
   it('accepts an official npm tarball independently of the current dependency inventory', () => {
-    expect(() => validateLockfile(npmLockfile('https://registry.npmjs.org/example/-/example-1.0.0.tgz'))).not.toThrow();
+    expect(() =>
+      validateLockfile(npmLockfile('https://registry.npmjs.org/example/-/example-1.0.0.tgz')),
+    ).not.toThrow();
   });
 
   it.each([

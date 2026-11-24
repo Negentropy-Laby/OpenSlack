@@ -1,11 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type {
-  CanonicalJsonError,
-  StrictGraphJsonError} from '../index.js';
-import {
-  canonicalJson,
-  parseStrictGraphJson,
-} from '../index.js';
+import type { CanonicalJsonError, StrictGraphJsonError } from '../index.js';
+import { canonicalJson, parseStrictGraphJson } from '../index.js';
 
 function expectCanonicalError(
   run: () => unknown,

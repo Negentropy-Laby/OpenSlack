@@ -1,5 +1,9 @@
 import { Command, Option } from 'commander';
-import { HarnessRootUnsafeError, type createConfiguredHarnessTaskHost, type HarnessTaskHost } from '@openslack/agent-runtime/internal/harness';
+import {
+  HarnessRootUnsafeError,
+  type createConfiguredHarnessTaskHost,
+  type HarnessTaskHost,
+} from '@openslack/agent-runtime/internal/harness';
 import {
   normalizeGraphServiceOrigin,
   type GraphReadAuthorityPort,
@@ -411,7 +415,9 @@ async function createProfileContext(
       provider: 'cli',
       ...(options.workspaceId === undefined ? {} : { workspaceIdAssertion: options.workspaceId }),
       ...(governanceAuthority === undefined ? {} : { governanceAuthority }),
-      ...(dependencies.harnessTaskHost === undefined ? {} : { harnessTaskHost: dependencies.harnessTaskHost }),
+      ...(dependencies.harnessTaskHost === undefined
+        ? {}
+        : { harnessTaskHost: dependencies.harnessTaskHost }),
     });
     const graphReadMirror = bindGraphReadMirror(dependencies, options);
     return createContext({
@@ -515,7 +521,10 @@ export function mcpCommands(dependencies: McpCommandDependencies): Command {
     )
     .option('--workspace-id <workspace-id>', 'Assert the canonical workspace ID')
     .option('--harness-task-host', 'Explicitly own the approved configured Harness task dispatcher')
-    .option('--harness-worker-binding <file>', 'Use a host-created per-run callback binding; requires a configured agent-bound Harness deployment')
+    .option(
+      '--harness-worker-binding <file>',
+      'Use a host-created per-run callback binding; requires a configured agent-bound Harness deployment',
+    )
     .option(
       '--graph-read-mirror-origin <origin>',
       'Mirror Graph query/explain reads to one exact credential-free Go service origin',
@@ -633,19 +642,26 @@ export function mcpCommands(dependencies: McpCommandDependencies): Command {
       const renderFailure = (error?: unknown): void => {
         if (failureRendered) return;
         failureRendered = true;
-        console.error(!(error instanceof McpStdioLifecycleError && error.phase === 'shutdown')
-          ? error instanceof HarnessRootUnsafeError
-            ? 'OPENSLACK_MCP_START_FAILED: HARNESS_ROOT_UNSAFE; use an approved physical workspace path without links or junction ancestors.'
-            : 'OPENSLACK_MCP_START_FAILED: the requested stdio profile did not start.'
-          : 'OPENSLACK_MCP_SHUTDOWN_UNCONFIRMED: preserve task evidence and reconcile before retrying.');
+        console.error(
+          !(error instanceof McpStdioLifecycleError && error.phase === 'shutdown')
+            ? error instanceof HarnessRootUnsafeError
+              ? 'OPENSLACK_MCP_START_FAILED: HARNESS_ROOT_UNSAFE; use an approved physical workspace path without links or junction ancestors.'
+              : 'OPENSLACK_MCP_START_FAILED: the requested stdio profile did not start.'
+            : 'OPENSLACK_MCP_SHUTDOWN_UNCONFIRMED: preserve task evidence and reconcile before retrying.',
+        );
         process.exitCode = 1;
       };
       try {
-        host = await createOpenSlackMcpStdioHost({ workspaceRoot: dependencies.workspaceRoot, profile: options.profile,
-          principalRef: options.principalRef, harnessTaskHost: dependencies.harnessTaskHost,
-          configuredDispatcher: options.harnessTaskHost, workerBinding: options.harnessWorkerBinding,
-          createConfiguredHost: dependencies.createConfiguredHarnessTaskHost, createServer: dependencies.createServer,
-          createContext: owner => createProfileContext({ ...dependencies, ...owner }, options),
+        host = await createOpenSlackMcpStdioHost({
+          workspaceRoot: dependencies.workspaceRoot,
+          profile: options.profile,
+          principalRef: options.principalRef,
+          harnessTaskHost: dependencies.harnessTaskHost,
+          configuredDispatcher: options.harnessTaskHost,
+          workerBinding: options.harnessWorkerBinding,
+          createConfiguredHost: dependencies.createConfiguredHarnessTaskHost,
+          createServer: dependencies.createServer,
+          createContext: (owner) => createProfileContext({ ...dependencies, ...owner }, options),
         });
 
         const close = async (): Promise<void> => {

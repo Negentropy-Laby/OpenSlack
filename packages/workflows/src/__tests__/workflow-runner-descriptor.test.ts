@@ -205,12 +205,16 @@ describe('Windows descriptor identity query', () => {
     expect(createWorkflowRunnerDescriptorPathSecurity('win32').platform).toBe('win32');
     expect(createWorkflowRunnerDescriptorPathSecurity('win32').platform).toBe('win32');
     expect(query).toHaveBeenCalledTimes(1);
-    expect(query).toHaveBeenCalledWith('C:\\Windows\\System32\\whoami.exe', ['/user', '/fo', 'csv', '/nh'], {
-      encoding: 'utf8',
-      timeout: 20_000,
-      windowsHide: true,
-      maxBuffer: 16 * 1024,
-    });
+    expect(query).toHaveBeenCalledWith(
+      'C:\\Windows\\System32\\whoami.exe',
+      ['/user', '/fo', 'csv', '/nh'],
+      {
+        encoding: 'utf8',
+        timeout: 20_000,
+        windowsHide: true,
+        maxBuffer: 16 * 1024,
+      },
+    );
   });
 
   it.each([
@@ -252,10 +256,14 @@ describe('Windows descriptor identity query', () => {
     return { path, stat: await lstat(path, { bigint: true }) };
   }
 
-  const ownerOnlyAcl = () => JSON.stringify({
-    owner: 'S-1-5-21-42-1001', protected: true, reparse: false,
-    allow: ['S-1-5-21-42-1001', 'S-1-5-18'], deny: [],
-  });
+  const ownerOnlyAcl = () =>
+    JSON.stringify({
+      owner: 'S-1-5-21-42-1001',
+      protected: true,
+      reparse: false,
+      allow: ['S-1-5-21-42-1001', 'S-1-5-18'],
+      deny: [],
+    });
 
   it('awaits the asynchronous ACL query while unrelated event-loop work proceeds', async () => {
     const fixture = await aclFixture();
@@ -269,14 +277,23 @@ describe('Windows descriptor identity query', () => {
     const security = createWorkflowRunnerDescriptorPathSecurity('win32');
     const inspecting = security.assertOwnerOnly(fixture.path, false, fixture.stat);
     let settled = false;
-    void inspecting.then(() => { settled = true; }, () => { settled = true; });
+    void inspecting.then(
+      () => {
+        settled = true;
+      },
+      () => {
+        settled = true;
+      },
+    );
     try {
       expect(query).toHaveBeenCalledTimes(1);
       expect(identity).toHaveBeenCalledTimes(1);
       await new Promise<void>((resolve) => setImmediate(resolve));
       expect(settled).toBe(false);
       const [executable, args, options] = query.mock.calls[0]! as [
-        string, string[], { encoding: string; timeout: number; windowsHide: boolean; env: NodeJS.ProcessEnv },
+        string,
+        string[],
+        { encoding: string; timeout: number; windowsHide: boolean; env: NodeJS.ProcessEnv },
       ];
       expect(executable).toBe('powershell.exe');
       expect(args?.slice(0, 4)).toEqual(['-NoLogo', '-NoProfile', '-NonInteractive', '-Command']);
@@ -302,8 +319,13 @@ describe('Windows descriptor identity query', () => {
       return {};
     });
     const { createWorkflowRunnerDescriptorPathSecurity } = await securityModule(identity, query);
-    await expect(createWorkflowRunnerDescriptorPathSecurity('win32')
-      .assertOwnerOnly(fixture.path, false, fixture.stat)).rejects.toBe(failure);
+    await expect(
+      createWorkflowRunnerDescriptorPathSecurity('win32').assertOwnerOnly(
+        fixture.path,
+        false,
+        fixture.stat,
+      ),
+    ).rejects.toBe(failure);
     expect(query).toHaveBeenCalledTimes(1);
     expect(identity).toHaveBeenCalledTimes(1);
   });
@@ -317,10 +339,15 @@ describe('Windows descriptor identity query', () => {
       return {};
     });
     const { createWorkflowRunnerDescriptorPathSecurity } = await securityModule(identity, query);
-    await expect(createWorkflowRunnerDescriptorPathSecurity('win32')
-      .assertOwnerOnly(fixture.path, false, fixture.stat)).rejects.toMatchObject({
-        code: 'WORKFLOW_RUNNER_DESCRIPTOR_STORE_PERMISSION_DENIED',
-      });
+    await expect(
+      createWorkflowRunnerDescriptorPathSecurity('win32').assertOwnerOnly(
+        fixture.path,
+        false,
+        fixture.stat,
+      ),
+    ).rejects.toMatchObject({
+      code: 'WORKFLOW_RUNNER_DESCRIPTOR_STORE_PERMISSION_DENIED',
+    });
     expect(query).toHaveBeenCalledTimes(1);
     expect(identity).toHaveBeenCalledTimes(1);
   });
@@ -339,9 +366,11 @@ describe('Windows descriptor identity query', () => {
     const { createWorkflowRunnerDescriptorPathSecurity } = await securityModule(identity, query);
     const security = createWorkflowRunnerDescriptorPathSecurity('win32');
     await security.assertOwnerOnly(fixture.path, false, fixture.stat);
-    await expect(security.assertOwnerOnly(fixture.path, false, fixture.stat)).rejects.toMatchObject({
-      code: 'WORKFLOW_RUNNER_DESCRIPTOR_STORE_PERMISSION_DENIED',
-    });
+    await expect(security.assertOwnerOnly(fixture.path, false, fixture.stat)).rejects.toMatchObject(
+      {
+        code: 'WORKFLOW_RUNNER_DESCRIPTOR_STORE_PERMISSION_DENIED',
+      },
+    );
     expect(query).toHaveBeenCalledTimes(2);
     expect(identity).toHaveBeenCalledTimes(1);
   });
@@ -505,10 +534,15 @@ describe('GS8-B sealed execution descriptor', () => {
       });
       restoreSpy = () => spy.mockRestore();
       reading = reader.read(value.descriptorRef);
-      const wasQueued = await Promise.race([queued.promise.then(() => true), reading.then(() => false)]);
+      const wasQueued = await Promise.race([
+        queued.promise.then(() => true),
+        reading.then(() => false),
+      ]);
       if (closed) return;
       expect(wasQueued).toBe(true);
-      expect((await readdir(join(root, 'descriptors'))).filter((name) => name.startsWith('.tmp-'))).toHaveLength(1);
+      expect(
+        (await readdir(join(root, 'descriptors'))).filter((name) => name.startsWith('.tmp-')),
+      ).toHaveLength(1);
       release.resolve();
       await expect(creation).resolves.toMatchObject({ duplicate: false });
       await expect(reading).resolves.toEqual(value);

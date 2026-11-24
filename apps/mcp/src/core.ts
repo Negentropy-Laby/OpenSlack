@@ -124,7 +124,6 @@ function redactString(value: string): string {
   return redactProtocolString(value, MAX_TEXT_LENGTH);
 }
 
-
 function sanitizeForProtocol(
   value: unknown,
   depth = 0,

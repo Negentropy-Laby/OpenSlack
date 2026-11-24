@@ -1,10 +1,25 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { assertHarnessRunStartEligibility, bindHarnessRunStartEligibility, bindHarnessToolEligibility,
-  createHarnessTaskEligibility, harnessRunStartEligibilityRestriction } from '../harness-eligibility.js';
+import {
+  assertHarnessRunStartEligibility,
+  bindHarnessRunStartEligibility,
+  bindHarnessToolEligibility,
+  createHarnessTaskEligibility,
+  harnessRunStartEligibilityRestriction,
+} from '../harness-eligibility.js';
 
-const taskBinding = { taskId: 'TASK-START', taskHash: 'a'.repeat(64), principalId: 'principal:fixture', principalHash: 'b'.repeat(64), phase: 'execute' as const };
+const taskBinding = {
+  taskId: 'TASK-START',
+  taskHash: 'a'.repeat(64),
+  principalId: 'principal:fixture',
+  principalHash: 'b'.repeat(64),
+  phase: 'execute' as const,
+};
 const runBinding = { runId: 'RUN-START', generation: 'generation-one' };
-const expected = { ...runBinding, requestHash: taskBinding.taskHash, principalHash: taskBinding.principalHash };
+const expected = {
+  ...runBinding,
+  requestHash: taskBinding.taskHash,
+  principalHash: taskBinding.principalHash,
+};
 afterEach(() => vi.restoreAllMocks());
 
 describe('nominal startup lease restrictions (explicit synthetic authority observations only)', () => {
@@ -14,24 +29,44 @@ describe('nominal startup lease restrictions (explicit synthetic authority obser
     expect(() => assertHarnessRunStartEligibility(fact, expected)).not.toThrow();
     expect(harnessRunStartEligibilityRestriction(fact)).toEqual({ mode: 'not_applicable' });
     expect(Object.keys(fact)).toEqual([]);
-    expect(() => assertHarnessRunStartEligibility(JSON.parse(JSON.stringify(fact)), expected)).toThrow('eligibility');
+    expect(() =>
+      assertHarnessRunStartEligibility(JSON.parse(JSON.stringify(fact)), expected),
+    ).toThrow('eligibility');
   });
 
-  it.each(['runId', 'requestHash', 'principalHash', 'generation'] as const)('rejects a mismatched %s binding', key => {
-    const fact = bindHarnessRunStartEligibility(createHarnessTaskEligibility(taskBinding, { mode: 'not_applicable' }), runBinding);
-    expect(() => assertHarnessRunStartEligibility(fact, { ...expected, [key]: `${expected[key]}-other` })).toThrow('eligibility');
-  });
+  it.each(['runId', 'requestHash', 'principalHash', 'generation'] as const)(
+    'rejects a mismatched %s binding',
+    (key) => {
+      const fact = bindHarnessRunStartEligibility(
+        createHarnessTaskEligibility(taskBinding, { mode: 'not_applicable' }),
+        runBinding,
+      );
+      expect(() =>
+        assertHarnessRunStartEligibility(fact, { ...expected, [key]: `${expected[key]}-other` }),
+      ).toThrow('eligibility');
+    },
+  );
 
-  it.each([undefined, {}, { mode: 'not_applicable' }, { mode: 'required', expiresAt: Infinity }])('rejects absent or forged startup observations', value => {
-    expect(() => assertHarnessRunStartEligibility(value, expected)).toThrow('eligibility');
-    expect(() => harnessRunStartEligibilityRestriction(value)).toThrow('eligibility');
-  });
+  it.each([undefined, {}, { mode: 'not_applicable' }, { mode: 'required', expiresAt: Infinity }])(
+    'rejects absent or forged startup observations',
+    (value) => {
+      expect(() => assertHarnessRunStartEligibility(value, expected)).toThrow('eligibility');
+      expect(() => harnessRunStartEligibilityRestriction(value)).toThrow('eligibility');
+    },
+  );
 
   it('preserves a required lease cutoff instead of converting it to unlimited eligibility', () => {
     let clock = 1000;
-    const task = createHarnessTaskEligibility(taskBinding, { mode: 'required', expiresAt: 1100 }, () => clock);
+    const task = createHarnessTaskEligibility(
+      taskBinding,
+      { mode: 'required', expiresAt: 1100 },
+      () => clock,
+    );
     const fact = bindHarnessRunStartEligibility(task, runBinding);
-    expect(harnessRunStartEligibilityRestriction(fact)).toEqual({ mode: 'required', expiresAt: 1100 });
+    expect(harnessRunStartEligibilityRestriction(fact)).toEqual({
+      mode: 'required',
+      expiresAt: 1100,
+    });
     clock = 1100;
     expect(() => assertHarnessRunStartEligibility(fact, expected)).toThrow('eligibility');
     expect(() => harnessRunStartEligibilityRestriction(fact)).toThrow('eligibility');
@@ -39,7 +74,11 @@ describe('nominal startup lease restrictions (explicit synthetic authority obser
 
   it('samples its trusted local clock once per observation and rejects invalid clocks', () => {
     const now = vi.fn(() => 1000);
-    const task = createHarnessTaskEligibility(taskBinding, { mode: 'required', expiresAt: 1100 }, now);
+    const task = createHarnessTaskEligibility(
+      taskBinding,
+      { mode: 'required', expiresAt: 1100 },
+      now,
+    );
     expect(now).toHaveBeenCalledOnce();
     const fact = bindHarnessRunStartEligibility(task, runBinding);
     now.mockClear();
@@ -47,13 +86,22 @@ describe('nominal startup lease restrictions (explicit synthetic authority obser
     expect(now).toHaveBeenCalledOnce();
     now.mockReturnValue(NaN);
     expect(() => assertHarnessRunStartEligibility(fact, expected)).toThrow('eligibility');
-    expect(() => createHarnessTaskEligibility(taskBinding, { mode: 'not_applicable' }, () => Infinity)).toThrow('eligibility');
+    expect(() =>
+      createHarnessTaskEligibility(taskBinding, { mode: 'not_applicable' }, () => Infinity),
+    ).toThrow('eligibility');
   });
 
   it('does not reuse task/report or native tool observations as startup authority', () => {
     const execute = createHarnessTaskEligibility(taskBinding, { mode: 'not_applicable' });
-    const report = createHarnessTaskEligibility({ ...taskBinding, phase: 'report' }, { mode: 'not_applicable' });
-    const tool = bindHarnessToolEligibility(execute, { ...runBinding, toolName: 'Read', targetPath: '/fixture.txt' });
+    const report = createHarnessTaskEligibility(
+      { ...taskBinding, phase: 'report' },
+      { mode: 'not_applicable' },
+    );
+    const tool = bindHarnessToolEligibility(execute, {
+      ...runBinding,
+      toolName: 'Read',
+      targetPath: '/fixture.txt',
+    });
     expect(() => bindHarnessRunStartEligibility(report, runBinding)).toThrow('eligibility');
     expect(() => assertHarnessRunStartEligibility(execute, expected)).toThrow('eligibility');
     expect(() => assertHarnessRunStartEligibility(tool, expected)).toThrow('eligibility');

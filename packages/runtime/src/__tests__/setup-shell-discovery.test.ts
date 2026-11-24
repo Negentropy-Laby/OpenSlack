@@ -27,7 +27,10 @@ describe('setup shell discovery policy', () => {
     expect(result.status).toBe('ok');
     if (process.platform === 'win32') {
       expect(result.command).toBe('wsl bash scripts/genesis-validate.sh');
-      expect(result.exec).toEqual({ executable: 'wsl', args: ['bash', 'scripts/genesis-validate.sh'] });
+      expect(result.exec).toEqual({
+        executable: 'wsl',
+        args: ['bash', 'scripts/genesis-validate.sh'],
+      });
       expect(execFileSync).toHaveBeenCalledWith('wsl', ['--status'], expect.any(Object));
     } else {
       expect(result.command).toBe('bash scripts/genesis-validate.sh');
@@ -57,6 +60,10 @@ describe('setup shell discovery policy', () => {
     const result = detectGenesisShell('/fixture');
     expect(result.exec?.executable).toBe('C:/fixture/wsl.exe');
     expect(result.command).toBe('wsl bash scripts/genesis-validate.sh');
-    expect(execFileSync).toHaveBeenCalledWith('C:/fixture/wsl.exe', ['--status'], expect.any(Object));
+    expect(execFileSync).toHaveBeenCalledWith(
+      'C:/fixture/wsl.exe',
+      ['--status'],
+      expect.any(Object),
+    );
   });
 });

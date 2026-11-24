@@ -69,7 +69,12 @@ import { parse as parseYaml } from 'yaml';
 import { createGovernedPlanCollaborationAuditSink } from './audit.js';
 import { OpenSlackMcpToolError } from './errors.js';
 import { HarnessTaskHost } from '@openslack/agent-runtime/internal/harness';
-import { createGovernedWorkflowFamilies, workflowPlanFromActionInput, type GovernedWorkflowFamily, type WorkflowFamilyObservation } from './governed-workflow-family.js';
+import {
+  createGovernedWorkflowFamilies,
+  workflowPlanFromActionInput,
+  type GovernedWorkflowFamily,
+  type WorkflowFamilyObservation,
+} from './governed-workflow-family.js';
 import {
   createOpenSlackGovernedMutationPort,
   MUTATION_PORT_BUILD_SOURCE_PATH,
@@ -208,7 +213,10 @@ function inspectCompositionOptions(
   const governanceAuthorityValue = descriptors.governanceAuthority?.value;
   const harnessTaskHost = descriptors.harnessTaskHost?.value;
   if (harnessTaskHost !== undefined && !(harnessTaskHost instanceof HarnessTaskHost)) {
-    return fail('GOVERNED_COMPOSITION_INPUT_INVALID', 'Harness task owner must be constructed by the trusted host.');
+    return fail(
+      'GOVERNED_COMPOSITION_INPUT_INVALID',
+      'Harness task owner must be constructed by the trusted host.',
+    );
   }
   let governanceAuthority: GovernedPlanAuthorityCompositionOptions | undefined;
   if (governanceAuthorityValue !== undefined) {
@@ -870,7 +878,11 @@ async function assertScenarioPlanMatchesDefinitions(
       definitionHash: current.definitionHash,
     });
   }
-  throw new OpenSlackMcpToolError('GOVERNED_ACTION_NOT_AUTHORIZED', 'The governed action is not registered for this composition.', 'blocked');
+  throw new OpenSlackMcpToolError(
+    'GOVERNED_ACTION_NOT_AUTHORIZED',
+    'The governed action is not registered for this composition.',
+    'blocked',
+  );
 }
 
 export async function createOpenSlackAgentBoundMutationComposition(
@@ -895,37 +907,60 @@ export async function createOpenSlackAgentBoundMutationComposition(
     provider,
   );
   const hostBinding = safeOptions.harnessTaskHost?.governanceBinding();
-  if (hostBinding && (hostBinding.workspaceId !== initialWorkspace.workspaceId ||
-    hostBinding.principalId !== initialPrincipal.principalId ||
-    (process.platform === 'win32' ? hostBinding.identityRoot.toLowerCase() !== rootBinding.real.toLowerCase() : hostBinding.identityRoot !== rootBinding.real))) {
-    return fail('GOVERNED_COMPOSITION_PRINCIPAL_MISMATCH', 'Harness owner is bound to another principal or workspace.');
+  if (
+    hostBinding &&
+    (hostBinding.workspaceId !== initialWorkspace.workspaceId ||
+      hostBinding.principalId !== initialPrincipal.principalId ||
+      (process.platform === 'win32'
+        ? hostBinding.identityRoot.toLowerCase() !== rootBinding.real.toLowerCase()
+        : hostBinding.identityRoot !== rootBinding.real))
+  ) {
+    return fail(
+      'GOVERNED_COMPOSITION_PRINCIPAL_MISMATCH',
+      'Harness owner is bound to another principal or workspace.',
+    );
   }
   const enabledFamilies: GovernedWorkflowFamily[] = [];
   if (safeOptions.harnessTaskHost) {
     const { createHarnessWorkflowFamily } = await import('./governed-harness-family.js');
-    const family = createHarnessWorkflowFamily(safeOptions.harnessTaskHost, initialPrincipal.snapshot);
+    const family = createHarnessWorkflowFamily(
+      safeOptions.harnessTaskHost,
+      initialPrincipal.snapshot,
+    );
     if (family) enabledFamilies.push(family);
   }
-  let scenarioSupport: { status: 'ready'; definitions: readonly LoadedScenarioDefinition[] } | { status: 'unavailable' } = { status: 'unavailable' };
+  let scenarioSupport:
+    | { status: 'ready'; definitions: readonly LoadedScenarioDefinition[] }
+    | { status: 'unavailable' } = { status: 'unavailable' };
   let scenarioAuthorized = false;
-  try { authorizeScenarioMutation(initialPrincipal); scenarioAuthorized = true; }
-  catch {
-    if (!enabledFamilies.length) return fail('GOVERNED_COMPOSITION_PERMISSION_DENIED', 'The selected principal is not granted scenario.instantiate.');
+  try {
+    authorizeScenarioMutation(initialPrincipal);
+    scenarioAuthorized = true;
+  } catch {
+    if (!enabledFamilies.length)
+      return fail(
+        'GOVERNED_COMPOSITION_PERMISSION_DENIED',
+        'The selected principal is not granted scenario.instantiate.',
+      );
   }
 
   const scenarioRoot = join(rootBinding.real, 'scenarios');
   const scenarioCatalog: ScenarioHostCatalog = createOpenSlackHostScenarioCatalog();
   let acceptedDefinitions: readonly LoadedScenarioDefinition[] = [];
   try {
-    if (scenarioAuthorized) acceptedDefinitions = (await discoverScenarioPacks({
-      scenarioRoot,
-      catalog: scenarioCatalog,
-    })).accepted;
+    if (scenarioAuthorized)
+      acceptedDefinitions = (
+        await discoverScenarioPacks({
+          scenarioRoot,
+          catalog: scenarioCatalog,
+        })
+      ).accepted;
   } catch {
-    if (!enabledFamilies.length) return fail(
-      'GOVERNED_COMPOSITION_SCENARIO_UNAVAILABLE',
-      'The locked Scenario root could not be discovered safely.',
-    );
+    if (!enabledFamilies.length)
+      return fail(
+        'GOVERNED_COMPOSITION_SCENARIO_UNAVAILABLE',
+        'The locked Scenario root could not be discovered safely.',
+      );
   }
   if (acceptedDefinitions.length === 0 && !enabledFamilies.length) {
     return fail(
@@ -939,7 +974,8 @@ export async function createOpenSlackAgentBoundMutationComposition(
   const initialDefinitions = new Map(
     acceptedDefinitions.map((definition) => [definition.manifest.id, definition] as const),
   );
-  if (acceptedDefinitions.length) scenarioSupport = { status: 'ready', definitions: acceptedDefinitions };
+  if (acceptedDefinitions.length)
+    scenarioSupport = { status: 'ready', definitions: acceptedDefinitions };
   let audit;
   let planStore: GovernedPlanStore;
   let scenarioInstanceRoot: string;
@@ -994,8 +1030,9 @@ export async function createOpenSlackAgentBoundMutationComposition(
     await planStore.list();
     scenarioInstanceRoot = scenarioInstanceStoreRoot(rootBinding.real);
     if (scenarioSupport.status === 'ready') {
-      try { await initializeScenarioInstanceStoreRoot(rootBinding.real); }
-      catch (error) {
+      try {
+        await initializeScenarioInstanceStoreRoot(rootBinding.real);
+      } catch (error) {
         if (!enabledFamilies.length) throw error;
         scenarioSupport = { status: 'unavailable' };
       }
@@ -1057,28 +1094,68 @@ export async function createOpenSlackAgentBoundMutationComposition(
     }
   };
 
-  const scenarioSources = (definitions: ReadonlyMap<string, LoadedScenarioDefinition>): Readonly<Record<string, unknown>> => {
-    try { return Object.freeze({ scenarioCatalogHash: scenarioCatalog.integrityHash,
-      scenarioDefinitions: Object.freeze(scenarioIds.map(id => definitionBinding(definitions.get(id)!, scenarioRoot))) }); }
-    catch { throw new OpenSlackMcpToolError('GOVERNED_SCENARIO_BINDING_CHANGED', 'A process-sealed Scenario lock binding is unavailable or unsafe.', 'blocked'); }
+  const scenarioSources = (
+    definitions: ReadonlyMap<string, LoadedScenarioDefinition>,
+  ): Readonly<Record<string, unknown>> => {
+    try {
+      return Object.freeze({
+        scenarioCatalogHash: scenarioCatalog.integrityHash,
+        scenarioDefinitions: Object.freeze(
+          scenarioIds.map((id) => definitionBinding(definitions.get(id)!, scenarioRoot)),
+        ),
+      });
+    } catch {
+      throw new OpenSlackMcpToolError(
+        'GOVERNED_SCENARIO_BINDING_CHANGED',
+        'A process-sealed Scenario lock binding is unavailable or unsafe.',
+        'blocked',
+      );
+    }
   };
   if (scenarioSupport.status === 'ready') {
     const { createContractWorkflowFamily } = await import('./governed-contract-family.js');
-    enabledFamilies.push(createContractWorkflowFamily({ catalog: scenarioCatalog, scenarioInstanceRoot, eventAppender: workflowEventAppender, provider,
-      definitions: async () => { const definitions = await loadDefinitions(); assertDefinitionSetStable(definitions); return definitions; }, sources: scenarioSources }));
+    enabledFamilies.push(
+      createContractWorkflowFamily({
+        catalog: scenarioCatalog,
+        scenarioInstanceRoot,
+        eventAppender: workflowEventAppender,
+        provider,
+        definitions: async () => {
+          const definitions = await loadDefinitions();
+          assertDefinitionSetStable(definitions);
+          return definitions;
+        },
+        sources: scenarioSources,
+      }),
+    );
   }
   const families = createGovernedWorkflowFamilies(enabledFamilies);
   const workflowResolver = families.resolver;
   const readBuildHash = (): string => {
     const hash = createHash('sha256');
-    for (const path of [BUILD_SOURCE_PATH, MUTATION_PORT_BUILD_SOURCE_PATH, ...families.buildSources]) {
-      hash.update(JSON.stringify([path.split(/[\\/]/).at(-1), createHash('sha256').update(readStableFile(path)).digest('hex')]) + '\n');
+    for (const path of [
+      BUILD_SOURCE_PATH,
+      MUTATION_PORT_BUILD_SOURCE_PATH,
+      ...families.buildSources,
+    ]) {
+      hash.update(
+        JSON.stringify([
+          path.split(/[\\/]/).at(-1),
+          createHash('sha256').update(readStableFile(path)).digest('hex'),
+        ]) + '\n',
+      );
     }
     return hash.update(workflowResolver.integrityHash).digest('hex');
   };
   let initialBuildHash: string;
-  try { initialBuildHash = readBuildHash(); }
-  catch { return fail('GOVERNED_COMPOSITION_STORAGE_UNAVAILABLE', 'The governed composition build artifact could not be bound safely.'); }
+  try {
+    initialBuildHash = readBuildHash();
+  } catch {
+    return fail(
+      'GOVERNED_COMPOSITION_STORAGE_UNAVAILABLE',
+      'The governed composition build artifact could not be bound safely.',
+    );
+  }
 
   const assertCurrentAuthority = (): CurrentPrincipalBinding => {
     let currentWorkspaceBinding: WorkspaceBinding;
@@ -1120,8 +1197,12 @@ export async function createOpenSlackAgentBoundMutationComposition(
 
   const assertScenarioAuthority = (current: CurrentPrincipalBinding): void => {
     authorizeScenarioMutation(current);
-    if (scenarioSupport.status !== 'ready') throw new OpenSlackMcpToolError('GOVERNED_SCENARIO_BINDING_CHANGED',
-      'The process-sealed Scenario capability or storage is unavailable.', 'blocked');
+    if (scenarioSupport.status !== 'ready')
+      throw new OpenSlackMcpToolError(
+        'GOVERNED_SCENARIO_BINDING_CHANGED',
+        'The process-sealed Scenario capability or storage is unavailable.',
+        'blocked',
+      );
   };
 
   const registry = createGovernedActionExecutionRegistry([
@@ -1248,17 +1329,33 @@ export async function createOpenSlackAgentBoundMutationComposition(
     }
     let observation: WorkflowFamilyObservation;
     if (context.canonicalPlan.kind === WORKFLOW_ACTION_ID) {
-      if (context.canonicalPlan.actions.length !== 1) throw new OpenSlackMcpToolError('GOVERNED_WORKFLOW_BINDING_CHANGED', 'One reviewed Workflow target is required.', 'blocked');
+      if (context.canonicalPlan.actions.length !== 1)
+        throw new OpenSlackMcpToolError(
+          'GOVERNED_WORKFLOW_BINDING_CHANGED',
+          'One reviewed Workflow target is required.',
+          'blocked',
+        );
       const action = context.canonicalPlan.actions[0]!;
       const persisted = workflowPlanFromActionInput(action.input);
-      const restored = families.restore(action.input, action.actionId, { ...context.authority, correlationId: persisted.correlationId });
+      const restored = families.restore(action.input, action.actionId, {
+        ...context.authority,
+        correlationId: persisted.correlationId,
+      });
       restored.target.family.authorize(currentPrincipal.snapshot, restored.target.entry);
       observation = await restored.target.family.observe(restored.plan);
     } else {
       assertScenarioAuthority(currentPrincipal);
-      const definitions = await loadDefinitions(); assertDefinitionSetStable(definitions);
-      observation = { subject: await assertScenarioPlanMatchesDefinitions(context.canonicalPlan, definitions, context.authority),
-        sources: scenarioSources(definitions), stores: { scenarioInstance: 'openslack.scenario_instance.v1' } };
+      const definitions = await loadDefinitions();
+      assertDefinitionSetStable(definitions);
+      observation = {
+        subject: await assertScenarioPlanMatchesDefinitions(
+          context.canonicalPlan,
+          definitions,
+          context.authority,
+        ),
+        sources: scenarioSources(definitions),
+        stores: { scenarioInstance: 'openslack.scenario_instance.v1' },
+      };
     }
     let buildArtifactHash: string;
     try {
@@ -1421,7 +1518,12 @@ export async function createOpenSlackAgentBoundMutationComposition(
         throw error;
       }
       const target = families.workflow(workflowPlan.workflow.id);
-      if (!target) throw new OpenSlackMcpToolError('GOVERNED_WORKFLOW_TARGET_NOT_REGISTERED', 'No sealed reviewed Workflow target is registered for this composition.', 'blocked');
+      if (!target)
+        throw new OpenSlackMcpToolError(
+          'GOVERNED_WORKFLOW_TARGET_NOT_REGISTERED',
+          'No sealed reviewed Workflow target is registered for this composition.',
+          'blocked',
+        );
       target.family.authorize(currentPrincipal.snapshot, target.entry);
       return target.family.compile(workflowPlan);
     },

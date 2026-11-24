@@ -268,7 +268,12 @@ describe('terminal merge bookkeeping', () => {
     test('later drift refuses an invented approval snapshot before any mutation', async () => {
       const count = f.state.mutations.length;
       await assert.rejects(
-        f.run('advance-drift', batch, ['--permit-id', 'cleanup-drift-1', '--approved-sha', sha(999)]),
+        f.run('advance-drift', batch, [
+          '--permit-id',
+          'cleanup-drift-1',
+          '--approved-sha',
+          sha(999),
+        ]),
         (error) => error.code === 'FIXTURE_APPROVED_SHA_MISMATCH',
       );
       assert.equal(f.state.mutations.length, count);
@@ -597,7 +602,9 @@ test('fixture transport yields in bounded batches and drains cancellation at the
   const original = f.dependencies.runCommand;
   const deferred = [];
   let started;
-  const inFlight = new Promise((resolve) => { started = resolve; });
+  const inFlight = new Promise((resolve) => {
+    started = resolve;
+  });
   f.dependencies.runCommand = (...args) => {
     const before = f.state.calls.length;
     const result = original(...args);
@@ -621,7 +628,17 @@ test('fixture transport yields in bounded batches and drains cancellation at the
   assert.equal(fs.existsSync(f.root), false);
   assert.equal(JSON.stringify(f.state.calls), calls);
   assert.equal(JSON.stringify(f.state.mutations), mutations);
-  assert.deepEqual(deferred.slice(0, 9), [true, false, false, false, false, false, false, false, true]);
+  assert.deepEqual(deferred.slice(0, 9), [
+    true,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    true,
+  ]);
 });
 
 async function createdFixture() {

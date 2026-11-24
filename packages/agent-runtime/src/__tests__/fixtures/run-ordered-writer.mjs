@@ -17,7 +17,8 @@ fs.openSync = (path, flags, ...args) => {
     fs.writeFileSync(`${marker}.acquired`, 'acquired');
     const deadline = performance.now() + 15_000;
     while (!fs.existsSync(release)) {
-      if (performance.now() >= deadline) throw new Error('Parent did not release the controlled fixture owner');
+      if (performance.now() >= deadline)
+        throw new Error('Parent did not release the controlled fixture owner');
       Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 2);
     }
   }
@@ -28,13 +29,33 @@ try {
   // Match the async host's pre-acquisition wait. Only an unopened lock can
   // retry; no touched transaction, callback or uncertain result is replayed.
   await waitForRunObservation(() => {
-    if (operation === 'create') createRunStore(root, { sweepOrphans: false }).createRun({ runId, agentId: 'ordered-create-fixture',
-      prompt: 'never sent', resolvedConfig: { agentId: 'ordered-create-fixture', source: 'test' },
-      permissionProfile: { allowedTools: [], deniedTools: [], permissionMode: 'default' } });
-    else appendTranscriptEvent(runId, { type: 'progress', timestamp: new Date().toISOString(), data: { independentAppend: true } }, root);
+    if (operation === 'create')
+      createRunStore(root, { sweepOrphans: false }).createRun({
+        runId,
+        agentId: 'ordered-create-fixture',
+        prompt: 'never sent',
+        resolvedConfig: { agentId: 'ordered-create-fixture', source: 'test' },
+        permissionProfile: { allowedTools: [], deniedTools: [], permissionMode: 'default' },
+      });
+    else
+      appendTranscriptEvent(
+        runId,
+        {
+          type: 'progress',
+          timestamp: new Date().toISOString(),
+          data: { independentAppend: true },
+        },
+        root,
+      );
   }, isRunPreAcquisitionContention);
   process.stdout.write(JSON.stringify({ operation, outcome: 'committed' }));
 } catch (error) {
-  process.stdout.write(JSON.stringify({ operation, outcome: 'rejected', code: error.code ?? null,
-    alreadyExists: error.message.includes('Run already exists') }));
+  process.stdout.write(
+    JSON.stringify({
+      operation,
+      outcome: 'rejected',
+      code: error.code ?? null,
+      alreadyExists: error.message.includes('Run already exists'),
+    }),
+  );
 }

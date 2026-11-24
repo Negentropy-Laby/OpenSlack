@@ -19,14 +19,26 @@ export interface ProviderExecutionPolicy {
 }
 
 /** Unspecified external processes default to isolation/preservation, not destructive cleanup. */
-export function providerExecutionPolicy(resolution: ProviderResolution): Readonly<ProviderExecutionPolicy> {
-  const external = resolution.transport === 'process' || resolution.transport === 'external-command';
-  const defaults = { requiresHostAcceptance: false, worktreeForFileWrites: external,
-    preserveWorktree: external };
+export function providerExecutionPolicy(
+  resolution: ProviderResolution,
+): Readonly<ProviderExecutionPolicy> {
+  const external =
+    resolution.transport === 'process' || resolution.transport === 'external-command';
+  const defaults = {
+    requiresHostAcceptance: false,
+    worktreeForFileWrites: external,
+    preserveWorktree: external,
+  };
   const input = resolution.policy;
-  if (input && (Object.keys(input).some(key => !Object.hasOwn(defaults, key)) ||
-    Object.values(input).some(value => typeof value !== 'boolean'))) {
-    throw new ProviderRegistryError('INVALID_PROVIDER_RESOLUTION', 'Provider lifecycle policy must contain only known Boolean capabilities.');
+  if (
+    input &&
+    (Object.keys(input).some((key) => !Object.hasOwn(defaults, key)) ||
+      Object.values(input).some((value) => typeof value !== 'boolean'))
+  ) {
+    throw new ProviderRegistryError(
+      'INVALID_PROVIDER_RESOLUTION',
+      'Provider lifecycle policy must contain only known Boolean capabilities.',
+    );
   }
   return Object.freeze({ ...defaults, ...input });
 }

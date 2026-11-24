@@ -5,8 +5,14 @@ import { describe, expect, it } from 'vitest';
 import ts from 'typescript';
 
 const sourceRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
-const familyFiles = ['governed-workflow-family.ts', 'governed-contract-family.ts', 'governed-harness-family.ts',
-  'governed-confirmation.ts', 'harness-workflow.ts', 'stdio-host.ts'];
+const familyFiles = [
+  'governed-workflow-family.ts',
+  'governed-contract-family.ts',
+  'governed-harness-family.ts',
+  'governed-confirmation.ts',
+  'harness-workflow.ts',
+  'stdio-host.ts',
+];
 
 function unreviewedAuthorityCalls(path: string, text: string): string[] {
   const source = ts.createSourceFile(path, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
@@ -18,9 +24,18 @@ function unreviewedAuthorityCalls(path: string, text: string): string[] {
   const visit = (node: ts.Node): void => {
     if (ts.isCallExpression(node)) {
       const target = node.expression;
-      const name = ts.isIdentifier(target) ? target.text : ts.isPropertyAccessExpression(target) ? target.name.text : undefined;
-      if (name && /^(?:authorize|claim|complete|reconcile)(?:WorkflowEffect|EffectExecution)?$/.test(name)) {
-        const allowed = name === 'authorize' && ts.isPropertyAccessExpression(target) &&
+      const name = ts.isIdentifier(target)
+        ? target.text
+        : ts.isPropertyAccessExpression(target)
+          ? target.name.text
+          : undefined;
+      if (
+        name &&
+        /^(?:authorize|claim|complete|reconcile)(?:WorkflowEffect|EffectExecution)?$/.test(name)
+      ) {
+        const allowed =
+          name === 'authorize' &&
+          ts.isPropertyAccessExpression(target) &&
           reviewed[path]?.includes(target.expression.getText(source));
         if (!allowed) forbidden.push(target.getText(source));
       }
@@ -91,8 +106,14 @@ describe('QW2 MCP source boundary', () => {
     expect(source).not.toMatch(
       /\b(?:executeRun|executeResume|createRuntime|createRuntimeWithHostAuthorities|createWorkflowEffectAuthorizationPort|LocalWorkflowEffectAuthorityStore)\b/,
     );
-    for (const path of files) expect(unreviewedAuthorityCalls(path, readFileSync(join(sourceRoot, path), 'utf8')), path).toEqual([]);
-    expect(unreviewedAuthorityCalls('governed-workflow-family.ts', 'family.authorize(snapshot, entry)')).toEqual([]);
+    for (const path of files)
+      expect(
+        unreviewedAuthorityCalls(path, readFileSync(join(sourceRoot, path), 'utf8')),
+        path,
+      ).toEqual([]);
+    expect(
+      unreviewedAuthorityCalls('governed-workflow-family.ts', 'family.authorize(snapshot, entry)'),
+    ).toEqual([]);
     for (const text of ['authorize()', 'other.authorize()', 'family.authorizeWorkflowEffect()']) {
       expect(unreviewedAuthorityCalls('governed-workflow-family.ts', text)).not.toEqual([]);
     }
@@ -128,8 +149,14 @@ describe('QW2 MCP source boundary', () => {
     );
     expect(source).not.toMatch(/apps\/cli|@openslack\/cli|node:child_process|execFile|spawn\s*\(/);
     const contract = readFileSync(join(sourceRoot, 'governed-contract-family.ts'), 'utf8');
-    for (const required of ['createContractDeliveryLiteWorkflowResolverEntry', 'rehydrateWorkflowStartPlan',
-      'assertContractDeliveryLiteWorkflowPlan', 'authorizeAgentAction', 'executeContractDeliveryLiteWorkflow']) expect(contract).toContain(required);
+    for (const required of [
+      'createContractDeliveryLiteWorkflowResolverEntry',
+      'rehydrateWorkflowStartPlan',
+      'assertContractDeliveryLiteWorkflowPlan',
+      'authorizeAgentAction',
+      'executeContractDeliveryLiteWorkflow',
+    ])
+      expect(contract).toContain(required);
   });
 
   it('assembles rehearsal evidence before explicit sealed graph publication', () => {

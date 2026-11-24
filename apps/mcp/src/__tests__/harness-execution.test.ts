@@ -8,64 +8,110 @@ import { OpenSlackMcpCore } from '../core.js';
 import { readHarnessExecutionProjection } from '../harness-execution.js';
 
 const roots: string[] = [];
-afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
+afterEach(() => {
+  for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
+});
 
 function fixture(runId = 'RUN-TEST') {
   const root = mkdtempSync(join(tmpdir(), 'mcp-harness-execution-'));
   roots.push(root);
   const directory = join(root, '.openslack.local/agents/runs', runId);
   mkdirSync(directory, { recursive: true });
-  const state = { runId, status: 'completed', agentId: 'fixture', startedAt: new Date().toISOString(),
-    tokensUsed: 0, tokensRemaining: null, toolCalls: 0, transcriptPath: join(directory, 'transcript.jsonl'), harnessExecution: {
-    schema: 'openslack.harness_execution.v1', taskId: 'TASK-1', acceptance: 'verified',
-    summary: 'Host verified fixture.', evidenceRefs: ['artifact:fixture'], principalHash: 'not-for-projection',
-  } };
+  const state = {
+    runId,
+    status: 'completed',
+    agentId: 'fixture',
+    startedAt: new Date().toISOString(),
+    tokensUsed: 0,
+    tokensRemaining: null,
+    toolCalls: 0,
+    transcriptPath: join(directory, 'transcript.jsonl'),
+    harnessExecution: {
+      schema: 'openslack.harness_execution.v1',
+      taskId: 'TASK-1',
+      acceptance: 'verified',
+      summary: 'Host verified fixture.',
+      evidenceRefs: ['artifact:fixture'],
+      principalHash: 'not-for-projection',
+    },
+  };
   writeFileSync(join(directory, 'run.json'), JSON.stringify(state));
   const event: CollaborationEvent = {
-    schema: 'openslack.collaboration_event.v1', id: 'EVT-HARNESS-1', timestamp: new Date().toISOString(),
-    type: 'workflow.started', actor: { kind: 'agent', id: 'fixture' }, object: { kind: 'workflow', id: runId },
-    source: { kind: 'openslack', ref: `run:${runId}` }, summary: 'Task admitted; acceptance pending.',
-    visibility: 'workspace', redacted: true, containsSensitiveData: false,
+    schema: 'openslack.collaboration_event.v1',
+    id: 'EVT-HARNESS-1',
+    timestamp: new Date().toISOString(),
+    type: 'workflow.started',
+    actor: { kind: 'agent', id: 'fixture' },
+    object: { kind: 'workflow', id: runId },
+    source: { kind: 'openslack', ref: `run:${runId}` },
+    summary: 'Task admitted; acceptance pending.',
+    visibility: 'workspace',
+    redacted: true,
+    containsSensitiveData: false,
   };
   return { root, runId, directory, state, event };
 }
 
 describe('Harness activity readback', () => {
-  it.each([true, false])('requires an existing same-run anchor beyond the activity window: %s', async anchored => {
-    const { root, runId, directory, state, event } = fixture();
-    state.status = 'running'; state.harnessExecution.acceptance = 'pending';
-    writeFileSync(join(directory, 'run.json'), JSON.stringify(state));
-    event.timestamp = new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString();
-    if (!anchored) event.object.id = 'RUN-OTHER';
-    const events = join(root, '.openslack.local/collaboration/events.jsonl');
-    mkdirSync(dirname(events), { recursive: true });
-    writeFileSync(events, `${JSON.stringify(event)}\n`);
-    const result = await new OpenSlackMcpCore(createOpenSlackMcpContext({ workspaceRoot: root,
-      operator: {} as OperatorApplicationContextPort })).callTool('openslack_get_activity', { objectKind: 'workflow', objectId: runId });
-    expect(result.structuredContent.data).toMatchObject({ events: [] });
-    if (anchored) expect(result.structuredContent.data).toMatchObject({ execution: { runId, status: 'running' } });
-    else expect(result.structuredContent.data).not.toHaveProperty('execution');
-  });
+  it.each([true, false])(
+    'requires an existing same-run anchor beyond the activity window: %s',
+    async (anchored) => {
+      const { root, runId, directory, state, event } = fixture();
+      state.status = 'running';
+      state.harnessExecution.acceptance = 'pending';
+      writeFileSync(join(directory, 'run.json'), JSON.stringify(state));
+      event.timestamp = new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString();
+      if (!anchored) event.object.id = 'RUN-OTHER';
+      const events = join(root, '.openslack.local/collaboration/events.jsonl');
+      mkdirSync(dirname(events), { recursive: true });
+      writeFileSync(events, `${JSON.stringify(event)}\n`);
+      const result = await new OpenSlackMcpCore(
+        createOpenSlackMcpContext({
+          workspaceRoot: root,
+          operator: {} as OperatorApplicationContextPort,
+        }),
+      ).callTool('openslack_get_activity', { objectKind: 'workflow', objectId: runId });
+      expect(result.structuredContent.data).toMatchObject({ events: [] });
+      if (anchored)
+        expect(result.structuredContent.data).toMatchObject({
+          execution: { runId, status: 'running' },
+        });
+      else expect(result.structuredContent.data).not.toHaveProperty('execution');
+    },
+  );
   it('bounds corrupt persistent stop evidence without leaking its raw parser error', () => {
     const { root, runId, event } = fixture();
     const admissions = join(root, '.openslack.local/agents/harness-admissions');
     mkdirSync(admissions, { recursive: true });
     writeFileSync(join(admissions, `${runId}.stop.json`), '{private-broken-stop');
-    expect(readHarnessExecutionProjection(root, runId, [event])).toEqual({ runId, readStatus: 'unavailable', reason: 'corrupt' });
+    expect(readHarnessExecutionProjection(root, runId, [event])).toEqual({
+      runId,
+      readStatus: 'unavailable',
+      reason: 'corrupt',
+    });
   });
   it('requires an already visible same-run workflow anchor and never reads arbitrary paths', () => {
     const { root, runId, event } = fixture();
     expect(readHarnessExecutionProjection(root, runId, [])).toBeUndefined();
     expect(readHarnessExecutionProjection(root, '../other', [event])).toBeUndefined();
     const projection = readHarnessExecutionProjection(root, runId, [event]);
-    expect(projection).toEqual({ taskId: 'TASK-1', runId, status: 'completed', acceptance: 'verified',
-      summary: 'Host verified fixture.', evidenceRefs: ['artifact:fixture'] });
+    expect(projection).toEqual({
+      taskId: 'TASK-1',
+      runId,
+      status: 'completed',
+      acceptance: 'verified',
+      summary: 'Host verified fixture.',
+      evidenceRefs: ['artifact:fixture'],
+    });
     expect(projection).not.toHaveProperty('principalHash');
   });
 
   it('uses the canonical RunStore grammar without silently dropping a longer valid run ID', () => {
     const { root, runId, event } = fixture(`RUN-${'A'.repeat(129)}`);
-    expect(readHarnessExecutionProjection(root, runId, [event])).toMatchObject({ runId, acceptance: 'verified' });
+    expect(readHarnessExecutionProjection(root, runId, [event])).toMatchObject({
+      runId,
+      acceptance: 'verified',
+    });
   });
 
   it('retains old records and orphan temp bytes without constructing a maintenance-capable store', () => {
@@ -83,7 +129,9 @@ describe('Harness activity readback', () => {
     const { root, runId, directory, state, event } = fixture();
     state.harnessExecution.acceptance = 'indeterminate';
     writeFileSync(join(directory, 'run.json'), JSON.stringify(state));
-    expect(() => readHarnessExecutionProjection(root, runId, [event])).toThrow('HARNESS_RUN_BINDING_INVALID');
+    expect(() => readHarnessExecutionProjection(root, runId, [event])).toThrow(
+      'HARNESS_RUN_BINDING_INVALID',
+    );
   });
 
   it('passes the optional execution projection through the actual existing MCP tool', async () => {
@@ -91,33 +139,57 @@ describe('Harness activity readback', () => {
     const events = join(root, '.openslack.local/collaboration/events.jsonl');
     mkdirSync(join(events, '..'), { recursive: true });
     writeFileSync(events, `${JSON.stringify(event)}\n`);
-    const context = createOpenSlackMcpContext({ workspaceRoot: root, operator: {} as OperatorApplicationContextPort });
+    const context = createOpenSlackMcpContext({
+      workspaceRoot: root,
+      operator: {} as OperatorApplicationContextPort,
+    });
     const core = new OpenSlackMcpCore(context);
-    const result = await core.callTool('openslack_get_activity', { objectKind: 'workflow', objectId: runId });
-    expect(result.structuredContent.data).toMatchObject({ execution: { taskId: 'TASK-1', runId, acceptance: 'verified' } });
+    const result = await core.callTool('openslack_get_activity', {
+      objectKind: 'workflow',
+      objectId: runId,
+    });
+    expect(result.structuredContent.data).toMatchObject({
+      execution: { taskId: 'TASK-1', runId, acceptance: 'verified' },
+    });
     expect(core.listTools()).toHaveLength(12);
     expect(JSON.stringify(result)).not.toContain('not-for-projection');
     const ordinary = await core.callTool('openslack_get_activity', {});
     expect(ordinary.structuredContent.data).not.toHaveProperty('execution');
   });
 
-  it.each(['locked', 'corrupt'] as const)('reports a visible %s run as read-unavailable without inventing business state or exposing private bytes', async reason => {
-    const { root, runId, directory, event } = fixture();
-    if (reason === 'locked') writeFileSync(join(directory, 'run.transaction.lock'), 'private writer bytes');
-    else writeFileSync(join(directory, 'run.json'), '{broken private state');
-    const before = readdirSync(directory).map(name => [name, readFileSync(join(directory, name)).toString('base64')]);
-    expect(readHarnessExecutionProjection(root, runId, [])).toBeUndefined();
-    const projection = readHarnessExecutionProjection(root, runId, [event]);
-    expect(projection).toEqual({ runId, readStatus: 'unavailable', reason });
-    expect(projection).not.toHaveProperty('status');
-    expect(projection).not.toHaveProperty('acceptance');
-    const events = join(root, '.openslack.local/collaboration/events.jsonl');
-    mkdirSync(join(events, '..'), { recursive: true });
-    writeFileSync(events, `${JSON.stringify(event)}\n`);
-    const result = await new OpenSlackMcpCore(createOpenSlackMcpContext({ workspaceRoot: root,
-      operator: {} as OperatorApplicationContextPort })).callTool('openslack_get_activity', { objectKind: 'workflow', objectId: runId });
-    expect(result.structuredContent.data).toMatchObject({ execution: projection });
-    expect(JSON.stringify(result)).not.toContain('private');
-    expect(readdirSync(directory).map(name => [name, readFileSync(join(directory, name)).toString('base64')])).toEqual(before);
-  });
+  it.each(['locked', 'corrupt'] as const)(
+    'reports a visible %s run as read-unavailable without inventing business state or exposing private bytes',
+    async (reason) => {
+      const { root, runId, directory, event } = fixture();
+      if (reason === 'locked')
+        writeFileSync(join(directory, 'run.transaction.lock'), 'private writer bytes');
+      else writeFileSync(join(directory, 'run.json'), '{broken private state');
+      const before = readdirSync(directory).map((name) => [
+        name,
+        readFileSync(join(directory, name)).toString('base64'),
+      ]);
+      expect(readHarnessExecutionProjection(root, runId, [])).toBeUndefined();
+      const projection = readHarnessExecutionProjection(root, runId, [event]);
+      expect(projection).toEqual({ runId, readStatus: 'unavailable', reason });
+      expect(projection).not.toHaveProperty('status');
+      expect(projection).not.toHaveProperty('acceptance');
+      const events = join(root, '.openslack.local/collaboration/events.jsonl');
+      mkdirSync(join(events, '..'), { recursive: true });
+      writeFileSync(events, `${JSON.stringify(event)}\n`);
+      const result = await new OpenSlackMcpCore(
+        createOpenSlackMcpContext({
+          workspaceRoot: root,
+          operator: {} as OperatorApplicationContextPort,
+        }),
+      ).callTool('openslack_get_activity', { objectKind: 'workflow', objectId: runId });
+      expect(result.structuredContent.data).toMatchObject({ execution: projection });
+      expect(JSON.stringify(result)).not.toContain('private');
+      expect(
+        readdirSync(directory).map((name) => [
+          name,
+          readFileSync(join(directory, name)).toString('base64'),
+        ]),
+      ).toEqual(before);
+    },
+  );
 });

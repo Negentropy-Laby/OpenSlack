@@ -630,9 +630,11 @@ class ObservationPort implements WorkflowEffectShadowObservationPort {
       );
       const inventory = await this.#loadInventory();
       const size = inventory.entries.get(path);
-      await withOwnerDirectoryEntryMutation([path], this.#security, () => unlink(path)).catch((error: NodeJS.ErrnoException) => {
-        if (error.code !== 'ENOENT') throw error;
-      });
+      await withOwnerDirectoryEntryMutation([path], this.#security, () => unlink(path)).catch(
+        (error: NodeJS.ErrnoException) => {
+          if (error.code !== 'ENOENT') throw error;
+        },
+      );
       if (size !== undefined) {
         inventory.entries.delete(path);
         inventory.bytes -= size;

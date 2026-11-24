@@ -55,14 +55,28 @@ export function mapAbyRuntimeDoctorToViewModel(
       report.handshakeTimeoutMs !== undefined ? `${report.handshakeTimeoutMs}ms` : 'not recorded',
     safeEnvAllowed: report.env.allowedKeys,
     safeEnvRejected: report.env.rejectedKeys,
-    checks: [...report.checks, ...(listing && (listing.storageIssue || listing.unavailable.length) ? [{ name: 'run-storage-availability', status: 'WARN' as const,
-      detail: `Unavailable run evidence: ${listing.unavailable.map(value => `${value.runId}:${value.reason}`).join(', ') || listing.storageIssue}. Inspect without replay.` }] : [])],
+    checks: [
+      ...report.checks,
+      ...(listing && (listing.storageIssue || listing.unavailable.length)
+        ? [
+            {
+              name: 'run-storage-availability',
+              status: 'WARN' as const,
+              detail: `Unavailable run evidence: ${listing.unavailable.map((value) => `${value.runId}:${value.reason}`).join(', ') || listing.storageIssue}. Inspect without replay.`,
+            },
+          ]
+        : []),
+    ],
     remediations:
       report.remediations.length > 0
         ? report.remediations
         : report.remediation.split('\n').filter((line) => line.trim()),
     lastSmokeRun: options.rootDir
-      ? findLastSmokeRun(options.rootDir, options.smokeAgentId ?? 'anthropic_architect_aby', listing?.runs ?? [])
+      ? findLastSmokeRun(
+          options.rootDir,
+          options.smokeAgentId ?? 'anthropic_architect_aby',
+          listing?.runs ?? [],
+        )
       : undefined,
   };
 }

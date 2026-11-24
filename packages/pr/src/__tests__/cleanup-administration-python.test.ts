@@ -112,19 +112,25 @@ function run(args: string[]) {
   });
 }
 
-function expectPythonReport(stdout: string, portableOnly: boolean, selection = portableOnly ? 'portable' : 'all', testCase?: string) {
+function expectPythonReport(
+  stdout: string,
+  portableOnly: boolean,
+  selection = portableOnly ? 'portable' : 'all',
+  testCase?: string,
+) {
   const report = JSON.parse(stdout.trim().split(/\r?\n/).at(-1)!);
   expect(report.schema).toBe('openslack.cleanup_python_test_run.v1');
   expect(report.portableOnly).toBe(portableOnly);
   expect(report.selection).toBe(selection);
   expect(Object.keys(report.portability).sort()).toEqual(['linux', 'portable']);
   expect(report.portability.linux + report.portability.portable).toBe(report.discovered);
-  const inventory: string[] = selection === 'all'
-    ? [...report.inventory.portable, ...report.inventory.linux]
-    : report.inventory[selection];
+  const inventory: string[] =
+    selection === 'all'
+      ? [...report.inventory.portable, ...report.inventory.linux]
+      : report.inventory[selection];
   expect(report.inventory.portable).toHaveLength(report.portability.portable);
   expect(report.inventory.linux).toHaveLength(report.portability.linux);
-  const selected = testCase ? inventory.filter(id => id.endsWith(`.${testCase}`)) : inventory;
+  const selected = testCase ? inventory.filter((id) => id.endsWith(`.${testCase}`)) : inventory;
   expect(report.selected).toBe(selected.length);
   expect(report.selected).toBeGreaterThan(0);
   expect(report.discovered).toBeGreaterThanOrEqual(report.selected);
@@ -155,15 +161,24 @@ describe('cleanup administrator Python tools', () => {
     const reports = [...linuxCaseReports.values()];
     const inventory = reports[0]!.inventory;
     for (const report of reports) expect(report.inventory).toEqual(inventory);
-    const executed = reports.flatMap(report => report.executed);
+    const executed = reports.flatMap((report) => report.executed);
     expect(new Set(executed).size).toBe(executed.length);
-    const selected = inventory.filter(id => linuxCaseReports.has(id.split('.').slice(-2).join('.')));
+    const selected = inventory.filter((id) =>
+      linuxCaseReports.has(id.split('.').slice(-2).join('.')),
+    );
     expect([...executed].sort()).toEqual([...selected].sort());
     const complete = linuxCaseReports.size === linuxFixtureCases.length;
     if (complete) expect([...executed].sort()).toEqual([...inventory].sort());
-    console.info(JSON.stringify({ scope: 'cleanup Linux Python fixture coverage', complete,
-      discovered: inventory.length, executed: executed.length, cases: [...linuxCaseReports.keys()],
-      executedTestIds: executed }));
+    console.info(
+      JSON.stringify({
+        scope: 'cleanup Linux Python fixture coverage',
+        complete,
+        discovered: inventory.length,
+        executed: executed.length,
+        cases: [...linuxCaseReports.keys()],
+        executedTestIds: executed,
+      }),
+    );
   });
   it('keeps generated Python and TS contracts synchronized on every platform without regeneration', () => {
     const result = run([
@@ -250,38 +265,47 @@ describe('cleanup administrator Python tools', () => {
   // Map each existing independent unittest to the unchanged per-test timeout.
   // Discovery checks the explicit matrix; the hook checks actual execution IDs,
   // so added, omitted or duplicated Python tests cannot silently disappear.
-  it.each(linuxFixtureCases)('runs real owned-FD case %s, or native refusal outside Linux', (testCase) => {
-    if (process.platform === 'linux') {
-      const result = run([join(tools, 'administration_test.py'), '--linux-only', testCase]);
-      expect(result.error).toBeUndefined();
-      expect(result.status, result.stderr).toBe(0);
-      const report = expectPythonReport(result.stdout, false, 'linux', testCase);
-      expect(report.inventory.linux.map((id: string) => id.split('.').slice(-2).join('.')).sort())
-        .toEqual([...linuxFixtureCases].sort());
-      expect(linuxCaseReports.has(testCase)).toBe(false);
-      linuxCaseReports.set(testCase, { inventory: report.inventory.linux, executed: report.executedTestIds });
-      expect(result.stderr).toContain('OK');
-    } else {
-      const result = run([join(tools, 'administration_test.py'), '--linux-only', testCase]);
-      expect(result.error).toBeUndefined();
-      expect(result.status).toBe(1);
-      expect(result.stdout).toBe('');
-      expect(result.stderr).toContain('TEST_LINUX_REQUIRED');
-      if (testCase !== linuxFixtureCases[0]) return;
-      const owned = mkdtempSync(join(tmpdir(), 'cleanup-python-native-'));
-      try {
-        for (const entry of entries) {
-          const output = join(owned, `${entry}.json`);
-          const result = run([join(tools, `${entry}.py`), '--output', output]);
-          expect(result.error).toBeUndefined();
-          expect(result.status, result.stderr).toBe(2);
-          expect(result.stderr).toMatch(/LINUX_(DESCRIPTOR_CAPABILITY|ROOT_OBSERVER)_REQUIRED/);
-          expect(existsSync(output)).toBe(false);
+  it.each(linuxFixtureCases)(
+    'runs real owned-FD case %s, or native refusal outside Linux',
+    (testCase) => {
+      if (process.platform === 'linux') {
+        const result = run([join(tools, 'administration_test.py'), '--linux-only', testCase]);
+        expect(result.error).toBeUndefined();
+        expect(result.status, result.stderr).toBe(0);
+        const report = expectPythonReport(result.stdout, false, 'linux', testCase);
+        expect(
+          report.inventory.linux.map((id: string) => id.split('.').slice(-2).join('.')).sort(),
+        ).toEqual([...linuxFixtureCases].sort());
+        expect(linuxCaseReports.has(testCase)).toBe(false);
+        linuxCaseReports.set(testCase, {
+          inventory: report.inventory.linux,
+          executed: report.executedTestIds,
+        });
+        expect(result.stderr).toContain('OK');
+      } else {
+        const result = run([join(tools, 'administration_test.py'), '--linux-only', testCase]);
+        expect(result.error).toBeUndefined();
+        expect(result.status).toBe(1);
+        expect(result.stdout).toBe('');
+        expect(result.stderr).toContain('TEST_LINUX_REQUIRED');
+        if (testCase !== linuxFixtureCases[0]) return;
+        const owned = mkdtempSync(join(tmpdir(), 'cleanup-python-native-'));
+        try {
+          for (const entry of entries) {
+            const output = join(owned, `${entry}.json`);
+            const result = run([join(tools, `${entry}.py`), '--output', output]);
+            expect(result.error).toBeUndefined();
+            expect(result.status, result.stderr).toBe(2);
+            expect(result.stderr).toMatch(/LINUX_(DESCRIPTOR_CAPABILITY|ROOT_OBSERVER)_REQUIRED/);
+            expect(existsSync(output)).toBe(false);
+          }
+          expect(readdirSync(owned)).toEqual([]);
+        } finally {
+          rmSync(owned, { recursive: true, force: true });
         }
-        expect(readdirSync(owned)).toEqual([]);
-      } finally { rmSync(owned, { recursive: true, force: true }); }
-    }
-  });
+      }
+    },
+  );
 
   it('runs independently reviewed load-time closure fixtures, or native collector refusal', () => {
     if (process.platform === 'linux') {

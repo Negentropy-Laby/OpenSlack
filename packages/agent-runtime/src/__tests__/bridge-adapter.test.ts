@@ -364,7 +364,9 @@ describe('BridgeProcessAdapter', () => {
     try {
       const script = join(root, 'chunk-peer.mjs');
       const wire = new URL('../../dist/bridge-wire.js', import.meta.url).href;
-      writeFileSync(script, `import {BridgeWireDecoder, BRIDGE_CHUNK_EXTENSION} from ${JSON.stringify(wire)};
+      writeFileSync(
+        script,
+        `import {BridgeWireDecoder, BRIDGE_CHUNK_EXTENSION} from ${JSON.stringify(wire)};
         const decoder = new BridgeWireDecoder(); let pending = '';
         const reply = (input, kind, payload) => process.stdout.write(JSON.stringify({ ...input, timestamp: new Date().toISOString(), kind, payload })+'\\n');
         process.stdin.setEncoding('utf8');
@@ -381,17 +383,31 @@ describe('BridgeProcessAdapter', () => {
               process.stdin.pause(); process.stdout.end(() => process.exit(0));
             }
           }
-        });`);
-      const adapter = new BridgeProcessAdapter({ command: process.execPath, args: [script], wireExtensions: [BRIDGE_CHUNK_EXTENSION] });
-      const launcher = createOpenSlackAgentLauncher({ rootDir: root, runStore: createRunStore(root), adapter });
+        });`,
+      );
+      const adapter = new BridgeProcessAdapter({
+        command: process.execPath,
+        args: [script],
+        wireExtensions: [BRIDGE_CHUNK_EXTENSION],
+      });
+      const launcher = createOpenSlackAgentLauncher({
+        rootDir: root,
+        runStore: createRunStore(root),
+        adapter,
+      });
       for (let session = 0; session < 2; session++) {
-        const result = await launcher('x'.repeat(1024 * 1024 + 4096), { label: 'reader', phase: 'review',
-          resolvedAgentConfig: { agentId: 'reader', source: 'fixture', tools: ['Read'] } }).catch(error => {
-            throw new Error(`Fixture process session ${session} failed`, { cause: error });
-          });
+        const result = await launcher('x'.repeat(1024 * 1024 + 4096), {
+          label: 'reader',
+          phase: 'review',
+          resolvedAgentConfig: { agentId: 'reader', source: 'fixture', tools: ['Read'] },
+        }).catch((error) => {
+          throw new Error(`Fixture process session ${session} failed`, { cause: error });
+        });
         expect(result.data).toEqual({ size: 1024 * 1024 + 4096 });
       }
-    } finally { cleanup(root); }
+    } finally {
+      cleanup(root);
+    }
   });
   it('has adapterId "bridge-process"', () => {
     const adapter = new BridgeProcessAdapter({ command: 'echo' });
@@ -416,13 +432,18 @@ describe('BridgeProcessAdapter', () => {
 
   it('negotiateCapabilities returns only explicitly available capabilities', async () => {
     const requested = [{ name: 'Read', supportedTools: ['read'] }];
-    const adapter = new BridgeProcessAdapter({ command: 'echo', availableCapabilities: [{ name: 'Read', supportedTools: ['read'] }] });
+    const adapter = new BridgeProcessAdapter({
+      command: 'echo',
+      availableCapabilities: [{ name: 'Read', supportedTools: ['read'] }],
+    });
     const caps = await adapter.negotiateCapabilities([...requested, { name: 'unsupported' }]);
     expect(caps).toHaveLength(1);
     expect(caps[0].name).toBe('Read');
     caps[0].supportedTools?.push('mutated');
     expect(requested[0].supportedTools).toEqual(['read']);
-    expect(await new BridgeProcessAdapter({ command: 'echo' }).negotiateCapabilities(requested)).toEqual([]);
+    expect(
+      await new BridgeProcessAdapter({ command: 'echo' }).negotiateCapabilities(requested),
+    ).toEqual([]);
   });
 
   it('BridgeAdapterError carries error kind', () => {
@@ -432,84 +453,89 @@ describe('BridgeProcessAdapter', () => {
     expect(err.name).toBe('BridgeAdapterError');
   });
 
-  it.each([null, 0, -1, 7] as const)('sends filtered permissions and preserves token budget %s in the real request', async remaining => {
-    const root = makeTempRoot();
-    try {
-      const bridgeScript = join(root, 'capture-bridge.mjs');
-      writeFileSync(
-        bridgeScript,
-        [
-          "import { stdin, stdout } from 'node:process';",
-          "let buffer = '';",
-          "stdin.setEncoding('utf8');",
-          'function envelope(input, kind, payload) {',
-          "  return JSON.stringify({ protocolVersion: input.protocolVersion, sessionId: input.sessionId, correlationId: input.correlationId, timestamp: new Date().toISOString(), kind, payload }) + '\\n';",
-          '}',
-          "stdin.on('data', chunk => {",
-          '  buffer += chunk;',
-          "  const lines = buffer.split('\\n');",
-          "  buffer = lines.pop() ?? '';",
-          '  for (const line of lines) {',
-          '    if (!line.trim()) continue;',
-          '    const input = JSON.parse(line);',
-          "    if (input.kind === 'handshake_request') stdout.write(envelope(input, 'handshake_response', { accepted: true }));",
-          "    if (input.kind === 'run_request') stdout.write(envelope(input, 'complete', { data: { payload: input.payload }, tokenUsage: 1 }));",
-          '  }',
-          '});',
-        ].join('\n'),
-        'utf-8',
-      );
+  it.each([null, 0, -1, 7] as const)(
+    'sends filtered permissions and preserves token budget %s in the real request',
+    async (remaining) => {
+      const root = makeTempRoot();
+      try {
+        const bridgeScript = join(root, 'capture-bridge.mjs');
+        writeFileSync(
+          bridgeScript,
+          [
+            "import { stdin, stdout } from 'node:process';",
+            "let buffer = '';",
+            "stdin.setEncoding('utf8');",
+            'function envelope(input, kind, payload) {',
+            "  return JSON.stringify({ protocolVersion: input.protocolVersion, sessionId: input.sessionId, correlationId: input.correlationId, timestamp: new Date().toISOString(), kind, payload }) + '\\n';",
+            '}',
+            "stdin.on('data', chunk => {",
+            '  buffer += chunk;',
+            "  const lines = buffer.split('\\n');",
+            "  buffer = lines.pop() ?? '';",
+            '  for (const line of lines) {',
+            '    if (!line.trim()) continue;',
+            '    const input = JSON.parse(line);',
+            "    if (input.kind === 'handshake_request') stdout.write(envelope(input, 'handshake_response', { accepted: true }));",
+            "    if (input.kind === 'run_request') stdout.write(envelope(input, 'complete', { data: { payload: input.payload }, tokenUsage: 1 }));",
+            '  }',
+            '});',
+          ].join('\n'),
+          'utf-8',
+        );
 
-      const adapter = new BridgeProcessAdapter({
-        command: process.execPath,
-        args: [bridgeScript],
-      });
-      const store = createRunStore(root);
-      const recorder = createRunRecorder(store, root);
-      const permissionProfile: AgentPermissionProfile = {
-        allowedTools: ['Read', 'github.pr.merge'],
-        deniedTools: [],
-        permissionMode: 'default',
-        canApprovePR: false,
-        canMerge: false,
-        canReadSecrets: false,
-        canBypassRulesets: false,
-        acceptEdits: false,
-        isReadOnly: false,
-      };
-      const runId = generateRunId();
-      const runState = recorder.start({
-        runId,
-        agentId: 'bridge-test',
-        prompt: 'capture permissions',
-        resolvedConfig: { agentId: 'bridge-test', source: 'test' },
-        permissionProfile,
-      });
+        const adapter = new BridgeProcessAdapter({
+          command: process.execPath,
+          args: [bridgeScript],
+        });
+        const store = createRunStore(root);
+        const recorder = createRunRecorder(store, root);
+        const permissionProfile: AgentPermissionProfile = {
+          allowedTools: ['Read', 'github.pr.merge'],
+          deniedTools: [],
+          permissionMode: 'default',
+          canApprovePR: false,
+          canMerge: false,
+          canReadSecrets: false,
+          canBypassRulesets: false,
+          acceptEdits: false,
+          isReadOnly: false,
+        };
+        const runId = generateRunId();
+        const runState = recorder.start({
+          runId,
+          agentId: 'bridge-test',
+          prompt: 'capture permissions',
+          resolvedConfig: { agentId: 'bridge-test', source: 'test' },
+          permissionProfile,
+        });
 
-      runState.tokensRemaining = remaining;
-      const result = await adapter.execute({
-        prompt: 'capture permissions',
-        runId,
-        agentId: 'bridge-test',
-        resolvedConfig: { agentId: 'bridge-test', source: 'test' },
-        permissionProfile,
-        recorder,
-        runState,
-        ...createToolPlane(root, permissionProfile, recorder, runId),
-      });
+        runState.tokensRemaining = remaining;
+        const result = await adapter.execute({
+          prompt: 'capture permissions',
+          runId,
+          agentId: 'bridge-test',
+          resolvedConfig: { agentId: 'bridge-test', source: 'test' },
+          permissionProfile,
+          recorder,
+          runState,
+          ...createToolPlane(root, permissionProfile, recorder, runId),
+        });
 
-      const data = result.data as Record<string, unknown>;
-      const payload = data.payload as Record<string, unknown>;
-      expect(payload.allowedTools).toEqual(['Read']);
-      expect(payload.permissionMode).toBe('default');
-      expect(payload.deniedTools as string[]).toContain('github.pr.merge');
-      expect(payload.input).toEqual([{ role: 'user', content: 'capture permissions' }]);
-      expect((payload.metadata as Record<string, unknown>).integrationId).toBe('openslack');
-      expect((payload.metadata as Record<string, unknown>).budget).toEqual(remaining === null ? undefined : { tokens: remaining, costUsd: 0 });
-    } finally {
-      cleanup(root);
-    }
-  });
+        const data = result.data as Record<string, unknown>;
+        const payload = data.payload as Record<string, unknown>;
+        expect(payload.allowedTools).toEqual(['Read']);
+        expect(payload.permissionMode).toBe('default');
+        expect(payload.deniedTools as string[]).toContain('github.pr.merge');
+        expect(payload.input).toEqual([{ role: 'user', content: 'capture permissions' }]);
+        expect((payload.metadata as Record<string, unknown>).integrationId).toBe('openslack');
+        expect((payload.metadata as Record<string, unknown>).budget).toEqual(
+          remaining === null ? undefined : { tokens: remaining, costUsd: 0 },
+        );
+      } finally {
+        cleanup(root);
+      }
+    },
+  );
 
   it('fails closed when a bridge emits approval_required', async () => {
     const root = makeTempRoot();

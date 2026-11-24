@@ -26,18 +26,38 @@ function readDescriptorRange(fd: number, length: number): Buffer {
 /** Internal mechanics for an owner that already sampled this FD itself. Never
  * accept a caller's serialized stat as authority. The owner still checks its
  * pathname, ancestors, permissions and links, including after this returns. */
-export function readObservedDescriptorBytes(fd: number, maxBytes: number, before: BigIntStats,
-  allowEmpty = true): { bytes: Buffer; after: BigIntStats } {
+export function readObservedDescriptorBytes(
+  fd: number,
+  maxBytes: number,
+  before: BigIntStats,
+  allowEmpty = true,
+): { bytes: Buffer; after: BigIntStats } {
   if (!before.isFile()) throw new StableDescriptorError('NOT_REGULAR');
-  if (!Number.isSafeInteger(maxBytes) || maxBytes < 0 || before.size < 0n || before.size > BigInt(maxBytes) ||
-    (!allowEmpty && before.size === 0n)) throw new StableDescriptorError('SIZE_INVALID');
+  if (
+    !Number.isSafeInteger(maxBytes) ||
+    maxBytes < 0 ||
+    before.size < 0n ||
+    before.size > BigInt(maxBytes) ||
+    (!allowEmpty && before.size === 0n)
+  )
+    throw new StableDescriptorError('SIZE_INVALID');
   const bytes = readDescriptorRange(fd, Number(before.size) + 1);
   const after = fstatSync(fd, { bigint: true });
   // Preserve the bounded extra-byte/EOF observation as well as full identity:
   // nanosecond fields do not imply unique timestamps on every filesystem.
-  if (bytes.length !== Number(before.size) || !after.isFile() || before.dev !== after.dev || before.ino !== after.ino ||
-    before.mode !== after.mode || before.uid !== after.uid || before.gid !== after.gid || before.nlink !== after.nlink ||
-    before.size !== after.size || before.mtimeNs !== after.mtimeNs || before.ctimeNs !== after.ctimeNs) {
+  if (
+    bytes.length !== Number(before.size) ||
+    !after.isFile() ||
+    before.dev !== after.dev ||
+    before.ino !== after.ino ||
+    before.mode !== after.mode ||
+    before.uid !== after.uid ||
+    before.gid !== after.gid ||
+    before.nlink !== after.nlink ||
+    before.size !== after.size ||
+    before.mtimeNs !== after.mtimeNs ||
+    before.ctimeNs !== after.ctimeNs
+  ) {
     throw new StableDescriptorError('IDENTITY_CHANGED');
   }
   return { bytes, after };
@@ -56,7 +76,10 @@ export function readStableDescriptor(fd: number, maxBytes: number, allowEmpty = 
   )
     throw new StableDescriptorError('SIZE_INVALID');
   const bytes = readDescriptorRange(fd, before.size + 1);
-  if (bytes.length !== before.size || stableFileIdentity(fstatSync(fd)) !== stableFileIdentity(before))
+  if (
+    bytes.length !== before.size ||
+    stableFileIdentity(fstatSync(fd)) !== stableFileIdentity(before)
+  )
     throw new StableDescriptorError('IDENTITY_CHANGED');
   return bytes;
 }

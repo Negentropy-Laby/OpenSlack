@@ -391,8 +391,10 @@ export function setupCommands(dependencies: SetupCommandDependencies = {}): Comm
           : {
               step: 'Genesis validate',
               passed: false,
-              detail:
-                `Genesis validation ${outcome.failure ?? 'FAILED'}: ${outcome.detail}`.slice(0, 200),
+              detail: `Genesis validation ${outcome.failure ?? 'FAILED'}: ${outcome.detail}`.slice(
+                0,
+                200,
+              ),
             },
       );
     }

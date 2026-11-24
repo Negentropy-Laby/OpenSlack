@@ -728,7 +728,8 @@ describe('notification delivery service workflow', () => {
       ),
       'Validate the notification workflows':
         'go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12 .github/workflows/notification-delivery-service.yml .github/workflows/openslack-reusable-validate.yml',
-      'Check dependency sources before installation': 'node scripts/ci/install-dependencies.mjs --check',
+      'Check dependency sources before installation':
+        'node scripts/ci/install-dependencies.mjs --check',
       'Install root dependencies': 'node scripts/ci/install-dependencies.mjs',
       'Verify Organization Graph golden contracts': 'bun run graph:golden -- --check',
       'Verify Governance Control golden contracts': 'bun run governance:golden -- --check',

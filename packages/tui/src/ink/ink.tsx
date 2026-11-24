@@ -1500,12 +1500,7 @@ export default class Ink {
 
     // Tab cycling is the default action — only fires if no handler
     // called preventDefault(). Mirrors browser behavior.
-    if (
-      !event.defaultPrevented &&
-      parsedKey.name === 'tab' &&
-      !parsedKey.ctrl &&
-      !parsedKey.meta
-    ) {
+    if (!event.defaultPrevented && parsedKey.name === 'tab' && !parsedKey.ctrl && !parsedKey.meta) {
       if (parsedKey.shift) {
         this.focusManager.focusPrevious(this.rootNode);
       } else {

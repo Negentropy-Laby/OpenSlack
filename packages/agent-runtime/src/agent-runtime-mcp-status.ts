@@ -50,7 +50,8 @@ export function getAgentRuntimeMcpStatus(
   const agent = options.agentId ? findAgentRuntimeRegistryEntry(options.agentId, rootDir) : null;
   const observation = options.runId ? observeRun(options.runId, rootDir) : undefined;
   const run = observation?.kind === 'ready' ? observation.state : null;
-  const transcript = observation?.kind === 'ready' ? readTranscript(observation.runId, rootDir) : [];
+  const transcript =
+    observation?.kind === 'ready' ? readTranscript(observation.runId, rootDir) : [];
   const startEvent = transcript.find((event) => event.type === 'start');
   const availabilityEvent = [...transcript]
     .reverse()
@@ -76,7 +77,9 @@ export function getAgentRuntimeMcpStatus(
   const invalidTools = namespaceValidation.invalid;
 
   const status: AgentRuntimeMcpStatus =
-    (observation && observation.kind !== 'ready') || missingRequiredServers.length > 0 || invalidTools.length > 0
+    (observation && observation.kind !== 'ready') ||
+    missingRequiredServers.length > 0 ||
+    invalidTools.length > 0
       ? 'FAIL'
       : requiredServers.length === 0 && availableServers.length === 0 && toolEvidence.length === 0
         ? 'WARN'
@@ -105,14 +108,22 @@ export function getAgentRuntimeMcpStatus(
     })),
     invalidTools,
     toolEvidence,
-    remediations: [...(observation?.kind === 'missing' ? ['The requested run does not exist; verify its run ID.'] :
-      observation?.kind === 'unavailable' ? ['Run evidence is unavailable; inspect the single run without replay or automatic repair.'] : []), ...remediationForMcp(
-      status,
-      options.agentId,
-      options.runId,
-      missingRequiredServers,
-      invalidTools,
-    )],
+    remediations: [
+      ...(observation?.kind === 'missing'
+        ? ['The requested run does not exist; verify its run ID.']
+        : observation?.kind === 'unavailable'
+          ? [
+              'Run evidence is unavailable; inspect the single run without replay or automatic repair.',
+            ]
+          : []),
+      ...remediationForMcp(
+        status,
+        options.agentId,
+        options.runId,
+        missingRequiredServers,
+        invalidTools,
+      ),
+    ],
   };
 }
 

@@ -15,8 +15,11 @@ function main(args: readonly string[]): void {
     const result = prepareCleanupAdminToolkit(readCleanupAdminToolkitPreparationInput(args[1]));
     process.stdout.write(JSON.stringify(result, null, 2) + '\n');
   } catch (error) {
-    process.stderr.write((error instanceof CleanupAdminToolkitError
-      ? error.message : 'ADMIN_TOOLKIT_IO_FAILED: stop; preserve existing files.') + '\n');
+    process.stderr.write(
+      (error instanceof CleanupAdminToolkitError
+        ? error.message
+        : 'ADMIN_TOOLKIT_IO_FAILED: stop; preserve existing files.') + '\n',
+    );
     process.exitCode = 2;
   }
 }

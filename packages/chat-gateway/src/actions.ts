@@ -3,11 +3,7 @@ import type { ActionRegistryPort } from '@openslack/operator';
 import type { ChatMessage, ChatResponse } from './types.js';
 import { loadPendingPlan, validatePlan, deletePendingPlan, isActionAllowed } from './plan-store.js';
 import { formatError } from './formatter.js';
-import {
-  cardToText,
-  buildHandoffCard,
-  buildDecisionCard,
-} from './cards.js';
+import { cardToText, buildHandoffCard, buildDecisionCard } from './cards.js';
 import {
   recordEvent,
   acceptHandoff,

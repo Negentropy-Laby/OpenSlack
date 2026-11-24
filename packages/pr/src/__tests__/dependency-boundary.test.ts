@@ -93,7 +93,10 @@ describe('package dependency boundary', () => {
   it('allows the standalone client script to use runtime, as designed', () => {
     // The client is a script, not the package: resolving the fixed identity is
     // explicitly its job, so this edge must remain permitted.
-    const client = readFileSync(join(repositoryRoot, 'scripts', 'cleanup-broker', 'client.ts'), 'utf8');
+    const client = readFileSync(
+      join(repositoryRoot, 'scripts', 'cleanup-broker', 'client.ts'),
+      'utf8',
+    );
     expect(client).toContain('runtime/src/identity.js');
   });
 });

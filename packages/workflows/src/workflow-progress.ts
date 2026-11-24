@@ -166,10 +166,21 @@ function recordReadFailure(
   strictRead: boolean,
   diagnostics: WorkflowRunReadDiagnostic[],
 ): void {
-  const failure = error instanceof RunStateInvalidError || error instanceof RunStateSnapshotChangedError
-    ? new WorkflowRunReadError([{ ...context, code: error instanceof RunStateInvalidError
-      ? 'WORKFLOW_PROGRESS_LOCAL_EVIDENCE_INVALID' : 'WORKFLOW_RUN_EVIDENCE_RECONCILIATION_REQUIRED' }], { cause: error })
-    : asWorkflowRunReadError(error, context);
+  const failure =
+    error instanceof RunStateInvalidError || error instanceof RunStateSnapshotChangedError
+      ? new WorkflowRunReadError(
+          [
+            {
+              ...context,
+              code:
+                error instanceof RunStateInvalidError
+                  ? 'WORKFLOW_PROGRESS_LOCAL_EVIDENCE_INVALID'
+                  : 'WORKFLOW_RUN_EVIDENCE_RECONCILIATION_REQUIRED',
+            },
+          ],
+          { cause: error },
+        )
+      : asWorkflowRunReadError(error, context);
   if (strictRead) throw failure;
   diagnostics.push(...failure.diagnostics);
 }

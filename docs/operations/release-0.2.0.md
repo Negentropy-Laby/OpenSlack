@@ -381,7 +381,7 @@ therefore match `.github/workflows/npm-stage-publish.yml` exactly:
 ```text
 Node 22.14.0
 npm 11.15.0
-Bun 1.3.14
+Bun 1.4.0
 ```
 
 Verify the versions before generating P6 artifacts.
@@ -392,7 +392,7 @@ Verify the versions before generating P6 artifacts.
 set -euo pipefail
 test "$(node --version)" = "v22.14.0"
 test "$(npm --version)" = "11.15.0"
-test "$(bun --version)" = "1.3.14"
+test "$(bun --version)" = "1.4.0"
 ```
 
 #### PowerShell
@@ -404,7 +404,7 @@ if ((node --version).Trim() -ne "v22.14.0") {
 if ((npm --version).Trim() -ne "11.15.0") {
   throw "STOP: P6 npm version does not match npm-stage-publish.yml"
 }
-if ((bun --version).Trim() -ne "1.3.14") {
+if ((bun --version).Trim() -ne "1.4.0") {
   throw "STOP: P6 Bun version does not match npm-stage-publish.yml"
 }
 ```

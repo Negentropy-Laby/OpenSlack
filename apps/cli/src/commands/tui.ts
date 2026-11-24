@@ -403,15 +403,13 @@ export function tuiCommands(operatorContext?: OperatorApplicationContext): Comma
             });
           }
 
-          const phaseIssues: PhaseIssueItem[] = gh.phaseIssues.map(
-            (pi) => ({
-              phase: pi.phase,
-              issueNumber: pi.number,
-              status: pi.state,
-              blockedBy: pi.blockedBy?.map(String),
-              trackingMode: pi.trackingMode,
-            }),
-          );
+          const phaseIssues: PhaseIssueItem[] = gh.phaseIssues.map((pi) => ({
+            phase: pi.phase,
+            issueNumber: pi.number,
+            status: pi.state,
+            blockedBy: pi.blockedBy?.map(String),
+            trackingMode: pi.trackingMode,
+          }));
 
           let nextAction: string | undefined;
           if (!gh.proposalIssue) {

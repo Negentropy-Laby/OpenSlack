@@ -1,4 +1,3 @@
-
 /**
  * Stub for ErrorOverview — the full version depends on code-excerpt
  * and stack-utils which are not available in this package.
