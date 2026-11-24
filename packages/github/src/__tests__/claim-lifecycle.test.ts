@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { GitHubClient } from '../client.js';
 import {
+  checkTaskClaimReview,
   completeClaim,
   heartbeatClaim,
   parseClaimReviewMetadata,
@@ -128,6 +129,56 @@ const reviewInput = {
   agentId: 'agent-one',
   prUrl: 'https://github.com/acme/project/pull/7',
 };
+
+const taskLink = `<!-- openslack-task-link
+${JSON.stringify({
+  schema: 'openslack.task_link.v1',
+  issue_number: 42,
+  agent_id: 'agent-one',
+  task_id: 'TASK-42',
+  run_id: 'RUN-42',
+  claim_ref: 'refs/heads/openslack/claims/issue-42',
+})}
+-->`;
+
+describe('checkTaskClaimReview', () => {
+  it('leaves ordinary PRs alone and blocks malformed task links without API reads', async () => {
+    const { dependencies } = createHarness();
+    await expect(checkTaskClaimReview(7, 'ordinary PR', {}, dependencies)).resolves.toBeUndefined();
+    await expect(
+      checkTaskClaimReview(7, `${taskLink}\n${taskLink}`, {}, dependencies),
+    ).resolves.toMatchObject({ reason: expect.stringContaining('CLAIM_TASK_LINK_INVALID') });
+    expect(dependencies.getClient).not.toHaveBeenCalled();
+  });
+
+  it('accepts exact review evidence and refuses a record for another PR', async () => {
+    const { dependencies, octokit } = createHarness();
+    await expect(reviewClaim(reviewInput, dependencies)).resolves.toMatchObject({
+      outcome: 'completed',
+    });
+    octokit.issues.createComment.mockClear();
+    await expect(checkTaskClaimReview(7, taskLink, {}, dependencies)).resolves.toBeUndefined();
+    await expect(checkTaskClaimReview(8, taskLink, {}, dependencies)).resolves.toMatchObject({
+      reason: expect.stringContaining('CLAIM_REVIEW_EVIDENCE_REQUIRED'),
+      recommendation: expect.stringContaining('--pr-url https://github.com/acme/project/pull/8'),
+    });
+    expect(octokit.issues.createComment).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [{ owner: 'another-agent' }, 'CLAIM_OWNER_MISMATCH'],
+    [{ refExists: false }, 'CLAIM_REF_NOT_FOUND'],
+    [{ fail: new Set(['listComments']) }, 'CLAIM_API_UNAVAILABLE'],
+  ] as const)(
+    'blocks when claim evidence is invalid or unreadable (%j)',
+    async (options, reason) => {
+      const { dependencies } = createHarness(options);
+      await expect(checkTaskClaimReview(7, taskLink, {}, dependencies)).resolves.toMatchObject({
+        reason: expect.stringContaining(reason),
+      });
+    },
+  );
+});
 
 const invalidInputHandlers = {
   heartbeat: heartbeatClaim,
@@ -446,8 +497,14 @@ describe('strict claim lifecycle', () => {
     expect(harness.refExists()).toBe(false);
     expect(harness.labels.has('openslack:done')).toBe(true);
 
+    harness.octokit.git.deleteRef.mockClear();
+    harness.octokit.issues.addLabels.mockClear();
+    harness.octokit.issues.removeLabel.mockClear();
     const repeated = await completeClaim(reviewInput, harness.dependencies);
     expect(repeated).toMatchObject({ outcome: 'completed', operation: 'complete' });
+    expect(harness.octokit.git.deleteRef).not.toHaveBeenCalled();
+    expect(harness.octokit.issues.addLabels).not.toHaveBeenCalled();
+    expect(harness.octokit.issues.removeLabel).not.toHaveBeenCalled();
   });
 
   it('fails before mutation when exact review evidence is missing', async () => {

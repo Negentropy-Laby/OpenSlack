@@ -1,4 +1,4 @@
-import { issueClaimRef } from '@openslack/core';
+import { issueClaimRef, parseTaskLinkMarker } from '@openslack/core';
 import { getClient, type GitHubClient, type GitHubClientOptions } from './client.js';
 import { parseClaimMetadata } from './claims.js';
 
@@ -98,6 +98,7 @@ const AGENT_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/;
 const CLAIM_COMMENT_PAGE_SIZE = 100;
 const CLAIM_COMMENT_MAX_PAGES = 10;
 const HEARTBEAT_RETRY_DEDUP_WINDOW_MS = 60_000;
+const ACTIVE_CLAIM_LABELS = ['openslack:claimed', 'openslack:running', 'openslack:review'];
 
 class ClaimLifecycleFailure extends Error {
   constructor(readonly code: ClaimLifecycleErrorCode) {
@@ -341,6 +342,45 @@ function reviewEvidencePresent(
       metadata.pr_url === prUrl
     );
   });
+}
+
+export async function checkTaskClaimReview(
+  prNumber: number,
+  body: string | undefined,
+  options?: GitHubClientOptions,
+  dependencies: ClaimLifecycleDependencies = DEFAULT_DEPENDENCIES,
+): Promise<{ reason: string; recommendation: string } | undefined> {
+  const link = parseTaskLinkMarker(body);
+  if (link.state === 'ABSENT') return;
+  if (link.state === 'INVALID') {
+    return {
+      reason: 'CLAIM_TASK_LINK_INVALID: The PR task link is invalid or ambiguous.',
+      recommendation: 'Correct the task link using the authorized task publication flow.',
+    };
+  }
+
+  const { issue_number: issueNumber, agent_id: agentId, claim_ref: claimRef } = link.metadata;
+  try {
+    const client = await dependencies.getClient({ ...options, requireLive: true });
+    if (client.isDryRun) throw new ClaimLifecycleFailure('CLAIM_API_UNAVAILABLE');
+    await requireClaimRef(client, issueNumber);
+    const comments = await listClaimComments(client, issueNumber);
+    requireMatchingOwner(resolveStrictOwner(comments, issueNumber, claimRef), agentId);
+    const prUrl = `https://github.com/${client.owner}/${client.repo}/pull/${prNumber}`;
+    const input = { issueNumber, agentId, prUrl };
+    if (!reviewEvidencePresent(comments, input, claimRef, prUrl)) {
+      return {
+        reason: `CLAIM_REVIEW_EVIDENCE_REQUIRED: Issue #${issueNumber} has no matching review record for PR #${prNumber}.`,
+        recommendation: `Record the review transition: ${recoveryCommand('review', input)}`,
+      };
+    }
+  } catch (error) {
+    return {
+      reason: `${failureCode(error)}: Could not verify the live claim for issue #${issueNumber}.`,
+      recommendation:
+        'Verify the claim ref and owner with live GitHub evidence, then re-run pr doctor.',
+    };
+  }
 }
 
 function findRecentMatchingHeartbeat(
@@ -755,43 +795,42 @@ export async function completeClaim(
     }
 
     let mutationFailed = false;
-    for (const label of ['openslack:claimed', 'openslack:running', 'openslack:review']) {
-      try {
-        await client.octokit.issues.removeLabel({
-          owner: client.owner,
-          repo: client.repo,
-          issue_number: input.issueNumber,
-          name: label,
-        });
-      } catch (error) {
-        if (statusOf(error) !== 404) mutationFailed = true;
-      }
-    }
-    try {
-      await client.octokit.issues.addLabels({
-        owner: client.owner,
-        repo: client.repo,
-        issue_number: input.issueNumber,
-        labels: ['openslack:done'],
-      });
-    } catch {
-      mutationFailed = true;
-    }
-    try {
-      await client.octokit.git.deleteRef({
-        owner: client.owner,
-        repo: client.repo,
-        ref: issueClaimRef(input.issueNumber),
-      });
-    } catch (error) {
-      if (statusOf(error) !== 404) mutationFailed = true;
-    }
-
     let refAbsent: boolean;
     let labels: Set<string>;
     try {
       refAbsent = await claimRefIsAbsent(client, input.issueNumber);
       labels = await issueLabels(client, input.issueNumber);
+      const activeLabels = ACTIVE_CLAIM_LABELS.filter((label) => labels.has(label));
+      if (!refAbsent || !labels.has('openslack:done') || activeLabels.length > 0) {
+        const issue = { owner: client.owner, repo: client.repo, issue_number: input.issueNumber };
+        for (const label of activeLabels) {
+          try {
+            await client.octokit.issues.removeLabel({ ...issue, name: label });
+          } catch (error) {
+            if (statusOf(error) !== 404) mutationFailed = true;
+          }
+        }
+        if (!labels.has('openslack:done')) {
+          try {
+            await client.octokit.issues.addLabels({ ...issue, labels: ['openslack:done'] });
+          } catch {
+            mutationFailed = true;
+          }
+        }
+        if (!refAbsent) {
+          try {
+            await client.octokit.git.deleteRef({
+              owner: client.owner,
+              repo: client.repo,
+              ref: issueClaimRef(input.issueNumber),
+            });
+          } catch (error) {
+            if (statusOf(error) !== 404) mutationFailed = true;
+          }
+        }
+        refAbsent = await claimRefIsAbsent(client, input.issueNumber);
+        labels = await issueLabels(client, input.issueNumber);
+      }
     } catch {
       return failedResult('complete', input, 'CLAIM_PARTIAL_STATE', {
         outcome: 'partial',
@@ -815,7 +854,12 @@ export async function completeClaim(
       { name: 'claim_ref_absent', satisfied: refAbsent },
       { name: 'done_label_present', satisfied: doneLabelPresent },
     ];
-    if (!refAbsent || !doneLabelPresent || mutationFailed) {
+    if (
+      !refAbsent ||
+      !doneLabelPresent ||
+      ACTIVE_CLAIM_LABELS.some((label) => labels.has(label)) ||
+      mutationFailed
+    ) {
       return failedResult('complete', input, 'CLAIM_COMPLETION_FAILED', {
         outcome: 'partial',
         owner,

@@ -2,7 +2,7 @@ import { listOpenPRs } from '@openslack/github';
 import type { PRReviewReport, PRReviewState } from './types.js';
 import { filterValidApprovals, isBotUser } from './approvals.js';
 import { classifyPRReport } from './classify.js';
-import { diagnosePR } from './doctor.js';
+import { diagnoseLivePR } from './doctor.js';
 import { loadPRReviewPolicy } from './policy.js';
 import { fetchPRDetails } from './fetch.js';
 import { loadPRCodeownerEvidence } from './codeowners.js';
@@ -172,7 +172,7 @@ async function diagnoseForQueue(prNumber: number): Promise<PRQueueItem> {
   const policy = loadPRReviewPolicy();
   const baseViolation = evaluatePRBasePolicy(classified, policy);
   const codeowners = baseViolation ? [] : (await loadPRCodeownerEvidence(classified)).owners;
-  const diagnosed = diagnosePR(classified, policy, codeowners);
+  const diagnosed = await diagnoseLivePR(classified, policy, codeowners);
   return {
     ...summarizePRDecision(diagnosed, codeowners),
     riskZone: diagnosed.riskZone,

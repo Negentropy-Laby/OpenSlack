@@ -2,7 +2,7 @@ import { mergePR } from '@openslack/github';
 import type { PRReviewPolicy, PRReviewState } from './types.js';
 import type { AgentPrincipal, AgentPermissionSnapshot } from '@openslack/kernel';
 import { authorizeAgentAction } from '@openslack/kernel';
-import { diagnosePR } from './doctor.js';
+import { diagnoseLivePR } from './doctor.js';
 import { loadPRCodeownerEvidence } from './codeowners.js';
 import { evaluatePRBasePolicy } from './base-policy.js';
 
@@ -47,7 +47,10 @@ export async function mergeIfReady(
     strictEvidence: true,
   });
 
-  const diagnosed = diagnosePR(classified, policy, codeowners);
+  const diagnosed = await diagnoseLivePR(classified, policy, codeowners, {
+    requireLive: true,
+    strictEvidence: true,
+  });
 
   if (diagnosed.decision !== 'READY_TO_MERGE') {
     return {

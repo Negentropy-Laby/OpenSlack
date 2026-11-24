@@ -107,7 +107,7 @@ vi.mock('@openslack/pr', () => ({
     effective_after_pr: 296,
   }),
   evaluatePRBasePolicy: () => null,
-  diagnosePR: (report: unknown) => report,
+  diagnoseLivePR: (report: unknown) => report,
   loadPRCodeownerEvidence: (...args: unknown[]) => hoisted.mockLoadPRCodeownerEvidence(...args),
   PRCodeownerEvidenceUnavailableError: hoisted.MockPRCodeownerEvidenceUnavailableError,
   parseCODEOWNERS: () => [],

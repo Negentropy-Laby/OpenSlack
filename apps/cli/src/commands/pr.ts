@@ -22,7 +22,7 @@ import {
   generateReviewReport,
   generateDoctorReport,
   loadPRReviewPolicy,
-  diagnosePR,
+  diagnoseLivePR,
   evaluatePRBasePolicy,
   loadPRCodeownerEvidence,
   PRCodeownerEvidenceUnavailableError,
@@ -425,7 +425,7 @@ export function prCommands(): Command {
           }
           throw error;
         }
-        const diagnosed = diagnosePR(report, policy, codeowners);
+        const diagnosed = await diagnoseLivePR(report, policy, codeowners, clientOptions);
         const doctorOutput = `${evidenceBanner}\n\n${generateDoctorReport(diagnosed, codeowners)}`;
 
         const isReady = diagnosed.decision === 'READY_TO_MERGE';
@@ -434,7 +434,7 @@ export function prCommands(): Command {
             type: isReady ? 'pr.doctor.ready' : 'pr.doctor.blocked',
             actor: { id: 'cli', kind: 'system', provider: 'cli' },
             object: { kind: 'pr', id: String(prNumber) },
-            source: { kind: 'prms', ref: 'diagnosePR' },
+            source: { kind: 'prms', ref: 'diagnoseLivePR' },
             summary: isReady
               ? `PR #${prNumber} is ready to merge`
               : `PR #${prNumber} blocked: ${diagnosed.reason}`,

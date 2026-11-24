@@ -2,7 +2,7 @@ import { fetchPRDetails } from './fetch.js';
 import { classifyPRReport } from './classify.js';
 import { loadPRReviewPolicy } from './policy.js';
 import { loadPRCodeownerEvidence } from './codeowners.js';
-import { diagnosePR } from './doctor.js';
+import { diagnoseLivePR } from './doctor.js';
 import { evaluatePRBasePolicy } from './base-policy.js';
 import type { PRReviewState } from './types.js';
 
@@ -43,7 +43,7 @@ export async function watchPR(prNumber: number, options: WatchOptions = {}): Pro
     const baseViolation = evaluatePRBasePolicy(classified, policy);
     const codeowners = baseViolation ? [] : (await loadPRCodeownerEvidence(classified)).owners;
 
-    const diagnosed = diagnosePR(classified, policy, codeowners);
+    const diagnosed = await diagnoseLivePR(classified, policy, codeowners);
     lastDecision = diagnosed.decision;
     lastReason = diagnosed.reason;
 

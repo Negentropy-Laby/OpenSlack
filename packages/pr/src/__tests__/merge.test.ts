@@ -4,6 +4,7 @@ import type { PRReviewReport, PRReviewPolicy } from '../types.js';
 import type { AgentPermissionSnapshot } from '@openslack/kernel';
 
 vi.mock('@openslack/github', () => ({
+  checkTaskClaimReview: vi.fn(),
   getCODEOWNERS: vi.fn(() => Promise.resolve('# no matching owners')),
   mergePR: vi.fn(() => Promise.resolve({ merged: true, sha: 'abc123', message: 'Merged' })),
 }));
@@ -171,6 +172,32 @@ describe('mergeIfReady', () => {
     expect(result.merged).toBe(true);
     expect(result.decision).toBe('READY_TO_MERGE');
     expect(mergePR).toHaveBeenCalledWith(1, { method: undefined });
+  });
+
+  it('requires live review evidence before merging a task-linked PR', async () => {
+    const { fetchPRDetails } = await import('../fetch.js');
+    const { checkTaskClaimReview, mergePR } = await import('@openslack/github');
+    const body = '<!-- openslack-task-link {} -->';
+    vi.mocked(fetchPRDetails).mockResolvedValue(makeReport({ body }));
+    vi.mocked(mergePR).mockClear();
+    vi.mocked(checkTaskClaimReview).mockResolvedValueOnce({
+      reason: 'CLAIM_REVIEW_EVIDENCE_REQUIRED',
+      recommendation: 'Record review',
+    });
+
+    await expect(mergeIfReady(1, DEFAULT_POLICY)).resolves.toMatchObject({
+      merged: false,
+      decision: 'BLOCKED_POLICY',
+      reason: 'CLAIM_REVIEW_EVIDENCE_REQUIRED',
+    });
+    expect(checkTaskClaimReview).toHaveBeenCalledWith(1, body, {
+      requireLive: true,
+      strictEvidence: true,
+    });
+    expect(mergePR).not.toHaveBeenCalled();
+
+    await expect(mergeIfReady(1, DEFAULT_POLICY)).resolves.toMatchObject({ merged: true });
+    expect(mergePR).toHaveBeenCalledOnce();
   });
 
   it('passes explicitly requested merge options to mergePR', async () => {

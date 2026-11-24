@@ -115,7 +115,7 @@ export {
 export { filterValidApprovals, isBotUser } from './approvals.js';
 export { detectDeadlock } from './deadlock.js';
 export { assessPRAuthorRisk } from './author-risk.js';
-export { diagnosePR } from './doctor.js';
+export { diagnoseLivePR, diagnosePR } from './doctor.js';
 export { generateDoctorReport } from './doctor-report.js';
 export {
   createWorkflowEvidence,
