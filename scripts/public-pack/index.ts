@@ -1,6 +1,6 @@
-import { copyFileSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
-import { relative, resolve, sep } from 'node:path';
+import { delimiter, relative, resolve, sep } from 'node:path';
 import {
   PUBLIC_PACKAGES,
   PUBLIC_VERSION,
@@ -87,13 +87,9 @@ function createPackSet(destination: string): readonly PublicPackArtifact[] {
     copyFileSync(resolve(root, 'NOTICE'), resolve(stage, 'NOTICE'));
     writeJson(resolve(stage, 'package.json'), staged);
 
-    run(
-      npmCommand(),
-      ['pack', '.', '--pack-destination', tarballRoot, '--json', '--ignore-scripts'],
-      {
-        cwd: stage,
-      },
-    );
+    runNpm(['pack', '.', '--pack-destination', tarballRoot, '--json', '--ignore-scripts'], {
+      cwd: stage,
+    });
     const tarballName = `openslack-${safeName}-${PUBLIC_VERSION}.tgz`;
     const tarball = resolve(tarballRoot, tarballName);
     assertFile(tarball);
@@ -210,10 +206,11 @@ function verifyCleanConsumer(artifacts: readonly PublicPackArtifact[]): void {
   });
   writeFileSync(resolve(consumer, 'consumer.ts'), consumerSource(), 'utf8');
 
-  run(
-    npmCommand(),
+  runNpm(
     ['install', '--ignore-scripts', '--no-audit', '--no-fund', '--package-lock=false', '--offline'],
-    { cwd: consumer },
+    {
+      cwd: consumer,
+    },
   );
   assertOnlyExpectedConsumerPackages(consumer);
   run(
@@ -315,8 +312,24 @@ function artifactReport(artifacts: readonly PublicPackArtifact[]) {
   };
 }
 
-function npmCommand(): string {
-  return process.platform === 'win32' ? 'npm.cmd' : 'npm';
+function runNpm(args: readonly string[], options: { readonly cwd: string }): void {
+  if (process.platform !== 'win32') {
+    run('npm', args, options);
+    return;
+  }
+
+  // Execute the CLI behind the first npm shim on PATH. Direct .cmd execution fails
+  // in Bun, and invoking a shell would reinterpret the pack destination path.
+  const npmDirectory = (process.env.PATH ?? '')
+    .split(delimiter)
+    .find((directory) => directory && existsSync(resolve(directory, 'npm.cmd')));
+  const npmCli =
+    npmDirectory &&
+    ['node_modules/npm/bin/npm-cli.js', '../npm/bin/npm-cli.js']
+      .map((path) => resolve(npmDirectory, path))
+      .find((path) => existsSync(path));
+  if (!npmCli) throw new Error('Cannot locate npm-cli.js behind npm.cmd on PATH.');
+  run('node', [npmCli, ...args], options);
 }
 
 function safeChildEnvironment(): NodeJS.ProcessEnv {
