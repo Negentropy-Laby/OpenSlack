@@ -1,6 +1,6 @@
 import { issueClaimRef, parseTaskLinkMarker } from '@openslack/core';
 import { getClient, type GitHubClient, type GitHubClientOptions } from './client.js';
-import { parseClaimMetadata } from './claims.js';
+import { parseClaimMetadata, type ClaimMetadata } from './claims.js';
 
 export type ClaimLifecycleOperation = 'heartbeat' | 'review' | 'complete';
 export type ClaimLifecycleOutcome = 'completed' | 'partial' | 'failed';
@@ -17,6 +17,7 @@ export type ClaimLifecyclePostconditionName =
 export type ClaimLifecycleErrorCode =
   | 'CLAIM_INVALID_INPUT'
   | 'CLAIM_REF_NOT_FOUND'
+  | 'CLAIM_LEASE_NOT_CURRENT'
   | 'CLAIM_OWNER_MISSING'
   | 'CLAIM_OWNER_MISMATCH'
   | 'CLAIM_API_UNAVAILABLE'
@@ -87,6 +88,7 @@ export interface ClaimReviewMetadata {
   claim_ref: string;
   pr_url: string;
   reviewed_at: string;
+  claim_id?: string;
 }
 
 const DEFAULT_DEPENDENCIES: ClaimLifecycleDependencies = {
@@ -98,7 +100,13 @@ const AGENT_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/;
 const CLAIM_COMMENT_PAGE_SIZE = 100;
 const CLAIM_COMMENT_MAX_PAGES = 10;
 const HEARTBEAT_RETRY_DEDUP_WINDOW_MS = 60_000;
-const ACTIVE_CLAIM_LABELS = ['openslack:claimed', 'openslack:running', 'openslack:review'];
+const PRE_REVIEW_LABELS = [
+  'openslack:ready',
+  'openslack:claimed',
+  'openslack:running',
+  'openslack:blocked',
+];
+const PRE_COMPLETION_LABELS = [...PRE_REVIEW_LABELS, 'openslack:review'];
 
 class ClaimLifecycleFailure extends Error {
   constructor(readonly code: ClaimLifecycleErrorCode) {
@@ -180,7 +188,8 @@ export function parseClaimReviewMetadata(
     typeof parsed.agent_id !== 'string' ||
     typeof parsed.claim_ref !== 'string' ||
     typeof parsed.pr_url !== 'string' ||
-    typeof parsed.reviewed_at !== 'string'
+    typeof parsed.reviewed_at !== 'string' ||
+    (parsed.claim_id !== undefined && typeof parsed.claim_id !== 'string')
   ) {
     return null;
   }
@@ -225,11 +234,11 @@ async function listClaimComments(client: GitHubClient, issueNumber: number) {
   throw new ClaimLifecycleFailure('CLAIM_API_UNAVAILABLE');
 }
 
-function resolveStrictOwner(
+function resolveStrictClaim(
   comments: Array<{ body?: string | null }>,
   issueNumber: number,
   claimRef: string,
-): string {
+): ClaimMetadata {
   const claims = [];
   for (const comment of comments) {
     const claim = parseClaimMetadata(comment.body);
@@ -238,49 +247,60 @@ function resolveStrictOwner(
       claim.claim_ref === claimRef &&
       AGENT_ID_PATTERN.test(claim.agent_id)
     ) {
+      if (!Number.isFinite(Date.parse(claim.claimed_at))) {
+        throw new ClaimLifecycleFailure('CLAIM_POSTCONDITION_FAILED');
+      }
       claims.push(claim);
     }
   }
   if (claims.length === 0) throw new ClaimLifecycleFailure('CLAIM_OWNER_MISSING');
   claims.sort((left, right) => Date.parse(right.claimed_at) - Date.parse(left.claimed_at));
-  const newestTimestamp = claims[0].claimed_at;
-  const owners = new Set(
-    claims.filter((claim) => claim.claimed_at === newestTimestamp).map((claim) => claim.agent_id),
-  );
-  if (owners.size !== 1) throw new ClaimLifecycleFailure('CLAIM_OWNER_MISMATCH');
-  return [...owners][0];
+  const current = claims[0];
+  if (
+    claims.some(
+      (claim) =>
+        Date.parse(claim.claimed_at) === Date.parse(current.claimed_at) &&
+        !sameClaim(claim, current),
+    )
+  ) {
+    throw new ClaimLifecycleFailure('CLAIM_OWNER_MISMATCH');
+  }
+  return current;
 }
 
-function claimLease(
-  comments: Array<{ body?: string | null }>,
-  issueNumber: number,
-  claimRef: string,
-): { ttlMinutes: number; heartbeatMinutes: number } {
-  const claims = comments
-    .map((comment) => parseClaimMetadata(comment.body))
-    .filter(
-      (claim): claim is NonNullable<typeof claim> =>
-        claim?.issue_number === issueNumber && claim.claim_ref === claimRef,
-    )
-    .sort((left, right) => Date.parse(right.claimed_at) - Date.parse(left.claimed_at));
-  const claim = claims[0];
-  if (claim) {
-    let ttlMinutes = claim.ttl_minutes;
-    if (!Number.isSafeInteger(ttlMinutes) || ttlMinutes! < 1 || ttlMinutes! > 480) {
-      const duration = (Date.parse(claim.expires_at) - Date.parse(claim.claimed_at)) / 60_000;
-      ttlMinutes =
-        Number.isSafeInteger(duration) && duration >= 1 && duration <= 480 ? duration : 60;
-    }
-    const effectiveTtlMinutes = ttlMinutes ?? 60;
-    const heartbeatMinutes =
-      Number.isSafeInteger(claim.heartbeat_minutes) &&
-      claim.heartbeat_minutes! >= 1 &&
-      claim.heartbeat_minutes! <= 120
-        ? claim.heartbeat_minutes!
-        : Math.min(15, effectiveTtlMinutes);
-    return { ttlMinutes: effectiveTtlMinutes, heartbeatMinutes };
+function sameClaim(left: ClaimMetadata, right: ClaimMetadata): boolean {
+  return (
+    left.agent_id === right.agent_id &&
+    left.claim_id === right.claim_id &&
+    Date.parse(left.claimed_at) === Date.parse(right.claimed_at) &&
+    left.expires_at === right.expires_at &&
+    left.task_id === right.task_id &&
+    left.principal.run_id === right.principal.run_id
+  );
+}
+
+async function requireSameCurrentClaim(client: GitHubClient, claim: ClaimMetadata): Promise<void> {
+  const comments = await listClaimComments(client, claim.issue_number);
+  const current = resolveStrictClaim(comments, claim.issue_number, claim.claim_ref);
+  if (!sameClaim(claim, current)) {
+    throw new ClaimLifecycleFailure('CLAIM_POSTCONDITION_FAILED');
   }
-  throw new ClaimLifecycleFailure('CLAIM_OWNER_MISSING');
+}
+
+function claimLease(claim: ClaimMetadata): { ttlMinutes: number; heartbeatMinutes: number } {
+  let ttlMinutes = claim.ttl_minutes;
+  if (!Number.isSafeInteger(ttlMinutes) || ttlMinutes! < 1 || ttlMinutes! > 480) {
+    const duration = (Date.parse(claim.expires_at) - Date.parse(claim.claimed_at)) / 60_000;
+    ttlMinutes = Number.isSafeInteger(duration) && duration >= 1 && duration <= 480 ? duration : 60;
+  }
+  const effectiveTtlMinutes = ttlMinutes ?? 60;
+  const heartbeatMinutes =
+    Number.isSafeInteger(claim.heartbeat_minutes) &&
+    claim.heartbeat_minutes! >= 1 &&
+    claim.heartbeat_minutes! <= 120
+      ? claim.heartbeat_minutes!
+      : Math.min(15, effectiveTtlMinutes);
+  return { ttlMinutes: effectiveTtlMinutes, heartbeatMinutes };
 }
 
 function requireMatchingOwner(owner: string, agentId: string): void {
@@ -327,10 +347,19 @@ async function issueLabels(client: GitHubClient, issueNumber: number): Promise<S
   );
 }
 
+function reviewLabelsComplete(labels: ReadonlySet<string>): boolean {
+  // Claim projection repair can re-add "claimed" while the review is active.
+  return (
+    labels.has('openslack:review') &&
+    !labels.has('openslack:done') &&
+    PRE_REVIEW_LABELS.every((label) => label === 'openslack:claimed' || !labels.has(label))
+  );
+}
+
 function reviewEvidencePresent(
   comments: Array<{ body?: string | null }>,
   input: ReviewClaimInput,
-  claimRef: string,
+  claim: ClaimMetadata,
   prUrl: string,
 ): boolean {
   return comments.some((comment) => {
@@ -338,10 +367,50 @@ function reviewEvidencePresent(
     return (
       metadata?.issue_number === input.issueNumber &&
       metadata.agent_id === input.agentId &&
-      metadata.claim_ref === claimRef &&
-      metadata.pr_url === prUrl
+      metadata.claim_ref === claim.claim_ref &&
+      metadata.pr_url === prUrl &&
+      (metadata.claim_id === undefined || metadata.claim_id === claim.claim_id) &&
+      Date.parse(metadata.reviewed_at) >= Date.parse(claim.claimed_at)
     );
   });
+}
+
+export function effectiveClaimExpiry(
+  comments: Array<{ body?: string | null }>,
+  claim: ClaimMetadata,
+  now: number,
+): string | null {
+  const claimTime = Date.parse(claim.claimed_at);
+  const heartbeats = comments
+    .map((comment) => parseHeartbeatMetadata(comment.body))
+    .filter((heartbeat) => {
+      if (
+        heartbeat?.issue_number !== claim.issue_number ||
+        heartbeat.agent_id !== claim.agent_id ||
+        heartbeat.claim_ref !== claim.claim_ref
+      ) {
+        return false;
+      }
+      const heartbeatTime = Date.parse(heartbeat.heartbeat_at);
+      const expiryTime = Date.parse(heartbeat.expires_at);
+      const duration = (expiryTime - heartbeatTime) / 60_000;
+      return (
+        Number.isFinite(heartbeatTime) &&
+        Number.isFinite(expiryTime) &&
+        heartbeatTime >= claimTime &&
+        heartbeatTime <= now &&
+        expiryTime > heartbeatTime &&
+        Number.isSafeInteger(duration) &&
+        duration >= 1 &&
+        duration <= 480
+      );
+    })
+    .sort((left, right) => Date.parse(right!.heartbeat_at) - Date.parse(left!.heartbeat_at));
+  if (heartbeats.length === 0) return claim.expires_at;
+  const latestTimestamp = heartbeats[0]!.heartbeat_at;
+  const latest = heartbeats.filter((heartbeat) => heartbeat!.heartbeat_at === latestTimestamp);
+  const expiries = new Set(latest.map((heartbeat) => heartbeat!.expires_at));
+  return expiries.size === 1 ? latest[0]!.expires_at : null;
 }
 
 export async function checkTaskClaimReview(
@@ -350,9 +419,10 @@ export async function checkTaskClaimReview(
   options?: GitHubClientOptions,
   dependencies: ClaimLifecycleDependencies = DEFAULT_DEPENDENCIES,
 ): Promise<{ reason: string; recommendation: string } | undefined> {
-  const link = parseTaskLinkMarker(body);
-  if (link.state === 'ABSENT') return;
-  if (link.state === 'INVALID') {
+  const markers = body?.match(/<!--\s*openslack-task-link[\s\S]*?(?:-->|$)/g);
+  if (!markers) return;
+  const link = markers.length === 1 ? parseTaskLinkMarker(markers[0]) : undefined;
+  if (link?.state !== 'VALID') {
     return {
       reason: 'CLAIM_TASK_LINK_INVALID: The PR task link is invalid or ambiguous.',
       recommendation: 'Correct the task link using the authorized task publication flow.',
@@ -365,13 +435,35 @@ export async function checkTaskClaimReview(
     if (client.isDryRun) throw new ClaimLifecycleFailure('CLAIM_API_UNAVAILABLE');
     await requireClaimRef(client, issueNumber);
     const comments = await listClaimComments(client, issueNumber);
-    requireMatchingOwner(resolveStrictOwner(comments, issueNumber, claimRef), agentId);
+    const claim = resolveStrictClaim(comments, issueNumber, claimRef);
+    requireMatchingOwner(claim.agent_id, agentId);
+    if (claim.task_id !== undefined && claim.task_id !== link.metadata.task_id) {
+      return {
+        reason: `CLAIM_TASK_LINK_MISMATCH: The PR does not match the current task for issue #${issueNumber}.`,
+        recommendation:
+          'Verify the current task and correct the PR link through authorized task publication.',
+      };
+    }
+    const now = dependencies.now().getTime();
+    const expiry = effectiveClaimExpiry(comments, claim, now);
+    if (Date.parse(claim.claimed_at) > now || expiry === null || !(Date.parse(expiry) > now)) {
+      throw new ClaimLifecycleFailure('CLAIM_LEASE_NOT_CURRENT');
+    }
     const prUrl = `https://github.com/${client.owner}/${client.repo}/pull/${prNumber}`;
     const input = { issueNumber, agentId, prUrl };
-    if (!reviewEvidencePresent(comments, input, claimRef, prUrl)) {
+    if (!reviewEvidencePresent(comments, input, claim, prUrl)) {
       return {
-        reason: `CLAIM_REVIEW_EVIDENCE_REQUIRED: Issue #${issueNumber} has no matching review record for PR #${prNumber}.`,
+        reason: `CLAIM_REVIEW_EVIDENCE_REQUIRED: Issue #${issueNumber} has no current review record for PR #${prNumber}.`,
         recommendation: `Record the review transition: ${recoveryCommand('review', input)}`,
+      };
+    }
+    const labels = await issueLabels(client, issueNumber);
+    if (!reviewLabelsComplete(labels)) {
+      return {
+        reason: `CLAIM_REVIEW_TRANSITION_FAILED: Issue #${issueNumber} has incomplete review labels.`,
+        recommendation: labels.has('openslack:done')
+          ? 'Reconcile the completed Issue with the current claim before re-running pr doctor.'
+          : `Complete the review transition: ${recoveryCommand('review', input)}`,
       };
     }
   } catch (error) {
@@ -385,8 +477,7 @@ export async function checkTaskClaimReview(
 
 function findRecentMatchingHeartbeat(
   comments: Array<{ body?: string | null }>,
-  input: HeartbeatClaimInput,
-  claimRef: string,
+  claim: ClaimMetadata,
   ttlMinutes: number,
   now: Date,
 ): HeartbeatMetadata | undefined {
@@ -395,9 +486,9 @@ function findRecentMatchingHeartbeat(
   for (const comment of comments) {
     const metadata = parseHeartbeatMetadata(comment.body);
     if (
-      metadata?.issue_number !== input.issueNumber ||
-      metadata.agent_id !== input.agentId ||
-      metadata.claim_ref !== claimRef
+      metadata?.issue_number !== claim.issue_number ||
+      metadata.agent_id !== claim.agent_id ||
+      metadata.claim_ref !== claim.claim_ref
     ) {
       continue;
     }
@@ -406,6 +497,7 @@ function findRecentMatchingHeartbeat(
     if (
       Number.isFinite(heartbeatMs) &&
       Number.isFinite(expiresMs) &&
+      heartbeatMs >= Date.parse(claim.claimed_at) &&
       nowMs >= heartbeatMs &&
       nowMs - heartbeatMs <= HEARTBEAT_RETRY_DEDUP_WINDOW_MS &&
       (metadata.ttl_minutes === undefined || metadata.ttl_minutes === ttlMinutes) &&
@@ -486,20 +578,15 @@ export async function heartbeatClaim(
     const client = await requireLiveClient(dependencies);
     await requireClaimRef(client, input.issueNumber);
     const comments = await listClaimComments(client, input.issueNumber);
-    owner = resolveStrictOwner(comments, input.issueNumber, claimRef);
+    const claim = resolveStrictClaim(comments, input.issueNumber, claimRef);
+    owner = claim.agent_id;
     requireMatchingOwner(owner, input.agentId);
-    const originalLease = claimLease(comments, input.issueNumber, claimRef);
+    const originalLease = claimLease(claim);
     const ttlMinutes = input.ttlMinutes ?? originalLease.ttlMinutes;
     const heartbeatMinutes = originalLease.heartbeatMinutes;
 
     const now = dependencies.now();
-    const existingHeartbeat = findRecentMatchingHeartbeat(
-      comments,
-      input,
-      claimRef,
-      ttlMinutes,
-      now,
-    );
+    const existingHeartbeat = findRecentMatchingHeartbeat(comments, claim, ttlMinutes, now);
     if (existingHeartbeat) {
       const nextHeartbeatAt =
         existingHeartbeat.next_heartbeat_at ??
@@ -638,17 +725,13 @@ export async function reviewClaim(
     prUrl = normalizePullRequest(input.prUrl, client).url;
     await requireClaimRef(client, input.issueNumber);
     const comments = await listClaimComments(client, input.issueNumber);
-    owner = resolveStrictOwner(comments, input.issueNumber, claimRef);
+    const claim = resolveStrictClaim(comments, input.issueNumber, claimRef);
+    owner = claim.agent_id;
     requireMatchingOwner(owner, input.agentId);
-    const reviewAlreadyRecorded = reviewEvidencePresent(comments, input, claimRef, prUrl);
+    const reviewAlreadyRecorded = reviewEvidencePresent(comments, input, claim, prUrl);
 
     let mutationFailed = false;
-    for (const label of [
-      'openslack:ready',
-      'openslack:claimed',
-      'openslack:running',
-      'openslack:blocked',
-    ]) {
+    for (const label of PRE_REVIEW_LABELS) {
       try {
         await client.octokit.issues.removeLabel({
           owner: client.owner,
@@ -683,6 +766,7 @@ export async function reviewClaim(
             claim_ref: claimRef,
             pr_url: prUrl,
             reviewed_at: dependencies.now().toISOString(),
+            claim_id: claim.claim_id,
           }),
         });
       } catch {
@@ -709,8 +793,10 @@ export async function reviewClaim(
         recoveryCommand: recoveryCommand('review', { ...input, prUrl }),
       });
     }
-    const reviewLabelPresent = labels.has('openslack:review');
-    const prLinkPresent = reviewEvidencePresent(updatedComments, input, claimRef, prUrl);
+    const reviewLabelPresent = reviewLabelsComplete(labels);
+    const current = resolveStrictClaim(updatedComments, input.issueNumber, claimRef);
+    const prLinkPresent =
+      sameClaim(claim, current) && reviewEvidencePresent(updatedComments, input, current, prUrl);
     const postconditions: ClaimLifecyclePostcondition[] = [
       { name: 'claim_ref_present', satisfied: true },
       { name: 'owner_matches', satisfied: true },
@@ -755,9 +841,10 @@ export async function completeClaim(
     const pullRequest = normalizePullRequest(input.prUrl, client);
     prUrl = pullRequest.url;
     const comments = await listClaimComments(client, input.issueNumber);
-    owner = resolveStrictOwner(comments, input.issueNumber, claimRef);
+    const claim = resolveStrictClaim(comments, input.issueNumber, claimRef);
+    owner = claim.agent_id;
     requireMatchingOwner(owner, input.agentId);
-    if (!reviewEvidencePresent(comments, input, claimRef, prUrl)) {
+    if (!reviewEvidencePresent(comments, input, claim, prUrl)) {
       throw new ClaimLifecycleFailure('CLAIM_POSTCONDITION_FAILED');
     }
     try {
@@ -777,11 +864,17 @@ export async function completeClaim(
           ],
         });
       }
+      if (
+        !pull.data.merged_at ||
+        !(Date.parse(pull.data.merged_at) >= Date.parse(claim.claimed_at))
+      ) {
+        throw new ClaimLifecycleFailure('CLAIM_POSTCONDITION_FAILED');
+      }
     } catch (error) {
       return failedResult(
         'complete',
         input,
-        statusOf(error) === 404 ? 'CLAIM_POSTCONDITION_FAILED' : 'CLAIM_API_UNAVAILABLE',
+        statusOf(error) === 404 ? 'CLAIM_POSTCONDITION_FAILED' : failureCode(error),
         {
           owner,
           prUrl,
@@ -800,8 +893,9 @@ export async function completeClaim(
     try {
       refAbsent = await claimRefIsAbsent(client, input.issueNumber);
       labels = await issueLabels(client, input.issueNumber);
-      const activeLabels = ACTIVE_CLAIM_LABELS.filter((label) => labels.has(label));
+      const activeLabels = PRE_COMPLETION_LABELS.filter((label) => labels.has(label));
       if (!refAbsent || !labels.has('openslack:done') || activeLabels.length > 0) {
+        await requireSameCurrentClaim(client, claim);
         const issue = { owner: client.owner, repo: client.repo, issue_number: input.issueNumber };
         for (const label of activeLabels) {
           try {
@@ -818,6 +912,7 @@ export async function completeClaim(
           }
         }
         if (!refAbsent) {
+          await requireSameCurrentClaim(client, claim);
           try {
             await client.octokit.git.deleteRef({
               owner: client.owner,
@@ -857,7 +952,7 @@ export async function completeClaim(
     if (
       !refAbsent ||
       !doneLabelPresent ||
-      ACTIVE_CLAIM_LABELS.some((label) => labels.has(label)) ||
+      PRE_COMPLETION_LABELS.some((label) => labels.has(label)) ||
       mutationFailed
     ) {
       return failedResult('complete', input, 'CLAIM_COMPLETION_FAILED', {

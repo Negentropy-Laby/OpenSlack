@@ -1,6 +1,6 @@
 import { issueClaimRef } from '@openslack/core';
 import { getClient, type GitHubClient } from './client.js';
-import { parseHeartbeatMetadata } from './claim-lifecycle.js';
+import { effectiveClaimExpiry } from './claim-lifecycle.js';
 import { parseClaimMetadata, type ClaimMetadata } from './claims.js';
 
 export interface RepairResult {
@@ -74,44 +74,6 @@ function currentClaimEvidence(
   const newest = claims.filter((claim) => claim.claimed_at === newestTimestamp);
   if (new Set(newest.map((claim) => claim.agent_id)).size !== 1) return null;
   return newest[0];
-}
-
-function effectiveExpiry(
-  comments: Array<{ body?: string | null }>,
-  claim: ClaimMetadata,
-  now: number,
-): string | null {
-  const claimTime = Date.parse(claim.claimed_at);
-  const heartbeats = comments
-    .map((comment) => parseHeartbeatMetadata(comment.body))
-    .filter((heartbeat) => {
-      if (
-        heartbeat?.issue_number !== claim.issue_number ||
-        heartbeat.agent_id !== claim.agent_id ||
-        heartbeat.claim_ref !== claim.claim_ref
-      ) {
-        return false;
-      }
-      const heartbeatTime = Date.parse(heartbeat.heartbeat_at);
-      const expiryTime = Date.parse(heartbeat.expires_at);
-      const duration = (expiryTime - heartbeatTime) / 60_000;
-      return (
-        Number.isFinite(heartbeatTime) &&
-        Number.isFinite(expiryTime) &&
-        heartbeatTime >= claimTime &&
-        heartbeatTime <= now &&
-        expiryTime > heartbeatTime &&
-        Number.isSafeInteger(duration) &&
-        duration >= 1 &&
-        duration <= 480
-      );
-    })
-    .sort((left, right) => Date.parse(right!.heartbeat_at) - Date.parse(left!.heartbeat_at));
-  if (heartbeats.length === 0) return claim.expires_at;
-  const latestTimestamp = heartbeats[0]!.heartbeat_at;
-  const latest = heartbeats.filter((heartbeat) => heartbeat!.heartbeat_at === latestTimestamp);
-  const expiries = new Set(latest.map((heartbeat) => heartbeat!.expires_at));
-  return expiries.size === 1 ? latest[0]!.expires_at : null;
 }
 
 async function issueLabels(client: GitHubClient, issueNumber: number): Promise<Set<string>> {
@@ -272,7 +234,7 @@ export async function repairExpiredClaims(
         });
         continue;
       }
-      const expiresAt = effectiveExpiry(comments, claim, now);
+      const expiresAt = effectiveClaimExpiry(comments, claim, now);
       if (!expiresAt) {
         results.push({
           action: 'reconcileClaim',
