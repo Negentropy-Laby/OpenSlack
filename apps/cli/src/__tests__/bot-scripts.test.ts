@@ -10,6 +10,7 @@ import { basename, join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { promisify } from 'node:util';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
+import { parse } from 'yaml';
 import {
   readBotGitHubPublicConfig,
   resolveBotGitHubRepository,
@@ -588,13 +589,26 @@ describe('bot-auth wrapper scripts', () => {
     },
   );
 
-  it('completes merged task Issues from structured claim evidence without a human token fallback', () => {
+  it('passes only a valid task link from a merged PR to Issue Done using the workflow token', () => {
     const workflow = readFileSync(
       resolve(repoRoot, '.github', 'workflows', 'openslack-issue-done.yml'),
       'utf8',
     );
-    expect(workflow).toContain('openslack-task-link');
-    expect(workflow).toContain("taskLink.schema !== 'openslack.task_link.v1'");
+    const { jobs } = parse(workflow) as {
+      jobs: Record<
+        string,
+        { if: string; steps: Array<{ id?: string; run?: string; with?: { script?: string } }> }
+      >;
+    };
+    const job = jobs['on-pr-merged'];
+    const extractIndex = job.steps.findIndex((step) => step.id === 'extract');
+    const buildIndex = job.steps.findIndex((step) => step.run === 'bun run build');
+    expect(job.if).toBe('github.event.pull_request.merged == true');
+    expect(buildIndex).toBeGreaterThanOrEqual(0);
+    expect(extractIndex).toBeGreaterThan(buildIndex);
+    const script = job.steps[extractIndex].with?.script;
+    expect(script).toContain('parseTaskLinkMarker(context.payload.pull_request.body)');
+    expect(workflow).toContain("if: steps.extract.outputs.issue_number != ''");
     expect(workflow).toContain('--agent-id');
     expect(workflow).toContain('GITHUB_TOKEN: ${{ github.token }}');
     expect(workflow).toContain('OPENSLACK_ISSUE_NUMBER: ${{ steps.extract.outputs.issue_number }}');
@@ -606,7 +620,76 @@ describe('bot-auth wrapper scripts', () => {
     expect(workflow).toMatch(/permissions:\s*\n\s*contents: write/);
     expect(workflow).not.toContain('OPENSLACK_GITHUB_TOKEN');
     expect(workflow).not.toContain('Issue:\\s*#?');
-  });
+
+    const marker = readFileSync(
+      resolve(
+        repoRoot,
+        'packages',
+        'runtime',
+        'src',
+        '__tests__',
+        'fixtures',
+        'task-link-golden.txt',
+      ),
+      'utf8',
+    ).trim();
+    const example = `~~~markdown\n${marker}\n~~~`;
+    const absent = { outputs: [], failures: [] };
+    const invalid = {
+      outputs: [],
+      failures: ['The OpenSlack task-link marker is invalid or ambiguous.'],
+    };
+    const valid = {
+      outputs: [
+        ['issue_number', '42'],
+        ['agent_id', 'repair'],
+      ],
+      failures: [],
+    };
+    const quoted = marker
+      .split('\n')
+      .map((line) => `> ${line}`)
+      .join('\n');
+    const bodies = [
+      `${example}\n\n${marker}`,
+      null,
+      example,
+      quoted,
+      `${marker}\n\n${marker}`,
+      marker.slice(0, -3),
+    ];
+
+    // Invoke Node outside the Vitest VM so the workflow's dynamic import runs natively.
+    const runner = `
+      const extract = async (context, core) => {\n${script}\n};
+      const bodies = JSON.parse(require('node:fs').readFileSync(0, 'utf8'));
+      async function run() {
+        const results = [];
+        for (const body of bodies) {
+          const outputs = [];
+          const failures = [];
+          await extract({ payload: { pull_request: { body } } }, {
+            info() {},
+            setOutput(name, value) { outputs.push([name, value]); },
+            setFailed(message) { failures.push(message); },
+          });
+          results.push({ outputs, failures });
+        }
+        process.stdout.write(JSON.stringify(results));
+      }
+      void run();
+    `;
+    const child = spawnSync(process.execPath, ['--input-type=commonjs', '-e', runner], {
+      encoding: 'utf8',
+      cwd: repoRoot,
+      env: { ...process.env, GITHUB_WORKSPACE: repoRoot },
+      input: JSON.stringify(bodies),
+      timeout: 10_000,
+    });
+    expect(child.error).toBeUndefined();
+    expect(child.status, child.stderr).toBe(0);
+    expect(JSON.parse(child.stdout)).toEqual([valid, absent, absent, absent, invalid, invalid]);
+  }, 15_000);
 
   it('maps historical PR creation flags without invoking GitHub or credentials', () => {
     const require = createRequire(import.meta.url);
