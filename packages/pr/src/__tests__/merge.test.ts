@@ -181,13 +181,15 @@ describe('mergeIfReady', () => {
     vi.mocked(fetchPRDetails).mockResolvedValue(makeReport({ body }));
     vi.mocked(mergePR).mockClear();
     vi.mocked(checkTaskClaimReview).mockResolvedValueOnce({
+      code: 'CLAIM_REVIEW_EVIDENCE_REQUIRED',
+      owner: 'agent',
       reason: 'CLAIM_REVIEW_EVIDENCE_REQUIRED',
       recommendation: 'Record review',
     });
 
     await expect(mergeIfReady(1, DEFAULT_POLICY)).resolves.toMatchObject({
       merged: false,
-      decision: 'BLOCKED_POLICY',
+      decision: 'BLOCKED_CLAIM_REVIEW',
       reason: 'CLAIM_REVIEW_EVIDENCE_REQUIRED',
     });
     expect(checkTaskClaimReview).toHaveBeenCalledWith(1, body, {

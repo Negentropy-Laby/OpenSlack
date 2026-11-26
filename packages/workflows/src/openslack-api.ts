@@ -2,7 +2,8 @@ import type { PRCodeownerEvidence, PRReviewReport, PRReviewPolicy } from '@opens
 import {
   fetchPRDetails,
   classifyPRReport,
-  diagnosePR,
+  diagnoseLivePR,
+  evaluatePRBasePolicy,
   loadPRCodeownerEvidence,
   loadPRReviewPolicy,
   mergeIfReady,
@@ -40,7 +41,7 @@ export interface OpenSlackAPIOptions {
     report: PRReviewReport,
     policy: PRReviewPolicy,
     codeowners: string[],
-  ) => PRReviewReport;
+  ) => PRReviewReport | Promise<PRReviewReport>;
   /** Override loadPRReviewPolicy for testing */
   _loadPRReviewPolicy?: () => PRReviewPolicy;
   /** Override mergeIfReady for testing */
@@ -81,11 +82,8 @@ export function createOpenSlackAPI(options: OpenSlackAPIOptions = {}) {
   // When no override is provided, the real implementation is used directly.
   const doFetchPRDetails: (prNumber: number) => Promise<PRReviewReport> =
     (options._fetchPRDetails as typeof doFetchPRDetails) ?? fetchPRDetails;
-  const doDiagnosePR: (
-    report: PRReviewReport,
-    policy: PRReviewPolicy,
-    codeowners: string[],
-  ) => PRReviewReport = (options._diagnosePR as typeof doDiagnosePR) ?? diagnosePR;
+  const liveOptions = { requireLive: true, strictEvidence: true } as const;
+  const doDiagnosePR = options._diagnosePR ?? diagnoseLivePR;
   const doLoadPolicy: () => PRReviewPolicy =
     (options._loadPRReviewPolicy as typeof doLoadPolicy) ?? loadPRReviewPolicy;
   const doMergeIfReady: (
@@ -163,13 +161,20 @@ export function createOpenSlackAPI(options: OpenSlackAPIOptions = {}) {
 
       async doctor(prNumber: number): Promise<PrmsDoctorResult> {
         try {
-          const report = await doFetchPRDetails(prNumber);
+          const report = options._fetchPRDetails
+            ? await doFetchPRDetails(prNumber)
+            : await fetchPRDetails(prNumber, liveOptions);
           const classified = classifyPRReport(report);
           const policy = doLoadPolicy();
 
-          const { owners: codeowners } = await doLoadPRCodeownerEvidence(classified);
+          const codeowners = evaluatePRBasePolicy(classified, policy)
+            ? []
+            : (options._loadPRCodeownerEvidence
+                ? await doLoadPRCodeownerEvidence(classified)
+                : await loadPRCodeownerEvidence(classified, liveOptions)
+              ).owners;
 
-          const diagnosed = doDiagnosePR(classified, policy, codeowners);
+          const diagnosed = await doDiagnosePR(classified, policy, codeowners, liveOptions);
 
           const decision = diagnosed.decision;
           const isReady = decision === 'READY_TO_MERGE';
@@ -198,6 +203,9 @@ export function createOpenSlackAPI(options: OpenSlackAPIOptions = {}) {
               detail: diagnosed.reason,
             },
           };
+          if (diagnosed.claimReviewIssue) {
+            gates.claimReview = { passed: false, detail: diagnosed.claimReviewIssue.reason };
+          }
 
           const blockers: Array<{
             gate: string;

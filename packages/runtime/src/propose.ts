@@ -13,6 +13,8 @@ import type { GitHubDeliveryInput, GitHubDeliveryResult } from '@openslack/deliv
 export interface PRProposalInput {
   agentId: string;
   taskId: string;
+  /** Canonical Issue task ID. Existing branch derivation retains taskId. */
+  linkedTaskId?: string;
   runId: string;
   issueNumber?: number;
   changedPaths: string[];
@@ -82,7 +84,7 @@ export async function proposeWorkspacePR(input: PRProposalInput): Promise<PRProp
         schema: 'openslack.task_link.v1',
         issue_number: input.issueNumber,
         agent_id: input.agentId,
-        task_id: input.taskId,
+        task_id: input.linkedTaskId ?? input.taskId,
         run_id: input.runId,
         claim_ref: issueClaimRef(input.issueNumber, 'canonical'),
       })
@@ -111,7 +113,7 @@ export async function proposeWorkspacePR(input: PRProposalInput): Promise<PRProp
   const prBody = `## OpenSlack Self-Evolution PR
 
 ### Task Information
-- **Task ID:** ${input.taskId}
+- **Task ID:** ${input.linkedTaskId ?? input.taskId}
 - **Agent ID:** ${input.agentId}
 - **Run ID:** ${input.runId}
 ${input.issueNumber ? `- **Issue:** #${input.issueNumber}` : ''}
@@ -153,6 +155,18 @@ To revert this change:
 ${riskZone === 'red' ? '- [ ] **Human approval required** (Red Zone files modified)' : ''}
 - [ ] Independent agent review
 `;
+
+  if (taskLink && parseTaskLinkMarker(prBody).state !== 'VALID') {
+    return {
+      success: false,
+      prBody,
+      branchName,
+      riskZone,
+      errors: [
+        'CLAIM_TASK_LINK_INVALID: Use a single valid task link with safe agent, task, and run IDs.',
+      ],
+    };
+  }
 
   if (blackViolations.length > 0) {
     return {

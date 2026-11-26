@@ -18,13 +18,13 @@ import {
 import {
   fetchPRDetails,
   classifyPRReport,
-  checkMergeReadiness,
   generateReviewReport,
   generateDoctorReport,
   loadPRReviewPolicy,
   diagnoseLivePR,
   evaluatePRBasePolicy,
   loadPRCodeownerEvidence,
+  summarizePRDecision,
   PRCodeownerEvidenceUnavailableError,
   postReviewComment,
   watchPR,
@@ -49,6 +49,31 @@ interface MergeCommandOptions {
   method: string;
   matchHeadCommit?: string;
   agentId?: string;
+}
+
+async function liveReviewReport(prNumber: number): Promise<PRReviewReport | undefined> {
+  const options = { requireLive: true, strictEvidence: true } as const;
+  try {
+    const policy = loadPRReviewPolicy();
+    const classified = classifyPRReport(await fetchPRDetails(prNumber, options));
+    const codeowners = evaluatePRBasePolicy(classified, policy)
+      ? []
+      : (await loadPRCodeownerEvidence(classified, options)).owners;
+    return await diagnoseLivePR(classified, policy, codeowners, options);
+  } catch (error) {
+    if (
+      !(
+        error instanceof GitHubEvidenceUnavailableError ||
+        error instanceof PRCodeownerEvidenceUnavailableError ||
+        error instanceof GitHubAuthRequiredError
+      )
+    ) {
+      throw error;
+    }
+    console.error(error.message);
+    process.exitCode = 1;
+    return undefined;
+  }
 }
 
 export function prCommands(): Command {
@@ -167,11 +192,8 @@ export function prCommands(): Command {
     .description('Show PR status and merge readiness')
     .action(async (number: string) => {
       const prNumber = parseInt(number, 10);
-      const report = await fetchPRDetails(prNumber);
-      const classified = classifyPRReport(report);
-      const policy = loadPRReviewPolicy();
-      const ready = checkMergeReadiness(classified, policy);
-      console.log(generateReviewReport(ready));
+      const report = await liveReviewReport(prNumber);
+      if (report) console.log(generateReviewReport(report));
     });
 
   cmd
@@ -180,10 +202,8 @@ export function prCommands(): Command {
     .option('--comment', 'Post the review report as a PR comment')
     .action(async (number: string, options: { comment?: boolean }) => {
       const prNumber = parseInt(number, 10);
-      const report = await fetchPRDetails(prNumber);
-      const classified = classifyPRReport(report);
-      const policy = loadPRReviewPolicy();
-      const ready = checkMergeReadiness(classified, policy);
+      const ready = await liveReviewReport(prNumber);
+      if (!ready) return;
 
       if (options.comment) {
         await postReviewComment(prNumber, ready);
@@ -198,10 +218,8 @@ export function prCommands(): Command {
     .description('Recommend next action for a PR')
     .action(async (number: string) => {
       const prNumber = parseInt(number, 10);
-      const report = await fetchPRDetails(prNumber);
-      const classified = classifyPRReport(report);
-      const policy = loadPRReviewPolicy();
-      const ready = checkMergeReadiness(classified, policy);
+      const ready = await liveReviewReport(prNumber);
+      if (!ready) return;
 
       if (ready.decision === 'NEEDS_HUMAN_APPROVAL') {
         console.log('Human approval required.');
@@ -212,11 +230,7 @@ export function prCommands(): Command {
         );
       } else if (ready.decision === 'READY_TO_MERGE') {
         console.log('Ready to merge.');
-        console.log(
-          `Suggested command: gh pr merge ${prNumber} --repo ${
-            process.env.GITHUB_OWNER || 'Negentropy-Laby'
-          }/${process.env.GITHUB_REPO || 'OpenSlack'} --merge`,
-        );
+        console.log(`Suggested command: openslack pr merge ${prNumber}`);
       } else if (ready.decision === 'BLOCKED_BLACK_ZONE') {
         console.log(`BLOCKED — Black Zone: ${ready.reason}`);
         console.log('Recommendation: Close this PR.');
@@ -230,6 +244,10 @@ export function prCommands(): Command {
         console.log(`Status: ${ready.decision}`);
         console.log(`Reason: ${ready.reason}`);
         console.log(`Recommendation: ${ready.recommendation}`);
+      }
+      if (ready.claimReviewIssue && ready.decision !== 'BLOCKED_CLAIM_REVIEW') {
+        console.log(ready.claimReviewIssue.reason);
+        console.log(ready.claimReviewIssue.recommendation);
       }
     });
 
@@ -398,10 +416,10 @@ export function prCommands(): Command {
 
         const evidenceBanner = renderDoctorEvidenceBanner(client);
         const policy = loadPRReviewPolicy();
-        let report: PRReviewReport;
+        let diagnosed: PRReviewReport;
         let codeowners: string[];
         try {
-          report = await fetchPRDetails(prNumber, clientOptions);
+          const report = await fetchPRDetails(prNumber, clientOptions);
           if (report.state === 'unknown') {
             console.error(
               `PR_FETCH_FAILED: Could not fetch PR #${prNumber} from ${client.owner}/${client.repo}.`,
@@ -413,7 +431,7 @@ export function prCommands(): Command {
           codeowners = evaluatePRBasePolicy(classified, policy)
             ? []
             : (await loadPRCodeownerEvidence(classified, clientOptions)).owners;
-          report = classified;
+          diagnosed = await diagnoseLivePR(classified, policy, codeowners, clientOptions);
         } catch (error) {
           if (
             error instanceof GitHubEvidenceUnavailableError ||
@@ -425,10 +443,10 @@ export function prCommands(): Command {
           }
           throw error;
         }
-        const diagnosed = await diagnoseLivePR(report, policy, codeowners, clientOptions);
         const doctorOutput = `${evidenceBanner}\n\n${generateDoctorReport(diagnosed, codeowners)}`;
 
         const isReady = diagnosed.decision === 'READY_TO_MERGE';
+        const summary = summarizePRDecision(diagnosed, codeowners);
         try {
           recordEvent({
             type: isReady ? 'pr.doctor.ready' : 'pr.doctor.blocked',
@@ -445,12 +463,12 @@ export function prCommands(): Command {
             owner: isReady
               ? undefined
               : {
-                  id: diagnosed.recommendation?.includes('review') ? 'human' : 'agent',
-                  kind: 'human',
+                  id: summary.owner,
+                  kind: summary.owner === 'agent' ? 'agent' : 'human',
                 },
             nextAction: isReady
               ? { owner: 'human', action: `Review and merge PR #${prNumber} on GitHub` }
-              : { owner: 'human', action: diagnosed.recommendation },
+              : { owner: summary.owner, action: summary.nextAction },
           });
         } catch {
           // Event recording is best-effort; do not block the CLI flow
@@ -461,8 +479,6 @@ export function prCommands(): Command {
           console.log(`Doctor report posted on PR #${prNumber}`);
         } else if (options.format === 'tui') {
           try {
-            const { summarizePRDecision } = await import('@openslack/pr');
-            const summary = summarizePRDecision(diagnosed, codeowners);
             const { renderDoctorTui } = await import('@openslack/tui');
             await renderDoctorTui(diagnosed, {
               evidence: [...evidenceBanner.split('\n'), ...summary.evidence],
@@ -581,6 +597,14 @@ export function prCommands(): Command {
             title: 'Risk zone',
             detail: `Zone: ${diagnosed.riskZone.toUpperCase()}`,
           });
+          if (diagnosed.claimReviewIssue) {
+            findings.push({
+              status: 'FAIL',
+              title: 'Claim review',
+              detail: diagnosed.claimReviewIssue.reason,
+              nextAction: diagnosed.claimReviewIssue.recommendation,
+            });
+          }
           const blocked = diagnosed.decision !== 'READY_TO_MERGE';
           findings.push({
             status: blocked ? 'FAIL' : 'PASS',
@@ -609,6 +633,11 @@ export function prCommands(): Command {
       console.log('');
       console.log(`Result: ${result.finalState}`);
       console.log(`Reason: ${result.reason}`);
+      if (result.claimReviewIssue) {
+        if (result.finalState !== 'BLOCKED_CLAIM_REVIEW')
+          console.log(result.claimReviewIssue.reason);
+        console.log(result.claimReviewIssue.recommendation);
+      }
       console.log(`Polls: ${result.polls} over ${Math.round(result.elapsedMs / 1000)}s`);
       if (result.finalState !== 'READY_TO_MERGE') {
         process.exit(1);

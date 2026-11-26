@@ -125,6 +125,7 @@ export {
   parseClaimReviewMetadata,
   parseHeartbeatMetadata,
   renderClaimLifecycleResult,
+  resolveTaskPublicationId,
   reviewClaim,
 } from './claim-lifecycle.js';
 export type {
@@ -135,6 +136,7 @@ export type {
   ClaimLifecyclePostcondition,
   ClaimLifecyclePostconditionName,
   ClaimLifecycleResult,
+  ClaimReviewIssue,
   CompleteClaimInput,
   HeartbeatClaimInput,
   ReviewClaimInput,

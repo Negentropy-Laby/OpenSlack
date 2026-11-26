@@ -50,7 +50,7 @@ See `docs/security/human-approval.md` for the cross-project definition.
 openslack pr status <number>       # Show PR status and merge readiness
 openslack pr review <number>      # Generate review report
 openslack pr recommend <number>   # Recommend next action
-openslack pr doctor <number>      # Run 11-gate governance diagnosis
+openslack pr doctor <number>      # Run live governance diagnosis
 openslack pr merge <number>       # Merge after all governance gates pass
 ```
 
@@ -115,7 +115,7 @@ packages/pr/
 │   ├── codeowners.ts     # parseCODEOWNERS, resolveCodeowners
 │   ├── approvals.ts      # filterValidApprovals, isBotUser
 │   ├── deadlock.ts       # detectDeadlock
-│   ├── doctor.ts         # diagnosePR (11-gate engine)
+│   ├── doctor.ts         # Local policy evaluation and live claim diagnosis
 │   ├── doctor-report.ts  # generateDoctorReport (markdown)
 │   ├── merge.ts          # mergeIfReady (policy-gated merge)
 │   └── __tests__/
@@ -162,6 +162,12 @@ result.
 
 Stale approval, self-review, sole-author CODEOWNER deadlock, unresolved blocking
 threads, unsynchronized heads, or missing checks block merge.
+
+When a PR has a structured task link, merge also requires a live claim ref, a
+current lease, and an Issue review record for the linked PR and claim
+generation. PRMS reports `BLOCKED_CLAIM_REVIEW` when those are the remaining
+blockers. Pending human or CODEOWNER approval remains visible alongside the
+claim finding. An unavailable GitHub read prevents a merge decision.
 
 ## Dependencies
 

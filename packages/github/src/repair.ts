@@ -1,7 +1,7 @@
+import { readClaimComments } from './claim-comments.js';
 import { issueClaimRef } from '@openslack/core';
 import { getClient, type GitHubClient } from './client.js';
-import { effectiveClaimExpiry } from './claim-lifecycle.js';
-import { parseClaimMetadata, type ClaimMetadata } from './claims.js';
+import { effectiveClaimExpiry, resolveStrictClaim } from './claim-lifecycle.js';
 
 export interface RepairResult {
   action: string;
@@ -27,53 +27,10 @@ export const REQUIRED_OPENSLACK_LABELS = [
   { name: 'openslack:blocked', color: 'cf222e', description: 'Blocked, needs human attention' },
 ] as const;
 
-const COMMENT_PAGE_SIZE = 100;
-const COMMENT_MAX_PAGES = 10;
-
 function statusOf(error: unknown): number | undefined {
   return typeof error === 'object' && error !== null && 'status' in error
     ? Number((error as { status?: unknown }).status)
     : undefined;
-}
-
-async function listComments(client: GitHubClient, issueNumber: number) {
-  const comments: Array<{ body?: string | null }> = [];
-  for (let page = 1; page <= COMMENT_MAX_PAGES; page += 1) {
-    const response = await client.octokit.issues.listComments({
-      owner: client.owner,
-      repo: client.repo,
-      issue_number: issueNumber,
-      sort: 'created',
-      direction: 'desc',
-      per_page: COMMENT_PAGE_SIZE,
-      page,
-    });
-    comments.push(...response.data);
-    if (response.data.length < COMMENT_PAGE_SIZE) return comments;
-  }
-  throw new Error('Claim comment evidence exceeded the bounded read limit.');
-}
-
-function currentClaimEvidence(
-  comments: Array<{ body?: string | null }>,
-  issueNumber: number,
-  claimRef: string,
-): ClaimMetadata | null {
-  const claims = comments
-    .map((comment) => parseClaimMetadata(comment.body))
-    .filter(
-      (claim): claim is ClaimMetadata =>
-        claim?.issue_number === issueNumber &&
-        claim.claim_ref === claimRef &&
-        Number.isFinite(Date.parse(claim.claimed_at)) &&
-        Number.isFinite(Date.parse(claim.expires_at)),
-    )
-    .sort((left, right) => Date.parse(right.claimed_at) - Date.parse(left.claimed_at));
-  if (claims.length === 0) return null;
-  const newestTimestamp = claims[0].claimed_at;
-  const newest = claims.filter((claim) => claim.claimed_at === newestTimestamp);
-  if (new Set(newest.map((claim) => claim.agent_id)).size !== 1) return null;
-  return newest[0];
 }
 
 async function issueLabels(client: GitHubClient, issueNumber: number): Promise<Set<string>> {
@@ -216,15 +173,20 @@ export async function repairExpiredClaims(
   }
 
   const results: RepairResult[] = [];
-  const now = Date.now();
   for (const ref of refs) {
     const match = ref.ref.match(/issue-(\d+)$/u);
     if (!match) continue;
     const issueNumber = Number(match[1]);
     try {
       const claimRef = issueClaimRef(issueNumber, 'canonical');
-      const comments = await listComments(client, issueNumber);
-      const claim = currentClaimEvidence(comments, issueNumber, claimRef);
+      const { comments, serverTime } = await readClaimComments(client, issueNumber);
+      const claim = (() => {
+        try {
+          return resolveStrictClaim(comments, issueNumber, claimRef);
+        } catch {
+          return null;
+        }
+      })();
       if (!claim) {
         results.push({
           action: 'reconcileClaim',
@@ -234,6 +196,7 @@ export async function repairExpiredClaims(
         });
         continue;
       }
+      const now = serverTime ?? Date.now();
       const expiresAt = effectiveClaimExpiry(comments, claim, now);
       if (!expiresAt) {
         results.push({

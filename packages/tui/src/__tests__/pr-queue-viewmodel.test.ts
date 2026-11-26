@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { mapPrQueueToViewModel } from '../view-models/pr-queue.js';
 import type { PrQueueInputItem } from '../view-models/pr-queue.js';
+import { renderPlainPrQueue } from '../plain-render.js';
 
 function makeItem(overrides?: Partial<PrQueueInputItem>): PrQueueInputItem {
   return {
@@ -27,6 +28,26 @@ describe('mapPrQueueToViewModel', () => {
     expect(model.blockedCount).toBe(0);
     expect(model.pendingCount).toBe(0);
     expect(model.items).toHaveLength(0);
+  });
+
+  it('renders claim recovery alongside the pending human approval', () => {
+    const model = mapPrQueueToViewModel([
+      makeItem({
+        decision: 'NEEDS_HUMAN_APPROVAL',
+        canMerge: false,
+        blockerCategory: 'approvals',
+        nextAction: 'Request human approval.',
+        claimReviewIssue: {
+          owner: 'agent',
+          reason: 'Lease expired.',
+          recommendation: 'Renew the claim.',
+        },
+      }),
+    ]);
+    const output = renderPlainPrQueue(model);
+    expect(output).toContain('Request human approval.');
+    expect(output).toContain('Claim review (agent): Lease expired.');
+    expect(output).toContain('Claim action: Renew the claim.');
   });
 
   it('maps a single ready PR', () => {

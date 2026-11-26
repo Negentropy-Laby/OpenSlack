@@ -549,12 +549,14 @@ reported as `empty`, never as passed. Publication is fail-closed: commit, push,
 PR creation/update, and exact-head synchronization must all succeed. A generated
 PR body is not a successful fallback when remote delivery fails.
 
-When `--issue-number` is supplied, the PR body also carries a structured
+When `--issue-number` is supplied, `task sync` checks the live claim and
+canonical Issue task ID before publication. The exact `ISSUE-<n>` checkout
+alias is accepted and the PR body records the manifest task ID in the structured
 `openslack.task_link.v1` marker. After delivery, `task sync` verifies the claim
 owner and the Issue review label/comment postconditions. If that transition is
-interrupted after the PR exists, the command exits non-zero and prints only the
-idempotent `openslack github claim review ...` recovery command; retrying never
-creates a second PR.
+interrupted after the PR exists, the command exits nonzero with recovery
+guidance. The idempotent `openslack github claim review ...` recovery command
+works on the existing PR.
 
 ```bash
 openslack delivery publish \
@@ -628,6 +630,10 @@ Claim lifecycle commands require live GitHub evidence and return
 `openslack.claim_lifecycle.v1`. They fail closed on missing/conflicting owner
 markers or unverifiable ref, comment, label, PR, and completion postconditions;
 transport failures are reported with fixed, secret-safe codes.
+Each of `claim heartbeat`, `claim review`, and `claim complete` accepts
+`--repo owner/name`. A failure before a write leaves the Issue unchanged.
+After a write attempt, a partial result lists confirmed observations and gives
+a retry command when the current claim can be verified.
 
 Notification reconciliation uses a principal separate from the handoff caller.
 Set `OPENSLACK_NOTIFICATION_SERVICE_AUDITOR_CREDENTIAL_REF` to an `env:` or
@@ -669,7 +675,7 @@ payloads, endpoints, credentials, or vendor responses.
 | `openslack pr review <n>`                                            | Generate review report for a PR                                            |
 | `openslack pr review <n> --comment`                                  | Post review report as PR comment                                           |
 | `openslack pr recommend <n>`                                         | Recommend next action for a PR                                             |
-| `openslack pr doctor <n>`                                            | Run governance diagnosis (11 gates)                                        |
+| `openslack pr doctor <n>`                                            | Run live governance diagnosis                                             |
 | `openslack pr doctor <n> --repo owner/name`                          | Diagnose a PR in an explicit repository                                    |
 | `openslack pr doctor <n> --auth auto\|app\|token\|dry-run`           | Select the GitHub evidence mode                                            |
 | `openslack pr doctor <n> --dry-run`                                  | Show the simulated diagnosis plan only; no governance decision is produced |
@@ -685,6 +691,25 @@ payloads, endpoints, credentials, or vendor responses.
 | `openslack pr merge <n>`                                             | Merge PR after all gates pass                                              |
 | `openslack pr cleanup-branch <n>`                                    | Preview governed remote branch cleanup using live evidence                 |
 | `openslack pr cleanup-branch <n> --execute`                          | Conditionally delete the merged PR's remote branch                         |
+
+### Task-linked PR readiness
+
+Status, review, recommendation, doctor, watch, and merge use live PR and claim
+evidence. Use a standalone `openslack-task-link` comment in the PR body.
+Fenced examples, quotations, and prose references carry no task association.
+
+| Reason code | Remediation |
+| --- | --- |
+| `CLAIM_LEASE_NOT_CURRENT` | The current owner renews the live ref using the suggested repository-scoped heartbeat command. |
+| `CLAIM_REF_NOT_FOUND` | Confirm task eligibility, reclaim the Issue, and record review for the same PR. |
+| `CLAIM_REVIEW_EVIDENCE_REQUIRED` or `CLAIM_REVIEW_TRANSITION_FAILED` | The current owner runs the suggested repository-scoped `claim review` command for the existing PR. |
+| `CLAIM_TASK_LINK_MISMATCH` or `CLAIM_TASK_LINK_INVALID` | Verify the canonical Issue task, owner, and ref, and correct the PR body's single structured marker. |
+| `CLAIM_REQUEUE_RECONCILIATION_REQUIRED` | A repository administrator verifies the intentional requeue and removes the stale done label. |
+| `CLAIM_RECONCILIATION_REQUIRED` | A repository administrator reconciles the old merge and current claim without altering the newer claim. |
+| `GITHUB_EVIDENCE_UNAVAILABLE` | Restore live GitHub access and rerun diagnosis. |
+
+A pending approval and a claim blocker appear independently. Once approval
+passes, an unresolved claim prerequisite produces `BLOCKED_CLAIM_REVIEW`.
 
 ### Merged PR branch cleanup
 

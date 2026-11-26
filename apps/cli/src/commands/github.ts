@@ -521,83 +521,111 @@ export function githubCommands(dependencies: GitHubCommandDependencies = {}): Co
   claim
     .command('heartbeat')
     .description('Extend a claim lease after verifying the ref and owner')
+    .option('--repo <owner/name>', 'Target GitHub repository')
     .requiredOption('--issue-number <n>', 'Issue number')
     .requiredOption('--agent-id <id>', 'Claim owner agent ID')
     .option(
       '--ttl-minutes <n>',
       'Lease extension in minutes (1-480); defaults to original claim TTL',
     )
-    .action(async (options: { issueNumber: string; agentId: string; ttlMinutes?: string }) => {
-      const issueNumber = positiveInteger(options.issueNumber);
-      const ttlMinutes =
-        options.ttlMinutes === undefined ? undefined : positiveInteger(options.ttlMinutes);
-      if (!issueNumber || (options.ttlMinutes !== undefined && (!ttlMinutes || ttlMinutes > 480))) {
-        console.error(
-          'CLAIM_INVALID_INPUT: issue number and TTL must be valid positive integers (TTL 1-480).',
-        );
-        process.exitCode = 1;
-        return;
-      }
-      const validatedTtlMinutes = ttlMinutes ?? undefined;
-      try {
-        printClaimLifecycleResult(
-          await heartbeatClaim({
-            issueNumber,
-            agentId: options.agentId,
-            ...(validatedTtlMinutes === undefined ? {} : { ttlMinutes: validatedTtlMinutes }),
-          }),
-        );
-      } catch {
-        console.error('CLAIM_API_UNAVAILABLE: claim heartbeat failed safely.');
-        process.exitCode = 1;
-      }
-    });
+    .action(
+      async (options: {
+        issueNumber: string;
+        agentId: string;
+        ttlMinutes?: string;
+        repo?: string;
+      }) => {
+        const issueNumber = positiveInteger(options.issueNumber);
+        const ttlMinutes =
+          options.ttlMinutes === undefined ? undefined : positiveInteger(options.ttlMinutes);
+        if (
+          !issueNumber ||
+          (options.ttlMinutes !== undefined && (!ttlMinutes || ttlMinutes > 480))
+        ) {
+          console.error(
+            'CLAIM_INVALID_INPUT: issue number and TTL must be valid positive integers (TTL 1-480).',
+          );
+          process.exitCode = 1;
+          return;
+        }
+        const validatedTtlMinutes = ttlMinutes ?? undefined;
+        try {
+          printClaimLifecycleResult(
+            await heartbeatClaim({
+              issueNumber,
+              agentId: options.agentId,
+              ...(options.repo === undefined ? {} : { repository: options.repo }),
+              ...(validatedTtlMinutes === undefined ? {} : { ttlMinutes: validatedTtlMinutes }),
+            }),
+          );
+        } catch {
+          console.error('CLAIM_API_UNAVAILABLE: claim heartbeat failed safely.');
+          process.exitCode = 1;
+        }
+      },
+    );
 
   claim
     .command('review')
     .description('Move a claimed Issue to review and verify its PR evidence')
+    .option('--repo <owner/name>', 'Target GitHub repository')
     .requiredOption('--issue-number <n>', 'Issue number')
     .requiredOption('--agent-id <id>', 'Claim owner agent ID')
     .requiredOption('--pr-url <url>', 'Canonical GitHub pull request URL')
-    .action(async (options: { issueNumber: string; agentId: string; prUrl: string }) => {
-      const issueNumber = positiveInteger(options.issueNumber);
-      if (!issueNumber) {
-        console.error('CLAIM_INVALID_INPUT: issue number must be a positive integer.');
-        process.exitCode = 1;
-        return;
-      }
-      try {
-        printClaimLifecycleResult(
-          await reviewClaim({ issueNumber, agentId: options.agentId, prUrl: options.prUrl }),
-        );
-      } catch {
-        console.error('CLAIM_API_UNAVAILABLE: claim review transition failed safely.');
-        process.exitCode = 1;
-      }
-    });
+    .action(
+      async (options: { issueNumber: string; agentId: string; prUrl: string; repo?: string }) => {
+        const issueNumber = positiveInteger(options.issueNumber);
+        if (!issueNumber) {
+          console.error('CLAIM_INVALID_INPUT: issue number must be a positive integer.');
+          process.exitCode = 1;
+          return;
+        }
+        try {
+          printClaimLifecycleResult(
+            await reviewClaim({
+              issueNumber,
+              agentId: options.agentId,
+              prUrl: options.prUrl,
+              ...(options.repo === undefined ? {} : { repository: options.repo }),
+            }),
+          );
+        } catch {
+          console.error('CLAIM_API_UNAVAILABLE: claim review transition failed safely.');
+          process.exitCode = 1;
+        }
+      },
+    );
 
   claim
     .command('complete')
     .description('Complete a claimed Issue and verify its final state')
+    .option('--repo <owner/name>', 'Target GitHub repository')
     .requiredOption('--issue-number <n>', 'Issue number')
     .requiredOption('--agent-id <id>', 'Claim owner agent ID')
     .requiredOption('--pr-url <url>', 'Canonical GitHub pull request URL')
-    .action(async (options: { issueNumber: string; agentId: string; prUrl: string }) => {
-      const issueNumber = positiveInteger(options.issueNumber);
-      if (!issueNumber) {
-        console.error('CLAIM_INVALID_INPUT: issue number must be a positive integer.');
-        process.exitCode = 1;
-        return;
-      }
-      try {
-        printClaimLifecycleResult(
-          await completeClaim({ issueNumber, agentId: options.agentId, prUrl: options.prUrl }),
-        );
-      } catch {
-        console.error('CLAIM_API_UNAVAILABLE: claim completion failed safely.');
-        process.exitCode = 1;
-      }
-    });
+    .action(
+      async (options: { issueNumber: string; agentId: string; prUrl: string; repo?: string }) => {
+        const issueNumber = positiveInteger(options.issueNumber);
+        if (!issueNumber) {
+          console.error('CLAIM_INVALID_INPUT: issue number must be a positive integer.');
+          process.exitCode = 1;
+          return;
+        }
+        try {
+          printClaimLifecycleResult(
+            await completeClaim({
+              issueNumber,
+              agentId: options.agentId,
+              prUrl: options.prUrl,
+              ...(options.repo === undefined ? {} : { repository: options.repo }),
+            }),
+          );
+        } catch {
+          console.error('CLAIM_API_UNAVAILABLE: claim completion failed safely.');
+          process.exitCode = 1;
+        }
+      },
+    );
 
   cmd.addCommand(claim);
 

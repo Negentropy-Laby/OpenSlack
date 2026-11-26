@@ -1,3 +1,4 @@
+import { readClaimComments } from './claim-comments.js';
 import { issueClaimRef } from '@openslack/core';
 import { DEFAULT_CLAIM_TTL_MINUTES, DEFAULT_CLAIM_HEARTBEAT_MINUTES } from './claim-defaults.js';
 import { randomUUID } from 'node:crypto';
@@ -71,8 +72,6 @@ interface CurrentClaimMetadata extends ClaimMetadata {
   next_heartbeat_at: string;
 }
 
-const CLAIM_COMMENT_PAGE_SIZE = 100;
-const CLAIM_COMMENT_MAX_PAGES = 10;
 const CLAIM_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 const SHA256_PATTERN = /^[0-9a-f]{64}$/u;
 const RECOVERY_COMMAND = 'openslack github repair claims --apply' as const;
@@ -111,24 +110,6 @@ function snapshotInputOf(issue: {
     body: issue.body || '',
     updatedAt: typeof issue.updated_at === 'string' ? issue.updated_at : '',
   };
-}
-
-async function listClaimComments(client: GitHubClient, issueNumber: number) {
-  const comments: Array<{ body?: string | null }> = [];
-  for (let page = 1; page <= CLAIM_COMMENT_MAX_PAGES; page += 1) {
-    const response = await client.octokit.issues.listComments({
-      owner: client.owner,
-      repo: client.repo,
-      issue_number: issueNumber,
-      sort: 'created',
-      direction: 'desc',
-      per_page: CLAIM_COMMENT_PAGE_SIZE,
-      page,
-    });
-    comments.push(...response.data);
-    if (response.data.length < CLAIM_COMMENT_PAGE_SIZE) return comments;
-  }
-  throw new Error('Claim comment evidence exceeded the bounded read limit.');
 }
 
 async function claimRefExists(client: GitHubClient, issueNumber: number): Promise<boolean> {
@@ -339,7 +320,7 @@ async function confirmClaimEvidence(
     }
   }
   try {
-    const comments = await listClaimComments(client, issueNumber);
+    const comments = (await readClaimComments(client, issueNumber)).comments;
     return comments.some((comment) =>
       claimEvidenceMatches(parseClaimMetadata(comment.body), expected),
     );
@@ -354,7 +335,7 @@ async function reconcileExistingClaimProjection(
 ): Promise<void> {
   try {
     const claimRef = issueClaimRef(issueNumber, 'canonical');
-    const claims = (await listClaimComments(client, issueNumber))
+    const claims = (await readClaimComments(client, issueNumber)).comments
       .map((comment) => parseClaimMetadata(comment.body))
       .filter(
         (claim): claim is ClaimMetadata =>

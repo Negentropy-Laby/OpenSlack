@@ -6,11 +6,13 @@ import {
   heartbeatClaim,
   parseClaimReviewMetadata,
   parseHeartbeatMetadata,
+  resolveTaskPublicationId,
   reviewClaim,
   type ClaimLifecycleDependencies,
 } from '../claim-lifecycle.js';
 import { renderClaimComment, type ClaimMetadata } from '../claims.js';
 import { repairExpiredClaims } from '../repair.js';
+import { renderIssueTaskManifest } from '../manifest.js';
 
 interface HarnessOptions {
   owner?: string;
@@ -49,7 +51,7 @@ function claimComment(agentId = 'agent-one', overrides: Partial<ClaimMetadata> =
 function createHarness(options: HarnessOptions = {}) {
   let refExists = options.refExists ?? true;
   const labels = new Set(options.labels ?? ['openslack:claimed', 'openslack:running']);
-  const comments: Array<{ id: number; body: string }> = [
+  const comments: Array<{ id: number; body: string; created_at?: string }> = [
     { id: 1, body: claimComment(options.owner ?? 'agent-one') },
   ];
   const fail = options.fail ?? new Set<string>();
@@ -102,7 +104,7 @@ function createHarness(options: HarnessOptions = {}) {
       addLabels: vi.fn(async ({ labels: added }: { labels: string[] }) => {
         if (fail.has('addLabels')) throw statusError(503);
         for (const label of added) labels.add(label);
-        return { data: {} };
+        return { data: [...labels].map((name) => ({ name })) };
       }),
       get: vi.fn(async () => {
         if (fail.has('getIssue')) throw statusError(503);
@@ -206,6 +208,24 @@ describe('checkTaskClaimReview', () => {
     expect(octokit.issues.createComment).not.toHaveBeenCalled();
   });
 
+  it('matches repository names case-insensitively and scopes the recovery command', async () => {
+    const harness = createHarness();
+    await reviewClaim(reviewInput, harness.dependencies);
+    const record = harness.comments.at(-1)!;
+    record.body = record.body.replace('github.com/acme/project', 'github.com/Acme/Project');
+    const opts = { repoFullName: 'acme/project' };
+    await expect(
+      checkTaskClaimReview(7, taskLink, opts, harness.dependencies),
+    ).resolves.toBeUndefined();
+    await expect(
+      checkTaskClaimReview(8, taskLink, opts, harness.dependencies),
+    ).resolves.toMatchObject({
+      code: 'CLAIM_REVIEW_EVIDENCE_REQUIRED',
+      recommendation: expect.stringContaining('--repo acme/project'),
+    });
+    expect(harness.dependencies.getClient).toHaveBeenLastCalledWith(expect.objectContaining(opts));
+  });
+
   it('blocks a still-present expired lease and accepts a current heartbeat', async () => {
     const { dependencies } = createHarness();
     await expect(reviewClaim(reviewInput, dependencies)).resolves.toMatchObject({
@@ -295,7 +315,6 @@ describe('checkTaskClaimReview', () => {
   it.each([
     [{ owner: 'another-agent' }, 'CLAIM_OWNER_MISMATCH'],
     [{ refExists: false }, 'CLAIM_REF_NOT_FOUND'],
-    [{ fail: new Set(['listComments']) }, 'CLAIM_API_UNAVAILABLE'],
   ] as const)(
     'blocks when claim evidence is invalid or unreadable (%j)',
     async (options, reason) => {
@@ -305,6 +324,51 @@ describe('checkTaskClaimReview', () => {
       });
     },
   );
+
+  it('reports unavailable claim evidence with the live repository and PR', async () => {
+    const { dependencies } = createHarness({ fail: new Set(['listComments']) });
+    await expect(checkTaskClaimReview(7, taskLink, {}, dependencies)).rejects.toMatchObject({
+      code: 'GITHUB_EVIDENCE_UNAVAILABLE',
+      status: 503,
+      owner: 'acme',
+      repo: 'project',
+      prNumber: 7,
+    });
+  });
+});
+
+describe('task publication preflight', () => {
+  it('resolves an exact checkout alias to the live manifest task ID', async () => {
+    const harness = createHarness();
+    harness.octokit.issues.get.mockImplementation(async () => ({
+      data: {
+        labels: [],
+        state: 'open',
+        body: renderIssueTaskManifest({
+          schema: 'openslack.github_issue_task.v1',
+          task_id: 'TASK-2026-000042',
+          title: 'Fix a task',
+          status: 'claimed',
+          agent_type: 'codex',
+          risk_level: 'medium',
+        }),
+      },
+    }));
+    await expect(
+      resolveTaskPublicationId(
+        { issueNumber: 42, agentId: 'agent-one', taskId: 'ISSUE-42' },
+        {},
+        harness.dependencies,
+      ),
+    ).resolves.toBe('TASK-2026-000042');
+    await expect(
+      resolveTaskPublicationId(
+        { issueNumber: 42, agentId: 'agent-one', taskId: 'ISSUE-41' },
+        {},
+        harness.dependencies,
+      ),
+    ).rejects.toThrow('CLAIM_TASK_LINK_MISMATCH');
+  });
 });
 
 const invalidInputHandlers = {
@@ -533,7 +597,7 @@ describe('strict claim lifecycle', () => {
     expect(harness.octokit.issues.listComments).toHaveBeenCalledTimes(2);
   });
 
-  it('fails closed when ownership evidence exceeds the bounded comment history', async () => {
+  it('finds authoritative evidence after more than one thousand older comments', async () => {
     const harness = createHarness();
     for (let index = 0; index < 1_000; index += 1) {
       harness.comments.push({ id: index + 100, body: `ordinary comment ${index}` });
@@ -544,9 +608,21 @@ describe('strict claim lifecycle', () => {
         { issueNumber: 42, agentId: 'agent-one', ttlMinutes: 60 },
         harness.dependencies,
       ),
-    ).resolves.toMatchObject({ outcome: 'failed', errorCode: 'CLAIM_API_UNAVAILABLE' });
+    ).resolves.toMatchObject({ outcome: 'completed' });
+    expect(harness.octokit.issues.createComment).toHaveBeenCalledOnce();
+    expect(harness.octokit.issues.listComments).toHaveBeenCalledTimes(11);
+  });
+
+  it('fails closed if comment pagination repeats a full page', async () => {
+    const harness = createHarness();
+    harness.octokit.issues.listComments.mockResolvedValue({
+      data: Array.from({ length: 100 }, (_, id) => ({ id: id + 1, body: 'ordinary comment' })),
+    });
+    await expect(heartbeatClaim(reviewInput, harness.dependencies)).resolves.toMatchObject({
+      outcome: 'failed',
+      errorCode: 'CLAIM_EVIDENCE_SCAN_INCOMPLETE',
+    });
     expect(harness.octokit.issues.createComment).not.toHaveBeenCalled();
-    expect(harness.octokit.issues.listComments).toHaveBeenCalledTimes(10);
   });
 
   it('moves a claim to review and verifies both label and exact PR evidence', async () => {
@@ -558,6 +634,80 @@ describe('strict claim lifecycle', () => {
       pr_url: reviewInput.prUrl,
       agent_id: 'agent-one',
     });
+  });
+
+  it('rejects an intentional requeue with a stale done label before writes', async () => {
+    const harness = createHarness({ labels: ['openslack:running', 'openslack:done'] });
+    const result = await reviewClaim(
+      { ...reviewInput, repository: 'acme/project' },
+      harness.dependencies,
+    );
+    expect(result).toMatchObject({
+      outcome: 'failed',
+      errorCode: 'CLAIM_REQUEUE_RECONCILIATION_REQUIRED',
+      guidance: expect.stringContaining('remove the stale openslack:done label'),
+    });
+    expect(harness.dependencies.getClient).toHaveBeenCalledWith(
+      expect.objectContaining({
+        repoFullName: 'acme/project',
+      }),
+    );
+    expect(harness.octokit.issues.removeLabel).not.toHaveBeenCalled();
+    expect(harness.octokit.issues.createComment).not.toHaveBeenCalled();
+  });
+
+  it('ignores malformed history only when server metadata proves it was superseded', async () => {
+    const harness = createHarness();
+    const current = harness.comments[0];
+    current.created_at = '2026-07-14T00:00:01Z';
+    harness.comments.unshift({
+      id: 0,
+      created_at: '2026-07-14T00:00:00Z',
+      body: '<!-- openslack-claim { -->',
+    });
+    await expect(heartbeatClaim(reviewInput, harness.dependencies)).resolves.toMatchObject({
+      outcome: 'completed',
+    });
+    harness.comments.push({
+      id: 15,
+      created_at: '2026-07-14T00:31:00Z',
+      body: '<!-- openslack-claim { -->',
+    });
+    await expect(heartbeatClaim(reviewInput, harness.dependencies)).resolves.toMatchObject({
+      outcome: 'failed',
+      errorCode: 'CLAIM_POSTCONDITION_FAILED',
+    });
+    expect(harness.octokit.issues.createComment).toHaveBeenCalledOnce();
+  });
+
+  it('uses GitHub time for legacy claim leases and review order despite client clock skew', async () => {
+    const harness = createHarness();
+    harness.comments[0] = {
+      id: 1,
+      created_at: '2026-07-14T00:00:00Z',
+      body: claimComment('agent-one', {
+        claimed_at: '2026-07-14T00:00:05Z',
+        expires_at: '2026-07-14T01:00:05Z',
+      }),
+    };
+    const list = harness.octokit.issues.listComments.getMockImplementation()!;
+    harness.octokit.issues.listComments.mockImplementation(async (request) => ({
+      ...(await list(request)),
+      headers: { date: 'Tue, 14 Jul 2026 00:00:03 GMT' },
+    }));
+    const create = harness.octokit.issues.createComment.getMockImplementation()!;
+    harness.octokit.issues.createComment.mockImplementation(async (request) => {
+      const result = await create(request);
+      harness.comments.at(-1)!.created_at = '2026-07-14T00:00:03Z';
+      return result;
+    });
+    harness.dependencies.now = () => new Date('2026-07-14T01:01:00Z');
+    await expect(reviewClaim(reviewInput, harness.dependencies)).resolves.toMatchObject({
+      outcome: 'completed',
+    });
+    await expect(
+      checkTaskClaimReview(7, taskLink, {}, harness.dependencies),
+    ).resolves.toBeUndefined();
   });
 
   it('rejects stale refs and PR URLs outside the selected repository', async () => {
@@ -589,6 +739,9 @@ describe('strict claim lifecycle', () => {
 
   it('returns recoverable partial state when review postconditions cannot be re-read', async () => {
     const harness = createHarness({ fail: new Set(['getIssue']) });
+    harness.octokit.issues.get.mockResolvedValueOnce({
+      data: { labels: [{ name: 'openslack:running' }] },
+    });
     const result = await reviewClaim(reviewInput, harness.dependencies);
     expect(result).toMatchObject({
       outcome: 'partial',
@@ -598,8 +751,28 @@ describe('strict claim lifecycle', () => {
     });
   });
 
+  it('retains verified review labels if malformed evidence arrives after writes', async () => {
+    const harness = createHarness();
+    const create = harness.octokit.issues.createComment.getMockImplementation()!;
+    harness.octokit.issues.createComment.mockImplementationOnce(async (request) => {
+      const result = await create(request);
+      harness.comments.push({ id: 99, body: '<!-- openslack-claim { -->' });
+      return result;
+    });
+    const result = await reviewClaim(reviewInput, harness.dependencies);
+    expect(result).toMatchObject({
+      outcome: 'partial',
+      postconditions: expect.arrayContaining([{ name: 'review_label_present', satisfied: true }]),
+      guidance: expect.stringContaining('Verify the current claim'),
+    });
+    expect(result.recoveryCommand).toBeUndefined();
+  });
+
   it('does not duplicate exact PR evidence when a partial review transition is retried', async () => {
     const harness = createHarness({ fail: new Set(['getIssue']) });
+    harness.octokit.issues.get.mockResolvedValueOnce({
+      data: { labels: [{ name: 'openslack:running' }] },
+    });
     expect(await reviewClaim(reviewInput, harness.dependencies)).toMatchObject({
       outcome: 'partial',
       errorCode: 'CLAIM_PARTIAL_STATE',
@@ -656,19 +829,23 @@ describe('strict claim lifecycle', () => {
     expect(harness.octokit.git.deleteRef).not.toHaveBeenCalled();
   });
 
-  it('refuses an older merged PR even after review is recorded against a new claim', async () => {
+  it('refuses to review or complete an older merged PR against a newer claim', async () => {
     const harness = createHarness({ prMergedAt: '2026-07-14T00:35:00Z' });
     harness.comments.push({ id: 8, body: claimComment('agent-one', renewedClaim) });
     harness.dependencies.now = () => new Date('2026-07-14T00:50:00Z');
     await expect(reviewClaim(reviewInput, harness.dependencies)).resolves.toMatchObject({
-      outcome: 'completed',
+      outcome: 'failed',
+      errorCode: 'CLAIM_RECONCILIATION_REQUIRED',
+      guidance: expect.stringContaining('Preserve the newer claim'),
     });
     harness.octokit.issues.addLabels.mockClear();
     await expect(completeClaim(reviewInput, harness.dependencies)).resolves.toMatchObject({
       outcome: 'failed',
-      errorCode: 'CLAIM_POSTCONDITION_FAILED',
+      errorCode: 'CLAIM_RECONCILIATION_REQUIRED',
+      postconditions: expect.arrayContaining([{ name: 'pr_merged', satisfied: true }]),
     });
     expect(harness.octokit.issues.addLabels).not.toHaveBeenCalled();
+    expect(harness.octokit.issues.createComment).not.toHaveBeenCalled();
     expect(harness.octokit.git.deleteRef).not.toHaveBeenCalled();
   });
 
@@ -701,8 +878,8 @@ describe('strict claim lifecycle', () => {
       return { data: { labels: [{ name: 'openslack:running' }] } };
     });
     await expect(completeClaim(reviewInput, harness.dependencies)).resolves.toMatchObject({
-      outcome: 'partial',
-      errorCode: 'CLAIM_PARTIAL_STATE',
+      outcome: 'failed',
+      errorCode: 'CLAIM_RECONCILIATION_REQUIRED',
     });
     expect(harness.octokit.issues.removeLabel).not.toHaveBeenCalled();
     expect(harness.octokit.issues.addLabels).not.toHaveBeenCalled();
@@ -716,7 +893,7 @@ describe('strict claim lifecycle', () => {
     const result = await completeClaim(reviewInput, harness.dependencies);
     expect(result).toMatchObject({
       outcome: 'partial',
-      errorCode: 'CLAIM_COMPLETION_FAILED',
+      errorCode: 'CLAIM_PARTIAL_STATE',
       recoveryCommand:
         'openslack github claim complete --issue-number 42 --agent-id agent-one --pr-url https://github.com/acme/project/pull/7',
     });
@@ -726,6 +903,9 @@ describe('strict claim lifecycle', () => {
     const harness = createHarness();
     expect((await reviewClaim(reviewInput, harness.dependencies)).outcome).toBe('completed');
     harness.fail.add('getIssue');
+    harness.octokit.issues.get.mockResolvedValueOnce({
+      data: { labels: [{ name: 'openslack:review' }] },
+    });
     const result = await completeClaim(reviewInput, harness.dependencies);
     expect(result).toMatchObject({
       outcome: 'partial',
@@ -733,6 +913,21 @@ describe('strict claim lifecycle', () => {
       recoveryCommand:
         'openslack github claim complete --issue-number 42 --agent-id agent-one --pr-url https://github.com/acme/project/pull/7',
     });
+    expect(harness.octokit.git.deleteRef).toHaveBeenCalledOnce();
+    expect(harness.labels.has('openslack:done')).toBe(true);
+    expect(result.postconditions).toContainEqual({ name: 'done_label_present', satisfied: true });
+  });
+
+  it('reports pre-mutation label failures as failed without a recovery command', async () => {
+    const harness = createHarness();
+    await reviewClaim(reviewInput, harness.dependencies);
+    harness.octokit.issues.addLabels.mockClear();
+    harness.fail.add('getIssue');
+    const result = await completeClaim(reviewInput, harness.dependencies);
+    expect(result).toMatchObject({ outcome: 'failed', errorCode: 'CLAIM_API_UNAVAILABLE' });
+    expect(result.recoveryCommand).toBeUndefined();
+    expect(harness.octokit.issues.addLabels).not.toHaveBeenCalled();
+    expect(harness.octokit.git.deleteRef).not.toHaveBeenCalled();
   });
 
   it('never returns raw transport errors or canaries', async () => {

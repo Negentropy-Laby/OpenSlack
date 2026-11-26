@@ -16,12 +16,25 @@ export async function diagnoseLivePR(
   const diagnosed = diagnosePR(report, policy, codeowners);
   if (
     !report.body ||
-    (diagnosed.decision !== 'READY_TO_MERGE' && diagnosed.decision !== 'NEEDS_HUMAN_APPROVAL')
+    ![
+      'READY_TO_MERGE',
+      'NEEDS_HUMAN_APPROVAL',
+      'NEEDS_CODEOWNER_APPROVAL',
+      'BOT_APPROVAL_IGNORED',
+    ].includes(diagnosed.decision)
   ) {
     return diagnosed;
   }
   const blocker = await checkTaskClaimReview(report.prNumber, report.body, options);
-  return blocker ? { ...diagnosed, ...blocker, decision: 'BLOCKED_POLICY' } : diagnosed;
+  if (!blocker) return diagnosed;
+  if (diagnosed.decision !== 'READY_TO_MERGE') return { ...diagnosed, claimReviewIssue: blocker };
+  return {
+    ...diagnosed,
+    claimReviewIssue: blocker,
+    decision: 'BLOCKED_CLAIM_REVIEW',
+    reason: blocker.reason,
+    recommendation: blocker.recommendation,
+  };
 }
 
 export function diagnosePR(

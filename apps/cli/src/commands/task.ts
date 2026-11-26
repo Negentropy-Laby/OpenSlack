@@ -11,7 +11,11 @@ import {
   resolveAgentPrincipal,
 } from '@openslack/runtime';
 import { recordEvent } from '@openslack/collaboration';
-import { renderClaimLifecycleResult, reviewClaim } from '@openslack/github';
+import {
+  renderClaimLifecycleResult,
+  resolveTaskPublicationId,
+  reviewClaim,
+} from '@openslack/github';
 
 function findRepoRoot(): string {
   let dir = process.cwd();
@@ -243,9 +247,35 @@ export function taskCommands(): Command {
       }
       const { principal, snapshot } = resolved;
 
+      let linkedTaskId: string | undefined;
+      if (issueNumber !== undefined) {
+        try {
+          linkedTaskId = await resolveTaskPublicationId(
+            {
+              issueNumber,
+              agentId: options.agentId,
+              taskId: options.taskId,
+            },
+            { cwd: root },
+          );
+        } catch (error) {
+          const code =
+            error instanceof Error && /^CLAIM_[A-Z_]+$/u.test(error.message)
+              ? error.message
+              : 'CLAIM_API_UNAVAILABLE';
+          console.error(
+            code === 'CLAIM_REQUEUE_RECONCILIATION_REQUIRED'
+              ? `${code}: Have a repository administrator verify the requeue and current claim, then remove the stale openslack:done label.`
+              : `${code}: Verify the live Issue manifest, claim owner, lease, and task ID before publishing.`,
+          );
+          process.exitCode = 1;
+          return;
+        }
+      }
       const result = await proposeWorkspacePR({
         agentId: options.agentId,
         taskId: options.taskId,
+        ...(linkedTaskId === undefined ? {} : { linkedTaskId }),
         runId: options.runId,
         issueNumber,
         changedPaths: paths,

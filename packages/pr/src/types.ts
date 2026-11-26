@@ -1,4 +1,5 @@
 import type { RiskZone } from '@openslack/kernel';
+import type { ClaimReviewIssue } from '@openslack/github';
 
 export type PRReviewState =
   | 'DISCOVERED'
@@ -11,6 +12,8 @@ export type PRReviewState =
   | 'NEEDS_CHANGES'
   | 'BLOCKED_BASE_BRANCH'
   | 'BLOCKED_POLICY'
+  | 'BLOCKED_CLAIM_REVIEW'
+  | 'EVIDENCE_UNAVAILABLE'
   | 'BLOCKED_SELF_REVIEW'
   | 'BLOCKED_BLACK_ZONE'
   | 'BLOCKED_DRAFT'
@@ -98,6 +101,7 @@ export interface ProfileSyncGateResult {
 }
 
 export interface PRReviewReport {
+  claimReviewIssue?: ClaimReviewIssue;
   requiredCheckIssue?: Pick<PRReviewReport, 'decision' | 'reason'>;
   merged?: boolean;
   headRepoFullName?: string;
