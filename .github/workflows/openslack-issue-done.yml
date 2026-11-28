@@ -36,31 +36,19 @@ jobs:
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd
         with:
           script: |
-            const body = context.payload.pull_request.body || '';
-            const match = body.match(/<!--\s*openslack-task-link\s*([\s\S]*?)-->/);
-            if (!match) {
+            const { pathToFileURL } = require('node:url');
+            const parserUrl = pathToFileURL(`${process.env.GITHUB_WORKSPACE}/packages/core/dist/task-link.js`);
+            const { parseTaskLinkMarker } = await import(parserUrl.href);
+            const result = parseTaskLinkMarker(context.payload.pull_request.body);
+            if (result.state === 'ABSENT') {
               core.info('No structured OpenSlack task link found in PR body.');
               return;
             }
-            let taskLink;
-            try {
-              taskLink = JSON.parse(match[1].trim());
-            } catch {
-              core.setFailed('The OpenSlack task-link marker is not valid JSON.');
+            if (result.state === 'INVALID') {
+              core.setFailed('The OpenSlack task-link marker is invalid or ambiguous.');
               return;
             }
-            const expectedRef = `refs/heads/openslack/claims/issue-${taskLink.issue_number}`;
-            if (
-              taskLink.schema !== 'openslack.task_link.v1' ||
-              !Number.isSafeInteger(taskLink.issue_number) ||
-              taskLink.issue_number <= 0 ||
-              typeof taskLink.agent_id !== 'string' ||
-              !/^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/.test(taskLink.agent_id) ||
-              taskLink.claim_ref !== expectedRef
-            ) {
-              core.setFailed('The OpenSlack task-link marker failed schema validation.');
-              return;
-            }
+            const taskLink = result.metadata;
             core.setOutput('issue_number', String(taskLink.issue_number));
             core.setOutput('agent_id', taskLink.agent_id);
             core.info(`Found structured OpenSlack task link for issue #${taskLink.issue_number}.`);

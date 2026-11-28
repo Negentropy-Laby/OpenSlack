@@ -62,6 +62,25 @@ describe('proposeWorkspacePR authorization', () => {
     });
   });
 
+  it('refuses to publish a generated task link with an invalid run ID', async () => {
+    const publish = vi.fn();
+    await expect(
+      proposeWorkspacePR({
+        agentId: 'test-agent',
+        taskId: 'ISSUE-42',
+        linkedTaskId: 'TASK-42',
+        runId: 'group/run',
+        issueNumber: 42,
+        changedPaths: ['docs/readme.md'],
+        deliveryService: { publish },
+      }),
+    ).resolves.toMatchObject({
+      success: false,
+      errors: [expect.stringContaining('CLAIM_TASK_LINK_INVALID')],
+    });
+    expect(publish).not.toHaveBeenCalled();
+  });
+
   it.each(['../bad', 'with space', ':bad', 'x'.repeat(129)])(
     'rejects unsafe task/run identifiers %s',
     (identifier) => {
@@ -194,7 +213,8 @@ describe('proposeWorkspacePR authorization', () => {
       }));
       const result = await proposeWorkspacePR({
         agentId: 'test-agent',
-        taskId: 'TASK-7',
+        taskId: 'ISSUE-42',
+        linkedTaskId: 'TASK-7',
         runId: 'RUN-7',
         issueNumber: 42,
         changedPaths: ['work.txt'],
@@ -210,14 +230,20 @@ describe('proposeWorkspacePR authorization', () => {
       expect(parseTaskLinkMetadata(result.prBody)).toMatchObject({
         issue_number: 42,
         agent_id: 'test-agent',
+        task_id: 'TASK-7',
         claim_ref: 'refs/heads/openslack/claims/issue-42',
       });
       expect(publish).toHaveBeenCalledWith(
-        expect.objectContaining({ rootDir: root, owner: 'acme', repo: 'project' }),
+        expect.objectContaining({
+          rootDir: root,
+          owner: 'acme',
+          repo: 'project',
+          branch: 'agent/test-agent/ISSUE-42/RUN-7',
+        }),
       );
       expect(
         execFileSync('git', ['log', '-1', '--pretty=%s'], { cwd: root, encoding: 'utf-8' }).trim(),
-      ).toBe('runtime: deliver TASK-7 workspace changes');
+      ).toBe('runtime: deliver ISSUE-42 workspace changes');
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

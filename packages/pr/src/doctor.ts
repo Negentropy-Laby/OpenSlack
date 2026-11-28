@@ -1,3 +1,4 @@
+import { checkTaskClaimReview, type GitHubClientOptions } from '@openslack/github';
 import type { PRReviewReport, PRReviewState, PRReviewPolicy } from './types.js';
 import { filterValidApprovals, isBotUser } from './approvals.js';
 import { detectDeadlock } from './deadlock.js';
@@ -5,6 +6,36 @@ import { evaluateWorkflowGate, isCoreWorkflowArtifactPath } from './workflow-gat
 import { evaluateProfileSyncGate } from './profile-sync-gate.js';
 import { evaluatePRBasePolicy } from './base-policy.js';
 import { requiredCheckBlocker } from './required-checks.js';
+
+export async function diagnoseLivePR(
+  report: PRReviewReport,
+  policy: PRReviewPolicy,
+  codeowners: string[],
+  options?: GitHubClientOptions,
+): Promise<PRReviewReport> {
+  const diagnosed = diagnosePR(report, policy, codeowners);
+  if (
+    !report.body ||
+    ![
+      'READY_TO_MERGE',
+      'NEEDS_HUMAN_APPROVAL',
+      'NEEDS_CODEOWNER_APPROVAL',
+      'BOT_APPROVAL_IGNORED',
+    ].includes(diagnosed.decision)
+  ) {
+    return diagnosed;
+  }
+  const blocker = await checkTaskClaimReview(report.prNumber, report.body, options);
+  if (!blocker) return diagnosed;
+  if (diagnosed.decision !== 'READY_TO_MERGE') return { ...diagnosed, claimReviewIssue: blocker };
+  return {
+    ...diagnosed,
+    claimReviewIssue: blocker,
+    decision: 'BLOCKED_CLAIM_REVIEW',
+    reason: blocker.reason,
+    recommendation: blocker.recommendation,
+  };
+}
 
 export function diagnosePR(
   report: PRReviewReport,

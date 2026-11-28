@@ -110,4 +110,21 @@ describe('shared cleanup contracts', () => {
     const body = `<!-- openslack-task-link ${JSON.stringify({ schema: 'openslack.task_link.v1', issue_number: 42, agent_id: taskId, task_id: taskId, run_id: taskId, claim_ref: issueClaimRef(42, 'canonical') })} -->`;
     expect(parseTaskLinkMarker(body).state).toBe('VALID');
   });
+  it.each([
+    '```html\n<!-- openslack-task-link {} -->\n```',
+    '~~~~\n<!-- openslack-task-link {} -->\n~~~\n<!-- openslack-task-link {} -->\n~~~~',
+    '> <!-- openslack-task-link {} -->',
+    'Example: `<!-- openslack-task-link {} -->`',
+    '    <!-- openslack-task-link {} -->',
+    '<!-- example\n<!-- openslack-task-link {} -->',
+  ])('ignores examples without creating a task association (%s)', (body) => {
+    expect(parseTaskLinkMarker(body)).toEqual({ state: 'ABSENT' });
+  });
+  it('requires a single complete standalone marker', () => {
+    const body =
+      '<!-- openslack-task-link {"schema":"openslack.task_link.v1","issue_number":1,"agent_id":"a","task_id":"t","run_id":"r","claim_ref":"refs/heads/openslack/claims/issue-1"} -->';
+    expect(parseTaskLinkMarker(`See openslack-task-link.\n\n${body}`).state).toBe('VALID');
+    expect(parseTaskLinkMarker(`${body}\n${body}`).state).toBe('INVALID');
+    expect(parseTaskLinkMarker(body.slice(0, -3)).state).toBe('INVALID');
+  });
 });

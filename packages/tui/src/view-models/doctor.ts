@@ -14,6 +14,7 @@ export interface DoctorReportInput {
   checks: Array<{ name: string; status: string; conclusion: string | null }>;
   reviews: Array<{ user: string; state: string }>;
   humanApprovals: Array<{ user: string }>;
+  claimReviewIssue?: { reason: string; recommendation: string };
 }
 
 export interface ProfileSyncGate {
@@ -106,6 +107,15 @@ export function mapDoctorToViewModel(
       detail: `Zone: ${report.riskZone.toUpperCase()}`,
     },
   ];
+  if (report.claimReviewIssue) {
+    gates.push({
+      name: 'Claim review',
+      status: 'FAIL',
+      detail: sanitizeTerminalText(
+        `${report.claimReviewIssue.reason} ${report.claimReviewIssue.recommendation}`,
+      ),
+    });
+  }
 
   return {
     prNumber: report.prNumber,

@@ -42,7 +42,7 @@ import type {
 } from '@openslack/operator';
 import {
   classifyPRReport,
-  diagnosePR,
+  diagnoseLivePR,
   fetchPRDetails,
   loadPRCodeownerEvidence,
   loadPRReviewPolicy,
@@ -1366,9 +1366,13 @@ export function createDefaultOpenSlackReadModelPorts(
       if (objectId) filter.objectId = objectId;
       const anchors = filterEvents(eventsForWindow(rootDir, 0), filter);
       const cutoff = eventWindowCutoff(sinceHours);
-      const events = anchors.filter(event => Date.parse(event.timestamp) >= cutoff).slice(0, limit);
-      const execution = objectKind === 'workflow' && objectId
-        ? readHarnessExecutionProjection(rootDir, objectId, anchors) : undefined;
+      const events = anchors
+        .filter((event) => Date.parse(event.timestamp) >= cutoff)
+        .slice(0, limit);
+      const execution =
+        objectKind === 'workflow' && objectId
+          ? readHarnessExecutionProjection(rootDir, objectId, anchors)
+          : undefined;
       return {
         generatedAt: new Date().toISOString(),
         events: events.map(eventDto),
@@ -1407,7 +1411,7 @@ export function createDefaultOpenSlackReadModelPorts(
       const classified = classifyPRReport(fetched);
       const policy = loadPRReviewPolicy(rootDir, { strict: true });
       const codeowners = (await loadPRCodeownerEvidence(classified, options)).owners;
-      const report = diagnosePR(classified, policy, codeowners);
+      const report = await diagnoseLivePR(classified, policy, codeowners, options);
       return {
         generatedAt: new Date().toISOString(),
         headSha: report.headSha ?? null,

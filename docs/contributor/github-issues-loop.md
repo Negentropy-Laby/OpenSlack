@@ -287,6 +287,22 @@ The strict claim lifecycle currently accepts canonical `https://github.com/.../p
 URLs only. GitHub Enterprise Server hosts are outside the v0.2.0 support boundary and fail closed
 with `CLAIM_INVALID_INPUT`.
 
+`task sync --issue-number` checks the live claim, lease, and Issue task ID
+before publication. The exact `ISSUE-<number>` alias from checkout preserves
+the branch name and records the manifest task ID in the PR body. Use
+`--repo owner/name` with claim heartbeat, review, or completion to target a
+different checkout's repository.
+
+If a lease expires while approvals are pending, the claim owner renews the
+same ref with `github claim heartbeat`. If the ref is absent, verify the
+Issue is eligible, reclaim it, and record review for the existing PR against
+the new generation. If an old PR already merged before the current claim,
+both review and completion return `CLAIM_RECONCILIATION_REQUIRED`. An
+administrator should compare the merge time, current claim, and owner's work,
+preserve the newer ref, and use the current claim's own PR for completion.
+When an intentional requeue still has `openslack:done`, an administrator
+verifies the requeue and current owner before removing the stale label.
+
 ## Authentication
 
 Uses the three-tier auth model from `docs/operations/github-automation.md`:

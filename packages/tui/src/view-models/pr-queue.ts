@@ -1,5 +1,11 @@
 import { sanitizeTerminalText } from '../sanitize.js';
 
+interface QueueClaimReviewIssue {
+  reason: string;
+  recommendation: string;
+  owner: string;
+}
+
 export interface WorkflowGateCriterion {
   name: string;
   passed: boolean;
@@ -27,6 +33,7 @@ export interface PrQueueViewModel {
     canMerge: boolean;
     riskZone: string;
     nextAction: string;
+    claimReviewIssue?: QueueClaimReviewIssue;
     rerunCommand: string;
     workflowGate: WorkflowGateViewModel;
   }>;
@@ -41,6 +48,7 @@ export interface PrQueueInputItem {
   blockerCategory: string;
   owner: string;
   nextAction: string;
+  claimReviewIssue?: QueueClaimReviewIssue;
   rerunCommand: string;
   riskZone: string;
   workflowGate?: {
@@ -87,6 +95,15 @@ export function mapPrQueueToViewModel(items: PrQueueInputItem[]): PrQueueViewMod
         canMerge: item.canMerge,
         riskZone: s(item.riskZone),
         nextAction: s(item.nextAction),
+        ...(item.claimReviewIssue
+          ? {
+              claimReviewIssue: {
+                reason: s(item.claimReviewIssue.reason),
+                recommendation: s(item.claimReviewIssue.recommendation),
+                owner: s(item.claimReviewIssue.owner),
+              },
+            }
+          : {}),
         rerunCommand: s(item.rerunCommand),
         workflowGate: {
           touched,

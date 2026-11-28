@@ -1,8 +1,9 @@
-import { listOpenPRs } from '@openslack/github';
+import { GitHubEvidenceUnavailableError, listOpenPRs } from '@openslack/github';
+import type { GitHubClientOptions } from '@openslack/github';
 import type { PRReviewReport, PRReviewState } from './types.js';
 import { filterValidApprovals, isBotUser } from './approvals.js';
 import { classifyPRReport } from './classify.js';
-import { diagnosePR } from './doctor.js';
+import { diagnoseLivePR } from './doctor.js';
 import { loadPRReviewPolicy } from './policy.js';
 import { fetchPRDetails } from './fetch.js';
 import { loadPRCodeownerEvidence } from './codeowners.js';
@@ -15,6 +16,8 @@ export type PRBlockerCategory =
   | 'risk_zone'
   | 'codeowners'
   | 'mergeability'
+  | 'claim_review'
+  | 'evidence'
   | 'branch_policy'
   | 'deadlock'
   | 'draft'
@@ -31,6 +34,7 @@ export interface PRDecisionSummary {
   owner: PRDecisionOwner;
   nextAction: string;
   evidence: string[];
+  claimReviewIssue?: PRReviewReport['claimReviewIssue'];
   rerunCommand: string;
 }
 
@@ -63,6 +67,10 @@ function categoryFor(decision: PRReviewState): PRBlockerCategory {
       return 'branch_policy';
     case 'BLOCKED_POLICY':
       return 'mergeability';
+    case 'BLOCKED_CLAIM_REVIEW':
+      return 'claim_review';
+    case 'EVIDENCE_UNAVAILABLE':
+      return 'evidence';
     default:
       return 'state';
   }
@@ -95,7 +103,7 @@ function nextActionFor(report: PRReviewReport, owner: PRDecisionOwner): string {
   if (report.decision === 'NEEDS_CODEOWNER_APPROVAL') {
     return 'Request CODEOWNER approval on GitHub.';
   }
-  if (report.decision === 'BLOCKED_BASE_BRANCH') {
+  if (report.decision === 'BLOCKED_BASE_BRANCH' || report.decision === 'BLOCKED_CLAIM_REVIEW') {
     return report.recommendation;
   }
   if (owner === 'github_admin') {
@@ -129,6 +137,13 @@ function evidenceFor(report: PRReviewReport, codeowners: string[]): string[] {
   if (failedChecks.length > 0)
     evidence.push(`Failing checks: ${failedChecks.map((c) => c.name).join(', ')}`);
   if (report.mergeable === false) evidence.push('GitHub reports merge conflicts.');
+  if (report.claimReviewIssue) {
+    evidence.push(
+      `Claim review (${report.claimReviewIssue.owner}): ${report.claimReviewIssue.reason}`,
+    );
+    evidence.push(report.claimReviewIssue.recommendation);
+  }
+  if (report.decision === 'EVIDENCE_UNAVAILABLE') evidence.push(report.reason);
   return evidence;
 }
 
@@ -137,7 +152,9 @@ export function summarizePRDecision(
   codeowners: string[] = [],
 ): PRDecisionSummary {
   const blockerCategory = categoryFor(report.decision);
-  const owner = ownerFor(blockerCategory, report.decision);
+  const owner =
+    (blockerCategory === 'claim_review' ? report.claimReviewIssue?.owner : undefined) ??
+    ownerFor(blockerCategory, report.decision);
   return {
     prNumber: report.prNumber,
     title: report.title,
@@ -147,6 +164,7 @@ export function summarizePRDecision(
     owner,
     nextAction: nextActionFor(report, owner),
     evidence: evidenceFor(report, codeowners),
+    ...(report.claimReviewIssue ? { claimReviewIssue: report.claimReviewIssue } : {}),
     rerunCommand: `openslack pr doctor ${report.prNumber}`,
   };
 }
@@ -166,13 +184,29 @@ export function renderPRDecisionSummary(summary: PRDecisionSummary): string {
   return lines.join('\n');
 }
 
-async function diagnoseForQueue(prNumber: number): Promise<PRQueueItem> {
-  const report = await fetchPRDetails(prNumber);
+async function diagnoseForQueue(
+  prNumber: number,
+  options: GitHubClientOptions,
+): Promise<PRQueueItem> {
+  const report = await fetchPRDetails(prNumber, options);
   const classified = classifyPRReport(report);
   const policy = loadPRReviewPolicy();
   const baseViolation = evaluatePRBasePolicy(classified, policy);
-  const codeowners = baseViolation ? [] : (await loadPRCodeownerEvidence(classified)).owners;
-  const diagnosed = diagnosePR(classified, policy, codeowners);
+  const codeowners = baseViolation
+    ? []
+    : (await loadPRCodeownerEvidence(classified, options)).owners;
+  let diagnosed: PRReviewReport;
+  try {
+    diagnosed = await diagnoseLivePR(classified, policy, codeowners, options);
+  } catch (error) {
+    if (!(error instanceof GitHubEvidenceUnavailableError)) throw error;
+    diagnosed = {
+      ...classified,
+      decision: 'EVIDENCE_UNAVAILABLE',
+      reason: error.message,
+      recommendation: 'Retry PR doctor when live GitHub evidence is available.',
+    };
+  }
   return {
     ...summarizePRDecision(diagnosed, codeowners),
     riskZone: diagnosed.riskZone,
@@ -187,11 +221,15 @@ function queueRank(item: PRQueueItem): number {
   return 3;
 }
 
-export async function buildPRQueue(limit = 20): Promise<PRQueueItem[]> {
-  const open = await listOpenPRs(limit);
+export async function buildPRQueue(
+  limit = 20,
+  clientOptions?: GitHubClientOptions,
+): Promise<PRQueueItem[]> {
+  const options = { ...clientOptions, requireLive: true, strictEvidence: true };
+  const open = await listOpenPRs(limit, undefined, undefined, options);
   const items: PRQueueItem[] = [];
   for (const pr of open) {
-    items.push(await diagnoseForQueue(pr.number));
+    items.push(await diagnoseForQueue(pr.number, options));
   }
   return items.sort((a, b) => queueRank(a) - queueRank(b) || a.prNumber - b.prNumber);
 }
@@ -210,6 +248,12 @@ export function renderPRQueue(items: PRQueueItem[]): string {
     lines.push(`  Owner: ${item.owner}`);
     lines.push(`  Blocker: ${item.blockerCategory}`);
     lines.push(`  Next: ${item.nextAction}`);
+    if (item.claimReviewIssue && item.blockerCategory !== 'claim_review') {
+      lines.push(
+        `  Claim review (${item.claimReviewIssue.owner}): ${item.claimReviewIssue.reason}`,
+      );
+      lines.push(`  Claim action: ${item.claimReviewIssue.recommendation}`);
+    }
     lines.push(`  Rerun: ${item.rerunCommand}`);
   }
   return lines.join('\n');

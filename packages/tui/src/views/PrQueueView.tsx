@@ -109,6 +109,13 @@ export default function PrQueueView({ model, onBack }: PrQueueViewProps): React.
                 detail: `Owner: ${item.owner} | Blocker: ${item.blockerCategory} | Next: ${item.nextAction}`,
                 status: statusForItem(item),
               }),
+              item.claimReviewIssue && item.blockerCategory !== 'claim_review'
+                ? React.createElement(ListItem, {
+                    label: `Claim review (${item.claimReviewIssue.owner})`,
+                    detail: `${item.claimReviewIssue.reason} ${item.claimReviewIssue.recommendation}`,
+                    status: 'FAIL',
+                  })
+                : null,
               renderWorkflowGate(item.workflowGate),
             ),
           ),

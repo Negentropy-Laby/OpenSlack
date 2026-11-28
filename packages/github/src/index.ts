@@ -119,11 +119,13 @@ export type { IssueTask, IssueTaskLookupResult } from './issue-tasks.js';
 export { claimIssueTask, expireIssueClaim } from './claims.js';
 export type { IssueClaimResult } from './claims.js';
 export {
+  checkTaskClaimReview,
   completeClaim,
   heartbeatClaim,
   parseClaimReviewMetadata,
   parseHeartbeatMetadata,
   renderClaimLifecycleResult,
+  resolveTaskPublicationId,
   reviewClaim,
 } from './claim-lifecycle.js';
 export type {
@@ -134,6 +136,7 @@ export type {
   ClaimLifecyclePostcondition,
   ClaimLifecyclePostconditionName,
   ClaimLifecycleResult,
+  ClaimReviewIssue,
   CompleteClaimInput,
   HeartbeatClaimInput,
   ReviewClaimInput,

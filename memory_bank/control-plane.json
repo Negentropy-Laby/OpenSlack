@@ -1951,10 +1951,10 @@
         },
         "pull_request": null,
         "acceptance_criteria": [
-          "An authenticated host binds the exact workspace, principal, provider, build, and workflow definition",
-          "Checkpoint, resume, approval/effect, budget, fencing, and audit success and fail-closed paths are evidenced",
-          "TypeScript remains the authoritative production Workflow writer and read source",
-          "No Go authority cutover or production claim is inferred from qualification"
+          "An authenticated sealed Go-authority v2 host binds the exact workspace, principal, provider, build, Runner, PostgreSQL authority, and Workflow definition",
+          "Initial, checkpoint, approval and effect, resume, and completion are evidenced with shared budget, fencing, durable restart readback, and fail-closed audit paths",
+          "This authenticated host qualification runs independently of the strict R-EXT campaign in issue 411",
+          "Qualification evidence applies to the verified host and confers no release or production promotion"
         ],
         "dependencies": [],
         "blockers": ["authenticated_host_qualification_pending"],

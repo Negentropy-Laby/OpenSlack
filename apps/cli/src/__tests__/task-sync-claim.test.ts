@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   proposeWorkspacePR: vi.fn(),
   resolveAgentPrincipal: vi.fn(),
+  resolveTaskPublicationId: vi.fn(),
   reviewClaim: vi.fn(),
 }));
 
@@ -17,6 +18,7 @@ vi.mock('@openslack/runtime', async (importOriginal) => ({
 vi.mock('@openslack/github', async (importOriginal) => ({
   ...(await importOriginal<typeof MockModule1>()),
   reviewClaim: mocks.reviewClaim,
+  resolveTaskPublicationId: mocks.resolveTaskPublicationId,
 }));
 
 import { taskCommands } from '../commands/task.js';
@@ -27,6 +29,7 @@ describe('task sync claim handoff', () => {
     mocks.proposeWorkspacePR.mockReset();
     mocks.resolveAgentPrincipal.mockReset();
     mocks.reviewClaim.mockReset();
+    mocks.resolveTaskPublicationId.mockReset().mockResolvedValue('TASK-42');
     mocks.resolveAgentPrincipal.mockReturnValue({
       principal: {
         registry_id: 'agent-one',
@@ -80,7 +83,7 @@ describe('task sync claim handoff', () => {
         '--agent-id',
         'agent-one',
         '--task-id',
-        'TASK-42',
+        'ISSUE-42',
         '--run-id',
         'RUN-42',
         '--paths',
@@ -92,7 +95,12 @@ describe('task sync claim handoff', () => {
     );
 
     expect(mocks.proposeWorkspacePR).toHaveBeenCalledWith(
-      expect.objectContaining({ issueNumber: 42, agentId: 'agent-one' }),
+      expect.objectContaining({
+        issueNumber: 42,
+        agentId: 'agent-one',
+        taskId: 'ISSUE-42',
+        linkedTaskId: 'TASK-42',
+      }),
     );
     expect(mocks.reviewClaim).toHaveBeenCalledWith({
       issueNumber: 42,
@@ -105,5 +113,29 @@ describe('task sync claim handoff', () => {
       'Recovery: openslack github claim review --issue-number 42 --agent-id agent-one --pr-url https://github.com/acme/project/pull/7',
     );
     expect(mocks.proposeWorkspacePR).toHaveBeenCalledTimes(1);
+  });
+
+  it('refuses a mismatched task before calling the publisher', async () => {
+    mocks.resolveTaskPublicationId.mockRejectedValueOnce(new Error('CLAIM_TASK_LINK_MISMATCH'));
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    await taskCommands().parseAsync(
+      [
+        'sync',
+        '--agent-id',
+        'agent-one',
+        '--task-id',
+        'ISSUE-41',
+        '--run-id',
+        'RUN-42',
+        '--paths',
+        'src/greeting.txt',
+        '--issue-number',
+        '42',
+      ],
+      { from: 'user' },
+    );
+    expect(process.exitCode).toBe(1);
+    expect(mocks.proposeWorkspacePR).not.toHaveBeenCalled();
+    expect(mocks.reviewClaim).not.toHaveBeenCalled();
   });
 });

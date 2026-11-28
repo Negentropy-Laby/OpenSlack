@@ -266,6 +266,11 @@ export function renderPlainPrQueue(vm: PrQueueViewModel, width: number = MAX_WID
       }
     }
     lines.push(wrapIndent(`  Next: ${item.nextAction}`, 4, width));
+    if (item.claimReviewIssue && item.blockerCategory !== 'claim_review') {
+      const claim = item.claimReviewIssue;
+      lines.push(wrapIndent(`  Claim review (${claim.owner}): ${claim.reason}`, 4, width));
+      lines.push(wrapIndent(`  Claim action: ${claim.recommendation}`, 4, width));
+    }
     lines.push(wrap(`  Rerun: ${item.rerunCommand}`, width));
     lines.push('');
   }
