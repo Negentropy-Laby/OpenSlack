@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { spawnSync } from 'node:child_process';
 import {
   chmodSync,
   copyFileSync,
@@ -11,7 +12,51 @@ import {
   statSync,
   writeFileSync,
 } from 'node:fs';
-import { relative, resolve, sep } from 'node:path';
+import { delimiter, isAbsolute, relative, resolve, sep } from 'node:path';
+
+/** Resolve the same CLI as the Windows npm shim, then let the caller pass argv directly to Node. */
+export function resolveWindowsNpmCli(cwd: string, childEnv: NodeJS.ProcessEnv): string {
+  const directory = (childEnv.PATH ?? childEnv.Path ?? '')
+    .split(delimiter)
+    .find((entry) => entry && existsSync(resolve(entry, 'npm.cmd')));
+  if (directory) {
+    const bundled = resolve(directory, 'node_modules/npm/bin/npm-cli.js');
+    const prefixHelper = resolve(directory, 'node_modules/npm/bin/npm-prefix.js');
+    if (existsSync(prefixHelper)) {
+      // The official npm.cmd asks its bundled npm for the configured global prefix.
+      // Only this lookup needs the caller's prefix settings; pack/install stay isolated.
+      const env = { ...childEnv };
+      for (const key of [
+        'npm_config_prefix',
+        'npm_config_userconfig',
+        'npm_config_globalconfig',
+        'HOME',
+        'USERPROFILE',
+        'PREFIX',
+      ]) {
+        const value = process.env[key] ?? process.env[key.toUpperCase()];
+        if (value !== undefined) env[key] = value;
+      }
+      const adjacentNode = resolve(directory, 'node.exe');
+      const probe = spawnSync(existsSync(adjacentNode) ? adjacentNode : 'node', [prefixHelper], {
+        cwd,
+        env,
+        encoding: 'utf8',
+        windowsHide: true,
+      });
+      const prefix = probe.stdout?.trim();
+      if (probe.status !== 0 || !prefix || !isAbsolute(prefix)) {
+        throw new Error('Cannot determine the global prefix selected by npm.cmd.');
+      }
+      const globalCli = resolve(prefix, 'node_modules/npm/bin/npm-cli.js');
+      if (existsSync(globalCli)) return globalCli;
+    }
+    if (existsSync(bundled)) return bundled;
+    const localCli = resolve(directory, '../npm/bin/npm-cli.js');
+    if (existsSync(localCli)) return localCli;
+  }
+  throw new Error('Cannot locate npm-cli.js behind npm.cmd on PATH.');
+}
 
 export const PUBLIC_VERSION = '0.2.0';
 export const PUBLIC_PACKAGES = Object.freeze([

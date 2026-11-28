@@ -1,6 +1,6 @@
-import { copyFileSync, existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs';
+import { copyFileSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
-import { delimiter, relative, resolve, sep } from 'node:path';
+import { relative, resolve, sep } from 'node:path';
 import {
   PUBLIC_PACKAGES,
   PUBLIC_VERSION,
@@ -10,6 +10,7 @@ import {
   copyPackagePayload,
   readJson,
   resetDirectory,
+  resolveWindowsNpmCli,
   sha256Canonical,
   sha256File,
   stageManifest,
@@ -27,6 +28,9 @@ if (command !== 'pack' && command !== 'verify') {
 }
 
 assertRootVersion();
+// Resolve npm in the preflight checkout before changing to a staging/consumer directory.
+const windowsNpmCli =
+  process.platform === 'win32' ? resolveWindowsNpmCli(root, safeChildEnvironment()) : undefined;
 if (command === 'pack') {
   resetDirectory(outputRoot);
   const artifacts = createPackSet(resolve(outputRoot, 'current'));
@@ -313,23 +317,8 @@ function artifactReport(artifacts: readonly PublicPackArtifact[]) {
 }
 
 function runNpm(args: readonly string[], options: { readonly cwd: string }): void {
-  if (process.platform !== 'win32') {
-    run('npm', args, options);
-    return;
-  }
-
-  // Execute the CLI behind the first npm shim on PATH. Direct .cmd execution fails
-  // in Bun, and invoking a shell would reinterpret the pack destination path.
-  const npmDirectory = (process.env.PATH ?? '')
-    .split(delimiter)
-    .find((directory) => directory && existsSync(resolve(directory, 'npm.cmd')));
-  const npmCli =
-    npmDirectory &&
-    ['node_modules/npm/bin/npm-cli.js', '../npm/bin/npm-cli.js']
-      .map((path) => resolve(npmDirectory, path))
-      .find((path) => existsSync(path));
-  if (!npmCli) throw new Error('Cannot locate npm-cli.js behind npm.cmd on PATH.');
-  run('node', [npmCli, ...args], options);
+  if (windowsNpmCli) run('node', [windowsNpmCli, ...args], options);
+  else run('npm', args, options);
 }
 
 function safeChildEnvironment(): NodeJS.ProcessEnv {
