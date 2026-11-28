@@ -1,14 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import {
-  existsSync,
-  readFileSync,
-  mkdtempSync,
-  rmSync,
-  mkdirSync,
-  writeFileSync,
-} from 'node:fs';
+import { existsSync, readFileSync, mkdtempSync, rmSync, mkdirSync, writeFileSync } from 'node:fs';
 import { parse as parseYaml } from 'yaml';
 import { tmpdir } from 'node:os';
 

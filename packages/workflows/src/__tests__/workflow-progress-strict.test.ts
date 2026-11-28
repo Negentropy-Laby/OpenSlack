@@ -201,11 +201,18 @@ describe('strict workflow progress evidence', () => {
     const lockPath = join(agentDir, 'run.transaction.lock');
     writeFileSync(lockPath, 'retained unknown writer');
     const originalState = readFileSync(join(agentDir, 'run.json'));
-    await expect(getWorkflowRunProgress(WORKFLOW_RUN_ID, {
-      rootDir: root, loadWorkflowManifest: false, loadCostConfig: false, strictRead: true,
-    })).rejects.toMatchObject({ code: 'WORKFLOW_RUN_EVIDENCE_RECONCILIATION_REQUIRED' });
+    await expect(
+      getWorkflowRunProgress(WORKFLOW_RUN_ID, {
+        rootDir: root,
+        loadWorkflowManifest: false,
+        loadCostConfig: false,
+        strictRead: true,
+      }),
+    ).rejects.toMatchObject({ code: 'WORKFLOW_RUN_EVIDENCE_RECONCILIATION_REQUIRED' });
     const observation = await getWorkflowRunProgress(WORKFLOW_RUN_ID, {
-      rootDir: root, loadWorkflowManifest: false, loadCostConfig: false,
+      rootDir: root,
+      loadWorkflowManifest: false,
+      loadCostConfig: false,
     });
     expect(JSON.stringify(observation)).toContain('WORKFLOW_RUN_EVIDENCE_RECONCILIATION_REQUIRED');
     expect(JSON.stringify(observation)).not.toContain('WORKFLOW_RUN_EVIDENCE_INTERNAL_ERROR');
@@ -216,18 +223,29 @@ describe('strict workflow progress evidence', () => {
   it('waits asynchronously for a short writer transaction before projecting its current snapshot', async () => {
     const { root, runDir } = fixtureRoot();
     writeValidAgentResult(runDir);
-    const agentDir = writeValidAgentRun(root), lock = join(agentDir, 'run.transaction.lock');
+    const agentDir = writeValidAgentRun(root),
+      lock = join(agentDir, 'run.transaction.lock');
     writeFileSync(lock, 'isolated short-lived writer');
     let released = false;
-    const timer = setTimeout(() => { rmSync(lock); released = true; }, 15);
+    const timer = setTimeout(() => {
+      rmSync(lock);
+      released = true;
+    }, 15);
     try {
       const progress = await getWorkflowRunProgress(WORKFLOW_RUN_ID, {
-        rootDir: root, loadWorkflowManifest: false, loadCostConfig: false, strictRead: true,
+        rootDir: root,
+        loadWorkflowManifest: false,
+        loadCostConfig: false,
+        strictRead: true,
       });
       expect(released).toBe(true);
       expect(progress?.agentCount).toBe(1);
-      expect(JSON.stringify(progress)).not.toContain('WORKFLOW_RUN_EVIDENCE_RECONCILIATION_REQUIRED');
-    } finally { clearTimeout(timer); }
+      expect(JSON.stringify(progress)).not.toContain(
+        'WORKFLOW_RUN_EVIDENCE_RECONCILIATION_REQUIRED',
+      );
+    } finally {
+      clearTimeout(timer);
+    }
   });
 
   it('accepts persisted negative over-budget tokensRemaining values', async () => {

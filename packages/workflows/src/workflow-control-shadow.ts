@@ -474,9 +474,13 @@ async function withOwnerDirectoryOperations<T>(
   operation: () => Promise<T>,
 ): Promise<T> {
   if (security.platform !== 'win32') return operation();
-  const keys = [...new Set(await Promise.all(
-    directories.map((directory) => workflowDirectoryCoordinationKey(directory, security)),
-  ))].sort();
+  const keys = [
+    ...new Set(
+      await Promise.all(
+        directories.map((directory) => workflowDirectoryCoordinationKey(directory, security)),
+      ),
+    ),
+  ].sort();
   const deadlineError = new OwnerDirectoryWaitTimeoutError();
   let expired = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -507,7 +511,11 @@ export function withOwnerDirectoryEntryMutation<T>(
   security: WorkflowControlShadowJournalSecurityDependencies,
   operation: () => Promise<T>,
 ): Promise<T> {
-  return withOwnerDirectoryOperations(paths.map((path) => dirname(path)), security, operation);
+  return withOwnerDirectoryOperations(
+    paths.map((path) => dirname(path)),
+    security,
+    operation,
+  );
 }
 
 /** Join cleanup of an already-owned entry even when new mutations would time out. */
@@ -805,7 +813,9 @@ async function assertStableDirectorySecurity(
   return withOwnerDirectoryOperations([path], security, async () => {
     let before = await lstat(path, { bigint: true });
     if (!sameDirectoryObject(initial, before)) {
-      throw new TypeError('Workflow Control shadow journal directory changed during security validation.');
+      throw new TypeError(
+        'Workflow Control shadow journal directory changed during security validation.',
+      );
     }
     for (let attempt = 0; attempt < 3; attempt += 1) {
       await assertOwnerOnlyPath(path, before, security);
@@ -1076,7 +1086,10 @@ export async function atomicWrite(
       });
     } catch (cleanupError) {
       if ((cleanupError as NodeJS.ErrnoException).code !== 'ENOENT') {
-        throw new AggregateError([error, cleanupError], 'Workflow Control temporary cleanup failed.');
+        throw new AggregateError(
+          [error, cleanupError],
+          'Workflow Control temporary cleanup failed.',
+        );
       }
     }
     throw error;
@@ -1196,7 +1209,11 @@ async function publishOwnerLock(
 ): Promise<BigIntStats> {
   const temporary = join(dirname(path), `.${basename(path)}.${process.pid}.${randomUUID()}.tmp`);
   let handle = await withOwnerDirectoryEntryMutation([temporary], security, () =>
-    open(temporary, fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_EXCL | NO_FOLLOW, 0o600),
+    open(
+      temporary,
+      fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_EXCL | NO_FOLLOW,
+      0o600,
+    ),
   );
   let closed = false;
   let owned: BigIntStats | undefined;
@@ -1237,7 +1254,9 @@ async function publishOwnerLock(
     const ready = complete;
     await withOwnerDirectoryEntryMutation([path], security, async () => {
       if (!sameIdentity(ready, await lstat(temporary, { bigint: true }))) {
-        throw new TypeError('Workflow Control shadow journal lock temporary changed before publication.');
+        throw new TypeError(
+          'Workflow Control shadow journal lock temporary changed before publication.',
+        );
       }
       await link(temporary, path);
     });
@@ -1355,7 +1374,9 @@ async function publishOwnerLock(
         throw error;
       }
       if (!owned || !sameFilesystemObject(owned, current) || current.isSymbolicLink()) {
-        throw new TypeError('Workflow Control shadow journal lock temporary changed before cleanup.');
+        throw new TypeError(
+          'Workflow Control shadow journal lock temporary changed before cleanup.',
+        );
       }
       await unlink(temporary);
     });
@@ -1418,7 +1439,9 @@ async function acquireStreamLock(
                 const opened = await ownedHandle.stat({ bigint: true });
                 const current = await lstat(path, { bigint: true });
                 if (!sameIdentity(acquired, opened) || !sameIdentity(opened, current)) {
-                  throw new TypeError('Workflow Control shadow journal lock changed before release.');
+                  throw new TypeError(
+                    'Workflow Control shadow journal lock changed before release.',
+                  );
                 }
               } catch (error) {
                 releaseError = error;
@@ -1521,13 +1544,17 @@ async function acquireStreamLock(
       if (!live) {
         try {
           const expected = before;
-          const removed = await withOwnerDirectoryEntryMutation([path], directories.security, async () => {
-            const repeated = await lstat(path, { bigint: true });
-            if (!sameIdentity(expected, repeated)) return false;
-            await unlink(path);
-            await syncDirectory(directories.locks);
-            return true;
-          });
+          const removed = await withOwnerDirectoryEntryMutation(
+            [path],
+            directories.security,
+            async () => {
+              const repeated = await lstat(path, { bigint: true });
+              if (!sameIdentity(expected, repeated)) return false;
+              await unlink(path);
+              await syncDirectory(directories.locks);
+              return true;
+            },
+          );
           if (removed) continue;
         } catch (reclaimError) {
           if ((reclaimError as NodeJS.ErrnoException).code === 'ENOENT') continue;

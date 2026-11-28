@@ -494,16 +494,25 @@ export class WorkflowRunnerDescriptorStore<
     for (const entry of entries) {
       const path = join(this.#descriptors, entry);
       if (TEMP_FILE.test(entry)) {
-        const temporary = await lstat(path, { bigint: true }).catch((error: NodeJS.ErrnoException) => {
-          if (error.code === 'ENOENT') return undefined;
-          throw error;
-        });
+        const temporary = await lstat(path, { bigint: true }).catch(
+          (error: NodeJS.ErrnoException) => {
+            if (error.code === 'ENOENT') return undefined;
+            throw error;
+          },
+        );
         if (!temporary) continue;
         if (!temporary.isFile() || temporary.isSymbolicLink()) {
-          storeFail('WORKFLOW_RUNNER_DESCRIPTOR_STORE_PATH_UNSAFE', 'Descriptor temporary is unsafe.', path);
+          storeFail(
+            'WORKFLOW_RUNNER_DESCRIPTOR_STORE_PATH_UNSAFE',
+            'Descriptor temporary is unsafe.',
+            path,
+          );
         }
         // A different process can still own a recent temporary or be publishing its hardlink.
-        if (temporary.nlink > 1n || Date.now() - Number(temporary.mtimeMs) < DESCRIPTOR_TEMPORARY_GRACE_MS) {
+        if (
+          temporary.nlink > 1n ||
+          Date.now() - Number(temporary.mtimeMs) < DESCRIPTOR_TEMPORARY_GRACE_MS
+        ) {
           continue;
         }
         const checked = await assertStablePath(path, false, this.#security);

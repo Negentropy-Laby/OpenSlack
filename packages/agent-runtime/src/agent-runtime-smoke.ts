@@ -132,11 +132,24 @@ function buildSmokeReport(input: {
   const observation = input.runId ? observeRun(input.runId, input.rootDir) : undefined;
   let transcript: ReturnType<typeof readTranscript> = [];
   let transcriptUnavailable = false;
-  try { if (input.runId && observation?.kind === 'ready') transcript = readTranscript(input.runId, input.rootDir); }
-  catch { transcriptUnavailable = true; }
+  try {
+    if (input.runId && observation?.kind === 'ready')
+      transcript = readTranscript(input.runId, input.rootDir);
+  } catch {
+    transcriptUnavailable = true;
+  }
   const checks = [
-    ...(observation?.kind === 'unavailable' || observation?.kind === 'missing' || transcriptUnavailable ? [{ name: 'run-storage-availability', status: 'FAIL' as const,
-      detail: `This run's evidence is unavailable: ${observation?.kind === 'unavailable' ? observation.reason : observation?.kind === 'missing' ? 'missing' : 'transcript-unavailable'}. Inspect without replay.` }] : []),
+    ...(observation?.kind === 'unavailable' ||
+    observation?.kind === 'missing' ||
+    transcriptUnavailable
+      ? [
+          {
+            name: 'run-storage-availability',
+            status: 'FAIL' as const,
+            detail: `This run's evidence is unavailable: ${observation?.kind === 'unavailable' ? observation.reason : observation?.kind === 'missing' ? 'missing' : 'transcript-unavailable'}. Inspect without replay.`,
+          },
+        ]
+      : []),
     {
       name: 'doctor',
       status: input.doctor.status,
@@ -161,13 +174,16 @@ function buildSmokeReport(input: {
     {
       name: 'evidence_files',
       status: evidenceFilesExist(evidence) ? 'PASS' : 'FAIL',
-      detail: input.runId ? `Run evidence for ${input.runId}` : 'No run was created by this invocation',
+      detail: input.runId
+        ? `Run evidence for ${input.runId}`
+        : 'No run was created by this invocation',
     },
   ] as Array<{ name: string; status: 'PASS' | 'FAIL'; detail: string }>;
 
   return {
     provider: 'aby',
-    status: input.status === 'PASS' && checks.every(check => check.status === 'PASS') ? 'PASS' : 'FAIL',
+    status:
+      input.status === 'PASS' && checks.every((check) => check.status === 'PASS') ? 'PASS' : 'FAIL',
     agentId: input.agentId,
     doctor: input.doctor,
     runId: input.runId,

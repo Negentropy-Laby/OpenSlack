@@ -939,13 +939,31 @@ describe('mcp command', () => {
   });
 
   it('does not inspect another principal deployment unless Harness ownership is explicitly selected', async () => {
-    const createConfiguredHarnessTaskHost = vi.fn(() => { throw new Error('another principal deployment must not be read'); });
+    const createConfiguredHarnessTaskHost = vi.fn(() => {
+      throw new Error('another principal deployment must not be read');
+    });
     const context = {} as OpenSlackMcpContext;
-    const createAgentBoundComposition = vi.fn(async () => ({ governedMutations: {} }) as OpenSlackAgentBoundMutationComposition);
+    const createAgentBoundComposition = vi.fn(
+      async () => ({ governedMutations: {} }) as OpenSlackAgentBoundMutationComposition,
+    );
     const created = server();
-    await mcpCommands({ workspaceRoot: process.cwd(), operator: operatorContext(), createConfiguredHarnessTaskHost,
-      createAgentBoundComposition, createContext: () => context, createServer: () => created })
-      .parseAsync(['node', 'test', 'serve', '--stdio', '--profile', 'agent-bound', '--principal-ref', 'agent-other']);
+    await mcpCommands({
+      workspaceRoot: process.cwd(),
+      operator: operatorContext(),
+      createConfiguredHarnessTaskHost,
+      createAgentBoundComposition,
+      createContext: () => context,
+      createServer: () => created,
+    }).parseAsync([
+      'node',
+      'test',
+      'serve',
+      '--stdio',
+      '--profile',
+      'agent-bound',
+      '--principal-ref',
+      'agent-other',
+    ]);
     expect(createConfiguredHarnessTaskHost).not.toHaveBeenCalled();
     expect(created.serveStdio).toHaveBeenCalledOnce();
     expect(stderr).not.toHaveBeenCalled();
@@ -954,30 +972,69 @@ describe('mcp command', () => {
   it.each([
     { injected: true, args: ['--harness-worker-binding', '/must-not-read.json'] },
     { injected: true, args: ['--harness-task-host'] },
-    { injected: false, args: ['--harness-task-host', '--harness-worker-binding', '/must-not-read.json'] },
-  ])('rejects conflicting injected/configured worker ownership before any loader or composition %#', async ({ injected, args }) => {
-    const createConfiguredHarnessTaskHost = vi.fn();
-    const createAgentBoundComposition = vi.fn();
-    const createServer = vi.fn();
-    await mcpCommands({ workspaceRoot: process.cwd(), operator: operatorContext(), createConfiguredHarnessTaskHost,
-      createAgentBoundComposition, createServer, ...(injected ? { harnessTaskHost: {} as HarnessTaskHost } : {}) })
-      .parseAsync(['node', 'test', 'serve', '--stdio', '--profile', 'agent-bound', '--principal-ref', 'agent-1', ...args]);
-    expect(createConfiguredHarnessTaskHost).not.toHaveBeenCalled();
-    expect(createAgentBoundComposition).not.toHaveBeenCalled();
-    expect(createServer).not.toHaveBeenCalled();
-    expect(stderr).toHaveBeenCalledOnce();
-    expect(String(stderr.mock.calls[0]![0])).toContain('OPENSLACK_MCP_PROFILE_ARGUMENT_INVALID');
-    expect(process.exitCode).toBe(1);
-  });
+    {
+      injected: false,
+      args: ['--harness-task-host', '--harness-worker-binding', '/must-not-read.json'],
+    },
+  ])(
+    'rejects conflicting injected/configured worker ownership before any loader or composition %#',
+    async ({ injected, args }) => {
+      const createConfiguredHarnessTaskHost = vi.fn();
+      const createAgentBoundComposition = vi.fn();
+      const createServer = vi.fn();
+      await mcpCommands({
+        workspaceRoot: process.cwd(),
+        operator: operatorContext(),
+        createConfiguredHarnessTaskHost,
+        createAgentBoundComposition,
+        createServer,
+        ...(injected ? { harnessTaskHost: {} as HarnessTaskHost } : {}),
+      }).parseAsync([
+        'node',
+        'test',
+        'serve',
+        '--stdio',
+        '--profile',
+        'agent-bound',
+        '--principal-ref',
+        'agent-1',
+        ...args,
+      ]);
+      expect(createConfiguredHarnessTaskHost).not.toHaveBeenCalled();
+      expect(createAgentBoundComposition).not.toHaveBeenCalled();
+      expect(createServer).not.toHaveBeenCalled();
+      expect(stderr).toHaveBeenCalledOnce();
+      expect(String(stderr.mock.calls[0]![0])).toContain('OPENSLACK_MCP_PROFILE_ARGUMENT_INVALID');
+      expect(process.exitCode).toBe(1);
+    },
+  );
 
   it('fails a missing explicitly selected host instead of serving a partial legacy profile', async () => {
     const createConfiguredHarnessTaskHost = vi.fn(() => undefined);
     const createAgentBoundComposition = vi.fn();
     const createServer = vi.fn();
-    await mcpCommands({ workspaceRoot: process.cwd(), operator: operatorContext(), createConfiguredHarnessTaskHost,
-      createAgentBoundComposition, createServer })
-      .parseAsync(['node', 'test', 'serve', '--stdio', '--profile', 'agent-bound', '--principal-ref', 'agent-1', '--harness-task-host']);
-    expect(createConfiguredHarnessTaskHost).toHaveBeenCalledWith(process.cwd(), 'agent-1', undefined);
+    await mcpCommands({
+      workspaceRoot: process.cwd(),
+      operator: operatorContext(),
+      createConfiguredHarnessTaskHost,
+      createAgentBoundComposition,
+      createServer,
+    }).parseAsync([
+      'node',
+      'test',
+      'serve',
+      '--stdio',
+      '--profile',
+      'agent-bound',
+      '--principal-ref',
+      'agent-1',
+      '--harness-task-host',
+    ]);
+    expect(createConfiguredHarnessTaskHost).toHaveBeenCalledWith(
+      process.cwd(),
+      'agent-1',
+      undefined,
+    );
     expect(createAgentBoundComposition).not.toHaveBeenCalled();
     expect(createServer).not.toHaveBeenCalled();
     expect(stderr).toHaveBeenCalledOnce();
@@ -985,42 +1042,79 @@ describe('mcp command', () => {
   });
 
   it('explains rejected linked Harness roots without leaking OS errors or weakening startup checks', async () => {
-    const createConfiguredHarnessTaskHost = vi.fn(() => { throw new HarnessRootUnsafeError(); });
-    const createAgentBoundComposition = vi.fn(), createServer = vi.fn();
-    await mcpCommands({ workspaceRoot: process.cwd(), operator: operatorContext(), createConfiguredHarnessTaskHost,
-      createAgentBoundComposition, createServer }).parseAsync(['node', 'test', 'serve', '--stdio', '--profile', 'agent-bound',
-      '--principal-ref', 'agent-1', '--harness-task-host']);
-    expect(stderr).toHaveBeenCalledExactlyOnceWith('OPENSLACK_MCP_START_FAILED: HARNESS_ROOT_UNSAFE; use an approved physical workspace path without links or junction ancestors.');
-    expect(createServer).not.toHaveBeenCalled(); expect(createAgentBoundComposition).not.toHaveBeenCalled();
+    const createConfiguredHarnessTaskHost = vi.fn(() => {
+      throw new HarnessRootUnsafeError();
+    });
+    const createAgentBoundComposition = vi.fn(),
+      createServer = vi.fn();
+    await mcpCommands({
+      workspaceRoot: process.cwd(),
+      operator: operatorContext(),
+      createConfiguredHarnessTaskHost,
+      createAgentBoundComposition,
+      createServer,
+    }).parseAsync([
+      'node',
+      'test',
+      'serve',
+      '--stdio',
+      '--profile',
+      'agent-bound',
+      '--principal-ref',
+      'agent-1',
+      '--harness-task-host',
+    ]);
+    expect(stderr).toHaveBeenCalledExactlyOnceWith(
+      'OPENSLACK_MCP_START_FAILED: HARNESS_ROOT_UNSAFE; use an approved physical workspace path without links or junction ancestors.',
+    );
+    expect(createServer).not.toHaveBeenCalled();
+    expect(createAgentBoundComposition).not.toHaveBeenCalled();
     expect(process.exitCode).toBe(1);
   });
 
-  it.each(['SIGINT', 'SIGTERM'] as const)('keeps %s during failed startup classified as startup, even if close fails', async signal => {
-    const created = server();
-    created.close = vi.fn(async () => { throw new Error('private close detail'); });
-    created.serveStdio = vi.fn(async () => {
-      process.emit(signal);
-      await Promise.resolve();
-      throw new Error('private start detail');
-    });
-    await mcpCommands({ workspaceRoot: process.cwd(), operator: operatorContext(),
-      createContext: () => ({} as OpenSlackMcpContext), createServer: () => created })
-      .parseAsync(['node', 'test', 'serve', '--stdio']);
-    expect(created.close).toHaveBeenCalledOnce();
-    expect(stderr).toHaveBeenCalledExactlyOnceWith('OPENSLACK_MCP_START_FAILED: the requested stdio profile did not start.');
-    expect(stdout).not.toHaveBeenCalled();
-    expect(process.exitCode).toBe(1);
-  });
+  it.each(['SIGINT', 'SIGTERM'] as const)(
+    'keeps %s during failed startup classified as startup, even if close fails',
+    async (signal) => {
+      const created = server();
+      created.close = vi.fn(async () => {
+        throw new Error('private close detail');
+      });
+      created.serveStdio = vi.fn(async () => {
+        process.emit(signal);
+        await Promise.resolve();
+        throw new Error('private start detail');
+      });
+      await mcpCommands({
+        workspaceRoot: process.cwd(),
+        operator: operatorContext(),
+        createContext: () => ({}) as OpenSlackMcpContext,
+        createServer: () => created,
+      }).parseAsync(['node', 'test', 'serve', '--stdio']);
+      expect(created.close).toHaveBeenCalledOnce();
+      expect(stderr).toHaveBeenCalledExactlyOnceWith(
+        'OPENSLACK_MCP_START_FAILED: the requested stdio profile did not start.',
+      );
+      expect(stdout).not.toHaveBeenCalled();
+      expect(process.exitCode).toBe(1);
+    },
+  );
 
   it('classifies an EOF-owned close failure as shutdown once, never startup', async () => {
     const closed = Promise.withResolvers<void>();
     void closed.promise.catch(() => {});
     const created = { ...server(), whenClosed: closed.promise };
-    created.serveStdio = vi.fn(async () => { setImmediate(() => closed.reject(new Error('private shutdown detail'))); });
-    await mcpCommands({ workspaceRoot: process.cwd(), operator: operatorContext(),
-      createContext: () => ({} as OpenSlackMcpContext), createServer: () => created })
-      .parseAsync(['node', 'test', 'serve', '--stdio']);
-    expect(stderr).toHaveBeenCalledExactlyOnceWith('OPENSLACK_MCP_SHUTDOWN_UNCONFIRMED: preserve task evidence and reconcile before retrying.');
+    created.serveStdio = vi.fn(async () => {
+      setImmediate(() => closed.reject(new Error('private shutdown detail')));
+    });
+    await mcpCommands({
+      workspaceRoot: process.cwd(),
+      operator: operatorContext(),
+      createContext: () => ({}) as OpenSlackMcpContext,
+      createServer: () => created,
+    }).parseAsync(['node', 'test', 'serve', '--stdio']);
+    expect(stderr).toHaveBeenCalledExactlyOnceWith(
+      'OPENSLACK_MCP_SHUTDOWN_UNCONFIRMED: preserve task evidence and reconcile before retrying.',
+    );
     expect(stdout).not.toHaveBeenCalled();
     expect(process.exitCode).toBe(1);
   });

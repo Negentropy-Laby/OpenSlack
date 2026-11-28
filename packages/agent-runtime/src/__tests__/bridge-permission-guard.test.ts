@@ -40,17 +40,26 @@ describe('BridgePermissionGuard', () => {
   function startAuditFixture(profile: ReturnType<typeof buildPermissionProfile>): void {
     // A generic recorder fixture only: no Harness lifecycle, execution identity,
     // peer or tool executor is created by recording this canonical audit run.
-    recorder.start({ runId: 'RUN-1', agentId: 'test', prompt: 'permission guard audit fixture',
-      resolvedConfig: { agentId: 'test', source: 'test' }, permissionProfile: profile });
+    recorder.start({
+      runId: 'RUN-1',
+      agentId: 'test',
+      prompt: 'permission guard audit fixture',
+      resolvedConfig: { agentId: 'test', source: 'test' },
+      permissionProfile: profile,
+    });
   }
 
   function auditEvents(step: string) {
     const transcript = readTranscript('RUN-1', root);
-    expect(transcript.some(event => event.type === 'start')).toBe(true);
-    expect(transcript.every(event => event.type === 'start' || event.type === 'progress')).toBe(true);
+    expect(transcript.some((event) => event.type === 'start')).toBe(true);
+    expect(transcript.every((event) => event.type === 'start' || event.type === 'progress')).toBe(
+      true,
+    );
     expect(store.getRun('RUN-1')).toMatchObject({ status: 'running', toolCalls: 0 });
     expect(store.getRun('RUN-1')?.harnessExecution).toBeUndefined();
-    const events = transcript.filter(event => event.type === 'progress' && event.data.step === step);
+    const events = transcript.filter(
+      (event) => event.type === 'progress' && event.data.step === step,
+    );
     expect(events.length).toBeGreaterThan(0);
     for (const event of events) expect(event.data).not.toHaveProperty('payload');
     return events;
@@ -105,7 +114,9 @@ describe('BridgePermissionGuard', () => {
 
     expect(result.allowed).toContain('Read');
     expect(result.denied).toContain('Bash');
-    expect(auditEvents('bridge_permission_filter')).toMatchObject([{ data: { deniedTools: ['Bash'] } }]);
+    expect(auditEvents('bridge_permission_filter')).toMatchObject([
+      { data: { deniedTools: ['Bash'] } },
+    ]);
   });
 
   it('filterOutboundTools removes SUBAGENT_ALWAYS_FORBIDDEN', () => {
@@ -135,7 +146,9 @@ describe('BridgePermissionGuard', () => {
     expect(result.denied).toContain('ruleset.bypass');
     expect(result.denied).toContain('agent.registry.write');
     expect(result.denied).toContain('workflow.trust.upgrade');
-    expect(auditEvents('bridge_permission_filter')).toMatchObject([{ data: { deniedTools: result.denied } }]);
+    expect(auditEvents('bridge_permission_filter')).toMatchObject([
+      { data: { deniedTools: result.denied } },
+    ]);
   });
 
   it('filterOutboundTools records denial in transcript', () => {
@@ -204,7 +217,9 @@ describe('BridgePermissionGuard', () => {
     const result = guard.validateInboundResponse(envelope);
     expect(result.valid).toBe(false);
     expect(result.violation).toContain('Bash');
-    expect(auditEvents('bridge_permission_denied')).toMatchObject([{ data: { toolName: 'Bash', context: 'tool_response' } }]);
+    expect(auditEvents('bridge_permission_denied')).toMatchObject([
+      { data: { toolName: 'Bash', context: 'tool_response' } },
+    ]);
   });
 
   it('validateInboundResponse rejects SUBAGENT_ALWAYS_FORBIDDEN in payload', () => {
@@ -224,7 +239,9 @@ describe('BridgePermissionGuard', () => {
     const result = guard.validateInboundResponse(envelope);
     expect(result.valid).toBe(false);
     expect(result.violation).toContain('github.pr.approve');
-    expect(auditEvents('bridge_permission_denied')).toMatchObject([{ data: { toolName: 'github.pr.approve', context: 'forbidden_action_detected' } }]);
+    expect(auditEvents('bridge_permission_denied')).toMatchObject([
+      { data: { toolName: 'github.pr.approve', context: 'forbidden_action_detected' } },
+    ]);
   });
 
   it('validateInboundResponse allows non-tool envelopes', () => {
@@ -267,7 +284,10 @@ describe('BridgePermissionGuard', () => {
     expect(result.violations).toHaveLength(2);
     expect(result.violations.map((v) => v.toolName)).toContain('Bash');
     expect(result.violations.map((v) => v.toolName)).toContain('github.pr.approve');
-    expect(auditEvents('bridge_permission_denied').map(event => event.data.toolName)).toEqual(['Bash', 'github.pr.approve']);
+    expect(auditEvents('bridge_permission_denied').map((event) => event.data.toolName)).toEqual([
+      'Bash',
+      'github.pr.approve',
+    ]);
   });
 
   it('records denial evidence for rejected inbound tools', () => {
@@ -350,7 +370,9 @@ describe('BridgePermissionGuard', () => {
     const result = guard.validateInboundResponse(envelope);
     expect(result.valid).toBe(false);
     expect(result.violation).toContain('github.pr.approve');
-    expect(auditEvents('bridge_permission_denied')).toMatchObject([{ data: { toolName: 'github.pr.approve', context: 'forbidden_action_detected' } }]);
+    expect(auditEvents('bridge_permission_denied')).toMatchObject([
+      { data: { toolName: 'github.pr.approve', context: 'forbidden_action_detected' } },
+    ]);
   });
 
   it('rejects non-tool envelope kind with forbidden toolName', () => {
@@ -371,6 +393,8 @@ describe('BridgePermissionGuard', () => {
     const result = guard.validateInboundResponse(envelope);
     expect(result.valid).toBe(false);
     expect(result.violation).toContain('Bash');
-    expect(auditEvents('bridge_permission_denied')).toMatchObject([{ data: { toolName: 'Bash', context: 'complete' } }]);
+    expect(auditEvents('bridge_permission_denied')).toMatchObject([
+      { data: { toolName: 'Bash', context: 'complete' } },
+    ]);
   });
 });

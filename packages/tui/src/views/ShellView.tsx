@@ -50,7 +50,13 @@ import type { AgentRunState } from '@openslack/agent-runtime';
  * A view that hasn't been wired to live data yet.
  * Shows the view name and a "press q to go back" prompt.
  */
-function PlaceholderView({ route, message }: { route: Route; message?: string }): React.JSX.Element {
+function PlaceholderView({
+  route,
+  message,
+}: {
+  route: Route;
+  message?: string;
+}): React.JSX.Element {
   const { pop } = useNavigation();
 
   useInput((input, key) => {
@@ -367,18 +373,17 @@ function ViewRouter({ data }: { data?: ShellViewData }): React.JSX.Element {
       return React.createElement(PlaceholderView, { route: current });
     }
     case 'agent-run-detail': {
-      const runState = current.params?.runState as
-        | AgentRunState
-        | undefined;
+      const runState = current.params?.runState as AgentRunState | undefined;
       const runId = current.params?.runId as string | undefined;
       const observation = runId ? observeRun(runId, data?.rootDir ?? process.cwd()) : undefined;
-      if (observation?.kind === 'unavailable') return React.createElement(PlaceholderView, { route: current,
-        message: `${runId}: evidence unavailable (${observation.reason}). Preserve evidence and inspect without replay.` });
+      if (observation?.kind === 'unavailable')
+        return React.createElement(PlaceholderView, {
+          route: current,
+          message: `${runId}: evidence unavailable (${observation.reason}). Preserve evidence and inspect without replay.`,
+        });
       const resolvedRunState =
         runState ??
-        (runId
-          ? (observation?.kind === 'ready' ? observation.state : undefined)
-          : undefined);
+        (runId ? (observation?.kind === 'ready' ? observation.state : undefined) : undefined);
       if (resolvedRunState) {
         const runModel = mapAgentRunToViewModel(resolvedRunState, {
           rootDir: data?.rootDir ?? process.cwd(),

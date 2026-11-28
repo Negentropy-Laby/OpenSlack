@@ -53,12 +53,12 @@ Windows 原生与 WSL 分别使用实际本地路径及既有 home，凭据仍�
 
 ## 入口与严格边界
 
-| 入口 | 用途 |
-| --- | --- |
-| 包根 | worker：精确文件授权、本任务 report、本运行查询 |
-| `/initiator` | 派发一个已批准任务，仅查询返回的运行 |
-| `/readonly` | 原有十二个只读 MCP 工具 |
-| `/sdk-host` | 公开 SDK Server 的宿主授权与关闭协调组合 |
+| 入口         | 用途                                            |
+| ------------ | ----------------------------------------------- |
+| 包根         | worker：精确文件授权、本任务 report、本运行查询 |
+| `/initiator` | 派发一个已批准任务，仅查询返回的运行            |
+| `/readonly`  | 原有十二个只读 MCP 工具                         |
+| `/sdk-host`  | 公开 SDK Server 的宿主授权与关闭协调组合        |
 
 私有 `dist/startup.js` 是 Bridge 启动产物，不是模型工具或新 application bin。
 OpenSlack 绑定原版 Harness、插件、Node、overlay、模型和验证器摘要。

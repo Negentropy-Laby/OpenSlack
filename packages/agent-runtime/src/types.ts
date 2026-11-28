@@ -112,10 +112,19 @@ export interface AgentRunState {
   /** Optional task-host data. Historical runs without this field remain unchanged. */
   harnessExecution?: HarnessExecutionBinding;
   /** New writer checkpoint only; absence on historical rows never authorizes repair. */
-  persistence?: { revision: number; transcriptBytes: number;
-    schemaVersion?: 2; creationId?: string; transactionId?: string; metadataSha256?: string;
+  persistence?: {
+    revision: number;
+    transcriptBytes: number;
+    schemaVersion?: 2;
+    creationId?: string;
+    transactionId?: string;
+    metadataSha256?: string;
     /** Maintenance receipt is evidence only, never restored execution permission. */
-    recovery?: { inspectionSha256: string; previousTransactionId: string; outcome: 'preserved_commit' | 'indeterminate' };
+    recovery?: {
+      inspectionSha256: string;
+      previousTransactionId: string;
+      outcome: 'preserved_commit' | 'indeterminate';
+    };
   };
 }
 
@@ -143,17 +152,32 @@ export interface HarnessExecutionBinding {
     deadlineAt: string;
     /** Concrete native execution cutoff; cleanup must finish within deadlineAt. */
     executionDeadlineAt?: string;
-    phase: 'awaiting_confirmation' | 'authorized' | 'started' | 'stopped_before_start' | 'indeterminate';
+    phase:
+      | 'awaiting_confirmation'
+      | 'authorized'
+      | 'started'
+      | 'stopped_before_start'
+      | 'indeterminate';
     governed?: { planId: string; executionId: string; confirmationAttemptId?: string };
   };
   /** Bounded reservation metadata only; complete tool payloads live once in JSONL. */
   evidence?: {
     reservedBytes: number;
     terminalBytes?: number;
-    calls: Record<string, { toolName: string; inputDigest: string; targetPath: string; generation: string;
-      maxResultBytes: number; resultDigest?: string; reservationId?: string;
-      /** Missing in legacy records means unknown, never permission to reclaim capacity. */
-      phase?: 'prepared' | 'authorization_attempted' | 'settled' | 'not_dispatched' }>;
+    calls: Record<
+      string,
+      {
+        toolName: string;
+        inputDigest: string;
+        targetPath: string;
+        generation: string;
+        maxResultBytes: number;
+        resultDigest?: string;
+        reservationId?: string;
+        /** Missing in legacy records means unknown, never permission to reclaim capacity. */
+        phase?: 'prepared' | 'authorization_attempted' | 'settled' | 'not_dispatched';
+      }
+    >;
   };
 }
 

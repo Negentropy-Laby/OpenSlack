@@ -19,38 +19,74 @@ function makeTempRoot(): string {
   return mkdtempSync(join(tmpdir(), 'bridge-process-smoke-test-'));
 }
 
-async function waitForOwnedWork<T>(work: Promise<T>, deadline = performance.now() + 5_000): Promise<T> {
+async function waitForOwnedWork<T>(
+  work: Promise<T>,
+  deadline = performance.now() + 5_000,
+): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
-    return await Promise.race([work, new Promise<never>((_, reject) => {
-      timer = setTimeout(() => reject(new Error('BRIDGE_SMOKE_OWNED_WORK_UNCONFIRMED')), Math.max(0, deadline - performance.now()));
-    })]);
-  } finally { clearTimeout(timer); }
+    return await Promise.race([
+      work,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () => reject(new Error('BRIDGE_SMOKE_OWNED_WORK_UNCONFIRMED')),
+          Math.max(0, deadline - performance.now()),
+        );
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /** Observe the exact fixture process; launcher completion never fabricates a close receipt. */
 type TestChildObservationChannel = Pick<ReturnType<typeof channel>, 'subscribe' | 'unsubscribe'>;
-function observeBridgeChild(args: readonly string[], diagnostic: TestChildObservationChannel = channel('child_process')) {
+function observeBridgeChild(
+  args: readonly string[],
+  diagnostic: TestChildObservationChannel = channel('child_process'),
+) {
   const pending = new Map<ChildProcess, () => void>();
   const constructions = new Set<Promise<void>>();
-  const matched = new Map<ChildProcess, { ended: Promise<void>; exit?: number | null; close?: number | null }>();
+  const matched = new Map<
+    ChildProcess,
+    { ended: Promise<void>; exit?: number | null; close?: number | null }
+  >();
   const observe = (value: unknown) => {
-    if (!value || typeof value !== 'object' || !('process' in value) || !(value.process instanceof ChildProcess)) return;
+    if (
+      !value ||
+      typeof value !== 'object' ||
+      !('process' in value) ||
+      !(value.process instanceof ChildProcess)
+    )
+      return;
     const child = value.process;
     const finished = Promise.withResolvers<void>();
     constructions.add(finished.promise);
     const spawned = () => {
       pending.delete(child);
-      if (child.spawnfile !== BUN || child.spawnargs.length !== args.length + 1 ||
-        !args.every((arg, index) => child.spawnargs[index + 1] === arg)) return;
-      const entry: { ended: Promise<void>; exit?: number | null; close?: number | null } = { ended: finished.promise };
+      if (
+        child.spawnfile !== BUN ||
+        child.spawnargs.length !== args.length + 1 ||
+        !args.every((arg, index) => child.spawnargs[index + 1] === arg)
+      )
+        return;
+      const entry: { ended: Promise<void>; exit?: number | null; close?: number | null } = {
+        ended: finished.promise,
+      };
       matched.set(child, entry);
-      child.once('exit', code => { entry.exit = code; });
-      child.once('close', code => { entry.close = code; });
+      child.once('exit', (code) => {
+        entry.exit = code;
+      });
+      child.once('close', (code) => {
+        entry.close = code;
+      });
     };
-    pending.set(child, spawned); child.once('spawn', spawned);
+    pending.set(child, spawned);
+    child.once('spawn', spawned);
     child.once('close', () => {
-      pending.delete(child); child.removeListener('spawn', spawned); finished.resolve();
+      pending.delete(child);
+      child.removeListener('spawn', spawned);
+      finished.resolve();
     });
   };
   diagnostic.subscribe(observe);
@@ -160,7 +196,7 @@ describe('Aby process bridge smoke', () => {
     ]);
   });
 
-  afterEach(async context => {
+  afterEach(async (context) => {
     const cleanupDeadline = performance.now() + 5_000;
     try {
       if (running) {
@@ -171,9 +207,12 @@ describe('Aby process bridge smoke', () => {
       // Delete only after both the owned launcher and actual process are finished.
       rmSync(root, { recursive: true, force: true });
     } catch (error) {
-      if (context.task.result?.state === 'fail') console.error('BRIDGE_SMOKE_CLEANUP_FAILED_FIXTURE_RETAINED', error);
+      if (context.task.result?.state === 'fail')
+        console.error('BRIDGE_SMOKE_CLEANUP_FAILED_FIXTURE_RETAINED', error);
       else throw error;
-    } finally { observation?.release(); }
+    } finally {
+      observation?.release();
+    }
   });
 
   it('runs a generic run_request through a fake Aby root and records transcript evidence', async () => {
@@ -198,7 +237,10 @@ describe('Aby process bridge smoke', () => {
         threadId: 'CONV-20260603-ABCDEFGH',
         correlationId: 'CONV-20260603-ABCDEFGH',
       });
-      running = launched.then(() => undefined, () => undefined);
+      running = launched.then(
+        () => undefined,
+        () => undefined,
+      );
       result = await launched;
       await observation!.join();
       expect(observation!.snapshot()).toEqual([{ exit: 0, close: 0 }]);
@@ -248,42 +290,66 @@ describe('Aby process bridge smoke', () => {
   });
 });
 
-
 describe('bridge smoke construction ownership', () => {
-  it.each(['pending-spawn', 'error-before-spawn'] as const)('does not treat %s as confirmed process termination', async mode => {
-    let notify: Parameters<TestChildObservationChannel['subscribe']>[0] | undefined;
-    const subscribe = vi.fn<TestChildObservationChannel['subscribe']>(listener => { notify = listener; });
-    const unsubscribe = vi.fn<TestChildObservationChannel['unsubscribe']>(() => true);
-    const observation = observeBridgeChild([], { subscribe, unsubscribe });
-    // Inert event emitter only: no OS child or actual-close evidence is fabricated.
-    const child = new ChildProcess();
-    child.on('error', () => undefined); // Existing runtime error consumer, not a close receipt.
-    notify!({ process: child }, 'child_process');
-    const joined = observation.join();
-    let ended = false; void joined.then(() => { ended = true; }, () => { ended = true; });
-    try {
-      if (mode === 'error-before-spawn') child.emit('error', new Error('Controlled fixture spawn failure'));
-      await new Promise<void>(resolve => setImmediate(resolve));
-      expect(ended).toBe(false);
-      expect(observation.snapshot()).toEqual([]);
-    } finally { child.emit('close', null, null); await joined; observation.release(); }
-    expect(unsubscribe).toHaveBeenCalledTimes(1);
-  });
+  it.each(['pending-spawn', 'error-before-spawn'] as const)(
+    'does not treat %s as confirmed process termination',
+    async (mode) => {
+      let notify: Parameters<TestChildObservationChannel['subscribe']>[0] | undefined;
+      const subscribe = vi.fn<TestChildObservationChannel['subscribe']>((listener) => {
+        notify = listener;
+      });
+      const unsubscribe = vi.fn<TestChildObservationChannel['unsubscribe']>(() => true);
+      const observation = observeBridgeChild([], { subscribe, unsubscribe });
+      // Inert event emitter only: no OS child or actual-close evidence is fabricated.
+      const child = new ChildProcess();
+      child.on('error', () => undefined); // Existing runtime error consumer, not a close receipt.
+      notify!({ process: child }, 'child_process');
+      const joined = observation.join();
+      let ended = false;
+      void joined.then(
+        () => {
+          ended = true;
+        },
+        () => {
+          ended = true;
+        },
+      );
+      try {
+        if (mode === 'error-before-spawn')
+          child.emit('error', new Error('Controlled fixture spawn failure'));
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        expect(ended).toBe(false);
+        expect(observation.snapshot()).toEqual([]);
+      } finally {
+        child.emit('close', null, null);
+        await joined;
+        observation.release();
+      }
+      expect(unsubscribe).toHaveBeenCalledTimes(1);
+    },
+  );
 
   it('refuses an unclosed construction at the original observation deadline', async () => {
     let notify: Parameters<TestChildObservationChannel['subscribe']>[0] | undefined;
-    const subscribe = vi.fn<TestChildObservationChannel['subscribe']>(listener => { notify = listener; });
+    const subscribe = vi.fn<TestChildObservationChannel['subscribe']>((listener) => {
+      notify = listener;
+    });
     const unsubscribe = vi.fn<TestChildObservationChannel['unsubscribe']>(() => true);
     const observation = observeBridgeChild([], { subscribe, unsubscribe });
     const child = new ChildProcess();
     notify!({ process: child }, 'child_process');
     vi.useFakeTimers();
     try {
-      const assertion = expect(observation.join()).rejects.toThrow('BRIDGE_SMOKE_OWNED_WORK_UNCONFIRMED');
+      const assertion = expect(observation.join()).rejects.toThrow(
+        'BRIDGE_SMOKE_OWNED_WORK_UNCONFIRMED',
+      );
       await vi.advanceTimersByTimeAsync(5_000);
       await assertion;
       expect(observation.snapshot()).toEqual([]);
-    } finally { observation.release(); vi.useRealTimers(); }
+    } finally {
+      observation.release();
+      vi.useRealTimers();
+    }
     expect(unsubscribe).toHaveBeenCalledTimes(1);
   });
 });

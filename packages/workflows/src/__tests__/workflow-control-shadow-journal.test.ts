@@ -220,8 +220,9 @@ describe('Workflow Control GS7-B durable observation journal', () => {
       };
       releasing = release().then(released, released);
       const write = vi.fn(async () => undefined);
-      timedOut = withOwnerDirectoryEntryMutation([join(root, 'entry')], security, write)
-        .catch((error: unknown) => error);
+      timedOut = withOwnerDirectoryEntryMutation([join(root, 'entry')], security, write).catch(
+        (error: unknown) => error,
+      );
       await waiting.promise;
       if (closed) return;
       await vi.advanceTimersByTimeAsync(WORKFLOW_CONTROL_SHADOW_POLICY.maxTimeoutMs);

@@ -125,26 +125,40 @@ afterEach(() => {
 describe('GitHub App JWT clock tolerance', () => {
   const serverSeconds = 1_800_000_000;
 
-  it.each([14, 59, 60])('stays inside the server window with a local clock %i seconds ahead', ahead => {
-    const localSeconds = serverSeconds + ahead;
-    const evidence = jwtEvidence(createGitHubAppJwt('123', PRIVATE_KEY, () => localSeconds * 1000));
-    expect(evidence.claims.exp).toBeLessThanOrEqual(serverSeconds + 600);
-    expect(evidence.claims.exp).toBeGreaterThan(serverSeconds);
-    expect(evidence.claims).toEqual({ iat: localSeconds - 60, exp: localSeconds + 540, iss: '123' });
-    expect(evidence.header).toEqual({ alg: 'RS256', typ: 'JWT' });
-    expect(evidence.signatureValid).toBe(true);
-  });
+  it.each([14, 59, 60])(
+    'stays inside the server window with a local clock %i seconds ahead',
+    (ahead) => {
+      const localSeconds = serverSeconds + ahead;
+      const evidence = jwtEvidence(
+        createGitHubAppJwt('123', PRIVATE_KEY, () => localSeconds * 1000),
+      );
+      expect(evidence.claims.exp).toBeLessThanOrEqual(serverSeconds + 600);
+      expect(evidence.claims.exp).toBeGreaterThan(serverSeconds);
+      expect(evidence.claims).toEqual({
+        iat: localSeconds - 60,
+        exp: localSeconds + 540,
+        iss: '123',
+      });
+      expect(evidence.header).toEqual({ alg: 'RS256', typ: 'JWT' });
+      expect(evidence.signatureValid).toBe(true);
+    },
+  );
 
   it('uses clock-safe signed JWTs for installation discovery and token issuance', async () => {
     const clock = vi.spyOn(Date, 'now').mockReturnValue((serverSeconds + 14) * 1000);
     try {
-      installResponse({ statusCode: 200, chunks: [JSON.stringify(installationResponse('456', 'acme'))] });
+      installResponse({
+        statusCode: 200,
+        chunks: [JSON.stringify(installationResponse('456', 'acme'))],
+      });
       installResponse({ chunks: [JSON.stringify(tokenResponse('synthetic-clock-token'))] });
-      await expect(requireAppInstallationToken({ repository: { owner: 'acme', repo: 'project' } }))
-        .resolves.toMatchObject({ appId: '123', installationId: '456', tokenType: 'installation' });
+      await expect(
+        requireAppInstallationToken({ repository: { owner: 'acme', repo: 'project' } }),
+      ).resolves.toMatchObject({ appId: '123', installationId: '456', tokenType: 'installation' });
       expect(requestMock).toHaveBeenCalledTimes(2);
       for (const [options] of requestMock.mock.calls) {
-        const authorization = (options as { headers: Record<string, string> }).headers.Authorization;
+        const authorization = (options as { headers: Record<string, string> }).headers
+          .Authorization;
         expect(authorization.startsWith('Bearer ')).toBe(true);
         const evidence = jwtEvidence(authorization.slice('Bearer '.length));
         expect(evidence.claims.exp).toBeLessThanOrEqual(serverSeconds + 600);

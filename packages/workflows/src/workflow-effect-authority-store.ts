@@ -263,7 +263,11 @@ function fail(
 
 function refuseAuthorityDirectoryWait(error: unknown): void {
   if (error instanceof OwnerDirectoryWaitTimeoutError) {
-    fail('WORKFLOW_EFFECT_AUTHORITY_BUSY', 'Authority directory coordination deadline exceeded.', error);
+    fail(
+      'WORKFLOW_EFFECT_AUTHORITY_BUSY',
+      'Authority directory coordination deadline exceeded.',
+      error,
+    );
   }
 }
 
@@ -327,8 +331,13 @@ async function preparePathsUncached(
     refuseAuthorityDirectoryWait(error);
     return fail('WORKFLOW_EFFECT_AUTHORITY_PATH_UNSAFE', 'Authority root is unsafe.', error);
   }
-  if ((await workflowDirectoryCoordinationKey(canonicalRoot, JOURNAL_SECURITY)) !== coordinationKey) {
-    return fail('WORKFLOW_EFFECT_AUTHORITY_PATH_UNSAFE', 'Authority root changed during initialization.');
+  if (
+    (await workflowDirectoryCoordinationKey(canonicalRoot, JOURNAL_SECURITY)) !== coordinationKey
+  ) {
+    return fail(
+      'WORKFLOW_EFFECT_AUTHORITY_PATH_UNSAFE',
+      'Authority root changed during initialization.',
+    );
   }
   const paths = {
     root: canonicalRoot,
@@ -374,10 +383,12 @@ async function awaitAuthorityPath<T>(pending: Promise<T>): Promise<T> {
       pending,
       new Promise<never>((_, reject) => {
         timer = setTimeout(() => {
-          reject(new WorkflowEffectAuthorityStoreError(
-            'WORKFLOW_EFFECT_AUTHORITY_BUSY',
-            'Authority path verification or writer deadline exceeded.',
-          ));
+          reject(
+            new WorkflowEffectAuthorityStoreError(
+              'WORKFLOW_EFFECT_AUTHORITY_BUSY',
+              'Authority path verification or writer deadline exceeded.',
+            ),
+          );
         }, WORKFLOW_CONTROL_SHADOW_POLICY.maxTimeoutMs);
       }),
     ]);
@@ -392,8 +403,14 @@ async function sameAuthorityRoot(left: string, right: string): Promise<boolean> 
     lstat(left, { bigint: true }),
     lstat(right, { bigint: true }),
   ]);
-  return first.isDirectory() && second.isDirectory() && !first.isSymbolicLink() &&
-    !second.isSymbolicLink() && first.dev === second.dev && first.ino === second.ino;
+  return (
+    first.isDirectory() &&
+    second.isDirectory() &&
+    !first.isSymbolicLink() &&
+    !second.isSymbolicLink() &&
+    first.dev === second.dev &&
+    first.ino === second.ino
+  );
 }
 
 async function preparePaths(approvalStoreRoot: string, create: boolean): Promise<StorePaths> {
@@ -424,7 +441,11 @@ async function preparePaths(approvalStoreRoot: string, create: boolean): Promise
       } catch (error) {
         if (error instanceof WorkflowEffectAuthorityStoreError) throw error;
         refuseAuthorityDirectoryWait(error);
-        return fail('WORKFLOW_EFFECT_AUTHORITY_PATH_UNSAFE', 'Authority root alias is unsafe.', error);
+        return fail(
+          'WORKFLOW_EFFECT_AUTHORITY_PATH_UNSAFE',
+          'Authority root alias is unsafe.',
+          error,
+        );
       }
     }
     return paths;
@@ -475,9 +496,12 @@ async function preparePaths(approvalStoreRoot: string, create: boolean): Promise
   });
   authorityPathInitializers.set(key, initializing);
   // A caller timing out does not dispose of a verification still doing I/O.
-  void initializing.finally(() => {
-    if (authorityPathInitializers.get(key) === initializing) authorityPathInitializers.delete(key);
-  }).catch(() => undefined);
+  void initializing
+    .finally(() => {
+      if (authorityPathInitializers.get(key) === initializing)
+        authorityPathInitializers.delete(key);
+    })
+    .catch(() => undefined);
   return awaitAuthorityPath(initializing);
 }
 
@@ -1213,7 +1237,10 @@ async function recoverAuthorityTemporaries(paths: StorePaths): Promise<void> {
   }
 }
 
-async function withAuthorityPathMutation<T>(paths: StorePaths, operation: () => Promise<T>): Promise<T> {
+async function withAuthorityPathMutation<T>(
+  paths: StorePaths,
+  operation: () => Promise<T>,
+): Promise<T> {
   // Capture verification before publishing this writer, so the two snapshots
   // cannot wait on each other. Writers still compete through the original lock.
   const verification = authorityPathInitializers.get(paths.coordinationKey);
@@ -1229,7 +1256,8 @@ async function withAuthorityPathMutation<T>(paths: StorePaths, operation: () => 
     return await operation();
   } finally {
     writers.delete(completed.promise);
-    if (writers.size === 0 && authorityPathWriters.get(paths.coordinationKey) === writers) authorityPathWriters.delete(paths.coordinationKey);
+    if (writers.size === 0 && authorityPathWriters.get(paths.coordinationKey) === writers)
+      authorityPathWriters.delete(paths.coordinationKey);
     // This signals completion even after refusal/release failure, never approval.
     completed.resolve();
   }
@@ -1239,7 +1267,10 @@ async function withLock<T>(paths: StorePaths, operation: () => Promise<T>): Prom
   return withAuthorityPathMutation(paths, () => withAuthorityFileLock(paths, operation));
 }
 
-async function withAuthorityFileLock<T>(paths: StorePaths, operation: () => Promise<T>): Promise<T> {
+async function withAuthorityFileLock<T>(
+  paths: StorePaths,
+  operation: () => Promise<T>,
+): Promise<T> {
   let release: (() => Promise<void>) | undefined;
   try {
     release = await acquireOwnerJournalLock(paths.locks, 'authority', JOURNAL_SECURITY);
@@ -4200,7 +4231,9 @@ export async function scanWorkflowEffectAuthorityObservationPrefixes(
     });
   }
   const paths = await preparePaths(approvalStoreRoot, false);
-  return withAuthorityPathMutation(paths, () => scanAuthorityObservationPrefixesLocked(paths, approvalStoreRoot, priorIndex));
+  return withAuthorityPathMutation(paths, () =>
+    scanAuthorityObservationPrefixesLocked(paths, approvalStoreRoot, priorIndex),
+  );
 }
 
 async function scanAuthorityObservationPrefixesLocked(

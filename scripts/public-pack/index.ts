@@ -10,6 +10,7 @@ import {
   copyPackagePayload,
   readJson,
   resetDirectory,
+  resolveWindowsNpmCli,
   sha256Canonical,
   sha256File,
   stageManifest,
@@ -27,6 +28,9 @@ if (command !== 'pack' && command !== 'verify') {
 }
 
 assertRootVersion();
+// Resolve npm in the preflight checkout before changing to a staging/consumer directory.
+const windowsNpmCli =
+  process.platform === 'win32' ? resolveWindowsNpmCli(root, safeChildEnvironment()) : undefined;
 if (command === 'pack') {
   resetDirectory(outputRoot);
   const artifacts = createPackSet(resolve(outputRoot, 'current'));
@@ -87,13 +91,9 @@ function createPackSet(destination: string): readonly PublicPackArtifact[] {
     copyFileSync(resolve(root, 'NOTICE'), resolve(stage, 'NOTICE'));
     writeJson(resolve(stage, 'package.json'), staged);
 
-    run(
-      npmCommand(),
-      ['pack', '.', '--pack-destination', tarballRoot, '--json', '--ignore-scripts'],
-      {
-        cwd: stage,
-      },
-    );
+    runNpm(['pack', '.', '--pack-destination', tarballRoot, '--json', '--ignore-scripts'], {
+      cwd: stage,
+    });
     const tarballName = `openslack-${safeName}-${PUBLIC_VERSION}.tgz`;
     const tarball = resolve(tarballRoot, tarballName);
     assertFile(tarball);
@@ -210,10 +210,11 @@ function verifyCleanConsumer(artifacts: readonly PublicPackArtifact[]): void {
   });
   writeFileSync(resolve(consumer, 'consumer.ts'), consumerSource(), 'utf8');
 
-  run(
-    npmCommand(),
+  runNpm(
     ['install', '--ignore-scripts', '--no-audit', '--no-fund', '--package-lock=false', '--offline'],
-    { cwd: consumer },
+    {
+      cwd: consumer,
+    },
   );
   assertOnlyExpectedConsumerPackages(consumer);
   run(
@@ -315,8 +316,9 @@ function artifactReport(artifacts: readonly PublicPackArtifact[]) {
   };
 }
 
-function npmCommand(): string {
-  return process.platform === 'win32' ? 'npm.cmd' : 'npm';
+function runNpm(args: readonly string[], options: { readonly cwd: string }): void {
+  if (windowsNpmCli) run('node', [windowsNpmCli, ...args], options);
+  else run('npm', args, options);
 }
 
 function safeChildEnvironment(): NodeJS.ProcessEnv {

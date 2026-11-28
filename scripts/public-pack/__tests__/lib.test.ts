@@ -1,10 +1,11 @@
 import { mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { delimiter, dirname, join } from 'node:path';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   PUBLIC_VERSION,
   canonicalDirectoryManifest,
+  resolveWindowsNpmCli,
   stageManifest,
   validatePublicManifest,
 } from '../lib.js';
@@ -37,6 +38,51 @@ function validManifest(): Record<string, unknown> {
     dependencies: { '@openslack/plugin-api': 'workspace:*' },
   };
 }
+
+describe('Windows npm selection', () => {
+  function fixture() {
+    const root = mkdtempSync(join(tmpdir(), 'public pack & npm '));
+    roots.push(root);
+    const shim = join(root, 'shim');
+    mkdirSync(shim);
+    writeFileSync(join(shim, 'npm.cmd'), '');
+    return {
+      root,
+      shim,
+      env: { ...process.env, PATH: [shim, dirname(process.execPath)].join(delimiter) },
+    };
+  }
+
+  it('honors the official prefix lookup and falls back when the prefix has no npm', () => {
+    const { root, shim, env } = fixture();
+    const bin = join(shim, 'node_modules/npm/bin');
+    const prefix = join(root, 'global prefix');
+    const override = join(prefix, 'node_modules/npm/bin/npm-cli.js');
+    mkdirSync(bin, { recursive: true });
+    writeFileSync(join(bin, 'npm-cli.js'), '');
+    writeFileSync(join(bin, 'npm-prefix.js'), 'console.log(process.env.npm_config_prefix);');
+    vi.stubEnv('npm_config_prefix', prefix);
+    try {
+      expect(resolveWindowsNpmCli(root, env)).toBe(join(bin, 'npm-cli.js'));
+      mkdirSync(dirname(override), { recursive: true });
+      writeFileSync(override, '');
+      expect(resolveWindowsNpmCli(root, env)).toBe(override);
+      writeFileSync(join(bin, 'npm-prefix.js'), 'process.exit(1);');
+      expect(() => resolveWindowsNpmCli(root, env)).toThrow(/Cannot determine the global prefix/);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it('resolves a package-manager bin shim and rejects an incomplete installation', () => {
+    const { root, shim, env } = fixture();
+    expect(() => resolveWindowsNpmCli(root, env)).toThrow(/Cannot locate npm-cli/);
+    const cli = join(shim, '../npm/bin/npm-cli.js');
+    mkdirSync(dirname(cli), { recursive: true });
+    writeFileSync(cli, '');
+    expect(resolveWindowsNpmCli(root, env)).toBe(cli);
+  });
+});
 
 describe('public package contract', () => {
   it('rewrites workspace dependencies to the exact public version', () => {

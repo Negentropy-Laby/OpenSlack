@@ -19,8 +19,12 @@ import { createRunStore, observeRun, readRunStateSnapshot } from '../run-store.j
 import type { AgentRunRequest } from '../types.js';
 import type * as Fs from 'node:fs';
 
-vi.mock('node:fs', async original => { const fs = await original<typeof Fs>(); return { ...fs, renameSync: vi.fn(fs.renameSync) }; });
-const rename = vi.mocked(renameSync), nativeRename = rename.getMockImplementation()!;
+vi.mock('node:fs', async (original) => {
+  const fs = await original<typeof Fs>();
+  return { ...fs, renameSync: vi.fn(fs.renameSync) };
+});
+const rename = vi.mocked(renameSync),
+  nativeRename = rename.getMockImplementation()!;
 
 function makeTempRoot(): string {
   return mkdtempSync(join(tmpdir(), 'agent-runtime-test-'));
@@ -116,23 +120,40 @@ describe('createRunStore', () => {
     const store = createRunStore(root, { sweepOrphans: false });
     const request = makeRequest();
     store.createRun(request);
-    store.updateRun(request.runId, { harnessExecution: {
-      schema: 'openslack.harness_execution.v1', taskId: 'TASK-1', requestHash: 'a'.repeat(64),
-      principalHash: 'b'.repeat(64), baseline: 'c'.repeat(40), acceptance: 'pending', summary: 'pending', evidenceRefs: [], reports: {}, visible: true,
-    } });
+    store.updateRun(request.runId, {
+      harnessExecution: {
+        schema: 'openslack.harness_execution.v1',
+        taskId: 'TASK-1',
+        requestHash: 'a'.repeat(64),
+        principalHash: 'b'.repeat(64),
+        baseline: 'c'.repeat(40),
+        acceptance: 'pending',
+        summary: 'pending',
+        evidenceRefs: [],
+        reports: {},
+        visible: true,
+      },
+    });
     const path = join(root, '.openslack.local/agents/runs', request.runId, 'run.json');
     const before = readFileSync(path);
     let nativeRefusal: NodeJS.ErrnoException | undefined;
     rename.mockImplementation((...args) => {
-      try { return nativeRename(...args); }
-      catch (error) { nativeRefusal = error as NodeJS.ErrnoException; throw error; }
+      try {
+        return nativeRename(...args);
+      } catch (error) {
+        nativeRefusal = error as NodeJS.ErrnoException;
+        throw error;
+      }
     });
     const descriptor = openSync(path, 'r');
     let refused = false;
     try {
       let failure: unknown;
-      try { store.updateRun(request.runId, { status: 'running' }); }
-      catch (error) { failure = error; }
+      try {
+        store.updateRun(request.runId, { status: 'running' });
+      } catch (error) {
+        failure = error;
+      }
       expect(readFileSync(descriptor)).toEqual(before);
       if (failure !== undefined) {
         if (process.platform !== 'win32') throw failure;
@@ -144,16 +165,31 @@ describe('createRunStore', () => {
         const intentFile = `run.intent.${owner.transactionId}.json`;
         expect(readdirSync(directory)).toContain(intentFile);
         const intent = JSON.parse(readFileSync(join(directory, intentFile), 'utf8'));
-        expect(intent).toMatchObject({ runId: request.runId, transactionId: owner.transactionId, operation: 'update' });
+        expect(intent).toMatchObject({
+          runId: request.runId,
+          transactionId: owner.transactionId,
+          operation: 'update',
+        });
         expect(intent.target.stateFile).toBe(`run.json.${owner.transactionId}.tmp`);
         const temporary = readFileSync(join(directory, intent.target.stateFile));
-        expect(createHash('sha256').update(temporary).digest('hex')).toBe(intent.target.stateSha256);
+        expect(createHash('sha256').update(temporary).digest('hex')).toBe(
+          intent.target.stateSha256,
+        );
         expect(JSON.parse(temporary.toString('utf8')).status).toBe('running');
-        expect(observeRun(request.runId, root)).toMatchObject({ kind: 'unavailable', reason: 'locked' });
+        expect(observeRun(request.runId, root)).toMatchObject({
+          kind: 'unavailable',
+          reason: 'locked',
+        });
         refused = true;
       } else expect(readRunStateSnapshot(request.runId, root)?.status).toBe('running');
-    } finally { closeSync(descriptor); }
-    if (refused) expect(observeRun(request.runId, root)).toMatchObject({ kind: 'unavailable', reason: 'locked' });
+    } finally {
+      closeSync(descriptor);
+    }
+    if (refused)
+      expect(observeRun(request.runId, root)).toMatchObject({
+        kind: 'unavailable',
+        reason: 'locked',
+      });
   });
 
   it('reads a bounded snapshot without sweeping stale atomic-write evidence', () => {
@@ -170,7 +206,10 @@ describe('createRunStore', () => {
 
   it('lets an explicitly maintenance-free writer preserve historical temporary evidence', () => {
     createRunStore(root).createRun(makeRequest());
-    const stale = join(root, '.openslack.local/agents/runs/RUN-20260101-TEST1234/run.json.stale.tmp');
+    const stale = join(
+      root,
+      '.openslack.local/agents/runs/RUN-20260101-TEST1234/run.json.stale.tmp',
+    );
     writeFileSync(stale, 'historical bytes');
     utimesSync(stale, new Date(0), new Date(0));
     const store = createRunStore(root, { sweepOrphans: false });
@@ -213,7 +252,9 @@ describe('createRunStore', () => {
     for (const runId of ['RUN-A', 'RUN--', `RUN-${'A'.repeat(140)}`]) {
       expect(store.createRun(makeRequest({ runId })).runId).toBe(runId);
     }
-    expect(() => store.getRun('RUN-lowercase')).toThrow('Must match /^RUN-[A-Z0-9-]+$/ (historical lengths are preserved)');
+    expect(() => store.getRun('RUN-lowercase')).toThrow(
+      'Must match /^RUN-[A-Z0-9-]+$/ (historical lengths are preserved)',
+    );
   });
 
   it('rejects invalid runId format', () => {
@@ -234,7 +275,10 @@ describe('createRunStore', () => {
     writeFileSync(runPath, 'not-valid-json', 'utf-8');
 
     expect(store.getRun('RUN-20260101-TEST1234')).toBeNull();
-    expect(store.observeRun('RUN-20260101-TEST1234')).toMatchObject({ kind: 'unavailable', reason: 'corrupt' });
+    expect(store.observeRun('RUN-20260101-TEST1234')).toMatchObject({
+      kind: 'unavailable',
+      reason: 'corrupt',
+    });
     expect(() => store.readRun('RUN-20260101-TEST1234')).toThrow(/Corrupted run metadata/);
   });
 

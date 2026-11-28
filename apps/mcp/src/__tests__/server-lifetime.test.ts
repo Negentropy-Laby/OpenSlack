@@ -7,13 +7,22 @@ describe('MCP transport and owned execution lifetime', () => {
   it('connect readiness does not mean transport exit; EOF drains resources exactly once', async () => {
     const input = new PassThrough();
     const output = new PassThrough();
-    const context = createOpenSlackMcpContext({ workspaceRoot: process.cwd(), operator: {} as OperatorApplicationContextPort });
+    const context = createOpenSlackMcpContext({
+      workspaceRoot: process.cwd(),
+      operator: {} as OperatorApplicationContextPort,
+    });
     let drained!: () => void;
-    const gate = new Promise<void>(resolve => { drained = resolve; });
-    const closeOwnedResources = vi.fn(async () => { await gate; });
+    const gate = new Promise<void>((resolve) => {
+      drained = resolve;
+    });
+    const closeOwnedResources = vi.fn(async () => {
+      await gate;
+    });
     const server = createOpenSlackMcpServer(context, {}, { input, output, closeOwnedResources });
     let closed = false;
-    void server.whenClosed?.then(() => { closed = true; });
+    void server.whenClosed?.then(() => {
+      closed = true;
+    });
     await server.serveStdio();
     expect(closed).toBe(false);
     input.end();

@@ -6,9 +6,7 @@ import {
   buildBridgeEnvelope,
   validateBridgeEnvelope,
 } from '../bridge-contract.js';
-import type {
-  BridgeEnvelopeKind,
-} from '../bridge-contract.js';
+import type { BridgeEnvelopeKind } from '../bridge-contract.js';
 
 describe('BRIDGE_PROTOCOL_VERSION', () => {
   it('has a date-based version string', () => {

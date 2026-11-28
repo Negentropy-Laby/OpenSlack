@@ -76,12 +76,12 @@ worker/dispatcher/injected-host combinations are rejected, not silently ignored.
 
 ## Entrypoints and trust boundary
 
-| Export | Purpose |
-| --- | --- |
-| Package root | Worker: exact native file scope, current-task report, current-run query |
-| `/initiator` | Dispatch one existing approved task and query its returned run |
-| `/readonly` | Original twelve read-only OpenSlack MCP tools |
-| `/sdk-host` | Public SDK server plus private live authorization and shutdown coordination |
+| Export       | Purpose                                                                     |
+| ------------ | --------------------------------------------------------------------------- |
+| Package root | Worker: exact native file scope, current-task report, current-run query     |
+| `/initiator` | Dispatch one existing approved task and query its returned run              |
+| `/readonly`  | Original twelve read-only OpenSlack MCP tools                               |
+| `/sdk-host`  | Public SDK server plus private live authorization and shutdown coordination |
 
 `dist/startup.js` is a private Bridge peer artifact, not a model tool or a new
 application bin. OpenSlack fixes Harness/plugin roots and build identities, Node

@@ -576,15 +576,43 @@ describeOnBashHosts('reviewed Go module verifier', () => {
     writeExecutable(join(fixture.bin, 'cat'), '#!/bin/sh\nexit 97\n');
     const cases = [
       { owner: '', args: ['inspect', '--format', 'com.openslack.go-check.run'], output: '\n' },
-      { owner: "owned ' $literal \\ value\n\n", args: ['inspect', '--format', 'com.openslack.go-check.run'], output: "owned ' $literal \\ value\n" },
-      { owner: 'owned\n', args: ['run', 'image', 'go', 'test', './...', '-list', '^TestFixture$'], output: 'TestFake\n' },
-      { owner: 'owned\n', args: ['run', '--env', 'OPENSLACK_GO_CHECK_EXPECT_TEST=TestFixture', 'image', 'go', 'test', '-json', '-race', './...'], output: '{"Action":"pass","Test":"TestFixture"}\n' },
-      { owner: 'owned\n', args: ['run', '-d', 'image', 'arg with spaces', '$(literal)'], output: 'fake-container\n' },
+      {
+        owner: "owned ' $literal \\ value\n\n",
+        args: ['inspect', '--format', 'com.openslack.go-check.run'],
+        output: "owned ' $literal \\ value\n",
+      },
+      {
+        owner: 'owned\n',
+        args: ['run', 'image', 'go', 'test', './...', '-list', '^TestFixture$'],
+        output: 'TestFake\n',
+      },
+      {
+        owner: 'owned\n',
+        args: [
+          'run',
+          '--env',
+          'OPENSLACK_GO_CHECK_EXPECT_TEST=TestFixture',
+          'image',
+          'go',
+          'test',
+          '-json',
+          '-race',
+          './...',
+        ],
+        output: '{"Action":"pass","Test":"TestFixture"}\n',
+      },
+      {
+        owner: 'owned\n',
+        args: ['run', '-d', 'image', 'arg with spaces', '$(literal)'],
+        output: 'fake-container\n',
+      },
     ];
     for (const testCase of cases) {
       writeFileSync(fixture.ownerFile, testCase.owner, 'utf8');
       const result = spawnSync(join(fixture.bin, 'docker'), testCase.args, {
-        cwd: fixture.root, env: goCheckEnvironment(fixture), encoding: 'utf8',
+        cwd: fixture.root,
+        env: goCheckEnvironment(fixture),
+        encoding: 'utf8',
       });
       expect(result.error).toBeUndefined();
       expect(result.status, result.stderr).toBe(0);
@@ -598,7 +626,9 @@ describeOnBashHosts('reviewed Go module verifier', () => {
       rmSync(fixture.ownerFile, { recursive: true, force: true });
       if (invalidOwner === 'directory') mkdirSync(fixture.ownerFile);
       const result = spawnSync(join(fixture.bin, 'docker'), cases[0]!.args, {
-        cwd: fixture.root, env: goCheckEnvironment(fixture), encoding: 'utf8',
+        cwd: fixture.root,
+        env: goCheckEnvironment(fixture),
+        encoding: 'utf8',
       });
       expect(result.error).toBeUndefined();
       expect(result.status, invalidOwner).toBe(1);

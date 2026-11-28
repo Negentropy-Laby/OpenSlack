@@ -7,7 +7,11 @@ import { channel } from 'node:diagnostics_channel';
 import { ChildProcess, spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { performance } from 'node:perf_hooks';
-import { BridgeAdapterError, BridgeProcessAdapter, type BridgeProcessAdapterOptions } from '../bridge-adapter.js';
+import {
+  BridgeAdapterError,
+  BridgeProcessAdapter,
+  type BridgeProcessAdapterOptions,
+} from '../bridge-adapter.js';
 import { buildBridgeEnvelope } from '../bridge-contract.js';
 import { createRunStore, generateRunId } from '../run-store.js';
 import { createRunRecorder } from '../recorder.js';
@@ -38,55 +42,143 @@ function nullDataFacts(error: unknown) {
     const descriptor = Object.getOwnPropertyDescriptor(value, key);
     return descriptor && 'value' in descriptor ? descriptor.value : undefined;
   };
-  const kind = data(error, 'kind'), code = data(error, 'code') ?? data(data(error, 'cause'), 'code');
-  return { kind: typeof kind === 'string' && ['handshake_failed', 'session_unavailable', 'timeout', 'envelope_malformed',
-    'permission_denied', 'worktree_boundary_violation', 'protocol_version_mismatch', 'process_crash', 'unknown'].includes(kind) ? kind : 'UNKNOWN',
-    code: typeof code === 'string' && ['EACCES', 'EPERM', 'EIO', 'ENOENT', 'ETIMEDOUT', 'RUN_STATE_BUSY', 'RUN_OBSERVATION_TIMEOUT'].includes(code) ? code : 'UNKNOWN' };
+  const kind = data(error, 'kind'),
+    code = data(error, 'code') ?? data(data(error, 'cause'), 'code');
+  return {
+    kind:
+      typeof kind === 'string' &&
+      [
+        'handshake_failed',
+        'session_unavailable',
+        'timeout',
+        'envelope_malformed',
+        'permission_denied',
+        'worktree_boundary_violation',
+        'protocol_version_mismatch',
+        'process_crash',
+        'unknown',
+      ].includes(kind)
+        ? kind
+        : 'UNKNOWN',
+    code:
+      typeof code === 'string' &&
+      [
+        'EACCES',
+        'EPERM',
+        'EIO',
+        'ENOENT',
+        'ETIMEDOUT',
+        'RUN_STATE_BUSY',
+        'RUN_OBSERVATION_TIMEOUT',
+      ].includes(code)
+        ? code
+        : 'UNKNOWN',
+  };
 }
 function publishNullDataFacts(context: TestContext, owned: NullDataFixture, retained = true) {
-  Object.assign(context.task.meta, { bridgeNullDataFixture: { stage: owned.stage,
-    steps: owned.steps.map(step => ({ ...step })), firstFailure: owned.firstFailure ?? null,
-    observedChildren: owned.children.size,
-    childExitEvents: [...owned.children.values()].filter(child => child.exitSeen).length,
-    childCloseEvents: [...owned.children.values()].filter(child => child.closeSeen).length,
-    confirmedChildCloseReceipts: [...owned.started].filter(fixture => fixture.adapter.processExitReceipt !== null).length,
-    retainedRoots: retained ? owned.roots.size : 0 } });
+  Object.assign(context.task.meta, {
+    bridgeNullDataFixture: {
+      stage: owned.stage,
+      steps: owned.steps.map((step) => ({ ...step })),
+      firstFailure: owned.firstFailure ?? null,
+      observedChildren: owned.children.size,
+      childExitEvents: [...owned.children.values()].filter((child) => child.exitSeen).length,
+      childCloseEvents: [...owned.children.values()].filter((child) => child.closeSeen).length,
+      confirmedChildCloseReceipts: [...owned.started].filter(
+        (fixture) => fixture.adapter.processExitReceipt !== null,
+      ).length,
+      retainedRoots: retained ? owned.roots.size : 0,
+    },
+  });
 }
-async function nullDataStep<T>(context: TestContext, owned: NullDataFixture, name: string, operation: () => Promise<T>): Promise<T> {
+async function nullDataStep<T>(
+  context: TestContext,
+  owned: NullDataFixture,
+  name: string,
+  operation: () => Promise<T>,
+): Promise<T> {
   const began = performance.now();
   let outcome: 'fulfilled' | 'rejected' = 'rejected';
-  try { const result = await operation(); outcome = 'fulfilled'; return result; }
-  catch (error) { owned.firstFailure ??= nullDataFacts(error); throw error; }
-  finally { owned.steps.push({ name, outcome, milliseconds: performance.now() - began }); publishNullDataFacts(context, owned); }
+  try {
+    const result = await operation();
+    outcome = 'fulfilled';
+    return result;
+  } catch (error) {
+    owned.firstFailure ??= nullDataFacts(error);
+    throw error;
+  } finally {
+    owned.steps.push({ name, outcome, milliseconds: performance.now() - began });
+    publishNullDataFacts(context, owned);
+  }
 }
-function ownNullDataCase(context: TestContext, operation: (owned: NullDataFixture) => Promise<void>) {
+function ownNullDataCase(
+  context: TestContext,
+  operation: (owned: NullDataFixture) => Promise<void>,
+) {
   const owned = nullDataFixtures.get(context.task)!;
   owned.stage = 'tested_protocol';
   const diagnostic = channel('child_process');
   const disposers = new Set<() => void>();
   const capture = (value: unknown) => {
-    if (!value || typeof value !== 'object' || !('process' in value) || !(value.process instanceof ChildProcess)) return;
+    if (
+      !value ||
+      typeof value !== 'object' ||
+      !('process' in value) ||
+      !(value.process instanceof ChildProcess)
+    )
+      return;
     const child = value.process;
     const spawned = () => {
       disposeSpawn();
-      if (child.spawnfile !== process.execPath || ![...owned.started].some(fixture =>
-        JSON.stringify(child.spawnargs.slice(1)) === JSON.stringify(['--input-type=module', '-e', fixture.source]))) return;
+      if (
+        child.spawnfile !== process.execPath ||
+        ![...owned.started].some(
+          (fixture) =>
+            JSON.stringify(child.spawnargs.slice(1)) ===
+            JSON.stringify(['--input-type=module', '-e', fixture.source]),
+        )
+      )
+        return;
       const closed = Promise.withResolvers<void>();
       const fact = { ended: closed.promise, exitSeen: false, closeSeen: false };
       owned.children.set(child, fact);
-      const exited = () => { fact.exitSeen = true; publishNullDataFacts(context, owned); };
-      const ended = () => { fact.closeSeen = true; closed.resolve(); disposeEvents(); publishNullDataFacts(context, owned); };
-      const disposeEvents = () => { child.removeListener('exit', exited); child.removeListener('close', ended); disposers.delete(disposeEvents); };
-      child.once('exit', exited); child.once('close', ended); disposers.add(disposeEvents);
+      const exited = () => {
+        fact.exitSeen = true;
+        publishNullDataFacts(context, owned);
+      };
+      const ended = () => {
+        fact.closeSeen = true;
+        closed.resolve();
+        disposeEvents();
+        publishNullDataFacts(context, owned);
+      };
+      const disposeEvents = () => {
+        child.removeListener('exit', exited);
+        child.removeListener('close', ended);
+        disposers.delete(disposeEvents);
+      };
+      child.once('exit', exited);
+      child.once('close', ended);
+      disposers.add(disposeEvents);
     };
-    const disposeSpawn = () => { child.removeListener('spawn', spawned); disposers.delete(disposeSpawn); };
-    child.once('spawn', spawned); disposers.add(disposeSpawn);
+    const disposeSpawn = () => {
+      child.removeListener('spawn', spawned);
+      disposers.delete(disposeSpawn);
+    };
+    child.once('spawn', spawned);
+    disposers.add(disposeSpawn);
   };
   diagnostic.subscribe(capture);
-  owned.unsubscribe = () => { diagnostic.unsubscribe(capture); for (const dispose of disposers) dispose(); };
-  const work = Promise.resolve().then(() => operation(owned)).catch(error => {
-    owned.firstFailure ??= nullDataFacts(error); throw error;
-  });
+  owned.unsubscribe = () => {
+    diagnostic.unsubscribe(capture);
+    for (const dispose of disposers) dispose();
+  };
+  const work = Promise.resolve()
+    .then(() => operation(owned))
+    .catch((error) => {
+      owned.firstFailure ??= nullDataFacts(error);
+      throw error;
+    });
   owned.work = work;
   void work.catch(() => undefined);
   return work;
@@ -94,82 +186,161 @@ function ownNullDataCase(context: TestContext, operation: (owned: NullDataFixtur
 async function joinNullDataWork<T>(work: Promise<T>, deadline: number): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
-    return await Promise.race([work, new Promise<never>((_, reject) => {
-      timer = setTimeout(() => reject(new Error('BRIDGE_NULL_DATA_WORK_UNCONFIRMED')), Math.max(0, deadline - performance.now()));
-    })]);
-  } finally { clearTimeout(timer); }
+    return await Promise.race([
+      work,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () => reject(new Error('BRIDGE_NULL_DATA_WORK_UNCONFIRMED')),
+          Math.max(0, deadline - performance.now()),
+        );
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
 }
-beforeEach(context => {
+beforeEach((context) => {
   if (context.task.name !== nullDataCaseName) return;
-  const owned: NullDataFixture = { roots: new Set(), fixtures: [], started: new Set(), children: new Map(), stage: 'preparing', steps: [] };
+  const owned: NullDataFixture = {
+    roots: new Set(),
+    fixtures: [],
+    started: new Set(),
+    children: new Map(),
+    stage: 'preparing',
+    steps: [],
+  };
   nullDataFixtures.set(context.task, owned);
-  const ownRoot = (root: string) => { owned.roots.add(root); const index = roots.indexOf(root); if (index >= 0) roots.splice(index, 1); };
-  for (const [name, payload] of [['prepare_valid', '{ data: null }'], ['prepare_missing', "{ result: 'not data' }"]] as const) {
+  const ownRoot = (root: string) => {
+    owned.roots.add(root);
+    const index = roots.indexOf(root);
+    if (index >= 0) roots.splice(index, 1);
+  };
+  for (const [name, payload] of [
+    ['prepare_valid', '{ data: null }'],
+    ['prepare_missing', "{ result: 'not data' }"],
+  ] as const) {
     const began = performance.now();
     let outcome: 'fulfilled' | 'rejected' = 'rejected';
-    try { owned.fixtures.push(setup(prefix + `reply(frame, 'complete', ${payload});` + suffix, 2_000, {}, ownRoot)); outcome = 'fulfilled'; }
-    catch (error) { owned.firstFailure ??= nullDataFacts(error); throw error; }
-    finally { owned.steps.push({ name, outcome, milliseconds: performance.now() - began }); publishNullDataFacts(context, owned); }
+    try {
+      owned.fixtures.push(
+        setup(prefix + `reply(frame, 'complete', ${payload});` + suffix, 2_000, {}, ownRoot),
+      );
+      outcome = 'fulfilled';
+    } catch (error) {
+      owned.firstFailure ??= nullDataFacts(error);
+      throw error;
+    } finally {
+      owned.steps.push({ name, outcome, milliseconds: performance.now() - began });
+      publishNullDataFacts(context, owned);
+    }
   }
 }, 5_000);
-afterEach(async context => {
+afterEach(async (context) => {
   const owned = nullDataFixtures.get(context.task);
   let primaryFailed = context.task.result?.state === 'fail';
   let cleanupFailures = 0;
   if (owned) {
     nullDataFixtures.delete(context.task);
-    owned.stage = 'waiting_owned_work'; publishNullDataFacts(context, owned);
+    owned.stage = 'waiting_owned_work';
+    publishNullDataFacts(context, owned);
     const deadline = performance.now() + 5_000;
     try {
-      const work = await joinNullDataWork(Promise.allSettled(owned.work ? [owned.work] : []), deadline);
-      if (work.some(result => result.status === 'rejected')) primaryFailed = true;
-      const unclosed = [...owned.started].filter(fixture => fixture.adapter.processExitReceipt === null);
-      await joinNullDataWork(Promise.allSettled(unclosed.map(fixture =>
-        fixture.adapter.closeSession(`bridge-${fixture.context.runId}`))), deadline);
+      const work = await joinNullDataWork(
+        Promise.allSettled(owned.work ? [owned.work] : []),
+        deadline,
+      );
+      if (work.some((result) => result.status === 'rejected')) primaryFailed = true;
+      const unclosed = [...owned.started].filter(
+        (fixture) => fixture.adapter.processExitReceipt === null,
+      );
+      await joinNullDataWork(
+        Promise.allSettled(
+          unclosed.map((fixture) =>
+            fixture.adapter.closeSession(`bridge-${fixture.context.runId}`),
+          ),
+        ),
+        deadline,
+      );
       // A cached rejected session-close promise may settle before the actual
       // child closes. Join the observed OS close events within the same bound.
-      await joinNullDataWork(Promise.all([...owned.children.values()].map(child => child.ended)), deadline);
-      if (owned.children.size < owned.started.size || [...owned.children.values()].some(child => !child.closeSeen)) {
+      await joinNullDataWork(
+        Promise.all([...owned.children.values()].map((child) => child.ended)),
+        deadline,
+      );
+      if (
+        owned.children.size < owned.started.size ||
+        [...owned.children.values()].some((child) => !child.closeSeen)
+      ) {
         throw new Error('BRIDGE_NULL_DATA_WORK_UNCONFIRMED');
       }
       // Expected protocol refusals may cache a rejected close promise. Only the
       // actual child close receipt proves that its work has ended.
-      if ([...owned.started].some(fixture => fixture.adapter.processExitReceipt === null)) {
+      if ([...owned.started].some((fixture) => fixture.adapter.processExitReceipt === null)) {
         throw new Error('BRIDGE_NULL_DATA_WORK_UNCONFIRMED');
       }
     } catch {
-      owned.stage = 'ownership_unconfirmed'; publishNullDataFacts(context, owned);
+      owned.stage = 'ownership_unconfirmed';
+      publishNullDataFacts(context, owned);
       if (!primaryFailed) throw new Error('BRIDGE_NULL_DATA_CLEANUP_UNCONFIRMED');
       return;
-    } finally { owned.unsubscribe?.(); }
-    owned.stage = 'owned_work_drained'; publishNullDataFacts(context, owned);
+    } finally {
+      owned.unsubscribe?.();
+    }
+    owned.stage = 'owned_work_drained';
+    publishNullDataFacts(context, owned);
   }
   const ordinaryRoots = roots.splice(0);
-  try { vi.restoreAllMocks(); }
-  catch {
-    if (owned) { owned.stage = 'cleanup_failed'; publishNullDataFacts(context, owned); }
-    Object.assign(context.task.meta, { bridgeCleanup: { error: 'SPY_RESTORE_FAILED', retainedOrdinaryRoots: ordinaryRoots.length } });
+  try {
+    vi.restoreAllMocks();
+  } catch {
+    if (owned) {
+      owned.stage = 'cleanup_failed';
+      publishNullDataFacts(context, owned);
+    }
+    Object.assign(context.task.meta, {
+      bridgeCleanup: { error: 'SPY_RESTORE_FAILED', retainedOrdinaryRoots: ordinaryRoots.length },
+    });
     if (!primaryFailed) throw new Error('HARNESS_BRIDGE_TEST_SPY_RESTORE_FAILED');
     return;
   }
   const removable = [...ordinaryRoots, ...(owned && !primaryFailed ? [...owned.roots] : [])];
   for (const [index, root] of removable.entries()) {
-    try { rmSync(root, { recursive: true, force: true }); owned?.roots.delete(root); }
-    catch (error) {
+    try {
+      rmSync(root, { recursive: true, force: true });
+      owned?.roots.delete(root);
+    } catch (error) {
       cleanupFailures += 1;
-      Object.assign(context.task.meta, { bridgeCleanup: { error: 'ROOT_REMOVAL_UNCONFIRMED',
-        code: nullDataFacts(error).code, cleanupFailures,
-        unconfirmedRemovals: 1, unattemptedRemovals: removable.length - index - 1 } });
+      Object.assign(context.task.meta, {
+        bridgeCleanup: {
+          error: 'ROOT_REMOVAL_UNCONFIRMED',
+          code: nullDataFacts(error).code,
+          cleanupFailures,
+          unconfirmedRemovals: 1,
+          unattemptedRemovals: removable.length - index - 1,
+        },
+      });
       // Preserve the remaining directories after any removal error, including
       // EIO. Report cleanup separately without replacing a primary failure.
       break;
     }
   }
-  if (owned) { owned.stage = cleanupFailures ? 'cleanup_failed' : primaryFailed ? 'failed_fixture_retained' : 'removed'; publishNullDataFacts(context, owned, primaryFailed || cleanupFailures > 0); }
+  if (owned) {
+    owned.stage = cleanupFailures
+      ? 'cleanup_failed'
+      : primaryFailed
+        ? 'failed_fixture_retained'
+        : 'removed';
+    publishNullDataFacts(context, owned, primaryFailed || cleanupFailures > 0);
+  }
   if (cleanupFailures && !primaryFailed) throw new Error('HARNESS_BRIDGE_TEST_CLEANUP_FAILED');
 });
 
-function setup(source: string, timeoutMs = 2_000, extra: Partial<BridgeProcessAdapterOptions> = {}, onCreated?: (root: string) => void) {
+function setup(
+  source: string,
+  timeoutMs = 2_000,
+  extra: Partial<BridgeProcessAdapterOptions> = {},
+  onCreated?: (root: string) => void,
+) {
   const root = mkdtempSync(join(tmpdir(), 'harness-bridge-'));
   roots.push(root);
   onCreated?.(root);
@@ -177,16 +348,31 @@ function setup(source: string, timeoutMs = 2_000, extra: Partial<BridgeProcessAd
   const resolvedConfig = { agentId: 'fixture', source: 'runtime', tools: ['Read'] };
   const permissionProfile = buildPermissionProfile(resolvedConfig);
   const recorder = createRunRecorder(createRunStore(root));
-  const state = recorder.start({ runId, agentId: 'fixture', prompt: 'hello', resolvedConfig, permissionProfile });
+  const state = recorder.start({
+    runId,
+    agentId: 'fixture',
+    prompt: 'hello',
+    resolvedConfig,
+    permissionProfile,
+  });
   const toolGuard = new ToolGuard(permissionProfile, recorder, runId);
   const adapter = new BridgeProcessAdapter({
-    command: process.execPath, args: ['--input-type=module', '-e', source],
-    timeoutMs, confirmProcessExit: true, exitGraceMs: 100,
+    command: process.execPath,
+    args: ['--input-type=module', '-e', source],
+    timeoutMs,
+    confirmProcessExit: true,
+    exitGraceMs: 100,
     ...extra,
   });
   const context = {
-    prompt: 'hello', runId, agentId: 'fixture', resolvedConfig, permissionProfile,
-    recorder, runState: state, toolGuard,
+    prompt: 'hello',
+    runId,
+    agentId: 'fixture',
+    resolvedConfig,
+    permissionProfile,
+    recorder,
+    runState: state,
+    toolGuard,
     toolExecutor: new RepositoryToolExecutor({ rootPath: root, recorder, runId, toolGuard }),
   };
   return { root, adapter, context, source };
@@ -204,15 +390,20 @@ lines.on('line', text => {
 const suffix = `\n  }\n});`;
 
 it('38-08: rejects an overlapping invocation without closing or mutating the first real peer', async () => {
-  const preliminary = mkdtempSync(join(tmpdir(), 'harness-overlap-control-')); roots.push(preliminary);
-  const ready = join(preliminary, 'ready'), release = join(preliminary, 'release');
+  const preliminary = mkdtempSync(join(tmpdir(), 'harness-overlap-control-'));
+  roots.push(preliminary);
+  const ready = join(preliminary, 'ready'),
+    release = join(preliminary, 'release');
   const source = `import{existsSync,writeFileSync}from'node:fs';\n${prefix}
     writeFileSync(${JSON.stringify(ready)},'ready');
     const timer=setInterval(()=>{if(existsSync(${JSON.stringify(release)})){clearInterval(timer);reply(frame,'complete',{data:{first:true}});lines.close();process.stdin.pause();setImmediate(()=>process.exit(0));}},5);
   ${suffix}`;
   const { adapter, context } = setup(source);
   const progress = vi.spyOn(context.recorder, 'progress');
-  const first = adapter.execute(context).then(value => ({ value }), error => ({ error }));
+  const first = adapter.execute(context).then(
+    (value) => ({ value }),
+    (error) => ({ error }),
+  );
   let primary: unknown;
   try {
     await vi.waitFor(() => expect(existsSync(ready)).toBe(true));
@@ -222,105 +413,193 @@ it('38-08: rejects an overlapping invocation without closing or mutating the fir
     writeFileSync(release, 'release');
     expect(await first).toMatchObject({ value: { data: { first: true } } });
     expect(adapter.processExitReceipt).toMatchObject({ code: 0 });
-  } catch (error) { primary = error; throw error; }
-  finally {
+  } catch (error) {
+    primary = error;
+    throw error;
+  } finally {
     writeFileSync(release, 'release');
     await first;
-    try { await adapter.closeSession(`bridge-${context.runId}`); }
-    catch (error) { if (primary === undefined) throw error; }
+    try {
+      await adapter.closeSession(`bridge-${context.runId}`);
+    } catch (error) {
+      if (primary === undefined) throw error;
+    }
   }
 });
 
 describe('real worker recorder contention', () => {
-  const kinds = new Set(['handshake_failed', 'session_unavailable', 'timeout', 'envelope_malformed',
-    'permission_denied', 'worktree_boundary_violation', 'protocol_version_mismatch', 'process_crash', 'unknown']);
-  const codes = new Set(['EACCES', 'EPERM', 'EIO', 'ENOENT', 'ETIMEDOUT', 'RUN_STATE_BUSY', 'RUN_OBSERVATION_TIMEOUT']);
+  const kinds = new Set([
+    'handshake_failed',
+    'session_unavailable',
+    'timeout',
+    'envelope_malformed',
+    'permission_denied',
+    'worktree_boundary_violation',
+    'protocol_version_mismatch',
+    'process_crash',
+    'unknown',
+  ]);
+  const codes = new Set([
+    'EACCES',
+    'EPERM',
+    'EIO',
+    'ENOENT',
+    'ETIMEDOUT',
+    'RUN_STATE_BUSY',
+    'RUN_OBSERVATION_TIMEOUT',
+  ]);
   const field = (value: unknown, key: string): unknown => {
     if (!value || typeof value !== 'object' || nodeTypes.isProxy(value)) return undefined;
     const descriptor = Object.getOwnPropertyDescriptor(value, key);
     return descriptor && 'value' in descriptor ? descriptor.value : undefined;
   };
   const failureFacts = (error: unknown) => {
-    const kind = field(error, 'kind'), code = field(error, 'code') ?? field(field(error, 'cause'), 'code');
-    return { kind: typeof kind === 'string' && kinds.has(kind) ? kind : 'UNKNOWN',
+    const kind = field(error, 'kind'),
+      code = field(error, 'code') ?? field(field(error, 'cause'), 'code');
+    return {
+      kind: typeof kind === 'string' && kinds.has(kind) ? kind : 'UNKNOWN',
       code: typeof code === 'string' && codes.has(code) ? code : 'UNKNOWN',
-      deadlineExceeded: field(error, 'deadlineExceeded') === true };
+      deadlineExceeded: field(error, 'deadlineExceeded') === true,
+    };
   };
   let control: string, ready: string, send: string, release: string, marker: string, source: string;
   let fixture: ReturnType<typeof setup> | undefined;
   let outcome: Promise<{ value: unknown } | { error: unknown }> | undefined;
   let exited: Promise<{ output: string; stderr: string }> | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
-  let phases: Record<string, number>, began: number, firstError: unknown, firstErrorRecorded: boolean;
+  let phases: Record<string, number>,
+    began: number,
+    firstError: unknown,
+    firstErrorRecorded: boolean;
   const recordFirstError = (error: unknown) => {
-    if (!firstErrorRecorded) { firstError = error; firstErrorRecorded = true; }
+    if (!firstErrorRecorded) {
+      firstError = error;
+      firstErrorRecorded = true;
+    }
   };
   let unsubscribe: (() => void) | undefined;
   const ownedRoots = new Set<string>();
-  type ChildFact = { kind: 'peer' | 'writer' | 'unknown'; ended: Promise<void>;
+  type ChildFact = {
+    kind: 'peer' | 'writer' | 'unknown';
+    ended: Promise<void>;
     exit?: { code: number | null; signal: NodeJS.Signals | null };
-    close?: { code: number | null; signal: NodeJS.Signals | null } };
+    close?: { code: number | null; signal: NodeJS.Signals | null };
+  };
   const children = new Map<ChildProcess, ChildFact>();
-  const mark = (phase: string) => { phases[phase] = performance.now() - began; };
+  const mark = (phase: string) => {
+    phases[phase] = performance.now() - began;
+  };
   const ownRoot = (root: string) => {
     ownedRoots.add(root);
-    const index = roots.indexOf(root); if (index >= 0) roots.splice(index, 1);
+    const index = roots.indexOf(root);
+    if (index >= 0) roots.splice(index, 1);
   };
   async function bounded<T>(work: Promise<T>, deadline: number): Promise<T> {
     let timeout: ReturnType<typeof setTimeout> | undefined;
     try {
-      return await Promise.race([work, new Promise<never>((_, reject) => {
-        timeout = setTimeout(() => reject(new Error('H38_06_OWNED_WORK_UNCONFIRMED')), Math.max(0, deadline - performance.now()));
-      })]);
-    } finally { clearTimeout(timeout); }
+      return await Promise.race([
+        work,
+        new Promise<never>((_, reject) => {
+          timeout = setTimeout(
+            () => reject(new Error('H38_06_OWNED_WORK_UNCONFIRMED')),
+            Math.max(0, deadline - performance.now()),
+          );
+        }),
+      ]);
+    } finally {
+      clearTimeout(timeout);
+    }
   }
 
   beforeEach(() => {
     control = ready = send = release = marker = source = '';
-    began = performance.now(); phases = {}; fixture = undefined; outcome = undefined;
-    exited = undefined; timer = undefined; firstError = undefined; firstErrorRecorded = false; unsubscribe = undefined;
-    children.clear(); ownedRoots.clear();
+    began = performance.now();
+    phases = {};
+    fixture = undefined;
+    outcome = undefined;
+    exited = undefined;
+    timer = undefined;
+    firstError = undefined;
+    firstErrorRecorded = false;
+    unsubscribe = undefined;
+    children.clear();
+    ownedRoots.clear();
     try {
-      control = mkdtempSync(join(tmpdir(), 'harness-recorder-contention-')); ownRoot(control);
-      ready = join(control, 'ready'); send = join(control, 'send');
-      release = join(control, 'release'); marker = join(control, 'writer');
+      control = mkdtempSync(join(tmpdir(), 'harness-recorder-contention-'));
+      ownRoot(control);
+      ready = join(control, 'ready');
+      send = join(control, 'send');
+      release = join(control, 'release');
+      marker = join(control, 'writer');
       source = `import{existsSync,writeFileSync}from'node:fs';\n${prefix}
         writeFileSync(${JSON.stringify(ready)},'ready');
         const timer=setInterval(()=>{if(existsSync(${JSON.stringify(send)})){clearInterval(timer);reply(frame,'progress',{step:'peer-during-worker-report'});reply(frame,'complete',{data:{ok:true}});lines.close();process.stdin.pause();setImmediate(()=>process.exit(0));}},5);
       ${suffix}`;
       fixture = setup(source, 2_000, {}, ownRoot);
       mark('prepared');
-    } catch (error) { recordFirstError(error); throw error; }
+    } catch (error) {
+      recordFirstError(error);
+      throw error;
+    }
   });
 
-  afterEach(async context => {
-    const deadline = performance.now() + 5_000, cleanupErrors: unknown[] = [];
+  afterEach(async (context) => {
+    const deadline = performance.now() + 5_000,
+      cleanupErrors: unknown[] = [];
     clearTimeout(timer);
     // All gates precede every join; a signal or producer result is never a close receipt.
-    for (const path of [send, release]) if (path) {
-      try { writeFileSync(path, 'cleanup'); } catch (error) { cleanupErrors.push(error); }
-    }
+    for (const path of [send, release])
+      if (path) {
+        try {
+          writeFileSync(path, 'cleanup');
+        } catch (error) {
+          cleanupErrors.push(error);
+        }
+      }
     try {
       if (outcome) await bounded(outcome, deadline);
-      if (exited) await bounded(exited.then(() => undefined, error => { cleanupErrors.push(error); }), deadline);
-      await bounded(Promise.all([...children.values()].map(value => value.ended)), deadline);
+      if (exited)
+        await bounded(
+          exited.then(
+            () => undefined,
+            (error) => {
+              cleanupErrors.push(error);
+            },
+          ),
+          deadline,
+        );
+      await bounded(Promise.all([...children.values()].map((value) => value.ended)), deadline);
     } catch (error) {
       cleanupErrors.push(error);
-      for (const [child, fact] of children) if (fact.kind !== 'unknown' && !fact.close) {
-        try { child.kill('SIGKILL'); } catch (cause) { cleanupErrors.push(cause); }
-      }
+      for (const [child, fact] of children)
+        if (fact.kind !== 'unknown' && !fact.close) {
+          try {
+            child.kill('SIGKILL');
+          } catch (cause) {
+            cleanupErrors.push(cause);
+          }
+        }
       // Unknown work retains its roots even if a later actual close arrives.
-    } finally { unsubscribe?.(); }
+    } finally {
+      unsubscribe?.();
+    }
     const primaryFailed = context.task.result?.state === 'fail' || firstErrorRecorded;
     if (!primaryFailed && cleanupErrors.length === 0) {
       for (const root of ownedRoots) {
-        try { rmSync(root, { recursive: true, force: true }); } catch (error) { cleanupErrors.push(error); }
+        try {
+          rmSync(root, { recursive: true, force: true });
+        } catch (error) {
+          cleanupErrors.push(error);
+        }
       }
     }
     if (primaryFailed || cleanupErrors.length > 0) {
-      console.error('H38_06_FIXTURE_RETAINED', { ...failureFacts(firstError), phases,
-        fixtureIds: [...ownedRoots].map(root => basename(root)),
-        cleanup: cleanupErrors.map(failureFacts) });
+      console.error('H38_06_FIXTURE_RETAINED', {
+        ...failureFacts(firstError),
+        phases,
+        fixtureIds: [...ownedRoots].map((root) => basename(root)),
+        cleanup: cleanupErrors.map(failureFacts),
+      });
     }
     if (!primaryFailed && cleanupErrors.length > 0) throw new Error('H38_06_CLEANUP_FAILED');
   });
@@ -332,57 +611,106 @@ describe('real worker recorder contention', () => {
     const diagnostic = channel('child_process');
     const pending = new Map<ChildProcess, () => void>();
     const capture = (value: unknown) => {
-      if (!value || typeof value !== 'object' || !('process' in value) || !(value.process instanceof ChildProcess)) return;
-      const child = value.process, finished = Promise.withResolvers<void>();
-      const fact: ChildFact = { kind: 'unknown', ended: finished.promise }; children.set(child, fact);
-      child.once('exit', (code, signal) => { fact.exit = { code, signal }; });
+      if (
+        !value ||
+        typeof value !== 'object' ||
+        !('process' in value) ||
+        !(value.process instanceof ChildProcess)
+      )
+        return;
+      const child = value.process,
+        finished = Promise.withResolvers<void>();
+      const fact: ChildFact = { kind: 'unknown', ended: finished.promise };
+      children.set(child, fact);
+      child.once('exit', (code, signal) => {
+        fact.exit = { code, signal };
+      });
       child.once('close', (code, signal) => {
-        fact.close = { code, signal }; pending.delete(child); child.removeListener('spawn', spawned);
-        mark(fact.kind + '_close'); finished.resolve();
+        fact.close = { code, signal };
+        pending.delete(child);
+        child.removeListener('spawn', spawned);
+        mark(fact.kind + '_close');
+        finished.resolve();
       });
       const spawned = () => {
         pending.delete(child);
         if (child.spawnfile === process.execPath) {
           const args = child.spawnargs.slice(1);
-          if (JSON.stringify(args) === JSON.stringify(['--input-type=module', '-e', source])) fact.kind = 'peer';
+          if (JSON.stringify(args) === JSON.stringify(['--input-type=module', '-e', source]))
+            fact.kind = 'peer';
           else if (JSON.stringify(args) === JSON.stringify(writerArgs)) fact.kind = 'writer';
         }
         mark(fact.kind + '_spawn');
       };
-      pending.set(child, spawned); child.once('spawn', spawned);
+      pending.set(child, spawned);
+      child.once('spawn', spawned);
     };
     diagnostic.subscribe(capture);
-    unsubscribe = () => { diagnostic.unsubscribe(capture); for (const [child, spawned] of pending) child.removeListener('spawn', spawned); };
+    unsubscribe = () => {
+      diagnostic.unsubscribe(capture);
+      for (const [child, spawned] of pending) child.removeListener('spawn', spawned);
+    };
     try {
       mark('adapter_start');
-      outcome = adapter.execute(context).then(value => { mark('outcome'); return { value }; }, error => {
-        mark('outcome'); recordFirstError(error); return { error };
-      });
-      await vi.waitFor(() => expect(existsSync(ready)).toBe(true)); mark('peer_ready');
+      outcome = adapter.execute(context).then(
+        (value) => {
+          mark('outcome');
+          return { value };
+        },
+        (error) => {
+          mark('outcome');
+          recordFirstError(error);
+          return { error };
+        },
+      );
+      await vi.waitFor(() => expect(existsSync(ready)).toBe(true));
+      mark('peer_ready');
       mark('writer_start');
       const child = spawn(process.execPath, writerArgs, { stdio: ['ignore', 'pipe', 'pipe'] });
-      let output = '', stderr = '';
-      child.stdout!.on('data', bytes => { output += bytes; }); child.stderr!.on('data', bytes => { stderr += bytes; });
+      let output = '',
+        stderr = '';
+      child.stdout!.on('data', (bytes) => {
+        output += bytes;
+      });
+      child.stderr!.on('data', (bytes) => {
+        stderr += bytes;
+      });
       exited = new Promise((resolve, reject) => {
         child.once('error', reject);
-        child.once('close', code => code === 0 ? resolve({ output, stderr }) : reject(new Error('H38_06_WRITER_EXIT_FAILED')));
+        child.once('close', (code) =>
+          code === 0 ? resolve({ output, stderr }) : reject(new Error('H38_06_WRITER_EXIT_FAILED')),
+        );
       });
       void exited.catch(() => undefined);
-      await vi.waitFor(() => expect(existsSync(marker + '.acquired')).toBe(true)); mark('writer_acquired');
-      writeFileSync(send, 'allow peer frame while writer owns lock'); mark('peer_send');
-      timer = setTimeout(() => { writeFileSync(release, 'release writer'); mark('writer_released'); }, 50);
+      await vi.waitFor(() => expect(existsSync(marker + '.acquired')).toBe(true));
+      mark('writer_acquired');
+      writeFileSync(send, 'allow peer frame while writer owns lock');
+      mark('peer_send');
+      timer = setTimeout(() => {
+        writeFileSync(release, 'release writer');
+        mark('writer_released');
+      }, 50);
       const result = await outcome;
       const comparable = 'error' in result ? { error: failureFacts(result.error) } : result;
-      expect(comparable, JSON.stringify({ phase: 'peer_result', ...failureFacts(firstError), phases }))
-        .toMatchObject({ value: { data: { ok: true } } });
+      expect(
+        comparable,
+        JSON.stringify({ phase: 'peer_result', ...failureFacts(firstError), phases }),
+      ).toMatchObject({ value: { data: { ok: true } } });
       await expect(exited).resolves.toMatchObject({ stderr: '' });
-      await bounded(Promise.all([...children.values()].map(value => value.ended)), began + 5_000);
-      expect([...children.values()].map(value => value.kind).sort()).toEqual(['peer', 'writer']);
-      expect([...children.values()].every(value => value.close?.code === 0 && value.exit?.code === 0)).toBe(true);
+      await bounded(Promise.all([...children.values()].map((value) => value.ended)), began + 5_000);
+      expect([...children.values()].map((value) => value.kind).sort()).toEqual(['peer', 'writer']);
+      expect(
+        [...children.values()].every((value) => value.close?.code === 0 && value.exit?.code === 0),
+      ).toBe(true);
       const transcript = readTranscript(context.runId, root);
-      expect(transcript.filter(event => event.data?.independentAppend)).toHaveLength(1);
-      expect(transcript.filter(event => event.data?.step === 'peer-during-worker-report')).toHaveLength(1);
-    } catch (error) { recordFirstError(error); throw error; }
+      expect(transcript.filter((event) => event.data?.independentAppend)).toHaveLength(1);
+      expect(
+        transcript.filter((event) => event.data?.step === 'peer-during-worker-report'),
+      ).toHaveLength(1);
+    } catch (error) {
+      recordFirstError(error);
+      throw error;
+    }
   });
 });
 
@@ -391,74 +719,149 @@ function observePeer(root: string, source: string) {
   const diagnostic = channel('child_process');
   const closed = Promise.withResolvers<{ code: number | null; signal: NodeJS.Signals | null }>();
   const pending = new Map<ChildProcess, () => void>();
-  let child: ChildProcess | undefined, closeFact: { code: number | null; signal: NodeJS.Signals | null } | undefined;
-  let matches = 0, constructions = 0, observationFailure: string | undefined;
+  let child: ChildProcess | undefined,
+    closeFact: { code: number | null; signal: NodeJS.Signals | null } | undefined;
+  let matches = 0,
+    constructions = 0,
+    observationFailure: string | undefined;
   const capture = (value: unknown) => {
-    if (!value || typeof value !== 'object' || !('process' in value) || !(value.process instanceof ChildProcess)) {
-      observationFailure = 'Invalid child construction observation'; return;
+    if (
+      !value ||
+      typeof value !== 'object' ||
+      !('process' in value) ||
+      !(value.process instanceof ChildProcess)
+    ) {
+      observationFailure = 'Invalid child construction observation';
+      return;
     }
     constructions++;
     const candidate = value.process;
     const spawned = () => {
       pending.delete(candidate);
-      if (candidate.spawnfile !== process.execPath || JSON.stringify(candidate.spawnargs.slice(1)) !== JSON.stringify(['--input-type=module', '-e', source])) {
-        observationFailure = 'Unexpected child executable or arguments'; return;
+      if (
+        candidate.spawnfile !== process.execPath ||
+        JSON.stringify(candidate.spawnargs.slice(1)) !==
+          JSON.stringify(['--input-type=module', '-e', source])
+      ) {
+        observationFailure = 'Unexpected child executable or arguments';
+        return;
       }
-      matches++; child = candidate;
-      if (matches !== 1 || !Number.isSafeInteger(candidate.pid) || candidate.pid! <= 0) observationFailure = 'Non-unique child identity';
-      candidate.once('close', (code, signal) => { closeFact = { code, signal }; closed.resolve(closeFact); });
+      matches++;
+      child = candidate;
+      if (matches !== 1 || !Number.isSafeInteger(candidate.pid) || candidate.pid! <= 0)
+        observationFailure = 'Non-unique child identity';
+      candidate.once('close', (code, signal) => {
+        closeFact = { code, signal };
+        closed.resolve(closeFact);
+      });
     };
-    pending.set(candidate, spawned); candidate.once('spawn', spawned);
+    pending.set(candidate, spawned);
+    candidate.once('spawn', spawned);
   };
   const bounded = async <T>(work: Promise<T>): Promise<T> => {
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {
-      return await Promise.race([work, new Promise<never>((_, reject) => {
-        timer = setTimeout(() => reject(new Error('Fixture close remains unknown; preserve its workspace')), 5_000);
-      })]);
-    } finally { clearTimeout(timer); }
+      return await Promise.race([
+        work,
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(
+            () => reject(new Error('Fixture close remains unknown; preserve its workspace')),
+            5_000,
+          );
+        }),
+      ]);
+    } finally {
+      clearTimeout(timer);
+    }
   };
   if (roots.includes(root)) roots.splice(roots.indexOf(root), 1);
   diagnostic.subscribe(capture);
   return {
-    get child() { return child; }, get matches() { return matches; },
-    get constructions() { return constructions; }, get pending() { return pending.size; },
-    get failure() { return observationFailure; }, get closeFact() { return closeFact; },
+    get child() {
+      return child;
+    },
+    get matches() {
+      return matches;
+    },
+    get constructions() {
+      return constructions;
+    },
+    get pending() {
+      return pending.size;
+    },
+    get failure() {
+      return observationFailure;
+    },
+    get closeFact() {
+      return closeFact;
+    },
     waitForClose: () => bounded(closed.promise),
     async verify<T>(task: Promise<T>, check: () => Promise<void>) {
       let primaryFailure: unknown;
-      try { await bounded(check()); }
-      catch (cause) { primaryFailure = cause; throw cause; }
-      finally {
-        try { await bounded(task); }
-        catch (cause) {
-          if (primaryFailure === undefined) { primaryFailure = cause; throw cause; }
-          if (primaryFailure instanceof Error) {
-            try { Object.defineProperty(primaryFailure, 'fixtureSettlementError', { value: cause }); } catch { /* preserve the primary */ }
+      try {
+        await bounded(check());
+      } catch (cause) {
+        primaryFailure = cause;
+        throw cause;
+      } finally {
+        try {
+          await bounded(task);
+        } catch (cause) {
+          if (primaryFailure === undefined) {
+            primaryFailure = cause;
+            throw cause;
           }
-        } finally { await this.release(primaryFailure); }
+          if (primaryFailure instanceof Error) {
+            try {
+              Object.defineProperty(primaryFailure, 'fixtureSettlementError', { value: cause });
+            } catch {
+              /* preserve the primary */
+            }
+          }
+        } finally {
+          await this.release(primaryFailure);
+        }
       }
     },
     async release(primaryFailure?: unknown) {
       try {
-        if (child && !closeFact) { child.kill('SIGKILL'); await bounded(closed.promise); }
+        if (child && !closeFact) {
+          child.kill('SIGKILL');
+          await bounded(closed.promise);
+        }
       } catch (cleanupError) {
         if (primaryFailure === undefined) throw cleanupError;
         if (primaryFailure instanceof Error) {
-          try { Object.defineProperty(primaryFailure, 'fixtureCleanupError', { value: cleanupError }); } catch { /* preserve the primary */ }
+          try {
+            Object.defineProperty(primaryFailure, 'fixtureCleanupError', { value: cleanupError });
+          } catch {
+            /* preserve the primary */
+          }
         }
       } finally {
         diagnostic.unsubscribe(capture);
         for (const [candidate, spawned] of pending) candidate.removeListener('spawn', spawned);
-        if (((constructions === 1 && matches === 1 && closeFact && pending.size === 0 && !observationFailure) || (constructions === 0 && pending.size === 0 && !observationFailure)) && !roots.includes(root)) roots.push(root);
+        if (
+          ((constructions === 1 &&
+            matches === 1 &&
+            closeFact &&
+            pending.size === 0 &&
+            !observationFailure) ||
+            (constructions === 0 && pending.size === 0 && !observationFailure)) &&
+          !roots.includes(root)
+        )
+          roots.push(root);
       }
     },
   };
 }
 
 async function assertRefusedChild(
-  observation: ReturnType<typeof observePeer>, adapter: BridgeProcessAdapter,
-  error: BridgeAdapterError, authorityCalls: number, startedAt: number,
+  observation: ReturnType<typeof observePeer>,
+  adapter: BridgeProcessAdapter,
+  error: BridgeAdapterError,
+  authorityCalls: number,
+  startedAt: number,
 ) {
   expect(observation.failure).toBeUndefined();
   expect(observation.pending).toBe(0);
@@ -498,16 +901,22 @@ describe('test observer ownership', () => {
     const { root, adapter } = setup(source);
     const observation = observePeer(root, source);
     // Inert emitters only. No spawn call is made and no real PID is signalled.
-    const first = Object.assign(new ChildProcess(), { spawnfile: process.execPath, spawnargs: [process.execPath, '--input-type=module', '-e', source], pid: 123 });
+    const first = Object.assign(new ChildProcess(), {
+      spawnfile: process.execPath,
+      spawnargs: [process.execPath, '--input-type=module', '-e', source],
+      pid: 123,
+    });
     try {
       first.emit('spawn');
       const refusal = new BridgeAdapterError('timeout', 'Fixed test refusal');
       refusal.shutdownEvidence = { exit: null, clean: false };
       const check = assertRefusedChild(observation, adapter, refusal, 0, performance.now());
-      new ChildProcess(); first.emit('close', 0, null);
+      new ChildProcess();
+      first.emit('close', 0, null);
       await expect(check).rejects.toThrow();
       await observation.release();
-      expect(observation.constructions).toBe(2); expect(observation.pending).toBe(1);
+      expect(observation.constructions).toBe(2);
+      expect(observation.pending).toBe(1);
       expect(roots).not.toContain(root);
     } finally {
       await observation.release();
@@ -519,104 +928,161 @@ describe('test observer ownership', () => {
 
 describe('Harness bridge ownership', () => {
   it('returns complete.data only after an observed clean exit', async () => {
-    const { adapter, context } = setup(prefix + `reply(frame, 'complete', { data: { text: 'done' } });` + suffix);
+    const { adapter, context } = setup(
+      prefix + `reply(frame, 'complete', { data: { text: 'done' } });` + suffix,
+    );
     expect((await adapter.execute(context)).data).toEqual({ text: 'done' });
     expect(adapter.processExitReceipt).toEqual({ code: 0, signal: null });
   });
 
-  it.each(['deadline', 'cancel', 'elapsed'] as const)('does not return success when %s invalidates clean shutdown confirmation', async kind => {
-    const controller = new AbortController();
-    const started = performance.now();
-    if (kind === 'deadline') vi.spyOn(AbortSignal, 'timeout').mockReturnValue(controller.signal);
-    const { adapter, context } = setup(prefix + `reply(frame, 'complete', { data: 'must not succeed' });` + suffix);
-    const close = adapter.closeSession.bind(adapter);
-    vi.spyOn(adapter, 'closeSession').mockImplementationOnce(async id => {
-      if (kind !== 'elapsed') controller.abort(new Error('Cancelled during shutdown'));
-      const result = await close(id);
-      if (kind === 'elapsed') vi.spyOn(performance, 'now').mockReturnValue(started + 60_000);
-      return result;
-    });
-    const outcome = await adapter.execute({ ...context, ...(kind === 'cancel' ? { signal: controller.signal } : {}) })
-      .then(value => ({ value, error: undefined }), error => ({ value: undefined, error }));
-    expect(adapter.processExitReceipt).toEqual({ code: 0, signal: null });
-    expect(outcome.value).toBeUndefined();
-    expect(outcome.error).toMatchObject({ kind: kind === 'cancel' ? 'unknown' : 'timeout' });
-  });
-
-  it.each([false, true])('rejects frames from a different run with held-open peer=%s', async holdOpen => {
-    const source = prefix + `reply({ ...frame, correlationId: 'other' }, 'complete', { data: {} });${holdOpen ? 'setInterval(() => {}, 1_000);' : ''}` + suffix;
-    const { root, adapter, context } = setup(source);
-    const observation = observePeer(root, source);
-    const progress = vi.spyOn(context.recorder, 'progress');
-    const startedAt = performance.now();
-    const task = adapter.execute(context).then(value => ({ value, error: undefined }), (error: unknown) => ({ value: undefined, error }));
-    await observation.verify(task, async () => {
-      const outcome = await task;
+  it.each(['deadline', 'cancel', 'elapsed'] as const)(
+    'does not return success when %s invalidates clean shutdown confirmation',
+    async (kind) => {
+      const controller = new AbortController();
+      const started = performance.now();
+      if (kind === 'deadline') vi.spyOn(AbortSignal, 'timeout').mockReturnValue(controller.signal);
+      const { adapter, context } = setup(
+        prefix + `reply(frame, 'complete', { data: 'must not succeed' });` + suffix,
+      );
+      const close = adapter.closeSession.bind(adapter);
+      vi.spyOn(adapter, 'closeSession').mockImplementationOnce(async (id) => {
+        if (kind !== 'elapsed') controller.abort(new Error('Cancelled during shutdown'));
+        const result = await close(id);
+        if (kind === 'elapsed') vi.spyOn(performance, 'now').mockReturnValue(started + 60_000);
+        return result;
+      });
+      const outcome = await adapter
+        .execute({ ...context, ...(kind === 'cancel' ? { signal: controller.signal } : {}) })
+        .then(
+          (value) => ({ value, error: undefined }),
+          (error) => ({ value: undefined, error }),
+        );
+      expect(adapter.processExitReceipt).toEqual({ code: 0, signal: null });
       expect(outcome.value).toBeUndefined();
-      expect(outcome.error).toBeInstanceOf(BridgeAdapterError);
-      if (!(outcome.error instanceof BridgeAdapterError)) throw new Error('Expected a typed protocol refusal.');
-      expect(outcome.error.kind).toBe('envelope_malformed');
-      expect(outcome.error.message).toContain('another run');
-      expect(observation.constructions).toBe(1);
-      expect(observation.matches).toBe(1);
-      const receiptAtReturn = adapter.processExitReceipt;
-      await assertRefusedChild(observation, adapter, outcome.error, 0, startedAt);
-      const state = createRunStore(root).readRun(context.runId);
-      expect(state).not.toBeNull();
-      expect(state!.toolCalls).toBe(0);
-      expect(state!.status).not.toBe('completed');
-      expect(progress.mock.calls.some(([, data]) => data.step === 'bridge_session_failed' && data.errorKind === 'envelope_malformed')).toBe(true);
-      expect(progress.mock.calls.some(([, data]) => data.step === 'bridge_session_completed')).toBe(false);
-      if (receiptAtReturn && (receiptAtReturn.code !== 0 || receiptAtReturn.signal !== null)) {
-        expect(outcome.error.shutdownEvidence).toEqual({ exit: receiptAtReturn, clean: false });
-      }
-    });
-  });
+      expect(outcome.error).toMatchObject({ kind: kind === 'cancel' ? 'unknown' : 'timeout' });
+    },
+  );
 
-  it('retains an explicit null data value and refuses a missing data field', context => ownNullDataCase(context, async owned => {
-    const [valid, missing] = owned.fixtures;
-    owned.started.add(valid!);
-    expect((await nullDataStep(context, owned, 'execute_valid', () => valid!.adapter.execute(valid!.context))).data).toBeNull();
-    owned.started.add(missing!);
-    await nullDataStep(context, owned, 'execute_missing', async () => {
-      await expect(missing!.adapter.execute(missing!.context)).rejects.toThrow(/data/);
-    });
-  }));
+  it.each([false, true])(
+    'rejects frames from a different run with held-open peer=%s',
+    async (holdOpen) => {
+      const source =
+        prefix +
+        `reply({ ...frame, correlationId: 'other' }, 'complete', { data: {} });${holdOpen ? 'setInterval(() => {}, 1_000);' : ''}` +
+        suffix;
+      const { root, adapter, context } = setup(source);
+      const observation = observePeer(root, source);
+      const progress = vi.spyOn(context.recorder, 'progress');
+      const startedAt = performance.now();
+      const task = adapter.execute(context).then(
+        (value) => ({ value, error: undefined }),
+        (error: unknown) => ({ value: undefined, error }),
+      );
+      await observation.verify(task, async () => {
+        const outcome = await task;
+        expect(outcome.value).toBeUndefined();
+        expect(outcome.error).toBeInstanceOf(BridgeAdapterError);
+        if (!(outcome.error instanceof BridgeAdapterError))
+          throw new Error('Expected a typed protocol refusal.');
+        expect(outcome.error.kind).toBe('envelope_malformed');
+        expect(outcome.error.message).toContain('another run');
+        expect(observation.constructions).toBe(1);
+        expect(observation.matches).toBe(1);
+        const receiptAtReturn = adapter.processExitReceipt;
+        await assertRefusedChild(observation, adapter, outcome.error, 0, startedAt);
+        const state = createRunStore(root).readRun(context.runId);
+        expect(state).not.toBeNull();
+        expect(state!.toolCalls).toBe(0);
+        expect(state!.status).not.toBe('completed');
+        expect(
+          progress.mock.calls.some(
+            ([, data]) =>
+              data.step === 'bridge_session_failed' && data.errorKind === 'envelope_malformed',
+          ),
+        ).toBe(true);
+        expect(
+          progress.mock.calls.some(([, data]) => data.step === 'bridge_session_completed'),
+        ).toBe(false);
+        if (receiptAtReturn && (receiptAtReturn.code !== 0 || receiptAtReturn.signal !== null)) {
+          expect(outcome.error.shutdownEvidence).toEqual({ exit: receiptAtReturn, clean: false });
+        }
+      });
+    },
+  );
+
+  it('retains an explicit null data value and refuses a missing data field', (context) =>
+    ownNullDataCase(context, async (owned) => {
+      const [valid, missing] = owned.fixtures;
+      owned.started.add(valid!);
+      expect(
+        (
+          await nullDataStep(context, owned, 'execute_valid', () =>
+            valid!.adapter.execute(valid!.context),
+          )
+        ).data,
+      ).toBeNull();
+      owned.started.add(missing!);
+      await nullDataStep(context, owned, 'execute_missing', async () => {
+        await expect(missing!.adapter.execute(missing!.context)).rejects.toThrow(/data/);
+      });
+    }));
 
   it('rejects duplicate terminal frames even when the first complete would otherwise be valid', async () => {
-    const { adapter, context } = setup(prefix + `reply(frame, 'complete', { data: 1 }); reply(frame, 'complete', { data: 2 });` + suffix);
+    const { adapter, context } = setup(
+      prefix +
+        `reply(frame, 'complete', { data: 1 }); reply(frame, 'complete', { data: 2 });` +
+        suffix,
+    );
     await expect(adapter.execute(context)).rejects.toThrow('Duplicate terminal');
   });
 
   it('decodes multibyte UTF-8 split across process writes', async () => {
-    const { adapter, context } = setup(prefix + `
+    const { adapter, context } = setup(
+      prefix +
+        `
       const bytes = Buffer.from(JSON.stringify({ ...frame, kind: 'complete', payload: { data: '双向闭环' } }) + '\\n');
       const cut = bytes.indexOf(Buffer.from('双')) + 1;
       process.stdout.write(bytes.subarray(0, cut));
       setTimeout(() => process.stdout.write(bytes.subarray(cut)), 10);
-    ` + suffix);
+    ` +
+        suffix,
+    );
     expect((await adapter.execute(context)).data).toBe('双向闭环');
   });
 
   it('requires an acknowledged live host authorization before the peer proceeds', async () => {
     const authorizeTool = vi.fn(async () => {});
-    const { adapter, context } = setup(prefix + `
+    const { adapter, context } = setup(
+      prefix +
+        `
       reply(frame, 'tool_request', { phase: 'authorize', authorizationRequestId: 'auth-1', toolName: 'Read', input: { file_path: '/fixture.txt' } });
     }
     if (frame.kind === 'tool_response' && frame.payload.authorizationRequestId === 'auth-1') {
       if (frame.payload.allowed !== true) process.exit(9);
       reply(frame, 'complete', { data: 'authorized' });
-    ` + suffix, 2_000, { authorizeTool });
+    ` +
+        suffix,
+      2_000,
+      { authorizeTool },
+    );
     expect((await adapter.execute(context)).data).toBe('authorized');
     expect(authorizeTool).toHaveBeenCalledTimes(1);
     expect(authorizeTool.mock.calls[0]?.slice(1)).toEqual(['Read', { file_path: '/fixture.txt' }]);
   });
 
   it('refuses live authority or an earlier original startup cutoff without effects', async () => {
-    for (const authorizeTool of [async () => { throw new Error('PRIVATE_AUTHORITY_DETAIL'); }, () => new Promise<void>(() => {})]) {
-      const source = prefix + `
+    for (const authorizeTool of [
+      async () => {
+        throw new Error('PRIVATE_AUTHORITY_DETAIL');
+      },
+      () => new Promise<void>(() => {}),
+    ]) {
+      const source =
+        prefix +
+        `
         reply(frame, 'tool_request', { phase: 'authorize', authorizationRequestId: 'auth-1', toolName: 'Read', input: {} });
-      ` + suffix;
+      ` +
+        suffix;
       const authority = vi.fn(authorizeTool);
       const { root, adapter, context } = setup(source, 100, { authorizeTool: authority });
       const effects = vi.spyOn(context.toolExecutor, 'execute');
@@ -624,17 +1090,32 @@ describe('Harness bridge ownership', () => {
       const progress = vi.spyOn(context.recorder, 'progress');
       const observation = observePeer(root, source);
       const startedAt = performance.now();
-      const task = adapter.execute(context).then(value => ({ value, error: undefined }), error => ({ value: undefined, error }));
+      const task = adapter.execute(context).then(
+        (value) => ({ value, error: undefined }),
+        (error) => ({ value: undefined, error }),
+      );
       await observation.verify(task, async () => {
         const outcome = await task;
         expect(outcome.value).toBeUndefined();
         expect(outcome.error).toBeInstanceOf(BridgeAdapterError);
         expect(['permission_denied', 'timeout']).toContain(outcome.error.kind);
         expect(outcome.error.message).not.toContain('PRIVATE_AUTHORITY_DETAIL');
-        expect(effects).not.toHaveBeenCalled(); expect(completed).not.toHaveBeenCalled();
-        expect(progress.mock.calls.some(([, value]) => value.step === 'bridge_session_completed')).toBe(false);
-        if (observation.constructions === 0) expect(progress.mock.calls.some(([, value]) => value.step === 'bridge_session_started')).toBe(false);
-        await assertRefusedChild(observation, adapter, outcome.error as BridgeAdapterError, authority.mock.calls.length, startedAt);
+        expect(effects).not.toHaveBeenCalled();
+        expect(completed).not.toHaveBeenCalled();
+        expect(
+          progress.mock.calls.some(([, value]) => value.step === 'bridge_session_completed'),
+        ).toBe(false);
+        if (observation.constructions === 0)
+          expect(
+            progress.mock.calls.some(([, value]) => value.step === 'bridge_session_started'),
+          ).toBe(false);
+        await assertRefusedChild(
+          observation,
+          adapter,
+          outcome.error as BridgeAdapterError,
+          authority.mock.calls.length,
+          startedAt,
+        );
       });
     }
   }, 20_000); // Two authority modes; bounded observation/teardown, not a renewed task.
@@ -650,121 +1131,219 @@ describe('Harness bridge ownership', () => {
       original(id, value);
       if (value.step === 'bridge_mcp_availability') {
         const cutoff = performance.now() + 120;
-        while (performance.now() < cutoff) { /* Controlled synchronous persistence stall. */ }
+        while (performance.now() < cutoff) {
+          /* Controlled synchronous persistence stall. */
+        }
       }
     });
-    const observation = observePeer(root, source), startedAt = performance.now();
-    const task = adapter.execute(context).then(value => ({ value, error: undefined }), error => ({ value: undefined, error }));
+    const observation = observePeer(root, source),
+      startedAt = performance.now();
+    const task = adapter.execute(context).then(
+      (value) => ({ value, error: undefined }),
+      (error) => ({ value: undefined, error }),
+    );
     await observation.verify(task, async () => {
       const outcome = await task;
-      expect(outcome.value).toBeUndefined(); expect(outcome.error).toBeInstanceOf(BridgeAdapterError);
+      expect(outcome.value).toBeUndefined();
+      expect(outcome.error).toBeInstanceOf(BridgeAdapterError);
       expect(observation.constructions).toBe(0);
-      expect(effects).not.toHaveBeenCalled(); expect(completed).not.toHaveBeenCalled();
-      expect(progress.mock.calls.some(([, value]) => value.step === 'bridge_session_started' || value.step === 'bridge_session_completed')).toBe(false);
-      await assertRefusedChild(observation, adapter, outcome.error as BridgeAdapterError, authority.mock.calls.length, startedAt);
+      expect(effects).not.toHaveBeenCalled();
+      expect(completed).not.toHaveBeenCalled();
+      expect(
+        progress.mock.calls.some(
+          ([, value]) =>
+            value.step === 'bridge_session_started' || value.step === 'bridge_session_completed',
+        ),
+      ).toBe(false);
+      await assertRefusedChild(
+        observation,
+        adapter,
+        outcome.error as BridgeAdapterError,
+        authority.mock.calls.length,
+        startedAt,
+      );
     });
   });
 
-  it.each(['rejected', 'pending'] as const)('enters a %s authority port once and preserves its bounded refusal', async mode => {
-    const controller = new AbortController();
-    if (mode === 'pending') vi.spyOn(AbortSignal, 'timeout').mockReturnValue(controller.signal);
-    const authority = vi.fn(async () => {
-      if (mode === 'rejected') throw new Error('PRIVATE_AUTHORITY_DETAIL');
-      queueMicrotask(() => controller.abort(new Error('PRIVATE_AUTHORITY_DETAIL')));
-      await new Promise<void>(() => {});
-    });
-    const source = prefix + `reply(frame, 'tool_request', { phase: 'authorize', authorizationRequestId: 'auth-1', toolName: 'Read', input: {} });` + suffix;
-    // The file's existing ordinary setup, not an extension of the 100ms case.
-    const { root, adapter, context } = setup(source, undefined, { authorizeTool: authority });
-    const effects = vi.spyOn(context.toolExecutor, 'execute');
-    const completed = vi.spyOn(context.recorder, 'complete');
-    const observation = observePeer(root, source), startedAt = performance.now();
-    const task = adapter.execute(context).then(value => ({ value, error: undefined }), error => ({ value: undefined, error }));
-    await observation.verify(task, async () => {
-      const outcome = await task;
-      expect(outcome.value).toBeUndefined(); expect(outcome.error).toBeInstanceOf(BridgeAdapterError);
-      expect(outcome.error).toMatchObject({ kind: mode === 'rejected' ? 'permission_denied' : 'timeout' });
-      expect(outcome.error.message).not.toContain('PRIVATE_AUTHORITY_DETAIL');
-      expect(authority).toHaveBeenCalledOnce();
-      expect(effects).not.toHaveBeenCalled(); expect(completed).not.toHaveBeenCalled();
-      await assertRefusedChild(observation, adapter, outcome.error as BridgeAdapterError, authority.mock.calls.length, startedAt);
-    });
-  });
+  it.each(['rejected', 'pending'] as const)(
+    'enters a %s authority port once and preserves its bounded refusal',
+    async (mode) => {
+      const controller = new AbortController();
+      if (mode === 'pending') vi.spyOn(AbortSignal, 'timeout').mockReturnValue(controller.signal);
+      const authority = vi.fn(async () => {
+        if (mode === 'rejected') throw new Error('PRIVATE_AUTHORITY_DETAIL');
+        queueMicrotask(() => controller.abort(new Error('PRIVATE_AUTHORITY_DETAIL')));
+        await new Promise<void>(() => {});
+      });
+      const source =
+        prefix +
+        `reply(frame, 'tool_request', { phase: 'authorize', authorizationRequestId: 'auth-1', toolName: 'Read', input: {} });` +
+        suffix;
+      // The file's existing ordinary setup, not an extension of the 100ms case.
+      const { root, adapter, context } = setup(source, undefined, { authorizeTool: authority });
+      const effects = vi.spyOn(context.toolExecutor, 'execute');
+      const completed = vi.spyOn(context.recorder, 'complete');
+      const observation = observePeer(root, source),
+        startedAt = performance.now();
+      const task = adapter.execute(context).then(
+        (value) => ({ value, error: undefined }),
+        (error) => ({ value: undefined, error }),
+      );
+      await observation.verify(task, async () => {
+        const outcome = await task;
+        expect(outcome.value).toBeUndefined();
+        expect(outcome.error).toBeInstanceOf(BridgeAdapterError);
+        expect(outcome.error).toMatchObject({
+          kind: mode === 'rejected' ? 'permission_denied' : 'timeout',
+        });
+        expect(outcome.error.message).not.toContain('PRIVATE_AUTHORITY_DETAIL');
+        expect(authority).toHaveBeenCalledOnce();
+        expect(effects).not.toHaveBeenCalled();
+        expect(completed).not.toHaveBeenCalled();
+        await assertRefusedChild(
+          observation,
+          adapter,
+          outcome.error as BridgeAdapterError,
+          authority.mock.calls.length,
+          startedAt,
+        );
+      });
+    },
+  );
 
   it('does not reset the deadline on heartbeat', async () => {
-    const { adapter, context } = setup(prefix + `
+    const { adapter, context } = setup(
+      prefix +
+        `
       const timer = setInterval(() => reply(frame, 'heartbeat', {}), 5);
       lines.on('close', () => clearInterval(timer));
-    ` + suffix, 100);
+    ` +
+        suffix,
+      100,
+    );
     await expect(adapter.execute(context)).rejects.toMatchObject({ kind: 'timeout' });
   });
 
   it('drains more than 256 valid heartbeats while live authorization is pending', async () => {
-    const authorizeTool = vi.fn(async () => { await new Promise(resolve => setTimeout(resolve, 80)); });
-    const { adapter, context } = setup(prefix + `
+    const authorizeTool = vi.fn(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 80));
+    });
+    const { adapter, context } = setup(
+      prefix +
+        `
       reply(frame, 'tool_request', { phase: 'authorize', authorizationRequestId: 'auth-1', toolName: 'Read', input: { file_path: '/fixture.txt' } });
       for (let n = 0; n < 600; n++) reply(frame, 'heartbeat', {});
     }
     if (frame.kind === 'tool_response') reply(frame, 'complete', { data: 'one live action' });
     if (false) {
-    ` + suffix, 2_000, { authorizeTool });
+    ` +
+        suffix,
+      2_000,
+      { authorizeTool },
+    );
     expect((await adapter.execute(context)).data).toBe('one live action');
     expect(authorizeTool).toHaveBeenCalledOnce();
   });
 
-  it.each(['foreign', 'missing-data', 'duplicate', 'utf8', 'truncated'])('applies strict %s validation to legacy providers too', async kind => {
-    const body = kind === 'foreign' ? `reply({ ...frame, correlationId: 'OTHER' }, 'complete', { data: 1 });`
-      : kind === 'missing-data' ? `reply(frame, 'complete', { result: 1 });`
-      : kind === 'duplicate' ? `reply(frame, 'complete', { data: 1 }); reply(frame, 'complete', { data: 2 });`
-      : kind === 'utf8' ? `process.stdout.write(Buffer.from([0xc3, 0x28, 0x0a]));`
-      : `process.stdout.write('{"protocolVersion":'); process.exit(0);`;
-    const { adapter, context } = setup(prefix + body + suffix, 2_000, { confirmProcessExit: false });
-    await expect(adapter.execute(context)).rejects.toMatchObject({ kind: 'envelope_malformed' });
-  });
+  it.each(['foreign', 'missing-data', 'duplicate', 'utf8', 'truncated'])(
+    'applies strict %s validation to legacy providers too',
+    async (kind) => {
+      const body =
+        kind === 'foreign'
+          ? `reply({ ...frame, correlationId: 'OTHER' }, 'complete', { data: 1 });`
+          : kind === 'missing-data'
+            ? `reply(frame, 'complete', { result: 1 });`
+            : kind === 'duplicate'
+              ? `reply(frame, 'complete', { data: 1 }); reply(frame, 'complete', { data: 2 });`
+              : kind === 'utf8'
+                ? `process.stdout.write(Buffer.from([0xc3, 0x28, 0x0a]));`
+                : `process.stdout.write('{"protocolVersion":'); process.exit(0);`;
+      const { adapter, context } = setup(prefix + body + suffix, 2_000, {
+        confirmProcessExit: false,
+      });
+      await expect(adapter.execute(context)).rejects.toMatchObject({ kind: 'envelope_malformed' });
+    },
+  );
 
-  it.each(['within', 'outside'] as const)('uses one absolute legacy completion grace: %s', async boundary => {
-    const base = performance.now();
-    let observed = base;
-    vi.spyOn(performance, 'now').mockImplementation(() => observed);
-    const { adapter, context } = setup(prefix + `reply(frame, 'progress', { step: 'advance-clock' }); reply(frame, 'complete', { data: 'boundary' });` + suffix,
-      2_000, { confirmProcessExit: false });
-    const progress = context.recorder.progress.bind(context.recorder);
-    vi.spyOn(context.recorder, 'progress').mockImplementation((runId, data) => {
-      progress(runId, data);
-      if (data.step === 'advance-clock') observed = base + (boundary === 'within' ? 2_050 : 3_001);
-    });
-    if (boundary === 'within') expect((await adapter.execute(context)).data).toBe('boundary');
-    else await expect(adapter.execute(context)).rejects.toMatchObject({ kind: 'timeout' });
-  });
+  it.each(['within', 'outside'] as const)(
+    'uses one absolute legacy completion grace: %s',
+    async (boundary) => {
+      const base = performance.now();
+      let observed = base;
+      vi.spyOn(performance, 'now').mockImplementation(() => observed);
+      const { adapter, context } = setup(
+        prefix +
+          `reply(frame, 'progress', { step: 'advance-clock' }); reply(frame, 'complete', { data: 'boundary' });` +
+          suffix,
+        2_000,
+        { confirmProcessExit: false },
+      );
+      const progress = context.recorder.progress.bind(context.recorder);
+      vi.spyOn(context.recorder, 'progress').mockImplementation((runId, data) => {
+        progress(runId, data);
+        if (data.step === 'advance-clock')
+          observed = base + (boundary === 'within' ? 2_050 : 3_001);
+      });
+      if (boundary === 'within') expect((await adapter.execute(context)).data).toBe('boundary');
+      else await expect(adapter.execute(context)).rejects.toMatchObject({ kind: 'timeout' });
+    },
+  );
 
-  it.each([-86_400_000, 86_400_000])('does not use an unrelated wall-clock jump of %i ms as local elapsed time', async jump => {
-    const wall = Date.now();
-    const { adapter, context } = setup(prefix + `reply(frame, 'progress', { step: 'wall-jump' }); reply(frame, 'complete', { data: 'local elapsed only' });` + suffix);
-    const progress = context.recorder.progress.bind(context.recorder);
-    vi.spyOn(context.recorder, 'progress').mockImplementation((id, value) => {
-      progress(id, value); if (value.step === 'wall-jump') vi.spyOn(Date, 'now').mockReturnValue(wall + jump);
-    });
-    expect((await adapter.execute(context)).data).toBe('local elapsed only');
-  });
+  it.each([-86_400_000, 86_400_000])(
+    'does not use an unrelated wall-clock jump of %i ms as local elapsed time',
+    async (jump) => {
+      const wall = Date.now();
+      const { adapter, context } = setup(
+        prefix +
+          `reply(frame, 'progress', { step: 'wall-jump' }); reply(frame, 'complete', { data: 'local elapsed only' });` +
+          suffix,
+      );
+      const progress = context.recorder.progress.bind(context.recorder);
+      vi.spyOn(context.recorder, 'progress').mockImplementation((id, value) => {
+        progress(id, value);
+        if (value.step === 'wall-jump') vi.spyOn(Date, 'now').mockReturnValue(wall + jump);
+      });
+      expect((await adapter.execute(context)).data).toBe('local elapsed only');
+    },
+  );
 
   it('retains an explicit UTC task cutoff as a separate denial bound even while monotonic execution time remains', async () => {
     const wall = Date.now();
-    const { adapter, context } = setup(prefix + `reply(frame, 'progress', { step: 'utc-policy-expiry' }); reply(frame, 'complete', { data: 'not accepted' });` + suffix);
+    const { adapter, context } = setup(
+      prefix +
+        `reply(frame, 'progress', { step: 'utc-policy-expiry' }); reply(frame, 'complete', { data: 'not accepted' });` +
+        suffix,
+    );
     const progress = context.recorder.progress.bind(context.recorder);
     vi.spyOn(context.recorder, 'progress').mockImplementation((id, value) => {
-      progress(id, value); if (value.step === 'utc-policy-expiry') vi.spyOn(Date, 'now').mockReturnValue(wall + 60_000);
+      progress(id, value);
+      if (value.step === 'utc-policy-expiry') vi.spyOn(Date, 'now').mockReturnValue(wall + 60_000);
     });
-    await expect(adapter.execute({ ...context, executionDeadline: wall + 30_000 })).rejects.toMatchObject({ kind: 'timeout' });
+    await expect(
+      adapter.execute({ ...context, executionDeadline: wall + 30_000 }),
+    ).rejects.toMatchObject({ kind: 'timeout' });
   });
 
   it('does not overwrite a primary permission denial when its deadline also aborts', async () => {
     const controller = new AbortController();
     vi.spyOn(AbortSignal, 'timeout').mockReturnValue(controller.signal);
     const denial = new BridgeAdapterError('permission_denied', 'fixed permission refusal');
-    const authorizeTool = async () => { controller.abort(new Error('deadline')); throw denial; };
-    const { adapter, context } = setup(prefix + `reply(frame, 'tool_request', { phase: 'authorize', authorizationRequestId: 'auth', toolName: 'Read', input: {} });` + suffix,
-      2_000, { authorizeTool });
-    await expect(adapter.execute(context)).rejects.toMatchObject({ kind: 'permission_denied', message: 'fixed permission refusal', deadlineExceeded: true });
+    const authorizeTool = async () => {
+      controller.abort(new Error('deadline'));
+      throw denial;
+    };
+    const { adapter, context } = setup(
+      prefix +
+        `reply(frame, 'tool_request', { phase: 'authorize', authorizationRequestId: 'auth', toolName: 'Read', input: {} });` +
+        suffix,
+      2_000,
+      { authorizeTool },
+    );
+    await expect(adapter.execute(context)).rejects.toMatchObject({
+      kind: 'permission_denied',
+      message: 'fixed permission refusal',
+      deadlineExceeded: true,
+    });
   });
 
   it('settles an in-flight public waiter when closeSession is called externally', async () => {
@@ -772,13 +1351,26 @@ describe('Harness bridge ownership', () => {
     const { root, adapter, context } = setup(source);
     const observation = observePeer(root, source);
     const progress = vi.spyOn(context.recorder, 'progress');
-    const task = adapter.execute(context).then(value => ({ value }), error => ({ error }));
+    const task = adapter.execute(context).then(
+      (value) => ({ value }),
+      (error) => ({ error }),
+    );
     await observation.verify(task, async () => {
-      await vi.waitFor(() => expect(progress.mock.calls.some(([, data]) => data.step === 'waiting-for-close')).toBe(true));
-      const shutdown = await adapter.closeSession(`bridge-${context.runId}`).then(() => undefined, error => error);
+      await vi.waitFor(() =>
+        expect(progress.mock.calls.some(([, data]) => data.step === 'waiting-for-close')).toBe(
+          true,
+        ),
+      );
+      const shutdown = await adapter.closeSession(`bridge-${context.runId}`).then(
+        () => undefined,
+        (error) => error,
+      );
       if (shutdown !== undefined) {
         expect(shutdown).toMatchObject({ kind: 'process_crash' });
-        expect(['Bridge did not confirm a clean owned shutdown', 'Bridge exit and side effects remain unknown']).toContain(shutdown.message);
+        expect([
+          'Bridge did not confirm a clean owned shutdown',
+          'Bridge exit and side effects remain unknown',
+        ]).toContain(shutdown.message);
       }
       expect(await task).toMatchObject({ error: { kind: 'session_unavailable' } });
       expect(observation.matches).toBe(1);
@@ -786,52 +1378,84 @@ describe('Harness bridge ownership', () => {
     });
   }, 20_000);
 
-  it.each(['callback', 'error-event'] as const)('handles an EPIPE at the public stdin %s boundary without an uncaught exception or success', async boundary => {
-    const source = prefix + `
+  it.each(['callback', 'error-event'] as const)(
+    'handles an EPIPE at the public stdin %s boundary without an uncaught exception or success',
+    async (boundary) => {
+      const source =
+        prefix +
+        `
       const hold = setInterval(() => {}, 1000);
       process.stdin.once('end', () => clearInterval(hold));
       reply(frame, 'progress', { step: 'write-fault-ready' });
-    ` + suffix;
-    const { root, adapter, context } = setup(source);
-    const observation = observePeer(root, source);
-    const progress = vi.spyOn(context.recorder, 'progress');
-    const task = adapter.execute(context).then(value => ({ value }), error => ({ error }));
-    await observation.verify(task, async () => {
-      await vi.waitFor(() => expect(progress.mock.calls.some(([, data]) => data.step === 'write-fault-ready')).toBe(true));
-      expect(observation.matches).toBe(1);
-      const stdin = observation.child!.stdin!;
-      const pipeError = Object.assign(new Error('Deterministic test-only broken pipe'), { code: 'EPIPE' });
-      // Fault injection at a public Writable port, not an OS-generated EPIPE
-      // qualification. Closing child fd 0 does not portably close every pipe handle.
-      vi.spyOn(stdin, 'write').mockImplementationOnce(((...args: unknown[]) => {
-        const callback = args.at(-1);
-        if (typeof callback !== 'function') throw new Error('Expected the real Bridge write callback');
-        queueMicrotask(() => {
-          // Outside write's synchronous try/catch: without the permanent error
-          // listener this would be an uncaught event, not a rescued callback.
-          if (boundary === 'error-event') stdin.emit('error', pipeError);
-          callback(pipeError);
-        }); return false;
-      }) as typeof stdin.write);
-      await expect(adapter.sendEnvelope(`bridge-${context.runId}`, buildBridgeEnvelope(`bridge-${context.runId}`, context.runId,
-        'progress', { text: 'x'.repeat(900_000) }))).rejects.toMatchObject({ kind: 'process_crash' });
-      expect(await task).toMatchObject({ error: { kind: 'process_crash' } });
-      expect(progress.mock.calls.some(([, data]) => data.step === 'bridge_session_completed')).toBe(false);
-      expect(await observation.waitForClose()).toEqual(adapter.processExitReceipt);
-    });
-  }, 20_000);
+    ` +
+        suffix;
+      const { root, adapter, context } = setup(source);
+      const observation = observePeer(root, source);
+      const progress = vi.spyOn(context.recorder, 'progress');
+      const task = adapter.execute(context).then(
+        (value) => ({ value }),
+        (error) => ({ error }),
+      );
+      await observation.verify(task, async () => {
+        await vi.waitFor(() =>
+          expect(progress.mock.calls.some(([, data]) => data.step === 'write-fault-ready')).toBe(
+            true,
+          ),
+        );
+        expect(observation.matches).toBe(1);
+        const stdin = observation.child!.stdin!;
+        const pipeError = Object.assign(new Error('Deterministic test-only broken pipe'), {
+          code: 'EPIPE',
+        });
+        // Fault injection at a public Writable port, not an OS-generated EPIPE
+        // qualification. Closing child fd 0 does not portably close every pipe handle.
+        vi.spyOn(stdin, 'write').mockImplementationOnce(((...args: unknown[]) => {
+          const callback = args.at(-1);
+          if (typeof callback !== 'function')
+            throw new Error('Expected the real Bridge write callback');
+          queueMicrotask(() => {
+            // Outside write's synchronous try/catch: without the permanent error
+            // listener this would be an uncaught event, not a rescued callback.
+            if (boundary === 'error-event') stdin.emit('error', pipeError);
+            callback(pipeError);
+          });
+          return false;
+        }) as typeof stdin.write);
+        await expect(
+          adapter.sendEnvelope(
+            `bridge-${context.runId}`,
+            buildBridgeEnvelope(`bridge-${context.runId}`, context.runId, 'progress', {
+              text: 'x'.repeat(900_000),
+            }),
+          ),
+        ).rejects.toMatchObject({ kind: 'process_crash' });
+        expect(await task).toMatchObject({ error: { kind: 'process_crash' } });
+        expect(
+          progress.mock.calls.some(([, data]) => data.step === 'bridge_session_completed'),
+        ).toBe(false);
+        expect(await observation.waitForClose()).toEqual(adapter.processExitReceipt);
+      });
+    },
+    20_000,
+  );
 
   it('does not publish success after forced shutdown', async () => {
-    const source = prefix + `
+    const source =
+      prefix +
+      `
       process.on('SIGTERM', () => {});
       setInterval(() => {}, 1000);
       reply(frame, 'complete', { data: { text: 'must not succeed' } });
-    ` + suffix;
+    ` +
+      suffix;
     const { root, adapter, context } = setup(source);
     const complete = vi.spyOn(context.recorder, 'complete');
     const progress = vi.spyOn(context.recorder, 'progress');
     const observation = observePeer(root, source);
-    const task = adapter.execute(context).then(value => ({ value, error: undefined }), error => ({ value: undefined, error }));
+    const task = adapter.execute(context).then(
+      (value) => ({ value, error: undefined }),
+      (error) => ({ value: undefined, error }),
+    );
     await observation.verify(task, async () => {
       const outcome = await task;
       expect(outcome.value).toBeUndefined();
@@ -839,9 +1463,14 @@ describe('Harness bridge ownership', () => {
       expect(outcome.error).toMatchObject({ kind: 'process_crash' });
       // The unchanged 100 ms cleanup may end before the OS delivers close after
       // SIGKILL. Both fail-closed outcomes are valid, never business success.
-      expect(['Bridge did not confirm a clean owned shutdown', 'Bridge exit and side effects remain unknown']).toContain(outcome.error.message);
+      expect([
+        'Bridge did not confirm a clean owned shutdown',
+        'Bridge exit and side effects remain unknown',
+      ]).toContain(outcome.error.message);
       expect(complete).not.toHaveBeenCalled();
-      expect(progress.mock.calls.some(([, data]) => data.step === 'bridge_session_completed')).toBe(false);
+      expect(progress.mock.calls.some(([, data]) => data.step === 'bridge_session_completed')).toBe(
+        false,
+      );
       expect(observation.matches).toBe(1);
       expect(await observation.waitForClose()).toEqual({ code: null, signal: 'SIGKILL' });
       // This is independent, possibly late OS evidence, not extra adapter time.
@@ -850,22 +1479,30 @@ describe('Harness bridge ownership', () => {
   }, 20_000);
 
   it('fails closed without trusted deployment configuration', () => {
-    expect(() => createDeepSeekHarnessProvider().resolve({
-      agentId: 'fixture', source: 'runtime', runtimeProvider: 'deepseek-harness',
-    })).toThrow('not configured');
+    expect(() =>
+      createDeepSeekHarnessProvider().resolve({
+        agentId: 'fixture',
+        source: 'runtime',
+        runtimeProvider: 'deepseek-harness',
+      }),
+    ).toThrow('not configured');
   });
 
   it('does not spawn or send a run request for a pre-cancelled invocation', async () => {
     const { adapter, context } = setup('process.exit(99)');
     const controller = new AbortController();
     controller.abort(new Error('Already cancelled'));
-    await expect(adapter.execute({ ...context, signal: controller.signal })).rejects.toThrow('Already cancelled');
+    await expect(adapter.execute({ ...context, signal: controller.signal })).rejects.toThrow(
+      'Already cancelled',
+    );
     expect(adapter.processExitReceipt).toBeNull();
   });
 
   it('rejects an expired host-owned absolute cutoff before spawning', async () => {
     const { adapter, context } = setup('process.exit(99)');
-    await expect(adapter.execute({ ...context, executionDeadline: Date.now() - 1 })).rejects.toMatchObject({ kind: 'timeout' });
+    await expect(
+      adapter.execute({ ...context, executionDeadline: Date.now() - 1 }),
+    ).rejects.toMatchObject({ kind: 'timeout' });
     expect(adapter.processExitReceipt).toBeNull();
   });
 
@@ -874,10 +1511,24 @@ describe('Harness bridge ownership', () => {
     let observed = base;
     vi.spyOn(Date, 'now').mockImplementation(() => observed);
     let calls = 0;
-    const { adapter, context } = setup(prefix + `
+    const { adapter, context } = setup(
+      prefix +
+        `
       reply(frame, 'tool_request', { phase: 'authorize', authorizationRequestId: 'auth-1', toolName: 'Read', input: {} });
-    ` + suffix, 2_000, { authorizeTool: async () => { calls++; await Promise.resolve(); observed = base + 1_001; } });
-    await expect(adapter.execute({ ...context, executionDeadline: base + 1_000 })).rejects.toMatchObject({ kind: 'timeout' });
+    ` +
+        suffix,
+      2_000,
+      {
+        authorizeTool: async () => {
+          calls++;
+          await Promise.resolve();
+          observed = base + 1_001;
+        },
+      },
+    );
+    await expect(
+      adapter.execute({ ...context, executionDeadline: base + 1_000 }),
+    ).rejects.toMatchObject({ kind: 'timeout' });
     expect(calls).toBe(1);
     expect(adapter.processExitReceipt).not.toBeNull();
   });
@@ -888,25 +1539,39 @@ describe('Harness bridge ownership', () => {
     vi.spyOn(Date, 'now').mockImplementation(() => observed);
     const businessCutoff = new AbortController();
     vi.spyOn(AbortSignal, 'timeout').mockReturnValue(businessCutoff.signal);
-    const { adapter, context } = setup(prefix + `reply(frame, 'complete', { data: 'before cutoff' });` + suffix, 2_000, { exitGraceMs: 500 });
+    const { adapter, context } = setup(
+      prefix + `reply(frame, 'complete', { data: 'before cutoff' });` + suffix,
+      2_000,
+      { exitGraceMs: 500 },
+    );
     const close = adapter.closeSession.bind(adapter);
-    vi.spyOn(adapter, 'closeSession').mockImplementationOnce(async id => {
+    vi.spyOn(adapter, 'closeSession').mockImplementationOnce(async (id) => {
       observed = base + 1_001;
       businessCutoff.abort(new Error('Business cutoff during permitted cleanup'));
       return close(id);
     });
-    expect((await adapter.execute({ ...context, executionDeadline: base + 1_000 })).data).toBe('before cutoff');
+    expect((await adapter.execute({ ...context, executionDeadline: base + 1_000 })).data).toBe(
+      'before cutoff',
+    );
     expect(adapter.processExitReceipt).toEqual({ code: 0, signal: null });
   });
 
   it('retains a primary error and closes the child when failure diagnostics cannot persist', async () => {
-    const { adapter, context } = setup(prefix + `reply(frame, 'error', { kind: 'permission_denied', message: 'primary refusal' });` + suffix);
+    const { adapter, context } = setup(
+      prefix +
+        `reply(frame, 'error', { kind: 'permission_denied', message: 'primary refusal' });` +
+        suffix,
+    );
     const progress = context.recorder.progress.bind(context.recorder);
     vi.spyOn(context.recorder, 'progress').mockImplementation((runId, data) => {
       if (data.step === 'bridge_session_failed') throw new Error('diagnostic disk unavailable');
       return progress(runId, data);
     });
-    await expect(adapter.execute(context)).rejects.toMatchObject({ kind: 'permission_denied', message: 'primary refusal', diagnosticPersistenceFailed: true });
+    await expect(adapter.execute(context)).rejects.toMatchObject({
+      kind: 'permission_denied',
+      message: 'primary refusal',
+      diagnosticPersistenceFailed: true,
+    });
     expect(adapter.processExitReceipt).toEqual({ code: 0, signal: null });
   });
 
@@ -917,12 +1582,16 @@ describe('Harness bridge ownership', () => {
     const observation = observePeer(root, source);
     const progress = context.recorder.progress.bind(context.recorder);
     vi.spyOn(context.recorder, 'progress').mockImplementation((runId, data) => {
-      if (data.step === 'bridge_agent_cancel_requested') throw new Error('diagnostic disk unavailable');
+      if (data.step === 'bridge_agent_cancel_requested')
+        throw new Error('diagnostic disk unavailable');
       const result = progress(runId, data);
       if (data.step === 'abort-now') controller.abort(new Error('explicit cancellation'));
       return result;
     });
-    const task = adapter.execute({ ...context, signal: controller.signal }).then(value => ({ value, error: undefined }), error => ({ value: undefined, error }));
+    const task = adapter.execute({ ...context, signal: controller.signal }).then(
+      (value) => ({ value, error: undefined }),
+      (error) => ({ value: undefined, error }),
+    );
     await observation.verify(task, async () => {
       const outcome = await task;
       expect(outcome.value).toBeUndefined();
@@ -933,38 +1602,71 @@ describe('Harness bridge ownership', () => {
   }, 20_000);
 
   it('does not announce a completed lifecycle before strict legacy wire finalization', async () => {
-    const { adapter, context } = setup(prefix + `reply(frame, 'complete', { data: 'not final' }); setTimeout(() => process.stdout.write('truncated'), 20);` + suffix,
-      2_000, { confirmProcessExit: false, exitGraceMs: 500 });
+    const { adapter, context } = setup(
+      prefix +
+        `reply(frame, 'complete', { data: 'not final' }); setTimeout(() => process.stdout.write('truncated'), 20);` +
+        suffix,
+      2_000,
+      { confirmProcessExit: false, exitGraceMs: 500 },
+    );
     const progress = vi.spyOn(context.recorder, 'progress');
     await expect(adapter.execute(context)).rejects.toMatchObject({ kind: 'envelope_malformed' });
-    expect(progress.mock.calls.some(([, data]) => data.step === 'bridge_session_completed')).toBe(false);
+    expect(progress.mock.calls.some(([, data]) => data.step === 'bridge_session_completed')).toBe(
+      false,
+    );
   });
 
   it('closes a child cancelled synchronously during the public spawn diagnostic without sending a handshake', async () => {
     const controller = new AbortController();
-    const { adapter, context } = setup(`process.stdin.on('data', () => { process.exitCode = 77; }); process.stdin.resume();`, 2_000, { exitGraceMs: 1_000 });
+    const { adapter, context } = setup(
+      `process.stdin.on('data', () => { process.exitCode = 77; }); process.stdin.resume();`,
+      2_000,
+      { exitGraceMs: 1_000 },
+    );
     const diagnostic = channel('child_process');
     let observed = 0;
     const capture = (value: unknown) => {
-      if (!value || typeof value !== 'object' || !('process' in value) || !(value.process instanceof ChildProcess)) return;
+      if (
+        !value ||
+        typeof value !== 'object' ||
+        !('process' in value) ||
+        !(value.process instanceof ChildProcess)
+      )
+        return;
       observed++;
       controller.abort(new Error('cancelled during spawn'));
     };
     diagnostic.subscribe(capture);
-    try { await expect(adapter.execute({ ...context, signal: controller.signal })).rejects.toThrow('cancelled during spawn'); }
-    finally { diagnostic.unsubscribe(capture); }
+    try {
+      await expect(adapter.execute({ ...context, signal: controller.signal })).rejects.toThrow(
+        'cancelled during spawn',
+      );
+    } finally {
+      diagnostic.unsubscribe(capture);
+    }
     expect(observed).toBe(1);
     expect(adapter.processExitReceipt).toEqual({ code: 0, signal: null });
   });
 
-  it.each(['late-duplicate', 'late-utf8', 'late-tail'] as const)('finalizes legacy stdout before accepting %s', kind => {
-    const late = kind === 'late-duplicate' ? `reply(frame, 'complete', { data: 'late' });`
-      : kind === 'late-utf8' ? `process.stdout.write(Buffer.from([0xc3, 0x28, 0x0a]));`
-      : `process.stdout.write('{"partial":');`;
-    const { adapter, context } = setup(prefix + `reply(frame, 'complete', { data: 'not final yet' }); setTimeout(() => { ${late} }, 20);` + suffix,
-      2_000, { confirmProcessExit: false, exitGraceMs: 300 });
-    return expect(adapter.execute(context)).rejects.toMatchObject({ kind: 'envelope_malformed' });
-  });
+  it.each(['late-duplicate', 'late-utf8', 'late-tail'] as const)(
+    'finalizes legacy stdout before accepting %s',
+    (kind) => {
+      const late =
+        kind === 'late-duplicate'
+          ? `reply(frame, 'complete', { data: 'late' });`
+          : kind === 'late-utf8'
+            ? `process.stdout.write(Buffer.from([0xc3, 0x28, 0x0a]));`
+            : `process.stdout.write('{"partial":');`;
+      const { adapter, context } = setup(
+        prefix +
+          `reply(frame, 'complete', { data: 'not final yet' }); setTimeout(() => { ${late} }, 20);` +
+          suffix,
+        2_000,
+        { confirmProcessExit: false, exitGraceMs: 300 },
+      );
+      return expect(adapter.execute(context)).rejects.toMatchObject({ kind: 'envelope_malformed' });
+    },
+  );
 
   it('does not provision absent deployment and refuses a configuration parent link', () => {
     const root = mkdtempSync(join(tmpdir(), 'harness-deployment-'));
@@ -974,7 +1676,13 @@ describe('Harness bridge ownership', () => {
     mkdirSync(target);
     mkdirSync(join(target, 'harness'));
     writeFileSync(join(target, 'harness/deployment.json'), '{}');
-    symlinkSync(target, join(root, '.openslack.local'), process.platform === 'win32' ? 'junction' : 'dir');
-    expect(() => createConfiguredHarnessTaskHost(root, 'fixture')).toThrow(/traverses? (?:a )?(?:directory )?link/);
+    symlinkSync(
+      target,
+      join(root, '.openslack.local'),
+      process.platform === 'win32' ? 'junction' : 'dir',
+    );
+    expect(() => createConfiguredHarnessTaskHost(root, 'fixture')).toThrow(
+      /traverses? (?:a )?(?:directory )?link/,
+    );
   });
 });

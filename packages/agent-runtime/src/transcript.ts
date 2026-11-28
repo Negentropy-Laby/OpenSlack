@@ -40,17 +40,26 @@ export function readTranscript(runId: string, rootDir?: string): AgentRunEvent[]
 
 /** Best-effort legacy parsing stays available; evidence consumers explicitly select strict parsing. */
 export function parseTranscriptEvents(raw: string | Uint8Array, strict = false): AgentRunEvent[] {
-  const text = typeof raw === 'string' ? raw : new TextDecoder('utf-8', { fatal: strict }).decode(raw);
+  const text =
+    typeof raw === 'string' ? raw : new TextDecoder('utf-8', { fatal: strict }).decode(raw);
   const events: AgentRunEvent[] = [];
-  for (const line of text.split('\n').filter(value => value.trim() !== '')) {
-    try { events.push(parseTranscriptLine(line, strict)); } catch (error) { if (strict) throw error; }
+  for (const line of text.split('\n').filter((value) => value.trim() !== '')) {
+    try {
+      events.push(parseTranscriptLine(line, strict));
+    } catch (error) {
+      if (strict) throw error;
+    }
   }
   return events;
 }
 
 /** Process a stable bounded JSONL descriptor incrementally, retaining at most one logical event. */
-export function visitStrictTranscript(path: string, visit: (event: AgentRunEvent) => void, maxBytes = 64 * 1024 * 1024): void {
-  withHarnessDescriptor(path, maxBytes, {}, fd => {
+export function visitStrictTranscript(
+  path: string,
+  visit: (event: AgentRunEvent) => void,
+  maxBytes = 64 * 1024 * 1024,
+): void {
+  withHarnessDescriptor(path, maxBytes, {}, (fd) => {
     const decoder = new TextDecoder('utf-8', { fatal: true });
     const block = Buffer.alloc(64 * 1024);
     let parts: string[] = [];
@@ -58,7 +67,8 @@ export function visitStrictTranscript(path: string, visit: (event: AgentRunEvent
     const append = (part: string) => {
       if (!part) return;
       eventBytes += Buffer.byteLength(part);
-      if (eventBytes > RUN_TRANSCRIPT_EVENT_MAX_BYTES) throw new Error('Transcript event exceeds its bound');
+      if (eventBytes > RUN_TRANSCRIPT_EVENT_MAX_BYTES)
+        throw new Error('Transcript event exceeds its bound');
       parts.push(part);
     };
     let read = 0;
@@ -70,10 +80,13 @@ export function visitStrictTranscript(path: string, visit: (event: AgentRunEvent
       // Decode each block once with the same persistent decoder, preserving
       // fatal UTF-8 validation and first-file BOM semantics before any visit.
       const text = decoder.decode(block.subarray(0, count), { stream: true });
-      let start = 0, end;
+      let start = 0,
+        end;
       while ((end = text.indexOf('\n', start)) >= 0) {
         append(text.slice(start, end));
-        const line = parts.join(''); parts = []; eventBytes = 0;
+        const line = parts.join('');
+        parts = [];
+        eventBytes = 0;
         if (line.trim()) visit(parseTranscriptLine(line, true));
         start = end + 1;
       }

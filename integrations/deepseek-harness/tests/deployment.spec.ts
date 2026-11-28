@@ -53,21 +53,55 @@ describe('external plugin build inputs', () => {
     const wireSource = join(root, '.build/wire-source/bridge-wire.ts');
     mkdirSync(dirname(wireSource), { recursive: true });
     cpSync(join(packageRoot, '../../packages/agent-runtime/src/bridge-wire.ts'), wireSource);
-    cpSync(join(packageRoot, '../../packages/agent-runtime/src/run-id.ts'), join(dirname(wireSource), 'run-id.ts'));
+    cpSync(
+      join(packageRoot, '../../packages/agent-runtime/src/run-id.ts'),
+      join(dirname(wireSource), 'run-id.ts'),
+    );
     const catalogSource = join(dirname(wireSource), 'harness-tool-catalog.ts');
-    for (const name of ['harness-tool-catalog.ts', 'tool-catalog.ts']) cpSync(join(packageRoot, '../../packages/qoder-adapter/src', name), join(dirname(wireSource), name));
+    for (const name of ['harness-tool-catalog.ts', 'tool-catalog.ts'])
+      cpSync(
+        join(packageRoot, '../../packages/qoder-adapter/src', name),
+        join(dirname(wireSource), name),
+      );
     const coreLeaves = ['runtime-contracts', 'owned-file', 'stable-descriptor', 'strict-json'];
-    for (const name of coreLeaves) cpSync(join(packageRoot, '../../packages/core/src', `${name}.ts`), join(dirname(wireSource), `${name}.ts`));
+    for (const name of coreLeaves)
+      cpSync(
+        join(packageRoot, '../../packages/core/src', `${name}.ts`),
+        join(dirname(wireSource), `${name}.ts`),
+      );
     const wireOutput = join(root, '.build/wire-output');
-    const wireProgram = ts.createProgram([wireSource, catalogSource, ...coreLeaves.map(name => join(dirname(wireSource), `${name}.ts`))], { target: ts.ScriptTarget.ES2024,
-      module: ts.ModuleKind.ESNext, moduleResolution: ts.ModuleResolutionKind.Bundler, strict: true,
-      declaration: true, skipLibCheck: true, rootDir: dirname(wireSource), outDir: wireOutput,
-      types: ['node'], typeRoots: [join(harnessRoot, 'node_modules/@types')] });
-    expect(ts.getPreEmitDiagnostics(wireProgram).map(d => ts.flattenDiagnosticMessageText(d.messageText, '\n'))).toEqual([]);
+    const wireProgram = ts.createProgram(
+      [
+        wireSource,
+        catalogSource,
+        ...coreLeaves.map((name) => join(dirname(wireSource), `${name}.ts`)),
+      ],
+      {
+        target: ts.ScriptTarget.ES2024,
+        module: ts.ModuleKind.ESNext,
+        moduleResolution: ts.ModuleResolutionKind.Bundler,
+        strict: true,
+        declaration: true,
+        skipLibCheck: true,
+        rootDir: dirname(wireSource),
+        outDir: wireOutput,
+        types: ['node'],
+        typeRoots: [join(harnessRoot, 'node_modules/@types')],
+      },
+    );
+    expect(
+      ts
+        .getPreEmitDiagnostics(wireProgram)
+        .map((d) => ts.flattenDiagnosticMessageText(d.messageText, '\n')),
+    ).toEqual([]);
     expect(wireProgram.emit().emitSkipped).toBe(false);
-    const env = { ...testProcessEnvironment(), DEEPSEEK_HARNESS_CHECKOUT: harnessRoot,
-      OPENSLACK_BRIDGE_WIRE_MODULE: join(wireOutput, 'bridge-wire.js'), OPENSLACK_TOOL_CATALOG_MODULE: join(wireOutput, 'harness-tool-catalog.js'),
-      OPENSLACK_CORE_LEAF_DIRECTORY: wireOutput };
+    const env = {
+      ...testProcessEnvironment(),
+      DEEPSEEK_HARNESS_CHECKOUT: harnessRoot,
+      OPENSLACK_BRIDGE_WIRE_MODULE: join(wireOutput, 'bridge-wire.js'),
+      OPENSLACK_TOOL_CATALOG_MODULE: join(wireOutput, 'harness-tool-catalog.js'),
+      OPENSLACK_CORE_LEAF_DIRECTORY: wireOutput,
+    };
     const built = spawnSync(testExecutable('bun', env), [join(root, 'build.mjs')], {
       cwd: root,
       env,
@@ -88,14 +122,29 @@ describe('external plugin build inputs', () => {
     expect(existsSync(join(root, 'dist/types/src/index.d.ts'))).toBe(true);
     expect(existsSync(join(root, 'dist/openslack-harness-supervisor.exe'))).toBe(true);
     const normalize = (path: string) => resolve(path).replaceAll('\\', '/');
-    for (const name of readdirSync(join(root, 'dist/types/src')).filter(name => name.endsWith('.d.ts'))) {
-      const file = join(root, 'dist/types/src', name), text = readFileSync(file, 'utf8');
+    for (const name of readdirSync(join(root, 'dist/types/src')).filter((name) =>
+      name.endsWith('.d.ts'),
+    )) {
+      const file = join(root, 'dist/types/src', name),
+        text = readFileSync(file, 'utf8');
       expect(text).not.toContain('@openslack/agent-runtime');
       expect(text).not.toContain('@openslack/core');
-      for (const reference of ts.preProcessFile(text).importedFiles.filter(item => item.fileName.startsWith('.'))) {
-        const target = ts.resolveModuleName(reference.fileName, file, { moduleResolution: ts.ModuleResolutionKind.Bundler }, ts.sys).resolvedModule;
-        expect(target, `${name} requires ${reference.fileName} in the relocated package`).toBeDefined();
-        expect(normalize(target?.resolvedFileName ?? '').startsWith(normalize(join(root, 'dist')) + '/')).toBe(true);
+      for (const reference of ts
+        .preProcessFile(text)
+        .importedFiles.filter((item) => item.fileName.startsWith('.'))) {
+        const target = ts.resolveModuleName(
+          reference.fileName,
+          file,
+          { moduleResolution: ts.ModuleResolutionKind.Bundler },
+          ts.sys,
+        ).resolvedModule;
+        expect(
+          target,
+          `${name} requires ${reference.fileName} in the relocated package`,
+        ).toBeDefined();
+        expect(
+          normalize(target?.resolvedFileName ?? '').startsWith(normalize(join(root, 'dist')) + '/'),
+        ).toBe(true);
       }
     }
     const inputs = (directory: string): string[] =>
@@ -155,16 +204,37 @@ describe('deployment mounts remain an exact two-code-root set', () => {
     const input = join(root, 'deployment-validation.json');
     writeFileSync(input, JSON.stringify({ root, deployment }), { flag: 'wx' });
     const timeoutMs = Math.min(300_000, deadlineAt - Date.now() - 10_000);
-    if (timeoutMs < 1) throw new Error('Deployment fixture setup exhausted its verification deadline');
+    if (timeoutMs < 1)
+      throw new Error('Deployment fixture setup exhausted its verification deadline');
     // Seven complete, fresh production observations must not block Vitest's
     // worker RPC/event loop. This is only a verification-process budget.
-    const child = spawn(process.execPath, [fileURLToPath(new URL('./fixtures/deployment-validation.mjs', import.meta.url)), input],
-      { cwd: root, env: testProcessEnvironment(), stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
-    const result = await new Promise<{ code: number | null; signal: NodeJS.Signals | null; stdout: string; stderr: string }>((resolve, reject) => {
-      const output: Buffer[] = [], errors: Buffer[] = [];
-      let bytes = 0, failure: Error | undefined, stopping = false, settled = false;
+    const child = spawn(
+      process.execPath,
+      [fileURLToPath(new URL('./fixtures/deployment-validation.mjs', import.meta.url)), input],
+      {
+        cwd: root,
+        env: testProcessEnvironment(),
+        stdio: ['ignore', 'pipe', 'pipe'],
+        windowsHide: true,
+      },
+    );
+    const result = await new Promise<{
+      code: number | null;
+      signal: NodeJS.Signals | null;
+      stdout: string;
+      stderr: string;
+    }>((resolve, reject) => {
+      const output: Buffer[] = [],
+        errors: Buffer[] = [];
+      let bytes = 0,
+        failure: Error | undefined,
+        stopping = false,
+        settled = false;
       let unconfirmed: ReturnType<typeof setTimeout> | undefined;
-      const clear = () => { clearTimeout(timer); if (unconfirmed) clearTimeout(unconfirmed); };
+      const clear = () => {
+        clearTimeout(timer);
+        if (unconfirmed) clearTimeout(unconfirmed);
+      };
       const stop = (reason: Error) => {
         failure ??= reason;
         if (stopping || settled) return;
@@ -174,8 +244,13 @@ describe('deployment mounts remain an exact two-code-root set', () => {
         child.kill('SIGKILL');
         unconfirmed = setTimeout(() => {
           if (settled) return;
-          settled = true; clear();
-          reject(new Error('Deployment validation process exit is unconfirmed; preserve the fixture', { cause: failure }));
+          settled = true;
+          clear();
+          reject(
+            new Error('Deployment validation process exit is unconfirmed; preserve the fixture', {
+              cause: failure,
+            }),
+          );
         }, 10_000);
       };
       const collect = (target: Buffer[]) => (chunk: Buffer) => {
@@ -183,21 +258,47 @@ describe('deployment mounts remain an exact two-code-root set', () => {
         if (bytes > 64 * 1024) stop(new Error('Deployment validation output exceeded its bound'));
         else target.push(chunk);
       };
-      const timer = setTimeout(() => stop(new Error('Deployment validation exceeded its bounded verification deadline')), timeoutMs);
-      child.stdout.on('data', collect(output)); child.stderr.on('data', collect(errors));
-      child.stdout.on('error', stop); child.stderr.on('error', stop); child.once('error', stop);
+      const timer = setTimeout(
+        () => stop(new Error('Deployment validation exceeded its bounded verification deadline')),
+        timeoutMs,
+      );
+      child.stdout.on('data', collect(output));
+      child.stderr.on('data', collect(errors));
+      child.stdout.on('error', stop);
+      child.stderr.on('error', stop);
+      child.once('error', stop);
       child.once('close', (code, signal) => {
         if (settled) return;
-        settled = true; clear();
+        settled = true;
+        clear();
         if (failure) reject(failure);
-        else resolve({ code, signal, stdout: Buffer.concat(output).toString('utf8'), stderr: Buffer.concat(errors).toString('utf8') });
+        else
+          resolve({
+            code,
+            signal,
+            stdout: Buffer.concat(output).toString('utf8'),
+            stderr: Buffer.concat(errors).toString('utf8'),
+          });
       });
     });
     expect(result.code, result.stderr).toBe(0);
     expect(result.signal).toBeNull();
-    expect(result.stdout.trim().split('\n').map(line => JSON.parse(line))).toEqual([
-      'valid', 'outside-root', 'unexported-source', 'private-subpath', 'bad-plugin-hash', 'bad-node-hash', 'peer-shadow',
-    ].map(check => ({ check, passed: true })));
+    expect(
+      result.stdout
+        .trim()
+        .split('\n')
+        .map((line) => JSON.parse(line)),
+    ).toEqual(
+      [
+        'valid',
+        'outside-root',
+        'unexported-source',
+        'private-subpath',
+        'bad-plugin-hash',
+        'bad-node-hash',
+        'peer-shadow',
+      ].map((check) => ({ check, passed: true })),
+    );
     passed = true;
   }, 330_000);
 });

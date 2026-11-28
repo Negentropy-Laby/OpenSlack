@@ -383,8 +383,7 @@ export function createWorkflowEffectAuthorizationPort(options: {
         throw new WorkflowEffectApprovalPendingError(binding.runId, artifact.approval.approvalId);
       }
       const observationScope =
-        artifact?.kind === 'effect_decision_committed' ||
-        artifact?.kind === 'effect_audit_recorded'
+        artifact?.kind === 'effect_decision_committed' || artifact?.kind === 'effect_audit_recorded'
           ? {
               runId: binding.runId,
               approvalId: artifact.approval.approvalId,

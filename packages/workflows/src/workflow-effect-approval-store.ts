@@ -122,7 +122,9 @@ export async function persistWorkflowEffectApprovalPending(
     if (hasWorkflowEffectAuthorityRoot(root)) {
       await ensureOwnerDirectory(root, AUTHORITY_STORE_SECURITY);
     } else {
-      await withOwnerDirectoryEntryMutation([root], AUTHORITY_STORE_SECURITY, () => mkdir(root, { recursive: false, mode: 0o700 }));
+      await withOwnerDirectoryEntryMutation([root], AUTHORITY_STORE_SECURITY, () =>
+        mkdir(root, { recursive: false, mode: 0o700 }),
+      );
     }
   }
   const record = createPendingWorkflowEffectApproval(input);
@@ -317,7 +319,10 @@ async function assertAuthorityDirectory(
 
 async function ensureFixedChild(parentReal: string, path: string): Promise<void> {
   const existing = await lstatIfPresent(path);
-  if (!existing) await withOwnerDirectoryEntryMutation([path], AUTHORITY_STORE_SECURITY, () => mkdir(path, { recursive: false, mode: 0o700 }));
+  if (!existing)
+    await withOwnerDirectoryEntryMutation([path], AUTHORITY_STORE_SECURITY, () =>
+      mkdir(path, { recursive: false, mode: 0o700 }),
+    );
   const child = await assertDirectory(path);
   if (!contained(parentReal, child.real)) {
     fail(
@@ -794,13 +799,21 @@ async function delay(milliseconds: number): Promise<void> {
   });
 }
 
-async function removeOwnedStoreTemporary(path: string, directory: string, owned: Stats): Promise<void> {
+async function removeOwnedStoreTemporary(
+  path: string,
+  directory: string,
+  owned: Stats,
+): Promise<void> {
   await withOwnedDirectoryEntryCleanup(path, AUTHORITY_STORE_SECURITY, async () => {
     const current = await lstatIfPresent(path);
     if (!current) return;
     const resolved = await realpath(path);
-    if (!current.isFile() || !sameIdentity(owned, current) ||
-        !samePath(path, resolved) || !contained(directory, resolved)) {
+    if (
+      !current.isFile() ||
+      !sameIdentity(owned, current) ||
+      !samePath(path, resolved) ||
+      !contained(directory, resolved)
+    ) {
       return fail(
         'WORKFLOW_EFFECT_APPROVAL_STORE_FILE_CHANGED',
         'Approval-store temporary no longer matches its owner.',
@@ -830,11 +843,16 @@ async function acquireLock(prepared: PreparedStore): Promise<AcquiredLock> {
       prepared.locks,
       `.decision.${owner.pid}.${owner.sessionId}.${owner.threadId}.${owner.nonce}.tmp`,
     );
-    const handle = await withOwnerDirectoryEntryMutation([temporaryPath], AUTHORITY_STORE_SECURITY, () => open(
-      temporaryPath,
-      fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_EXCL | NO_FOLLOW,
-      0o600,
-    ));
+    const handle = await withOwnerDirectoryEntryMutation(
+      [temporaryPath],
+      AUTHORITY_STORE_SECURITY,
+      () =>
+        open(
+          temporaryPath,
+          fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_EXCL | NO_FOLLOW,
+          0o600,
+        ),
+    );
     let handleClosed = false;
     let linkedStat: Stats | undefined;
     let ownedTemporary: Stats | undefined;
@@ -865,7 +883,9 @@ async function acquireLock(prepared: PreparedStore): Promise<AcquiredLock> {
         );
       }
       try {
-        await withOwnerDirectoryEntryMutation([temporaryPath], AUTHORITY_STORE_SECURITY, () => link(temporaryPath, path));
+        await withOwnerDirectoryEntryMutation([temporaryPath], AUTHORITY_STORE_SECURITY, () =>
+          link(temporaryPath, path),
+        );
         linkedStat = temporaryStat;
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
@@ -913,14 +933,18 @@ async function acquireLock(prepared: PreparedStore): Promise<AcquiredLock> {
       const cleanupErrors: unknown[] = [];
       if (!handleClosed) await handle.close().catch((cause) => cleanupErrors.push(cause));
       if (ownedTemporary) {
-        await removeOwnedStoreTemporary(temporaryPath, prepared.locksReal, ownedTemporary)
-          .catch((cause) => cleanupErrors.push(cause));
+        await removeOwnedStoreTemporary(temporaryPath, prepared.locksReal, ownedTemporary).catch(
+          (cause) => cleanupErrors.push(cause),
+        );
       }
       if (linkedStat) {
         await releaseLock({ path, stat: linkedStat }).catch((cause) => cleanupErrors.push(cause));
       }
       if (cleanupErrors.length > 0) {
-        throw new AggregateError([error, ...cleanupErrors], 'Approval-store lock publication and cleanup failed.');
+        throw new AggregateError(
+          [error, ...cleanupErrors],
+          'Approval-store lock publication and cleanup failed.',
+        );
       }
       throw error;
     }
@@ -1142,11 +1166,16 @@ async function atomicWrite(
   const key = recordKey(runId, approvalId);
   const path = recordPath(prepared, runId, approvalId);
   const temporaryPath = join(prepared.records, `.${key}.${process.pid}.${randomUUID()}.tmp`);
-  const handle = await withOwnerDirectoryEntryMutation([temporaryPath], AUTHORITY_STORE_SECURITY, () => open(
-    temporaryPath,
-    fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_EXCL | NO_FOLLOW,
-    0o600,
-  ));
+  const handle = await withOwnerDirectoryEntryMutation(
+    [temporaryPath],
+    AUTHORITY_STORE_SECURITY,
+    () =>
+      open(
+        temporaryPath,
+        fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_EXCL | NO_FOLLOW,
+        0o600,
+      ),
+  );
   let handleClosed = false;
   let ownedTemporary: Stats | undefined;
   let publicationFailure: { cause: unknown } | undefined;
@@ -1189,10 +1218,14 @@ async function atomicWrite(
     await assertPreparedStable(prepared);
     if (expected === null) {
       try {
-        await withOwnerDirectoryEntryMutation([temporaryPath], AUTHORITY_STORE_SECURITY, async () => {
-          await assertExactTemporary();
-          await link(temporaryPath, path);
-        });
+        await withOwnerDirectoryEntryMutation(
+          [temporaryPath],
+          AUTHORITY_STORE_SECURITY,
+          async () => {
+            await assertExactTemporary();
+            await link(temporaryPath, path);
+          },
+        );
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code === 'EEXIST') {
           return fail(
@@ -1206,18 +1239,22 @@ async function atomicWrite(
       await removeOwnedStoreTemporary(temporaryPath, prepared.recordsReal, ownedTemporary);
       ownedTemporary = undefined;
     } else {
-      await withOwnerDirectoryEntryMutation([temporaryPath, path], AUTHORITY_STORE_SECURITY, async () => {
-        const current = await assertRecordFile(path, prepared.recordsReal);
-        if (!stableIdentity(expected, current)) {
-          return fail(
-            'WORKFLOW_EFFECT_APPROVAL_STORE_FILE_CHANGED',
-            'Workflow effect approval changed before atomic update.',
-            path,
-          );
-        }
-        await assertExactTemporary();
-        await rename(temporaryPath, path);
-      });
+      await withOwnerDirectoryEntryMutation(
+        [temporaryPath, path],
+        AUTHORITY_STORE_SECURITY,
+        async () => {
+          const current = await assertRecordFile(path, prepared.recordsReal);
+          if (!stableIdentity(expected, current)) {
+            return fail(
+              'WORKFLOW_EFFECT_APPROVAL_STORE_FILE_CHANGED',
+              'Workflow effect approval changed before atomic update.',
+              path,
+            );
+          }
+          await assertExactTemporary();
+          await rename(temporaryPath, path);
+        },
+      );
       ownedTemporary = undefined;
     }
     await syncDirectory(prepared.records);
@@ -1237,8 +1274,9 @@ async function atomicWrite(
     const cleanupErrors: unknown[] = [];
     if (!handleClosed) await handle.close().catch((cause) => cleanupErrors.push(cause));
     if (ownedTemporary) {
-      await removeOwnedStoreTemporary(temporaryPath, prepared.recordsReal, ownedTemporary)
-        .catch((cause) => cleanupErrors.push(cause));
+      await removeOwnedStoreTemporary(temporaryPath, prepared.recordsReal, ownedTemporary).catch(
+        (cause) => cleanupErrors.push(cause),
+      );
     }
     if (cleanupErrors.length > 0) {
       throw new AggregateError(

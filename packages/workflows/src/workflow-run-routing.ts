@@ -952,8 +952,8 @@ export class WorkflowRunRouteJournal {
             );
           }
           await withOwnerDirectoryEntryMutation([source, activeTarget], this.#security, () =>
-        rename(source, activeTarget),
-      );
+            rename(source, activeTarget),
+          );
           continue;
         } catch (error) {
           if (
@@ -971,8 +971,8 @@ export class WorkflowRunRouteJournal {
               .digest('hex')}.entry`,
           );
           await withOwnerDirectoryEntryMutation([source, target], this.#security, () =>
-        rename(source, target),
-      );
+            rename(source, target),
+          );
           this.#quarantinedRouteNames.add(entry.name);
           continue;
         }
@@ -1063,8 +1063,8 @@ export class WorkflowRunRouteJournal {
       `${safeName}.${createHash('sha256').update(`${name}\0${stat.dev}\0${stat.ino}\0${stat.size}`).digest('hex')}.entry`,
     );
     await withOwnerDirectoryEntryMutation([path, target], this.#security, () =>
-        rename(path, target),
-      );
+      rename(path, target),
+    );
     if (ROUTE_FILE.test(name)) this.#quarantinedRouteNames.add(name);
     await Promise.all([syncDirectory(this.#active), syncDirectory(this.#quarantine)]);
   }

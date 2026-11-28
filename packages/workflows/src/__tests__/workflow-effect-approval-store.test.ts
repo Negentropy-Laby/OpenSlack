@@ -336,12 +336,13 @@ describe('LocalWorkflowEffectApprovalStore', () => {
     const storeRoot = await root();
     const records = join(storeRoot, 'records');
     const decisionAuthority = authority();
-    const store = new LocalWorkflowEffectApprovalStore(
-      storeRoot, decisionAuthority, () => new Date(now + 1_000).toISOString(),
+    const store = new LocalWorkflowEffectApprovalStore(storeRoot, decisionAuthority, () =>
+      new Date(now + 1_000).toISOString(),
     );
     const renamed = new Set<string>();
     const mutate = shadowFilesystem.withOwnerDirectoryEntryMutation;
-    const admission = vi.spyOn(shadowFilesystem, 'withOwnerDirectoryEntryMutation')
+    const admission = vi
+      .spyOn(shadowFilesystem, 'withOwnerDirectoryEntryMutation')
       .mockImplementation(async (paths, security, operation) => {
         const temporary = paths[0];
         if (temporary?.endsWith('.tmp') && basename(dirname(temporary)) === 'records') {
@@ -360,15 +361,21 @@ describe('LocalWorkflowEffectApprovalStore', () => {
     const cleanup = vi.spyOn(shadowFilesystem, 'withOwnedDirectoryEntryCleanup');
     try {
       await expect(store.createPending(pending(now))).resolves.toMatchObject({ revision: 0 });
-      expect(cleanup.mock.calls.some(([path]) => path.endsWith('.tmp') && basename(dirname(path)) === 'records')).toBe(true);
-      await expect(store.decide({
-        runId: 'run-001',
-        approvalId: 'approval-001',
-        expectedRevision: 0,
-        decision: 'approved',
-        reasonHash: approvedReasonHash,
-        binding: binding(decisionAuthority, now, 'approved', approvedReasonHash),
-      })).resolves.toMatchObject({ status: 'approved', revision: 1 });
+      expect(
+        cleanup.mock.calls.some(
+          ([path]) => path.endsWith('.tmp') && basename(dirname(path)) === 'records',
+        ),
+      ).toBe(true);
+      await expect(
+        store.decide({
+          runId: 'run-001',
+          approvalId: 'approval-001',
+          expectedRevision: 0,
+          decision: 'approved',
+          reasonHash: approvedReasonHash,
+          binding: binding(decisionAuthority, now, 'approved', approvedReasonHash),
+        }),
+      ).resolves.toMatchObject({ status: 'approved', revision: 1 });
       expect(renamed.size).toBe(1);
       expect(await readdir(records)).toEqual([recordName()]);
       await expect(store.read('run-001', 'approval-001')).resolves.toMatchObject({ revision: 1 });

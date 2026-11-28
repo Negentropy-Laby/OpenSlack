@@ -36,18 +36,14 @@ function diffLineTheme(line: string): 'success' | 'error' | 'info' {
   return 'info';
 }
 
-function syncStatusIcon(
-  status: ProfileViewModel['syncStatus'],
-): StatusCategory {
+function syncStatusIcon(status: ProfileViewModel['syncStatus']): StatusCategory {
   if (status === 'synced') return 'pass';
   if (status === 'pending') return 'warn';
   if (status === 'failed') return 'fail';
   return 'info';
 }
 
-function markerStatusIcon(
-  status: ProfileViewModel['markerStatus'],
-): StatusCategory {
+function markerStatusIcon(status: ProfileViewModel['markerStatus']): StatusCategory {
   if (status === 'present') return 'pass';
   if (status === 'missing') return 'fail';
   return 'info';

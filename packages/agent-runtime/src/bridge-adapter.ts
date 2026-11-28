@@ -44,11 +44,22 @@ import {
 } from './bridge-mcp-scope.js';
 import { buildBridgeProcessEnv } from './bridge-env.js';
 import { ABY_BRIDGE_RUNTIME_LIMITS } from './runtime-config-file.js';
-import { assertHarnessToolEligibility, harnessToolEligibilityRestriction, assertHarnessRunStartEligibility, harnessRunStartEligibilityRestriction,
-  type HarnessToolEligibility, type HarnessEligibilityRestriction } from './harness-eligibility.js';
 import {
-  BRIDGE_FRAME_MAX_BYTES, BRIDGE_QUEUE_MAX_BYTES, BRIDGE_CHUNK_EXTENSION,
-  BridgeWireEncoder, BridgeWireDecoder, HARNESS_CALLBACK_TOOLS, BRIDGE_MESSAGE_MAX_BYTES,
+  assertHarnessToolEligibility,
+  harnessToolEligibilityRestriction,
+  assertHarnessRunStartEligibility,
+  harnessRunStartEligibilityRestriction,
+  type HarnessToolEligibility,
+  type HarnessEligibilityRestriction,
+} from './harness-eligibility.js';
+import {
+  BRIDGE_FRAME_MAX_BYTES,
+  BRIDGE_QUEUE_MAX_BYTES,
+  BRIDGE_CHUNK_EXTENSION,
+  BridgeWireEncoder,
+  BridgeWireDecoder,
+  HARNESS_CALLBACK_TOOLS,
+  BRIDGE_MESSAGE_MAX_BYTES,
 } from './bridge-wire.js';
 
 const MAX_ENVELOPE_SIZE_BYTES = 1024 * 1024; // 1MB
@@ -78,7 +89,11 @@ export interface BridgeProcessAdapterOptions {
   /** One total cleanup budget for peers without the governed/native 30s reserve. */
   exitGraceMs?: number;
   /** Live host authorization for a peer's pre-effect tool request; absence always rejects it. */
-  authorizeTool?: (context: AdapterExecutionContext, toolName: string, input: unknown) => Promise<void | HarnessToolEligibility>;
+  authorizeTool?: (
+    context: AdapterExecutionContext,
+    toolName: string,
+    input: unknown,
+  ) => Promise<void | HarnessToolEligibility>;
   /** Explicit trusted support. Absence never claims unsupported capabilities. */
   availableCapabilities?: readonly BridgeCapabilityDescriptor[];
   /** Transport extensions supported by this provider, never inferred from a tool list. */
@@ -118,7 +133,8 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
   private envelopeQueue: BridgeEnvelope[] = [];
   private stderrBuffer = '';
   private abortListener: (() => void) | null = null;
-  private exitPromise: Promise<{ code: number | null; signal: NodeJS.Signals | null }> | null = null;
+  private exitPromise: Promise<{ code: number | null; signal: NodeJS.Signals | null }> | null =
+    null;
   private exitReceipt: { code: number | null; signal: NodeJS.Signals | null } | null = null;
   private responseDecoder: TextDecoder;
   private inboundFailure: BridgeAdapterError | null = null;
@@ -130,8 +146,17 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
   private supervisorBuffer = '';
   private supervisorDecoder = new TextDecoder('utf-8', { fatal: true });
   private supervisorPid: number | undefined;
-  private supervisorReceipt: { pid: number; rootExitCode: number; jobEmpty: boolean; streamsDrained: boolean;
-    terminationRequested: boolean; graceful: boolean; timedOut: boolean } | undefined;
+  private supervisorReceipt:
+    | {
+        pid: number;
+        rootExitCode: number;
+        jobEmpty: boolean;
+        streamsDrained: boolean;
+        terminationRequested: boolean;
+        graceful: boolean;
+        timedOut: boolean;
+      }
+    | undefined;
   private cleanupStartedAt: number | undefined;
   private cleanupDeadline: number | undefined;
   private outbound: Promise<void> = Promise.resolve();
@@ -141,7 +166,13 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
   private invocationAbortError: BridgeAdapterError | undefined;
   private activeExecutionDeadline: number | undefined;
   private activeUtcExecutionDeadline: number | undefined;
-  private startEligibilityCheck: (() => Readonly<{ runId: string; generation: string; restriction: HarnessEligibilityRestriction }>) | undefined;
+  private startEligibilityCheck:
+    | (() => Readonly<{
+        runId: string;
+        generation: string;
+        restriction: HarnessEligibilityRestriction;
+      }>)
+    | undefined;
   private transportAbort = new AbortController();
 
   /** Last observed OS process exit, not merely a signal request. */
@@ -162,14 +193,27 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
     requested: BridgeCapabilityDescriptor[],
   ): Promise<BridgeCapabilityDescriptor[]> {
     const available = this.options.availableCapabilities ?? [];
-    return structuredClone(requested.filter(cap => available.some(supported => supported.name === cap.name &&
-      (cap.version === undefined || cap.version === supported.version) &&
-      (cap.supportedTools ?? []).every(tool => supported.supportedTools?.includes(tool)) &&
-      (cap.supportedMcpServers ?? []).every(server => supported.supportedMcpServers?.includes(server)))));
+    return structuredClone(
+      requested.filter((cap) =>
+        available.some(
+          (supported) =>
+            supported.name === cap.name &&
+            (cap.version === undefined || cap.version === supported.version) &&
+            (cap.supportedTools ?? []).every((tool) => supported.supportedTools?.includes(tool)) &&
+            (cap.supportedMcpServers ?? []).every((server) =>
+              supported.supportedMcpServers?.includes(server),
+            ),
+        ),
+      ),
+    );
   }
 
   async openSession(config: BridgeSessionConfig): Promise<BridgeSessionState> {
-    if (this.invocationOwner) throw new BridgeAdapterError('session_unavailable', 'Session belongs to an active invocation');
+    if (this.invocationOwner)
+      throw new BridgeAdapterError(
+        'session_unavailable',
+        'Session belongs to an active invocation',
+      );
     return this.openOwnedSession(config);
   }
 
@@ -225,7 +269,10 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
   }
 
   closeSession(sessionId: string): Promise<BridgeSessionState> {
-    if (this.sessionMachine && this.sessionMachine.id !== sessionId) return Promise.reject(new BridgeAdapterError('session_unavailable', 'Session belongs to another invocation'));
+    if (this.sessionMachine && this.sessionMachine.id !== sessionId)
+      return Promise.reject(
+        new BridgeAdapterError('session_unavailable', 'Session belongs to another invocation'),
+      );
     this.sessionClose ??= this.closeActiveSession();
     return this.sessionClose;
   }
@@ -245,7 +292,12 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
       clearTimeout(this.responseTimer);
       this.responseTimer = null;
     }
-    this.pendingReject?.(new BridgeAdapterError('session_unavailable', 'Bridge session closed while awaiting a response'));
+    this.pendingReject?.(
+      new BridgeAdapterError(
+        'session_unavailable',
+        'Bridge session closed while awaiting a response',
+      ),
+    );
     this.pendingResponse = null;
     this.pendingReject = null;
     this.envelopeQueue = [];
@@ -280,57 +332,101 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
     // This decision belongs to the bytes encoded for this send, not to a
     // caller-owned envelope that could change while another send is pending.
     const isRunRequest = envelope.kind === 'run_request';
-    const isEffectAuthorization = envelope.kind === 'tool_response' && envelope.payload !== null &&
-      typeof envelope.payload === 'object' && 'allowed' in envelope.payload && envelope.payload.allowed === true;
+    const isEffectAuthorization =
+      envelope.kind === 'tool_response' &&
+      envelope.payload !== null &&
+      typeof envelope.payload === 'object' &&
+      'allowed' in envelope.payload &&
+      envelope.payload.allowed === true;
     let capturedCancellation: unknown;
-    const cancellation = () => capturedCancellation ??= (this.activeSignal === signal ? this.invocationAbortError : undefined) ?? signal?.reason;
+    const cancellation = () =>
+      (capturedCancellation ??=
+        (this.activeSignal === signal ? this.invocationAbortError : undefined) ?? signal?.reason);
     const assertOwner = () => {
       if (signal?.aborted) throw cancellation();
-      if (this.process !== child || this.sessionMachine !== session || session.currentState === 'shutdown') {
-        throw new BridgeAdapterError('session_unavailable', 'Bridge send owner is no longer active');
+      if (
+        this.process !== child ||
+        this.sessionMachine !== session ||
+        session.currentState === 'shutdown'
+      ) {
+        throw new BridgeAdapterError(
+          'session_unavailable',
+          'Bridge send owner is no longer active',
+        );
       }
     };
     let frames: string[];
-    try { frames = this.wireEncoder.encode(envelope as unknown as Parameters<BridgeWireEncoder['encode']>[0]); }
-    catch (error) { throw new BridgeAdapterError('envelope_malformed', error instanceof Error ? error.message : 'Invalid Bridge output'); }
+    try {
+      frames = this.wireEncoder.encode(
+        envelope as unknown as Parameters<BridgeWireEncoder['encode']>[0],
+      );
+    } catch (error) {
+      throw new BridgeAdapterError(
+        'envelope_malformed',
+        error instanceof Error ? error.message : 'Invalid Bridge output',
+      );
+    }
     const bytes = frames.reduce((sum, frame) => sum + Buffer.byteLength(frame) + 1, 0);
     if (this.outboundBytes + bytes > BRIDGE_QUEUE_MAX_BYTES) {
       throw new BridgeAdapterError('envelope_malformed', 'Bridge outbound byte queue is full');
     }
     this.outboundBytes += bytes;
-    const operation = this.awaitSendBoundary(this.outbound, signal, cancellation).then(async () => {
-      for (const json of frames) {
-        assertOwner();
-        if (isRunRequest || isEffectAuthorization) this.assertExecutionWindow();
-        if (isRunRequest) {
-          this.assertStartEligibility();
-        }
-        if (Buffer.byteLength(json) > Math.min(this.options.maxEnvelopeSizeBytes ?? MAX_ENVELOPE_SIZE_BYTES, BRIDGE_FRAME_MAX_BYTES)) {
-          throw new BridgeAdapterError('envelope_malformed', 'Envelope exceeds maximum size');
-        }
-        const written = new Promise<void>((resolve, reject) => {
-          const failed = (error: Error) => {
-            const failure = new BridgeAdapterError('process_crash', 'Bridge stdin write failed', undefined, { cause: error });
-            if (signal?.aborted) {
-              const primary = cancellation();
-              this.recordSecondaryPipeFailure(primary, error);
-              reject(primary);
-            } else {
-              if (this.process === child && this.sessionMachine === session) this.rejectInbound(failure);
-              reject(failure);
+    const operation = this.awaitSendBoundary(this.outbound, signal, cancellation)
+      .then(async () => {
+        for (const json of frames) {
+          assertOwner();
+          if (isRunRequest || isEffectAuthorization) this.assertExecutionWindow();
+          if (isRunRequest) {
+            this.assertStartEligibility();
+          }
+          if (
+            Buffer.byteLength(json) >
+            Math.min(
+              this.options.maxEnvelopeSizeBytes ?? MAX_ENVELOPE_SIZE_BYTES,
+              BRIDGE_FRAME_MAX_BYTES,
+            )
+          ) {
+            throw new BridgeAdapterError('envelope_malformed', 'Envelope exceeds maximum size');
+          }
+          const written = new Promise<void>((resolve, reject) => {
+            const failed = (error: Error) => {
+              const failure = new BridgeAdapterError(
+                'process_crash',
+                'Bridge stdin write failed',
+                undefined,
+                { cause: error },
+              );
+              if (signal?.aborted) {
+                const primary = cancellation();
+                this.recordSecondaryPipeFailure(primary, error);
+                reject(primary);
+              } else {
+                if (this.process === child && this.sessionMachine === session)
+                  this.rejectInbound(failure);
+                reject(failure);
+              }
+            };
+            try {
+              stdin.write(json + '\n', (error) => {
+                if (!error) {
+                  resolve();
+                  return;
+                }
+                failed(error);
+              });
+            } catch (error) {
+              failed(error instanceof Error ? error : new Error('Bridge stdin write failed'));
             }
-          };
-          try { stdin.write(json + '\n', error => {
-            if (!error) { resolve(); return; }
-            failed(error);
-          }); } catch (error) { failed(error instanceof Error ? error : new Error('Bridge stdin write failed')); }
-        });
-        // A paused reader may never invoke write's callback before its own
-        // exit. Abort the wait, not the owned cleanup budget; the raw callback
-        // stays handled and may add secondary EPIPE evidence during shutdown.
-        await this.awaitSendBoundary(written, signal, cancellation);
-      }
-    }).finally(() => { this.outboundBytes -= bytes; });
+          });
+          // A paused reader may never invoke write's callback before its own
+          // exit. Abort the wait, not the owned cleanup budget; the raw callback
+          // stays handled and may add secondary EPIPE evidence during shutdown.
+          await this.awaitSendBoundary(written, signal, cancellation);
+        }
+      })
+      .finally(() => {
+        this.outboundBytes -= bytes;
+      });
     this.outbound = operation.catch(() => {});
     return operation;
   }
@@ -347,16 +443,28 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
   // ---------------------------------------------------------------------------
 
   async execute<T>(context: AdapterExecutionContext): Promise<AdapterExecutionResult<T>> {
-    if (this.invocationOwner || (this.process && !this.process.killed) || (this.sessionMachine && this.sessionMachine.currentState !== 'shutdown')) {
-      throw new BridgeAdapterError('session_unavailable', 'Session already active; preserve the owning invocation');
+    if (
+      this.invocationOwner ||
+      (this.process && !this.process.killed) ||
+      (this.sessionMachine && this.sessionMachine.currentState !== 'shutdown')
+    ) {
+      throw new BridgeAdapterError(
+        'session_unavailable',
+        'Session already active; preserve the owning invocation',
+      );
     }
     const owner = Symbol('Bridge invocation');
     this.invocationOwner = owner;
-    try { return await this.executeOwned<T>(context); }
-    finally { if (this.invocationOwner === owner) this.invocationOwner = undefined; }
+    try {
+      return await this.executeOwned<T>(context);
+    } finally {
+      if (this.invocationOwner === owner) this.invocationOwner = undefined;
+    }
   }
 
-  private async executeOwned<T>(context: AdapterExecutionContext): Promise<AdapterExecutionResult<T>> {
+  private async executeOwned<T>(
+    context: AdapterExecutionContext,
+  ): Promise<AdapterExecutionResult<T>> {
     const startTime = performance.now();
     // Keep the caller's signal separate: AbortSignal.any retains its first
     // reason and can hide a later explicit cancellation behind an inner cutoff.
@@ -367,27 +475,55 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
     let successfulSummary: ReturnType<typeof BridgeLifecycleMapper.buildSummary> | undefined;
     let ownedSession: BridgeSessionStateMachine | null = null;
     const totalTimeoutMs = this.options.timeoutMs ?? ABY_BRIDGE_RUNTIME_LIMITS.timeoutMs.default;
-    const completionGrace = this.options.completionGraceMs ?? (this.options.confirmProcessExit ? 0 : 1000);
+    const completionGrace =
+      this.options.completionGraceMs ?? (this.options.confirmProcessExit ? 0 : 1000);
     if (!Number.isSafeInteger(completionGrace) || completionGrace < 0 || completionGrace > 1000) {
       throw new BridgeAdapterError('session_unavailable', 'Invalid trusted completion grace');
     }
-    if (context.executionDeadline !== undefined && (!Number.isSafeInteger(context.executionDeadline) || context.executionDeadline < 0)) {
+    if (
+      context.executionDeadline !== undefined &&
+      (!Number.isSafeInteger(context.executionDeadline) || context.executionDeadline < 0)
+    ) {
       throw new BridgeAdapterError('session_unavailable', 'Invalid trusted execution deadline');
     }
-    if (context.executionMonotonicDeadline !== undefined && (!Number.isFinite(context.executionMonotonicDeadline) || context.executionMonotonicDeadline < 0)) {
-      throw new BridgeAdapterError('session_unavailable', 'Invalid same-process execution deadline');
+    if (
+      context.executionMonotonicDeadline !== undefined &&
+      (!Number.isFinite(context.executionMonotonicDeadline) ||
+        context.executionMonotonicDeadline < 0)
+    ) {
+      throw new BridgeAdapterError(
+        'session_unavailable',
+        'Invalid same-process execution deadline',
+      );
     }
     // Translate the trusted UTC upper bound once into a remaining local duration.
     // Keep UTC as a separate revocation bound; wall-clock changes cannot renew
     // local elapsed/cleanup budgets or compare unrelated process clock origins.
-    const executionDeadline = Math.min(context.executionMonotonicDeadline ?? Infinity, startTime + Math.min(totalTimeoutMs,
-      context.executionDeadline === undefined ? Infinity : Math.max(0, context.executionDeadline - Date.now())));
+    const executionDeadline = Math.min(
+      context.executionMonotonicDeadline ?? Infinity,
+      startTime +
+        Math.min(
+          totalTimeoutMs,
+          context.executionDeadline === undefined
+            ? Infinity
+            : Math.max(0, context.executionDeadline - Date.now()),
+        ),
+    );
     const completionDeadline = executionDeadline + completionGrace;
     this.transportAbort = new AbortController();
     this.invocationAbortError = undefined;
     {
-      deadline = AbortSignal.timeout(Math.max(0, Math.ceil(completionDeadline - performance.now())));
-      context = { ...context, signal: AbortSignal.any([...(callerSignal ? [callerSignal] : []), deadline, this.transportAbort.signal]) };
+      deadline = AbortSignal.timeout(
+        Math.max(0, Math.ceil(completionDeadline - performance.now())),
+      );
+      context = {
+        ...context,
+        signal: AbortSignal.any([
+          ...(callerSignal ? [callerSignal] : []),
+          deadline,
+          this.transportAbort.signal,
+        ]),
+      };
     }
     const {
       prompt,
@@ -402,35 +538,58 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
     this.startEligibilityCheck = undefined;
     if (this.options.requireToolEvidence) {
       const binding = context.runState.harnessExecution;
-      if (!binding?.lifecycle) throw new BridgeAdapterError('permission_denied', 'Known Harness start eligibility is unavailable');
-      const expected = { runId, requestHash: binding.requestHash, principalHash: binding.principalHash, generation: binding.lifecycle.ownerGeneration };
+      if (!binding?.lifecycle)
+        throw new BridgeAdapterError(
+          'permission_denied',
+          'Known Harness start eligibility is unavailable',
+        );
+      const expected = {
+        runId,
+        requestHash: binding.requestHash,
+        principalHash: binding.principalHash,
+        generation: binding.lifecycle.ownerGeneration,
+      };
       this.startEligibilityCheck = () => {
         assertHarnessRunStartEligibility(context.startEligibility, expected);
-        return Object.freeze({ runId, generation: expected.generation, restriction: harnessRunStartEligibilityRestriction(context.startEligibility) });
+        return Object.freeze({
+          runId,
+          generation: expected.generation,
+          restriction: harnessRunStartEligibilityRestriction(context.startEligibility),
+        });
       };
     }
 
     // Observation/result recording may consume the existing cleanup allowance.
     // Business effects retain their independent live UTC/monotonic guards.
     const persist = async <R>(write: () => R): Promise<R> => {
-      try { return await waitForRecorderWrite(recorder, write, { signal: context.signal, monotonicDeadline: completionDeadline }); }
-      catch (cause) {
-        if (cause instanceof RunWaitDeadlineError) throw new BridgeAdapterError('timeout', 'Bridge total deadline exceeded', undefined, { cause });
+      try {
+        return await waitForRecorderWrite(recorder, write, {
+          signal: context.signal,
+          monotonicDeadline: completionDeadline,
+        });
+      } catch (cause) {
+        if (cause instanceof RunWaitDeadlineError)
+          throw new BridgeAdapterError('timeout', 'Bridge total deadline exceeded', undefined, {
+            cause,
+          });
         throw cause;
       }
     };
-    const persistFinal = <R>(write: () => R) => waitForRecorderWrite(recorder, write, { monotonicDeadline: completionDeadline });
+    const persistFinal = <R>(write: () => R) =>
+      waitForRecorderWrite(recorder, write, { monotonicDeadline: completionDeadline });
     const lifecycle = new BridgeLifecycleMapper(recorder, runId);
     const guard = new BridgePermissionGuard(permissionProfile, recorder, runId);
     const worktreeGuard = new BridgeWorktreeGuard(recorder, runId);
 
     // Validate MCP servers if configured
     const availableMcpServers = this.options.availableMcpServers ?? [];
-    await persist(() => recorder.progress(runId, {
-      step: 'bridge_mcp_availability',
-      required: resolvedConfig.requiredMcpServers ?? [],
-      available: availableMcpServers,
-    }));
+    await persist(() =>
+      recorder.progress(runId, {
+        step: 'bridge_mcp_availability',
+        required: resolvedConfig.requiredMcpServers ?? [],
+        available: availableMcpServers,
+      }),
+    );
     if (resolvedConfig.requiredMcpServers && resolvedConfig.requiredMcpServers.length > 0) {
       const mcpDescriptors = buildMcpServerDescriptors(resolvedConfig.requiredMcpServers);
       validateRequiredMcpServers(mcpDescriptors, availableMcpServers);
@@ -441,15 +600,19 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
     if (mcpTools.length > 0) {
       const namespaceValidation = validateMcpToolNamespace(mcpTools, availableMcpServers);
       if (namespaceValidation.invalid.length > 0) {
-        await persist(() => recorder.progress(runId, {
-          step: 'bridge_mcp_namespace_invalid',
-          invalidTools: namespaceValidation.invalid,
-        }));
+        await persist(() =>
+          recorder.progress(runId, {
+            step: 'bridge_mcp_namespace_invalid',
+            invalidTools: namespaceValidation.invalid,
+          }),
+        );
       }
     }
 
     // Filter outbound tools through BridgePermissionGuard
-    const outboundFiltered = await persist(() => guard.filterOutboundTools(permissionProfile.allowedTools));
+    const outboundFiltered = await persist(() =>
+      guard.filterOutboundTools(permissionProfile.allowedTools),
+    );
 
     // Build worktree config if available
     const worktreeConfig = BridgeWorktreeGuard.buildConfig(worktreePath);
@@ -472,9 +635,10 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
         model: resolvedConfig.model,
         correlationId: context.correlationId ?? runId,
         threadId: context.threadId,
-        budget: context.runState.tokensRemaining !== null
-          ? { tokens: context.runState.tokensRemaining, costUsd: 0 }
-          : undefined,
+        budget:
+          context.runState.tokensRemaining !== null
+            ? { tokens: context.runState.tokensRemaining, costUsd: 0 }
+            : undefined,
         resolvedConfig: resolvedConfig as unknown as Record<string, unknown>,
         worktree: worktreeConfig,
       },
@@ -490,11 +654,23 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
         this.abortListener = () => {
           // An EventTarget callback must still stop the owned process when
           // diagnostic persistence fails; never throw from this listener.
-          try { lifecycle.onBridgeProgress('agent_cancel_requested', { runId, reason: 'AbortSignal' }); }
-          catch (error) { diagnosticFailure ??= error; }
-          this.invocationAbortError ??= this.inboundFailure ?? (deadline?.aborted
-            ? new BridgeAdapterError('timeout', 'Bridge total deadline exceeded', undefined, { cause: context.signal?.reason })
-            : new BridgeAdapterError('session_unavailable', 'Bridge invocation cancelled', undefined, { cause: context.signal?.reason }));
+          try {
+            lifecycle.onBridgeProgress('agent_cancel_requested', { runId, reason: 'AbortSignal' });
+          } catch (error) {
+            diagnosticFailure ??= error;
+          }
+          this.invocationAbortError ??=
+            this.inboundFailure ??
+            (deadline?.aborted
+              ? new BridgeAdapterError('timeout', 'Bridge total deadline exceeded', undefined, {
+                  cause: context.signal?.reason,
+                })
+              : new BridgeAdapterError(
+                  'session_unavailable',
+                  'Bridge invocation cancelled',
+                  undefined,
+                  { cause: context.signal?.reason },
+                ));
           this.pendingReject?.(this.invocationAbortError);
           this.pendingReject = null;
           this.pendingResponse = null;
@@ -545,14 +721,18 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
       // producing a final result.
       let finalResult: { data: T; tokenUsage?: number } | null = null;
       let reconciliationEventCount = 0;
-      const evidenceCalls = new Map<string, { input: unknown; targetPath: string; toolName: string }>();
+      const evidenceCalls = new Map<
+        string,
+        { input: unknown; targetPath: string; toolName: string }
+      >();
 
       while (finalResult === null) {
         this.assertInvocationSignal();
         // Track elapsed time so the total budget is shared across all
         // envelopes, not multiplied per envelope.
         const remaining = completionDeadline - performance.now();
-        if (remaining <= 0) throw new BridgeAdapterError('timeout', 'Bridge total deadline exceeded');
+        if (remaining <= 0)
+          throw new BridgeAdapterError('timeout', 'Bridge total deadline exceeded');
         const envelope = await this.waitForResponse(remaining);
 
         // Validate every incoming envelope
@@ -566,9 +746,20 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
         if (envelope.sessionId !== sessionId || envelope.correlationId !== runId) {
           throw new BridgeAdapterError('envelope_malformed', 'Bridge frame belongs to another run');
         }
-        if (performance.now() >= completionDeadline || (context.executionDeadline !== undefined && Date.now() >= context.executionDeadline + completionGrace)) throw new BridgeAdapterError('timeout', 'Bridge total deadline exceeded');
-        if (performance.now() >= executionDeadline && !['complete', 'error', 'heartbeat'].includes(envelope.kind)) {
-          throw new BridgeAdapterError('timeout', 'Bridge completion grace cannot authorize further actions');
+        if (
+          performance.now() >= completionDeadline ||
+          (context.executionDeadline !== undefined &&
+            Date.now() >= context.executionDeadline + completionGrace)
+        )
+          throw new BridgeAdapterError('timeout', 'Bridge total deadline exceeded');
+        if (
+          performance.now() >= executionDeadline &&
+          !['complete', 'error', 'heartbeat'].includes(envelope.kind)
+        ) {
+          throw new BridgeAdapterError(
+            'timeout',
+            'Bridge completion grace cannot authorize further actions',
+          );
         }
 
         // Permission guard on every inbound envelope
@@ -583,22 +774,31 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
         // Process by kind
         switch (envelope.kind) {
           case 'run_started': {
-            await persist(() => lifecycle.onBridgeProgress('run_started', envelope.payload as Record<string, unknown>));
+            await persist(() =>
+              lifecycle.onBridgeProgress(
+                'run_started',
+                envelope.payload as Record<string, unknown>,
+              ),
+            );
             reconciliationEventCount++;
             break;
           }
 
           case 'assistant_text': {
-            await persist(() => lifecycle.onBridgeProgress(
-              'assistant_text',
-              envelope.payload as Record<string, unknown>,
-            ));
+            await persist(() =>
+              lifecycle.onBridgeProgress(
+                'assistant_text',
+                envelope.payload as Record<string, unknown>,
+              ),
+            );
             reconciliationEventCount++;
             break;
           }
 
           case 'progress': {
-            await persist(() => lifecycle.onBridgeProgress('event', envelope.payload as Record<string, unknown>));
+            await persist(() =>
+              lifecycle.onBridgeProgress('event', envelope.payload as Record<string, unknown>),
+            );
             reconciliationEventCount++;
             break;
           }
@@ -615,35 +815,78 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
               try {
                 this.assertExecutionWindow();
                 toolGuard.check(toolName);
-                const callback = Object.values(HARNESS_CALLBACK_TOOLS).some(item => item.bridge === toolName);
+                const callback = Object.values(HARNESS_CALLBACK_TOOLS).some(
+                  (item) => item.bridge === toolName,
+                );
                 if (!this.options.authorizeTool || typeof tp.authorizationRequestId !== 'string') {
                   throw new Error('Live authorization port is not configured');
                 }
-                if (callback && !this.options.requireToolEvidence) throw new Error('Task callback evidence is not configured');
-                const eligibility = await this.authorizePeerTool(context, toolName, structuredClone(tp.input));
+                if (callback && !this.options.requireToolEvidence)
+                  throw new Error('Task callback evidence is not configured');
+                const eligibility = await this.authorizePeerTool(
+                  context,
+                  toolName,
+                  structuredClone(tp.input),
+                );
                 this.assertExecutionWindow();
                 if (this.options.requireToolEvidence) {
                   const evidence = tp.evidence as Record<string, unknown> | undefined;
-                  if (!evidence || typeof evidence !== 'object' || Array.isArray(evidence) ||
-                    Object.keys(evidence).sort().join(',') !== 'callId,generation,input,maxResultBytes,targetPath' ||
-                    typeof evidence.callId !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(evidence.callId) ||
-                    typeof evidence.generation !== 'string' || !evidence.generation || typeof evidence.targetPath !== 'string' ||
-                    !Number.isSafeInteger(evidence.maxResultBytes) || (evidence.maxResultBytes as number) < 1 || (evidence.maxResultBytes as number) > BRIDGE_MESSAGE_MAX_BYTES ||
-                    (!callback && (!tp.input || typeof tp.input !== 'object' || !('file_path' in tp.input) || tp.input.file_path !== evidence.targetPath)) ||
-                    (callback && evidence.targetPath !== `mcp:${toolName}`) || !recorder.reserveToolEvidence ||
-                    !recorder.markToolEvidenceAuthorizationAttempt || !recorder.releaseUndispatchedToolEvidence) throw new Error('Unsupported canonical evidence reservation');
+                  if (
+                    !evidence ||
+                    typeof evidence !== 'object' ||
+                    Array.isArray(evidence) ||
+                    Object.keys(evidence).sort().join(',') !==
+                      'callId,generation,input,maxResultBytes,targetPath' ||
+                    typeof evidence.callId !== 'string' ||
+                    !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(evidence.callId) ||
+                    typeof evidence.generation !== 'string' ||
+                    !evidence.generation ||
+                    typeof evidence.targetPath !== 'string' ||
+                    !Number.isSafeInteger(evidence.maxResultBytes) ||
+                    (evidence.maxResultBytes as number) < 1 ||
+                    (evidence.maxResultBytes as number) > BRIDGE_MESSAGE_MAX_BYTES ||
+                    (!callback &&
+                      (!tp.input ||
+                        typeof tp.input !== 'object' ||
+                        !('file_path' in tp.input) ||
+                        tp.input.file_path !== evidence.targetPath)) ||
+                    (callback && evidence.targetPath !== `mcp:${toolName}`) ||
+                    !recorder.reserveToolEvidence ||
+                    !recorder.markToolEvidenceAuthorizationAttempt ||
+                    !recorder.releaseUndispatchedToolEvidence
+                  )
+                    throw new Error('Unsupported canonical evidence reservation');
                   const binding = context.runState.harnessExecution;
-                  if (!binding || !binding.lifecycle) throw new Error('Canonical Harness evidence owner is missing');
-                  const expected = { runId, requestHash: binding.requestHash, principalHash: binding.principalHash,
-                    generation: binding.lifecycle.ownerGeneration, toolName, targetPath: evidence.targetPath };
+                  if (!binding || !binding.lifecycle)
+                    throw new Error('Canonical Harness evidence owner is missing');
+                  const expected = {
+                    runId,
+                    requestHash: binding.requestHash,
+                    principalHash: binding.principalHash,
+                    generation: binding.lifecycle.ownerGeneration,
+                    toolName,
+                    targetPath: evidence.targetPath,
+                  };
                   assertHarnessToolEligibility(eligibility, expected);
-                  const reservation = { callId: evidence.callId, toolName, input: evidence.input,
-                    targetPath: evidence.targetPath, generation: evidence.generation, maxResultBytes: evidence.maxResultBytes as number };
-                  const receipt = await persist(() => recorder.reserveToolEvidence!(runId, reservation, eligibility));
+                  const reservation = {
+                    callId: evidence.callId,
+                    toolName,
+                    input: evidence.input,
+                    targetPath: evidence.targetPath,
+                    generation: evidence.generation,
+                    maxResultBytes: evidence.maxResultBytes as number,
+                  };
+                  const receipt = await persist(() =>
+                    recorder.reserveToolEvidence!(runId, reservation, eligibility),
+                  );
                   reservationReceipt = receipt;
                   assertHarnessToolEligibility(eligibility, expected);
                   restriction = harnessToolEligibilityRestriction(eligibility);
-                  evidenceCalls.set(evidence.callId, { input: structuredClone(evidence.input), toolName, targetPath: evidence.targetPath });
+                  evidenceCalls.set(evidence.callId, {
+                    input: structuredClone(evidence.input),
+                    toolName,
+                    targetPath: evidence.targetPath,
+                  });
                   this.assertExecutionWindow();
                   authorizationAttempted = true;
                   await persist(() => recorder.markToolEvidenceAuthorizationAttempt!(receipt));
@@ -652,34 +895,80 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
               } catch (error) {
                 if (reservationReceipt && !authorizationAttempted) {
                   const receipt = reservationReceipt;
-                  try { await persist(() => recorder.releaseUndispatchedToolEvidence!(receipt)); }
-                  catch { /* A disputed/legacy reservation remains reserved; the run must fail and reconcile. */ }
+                  try {
+                    await persist(() => recorder.releaseUndispatchedToolEvidence!(receipt));
+                  } catch {
+                    /* A disputed/legacy reservation remains reserved; the run must fail and reconcile. */
+                  }
                 }
                 // Return no principal, path or upstream exception text to the untrusted caller.
-                authorizationError = error instanceof BridgeAdapterError ? error
-                  : deadline?.aborted && error === context.signal?.reason
-                    ? new BridgeAdapterError('timeout', 'Bridge authorization exceeded the execution deadline', undefined, { cause: error })
-                    : new BridgeAdapterError('permission_denied', 'Live host tool authorization denied', undefined, { cause: error });
+                authorizationError =
+                  error instanceof BridgeAdapterError
+                    ? error
+                    : deadline?.aborted && error === context.signal?.reason
+                      ? new BridgeAdapterError(
+                          'timeout',
+                          'Bridge authorization exceeded the execution deadline',
+                          undefined,
+                          { cause: error },
+                        )
+                      : new BridgeAdapterError(
+                          'permission_denied',
+                          'Live host tool authorization denied',
+                          undefined,
+                          { cause: error },
+                        );
               }
-              if (context.signal?.aborted) throw authorizationError ?? new BridgeAdapterError('session_unavailable', 'Bridge authorization was cancelled');
+              if (context.signal?.aborted)
+                throw (
+                  authorizationError ??
+                  new BridgeAdapterError(
+                    'session_unavailable',
+                    'Bridge authorization was cancelled',
+                  )
+                );
               if (allowed) this.assertExecutionWindow();
-              await this.sendEnvelope(sessionId, buildBridgeEnvelope(sessionId, runId, 'tool_response', {
-                authorizationRequestId: tp.authorizationRequestId, allowed, ...(allowed && restriction ? { restriction } : {}),
-              }));
+              await this.sendEnvelope(
+                sessionId,
+                buildBridgeEnvelope(sessionId, runId, 'tool_response', {
+                  authorizationRequestId: tp.authorizationRequestId,
+                  allowed,
+                  ...(allowed && restriction ? { restriction } : {}),
+                }),
+              );
               this.assertInvocationSignal();
-              await persist(() => recorder.progress(runId, { step: 'harness_tool_authorization', toolName, allowed }));
-              if (!allowed) throw authorizationError ?? new BridgeAdapterError('permission_denied', 'Live host tool authorization denied');
+              await persist(() =>
+                recorder.progress(runId, { step: 'harness_tool_authorization', toolName, allowed }),
+              );
+              if (!allowed)
+                throw (
+                  authorizationError ??
+                  new BridgeAdapterError('permission_denied', 'Live host tool authorization denied')
+                );
               break;
             }
-            const reserved = typeof tp.callId === 'string' ? evidenceCalls.get(tp.callId) : undefined;
-            if (this.options.requireToolEvidence && (!reserved || reserved.toolName !== toolName || !isDeepStrictEqual(reserved.input, tp.input))) {
-              throw new BridgeAdapterError('envelope_malformed', 'Observed tool call differs from its durable reservation');
+            const reserved =
+              typeof tp.callId === 'string' ? evidenceCalls.get(tp.callId) : undefined;
+            if (
+              this.options.requireToolEvidence &&
+              (!reserved ||
+                reserved.toolName !== toolName ||
+                !isDeepStrictEqual(reserved.input, tp.input))
+            ) {
+              throw new BridgeAdapterError(
+                'envelope_malformed',
+                'Observed tool call differs from its durable reservation',
+              );
             }
             // Validate worktree boundary on tool events
             if (worktreeConfig) {
-              const checked = reserved && ['Read', 'Write', 'Edit'].includes(toolName)
-                ? { ...tp, input: { file_path: reserved.targetPath } } : tp;
-              const wtCheck = await persist(() => worktreeGuard.validateToolEvent(toolName, checked, worktreeConfig));
+              const checked =
+                reserved && ['Read', 'Write', 'Edit'].includes(toolName)
+                  ? { ...tp, input: { file_path: reserved.targetPath } }
+                  : tp;
+              const wtCheck = await persist(() =>
+                worktreeGuard.validateToolEvent(toolName, checked, worktreeConfig),
+              );
               if (!wtCheck.valid) {
                 throw new BridgeAdapterError(
                   'worktree_boundary_violation',
@@ -693,12 +982,18 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
             toolGuard.check(toolName);
             // Write canonical tool_call transcript event
             if (this.options.requireToolEvidence) {
-              if (!recorder.recordToolEvidenceCall || typeof tp.callId !== 'string') throw new BridgeAdapterError('envelope_malformed', 'Canonical call evidence is unavailable');
+              if (!recorder.recordToolEvidenceCall || typeof tp.callId !== 'string')
+                throw new BridgeAdapterError(
+                  'envelope_malformed',
+                  'Canonical call evidence is unavailable',
+                );
               const callId = tp.callId;
               await persist(() => recorder.recordToolEvidenceCall!(runId, callId));
             } else await persist(() => recorder.toolCall(runId, toolName, tp.input));
             // Also record bridge-specific progress for observability
-            await persist(() => lifecycle.onBridgeProgress('tool_call', { toolName, callId: tp.callId }));
+            await persist(() =>
+              lifecycle.onBridgeProgress('tool_call', { toolName, callId: tp.callId }),
+            );
             reconciliationEventCount++;
             break;
           }
@@ -706,11 +1001,19 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
           case 'tool_response': {
             const tp = envelope.payload as Record<string, unknown>;
             const toolName = (tp.toolName as string) ?? 'unknown';
-            if (this.options.requireToolEvidence && (typeof tp.callId !== 'string' || evidenceCalls.get(tp.callId)?.toolName !== toolName)) {
-              throw new BridgeAdapterError('envelope_malformed', 'Unreserved or repeated tool result');
+            if (
+              this.options.requireToolEvidence &&
+              (typeof tp.callId !== 'string' || evidenceCalls.get(tp.callId)?.toolName !== toolName)
+            ) {
+              throw new BridgeAdapterError(
+                'envelope_malformed',
+                'Unreserved or repeated tool result',
+              );
             }
             if (worktreeConfig) {
-              const wtCheck = await persist(() => worktreeGuard.validateToolEvent(toolName, tp, worktreeConfig));
+              const wtCheck = await persist(() =>
+                worktreeGuard.validateToolEvent(toolName, tp, worktreeConfig),
+              );
               if (!wtCheck.valid) {
                 throw new BridgeAdapterError(
                   'worktree_boundary_violation',
@@ -720,13 +1023,19 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
             }
             // Write canonical tool_result transcript event
             if (this.options.requireToolEvidence) {
-              if (!recorder.recordToolEvidenceResult || typeof tp.callId !== 'string') throw new BridgeAdapterError('envelope_malformed', 'Canonical result evidence is unavailable');
+              if (!recorder.recordToolEvidenceResult || typeof tp.callId !== 'string')
+                throw new BridgeAdapterError(
+                  'envelope_malformed',
+                  'Canonical result evidence is unavailable',
+                );
               const callId = tp.callId;
               await persist(() => recorder.recordToolEvidenceResult!(runId, callId, tp.output));
               evidenceCalls.delete(tp.callId);
             } else await persist(() => recorder.toolResult(runId, toolName, tp.output));
             // Also record bridge-specific progress for observability
-            await persist(() => lifecycle.onBridgeProgress('tool_result', { toolName, callId: tp.callId }));
+            await persist(() =>
+              lifecycle.onBridgeProgress('tool_result', { toolName, callId: tp.callId }),
+            );
             reconciliationEventCount++;
             break;
           }
@@ -737,12 +1046,14 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
           }
 
           case 'approval_required': {
-            await persist(() => recorder.progress(runId, {
-              step: 'bridge_approval_required',
-              payload: envelope.payload,
-              reason:
-                'External bridge requested approval; OpenSlack does not accept external approval decisions',
-            }));
+            await persist(() =>
+              recorder.progress(runId, {
+                step: 'bridge_approval_required',
+                payload: envelope.payload,
+                reason:
+                  'External bridge requested approval; OpenSlack does not accept external approval decisions',
+              }),
+            );
             throw new BridgeAdapterError(
               'permission_denied',
               'Bridge runtime requested approval, which is not allowed for subagent runs',
@@ -750,7 +1061,11 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
           }
 
           case 'complete': {
-            if (evidenceCalls.size) throw new BridgeAdapterError('envelope_malformed', 'Bridge completed with unresolved full tool evidence');
+            if (evidenceCalls.size)
+              throw new BridgeAdapterError(
+                'envelope_malformed',
+                'Bridge completed with unresolved full tool evidence',
+              );
             // Terminal envelope — extract final result
             const payload = envelope.payload as {
               data?: T;
@@ -758,13 +1073,23 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
               toolStats?: Record<string, unknown>;
               events?: Array<{ kind: string; payload: unknown }>;
             };
-            if (!Object.hasOwn(payload, 'data') ||
-              (payload.tokenUsage !== undefined && (!Number.isSafeInteger(payload.tokenUsage) || payload.tokenUsage < 0))) {
-              throw new BridgeAdapterError('envelope_malformed', 'Bridge complete requires data and valid observed usage');
+            if (
+              !Object.hasOwn(payload, 'data') ||
+              (payload.tokenUsage !== undefined &&
+                (!Number.isSafeInteger(payload.tokenUsage) || payload.tokenUsage < 0))
+            ) {
+              throw new BridgeAdapterError(
+                'envelope_malformed',
+                'Bridge complete requires data and valid observed usage',
+              );
             }
-            if (this.options.confirmProcessExit) await persist(() => recorder.progress(runId, {
-              step: 'harness_usage', status: payload.tokenUsage === undefined ? 'unknown' : 'observed',
-            }));
+            if (this.options.confirmProcessExit)
+              await persist(() =>
+                recorder.progress(runId, {
+                  step: 'harness_usage',
+                  status: payload.tokenUsage === undefined ? 'unknown' : 'observed',
+                }),
+              );
 
             // Reconcile any events reported in the complete payload
             if (payload.events && Array.isArray(payload.events)) {
@@ -785,7 +1110,9 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
 
           default: {
             // Unknown envelope kind — record but continue
-            await persist(() => lifecycle.onBridgeProgress('unknown_envelope', { kind: envelope.kind }));
+            await persist(() =>
+              lifecycle.onBridgeProgress('unknown_envelope', { kind: envelope.kind }),
+            );
             break;
           }
         }
@@ -806,18 +1133,32 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
         tokenUsage: finalResult.tokenUsage,
       };
     } catch (err) {
-      executionError = err instanceof BridgeAdapterError ? err
-        : deadline?.aborted && (err === context.signal?.reason || (err instanceof Error && err.name === 'TimeoutError'))
-          ? new BridgeAdapterError('timeout', 'Bridge total deadline exceeded', undefined, { cause: err })
-          : err instanceof Error ? err : new BridgeAdapterError('unknown', 'Bridge execution failed');
-      if (executionError instanceof BridgeAdapterError && deadline?.aborted) executionError.deadlineExceeded = true;
+      executionError =
+        err instanceof BridgeAdapterError
+          ? err
+          : deadline?.aborted &&
+              (err === context.signal?.reason ||
+                (err instanceof Error && err.name === 'TimeoutError'))
+            ? new BridgeAdapterError('timeout', 'Bridge total deadline exceeded', undefined, {
+                cause: err,
+              })
+            : err instanceof Error
+              ? err
+              : new BridgeAdapterError('unknown', 'Bridge execution failed');
+      if (executionError instanceof BridgeAdapterError && deadline?.aborted)
+        executionError.deadlineExceeded = true;
       const sessionId = this.sessionMachine?.id ?? 'unknown';
-      const errorKind = executionError instanceof BridgeAdapterError ? executionError.kind : 'unknown';
+      const errorKind =
+        executionError instanceof BridgeAdapterError ? executionError.kind : 'unknown';
       const errorMessage = executionError.message;
 
       try {
-        await persistFinal(() => lifecycle.onSessionError({ kind: errorKind, message: errorMessage, sessionId }));
-      } catch (error) { diagnosticFailure ??= error; }
+        await persistFinal(() =>
+          lifecycle.onSessionError({ kind: errorKind, message: errorMessage, sessionId }),
+        );
+      } catch (error) {
+        diagnosticFailure ??= error;
+      }
 
       throw executionError;
     } finally {
@@ -826,8 +1167,11 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
       // responsibility — the bridge adapter must not fabricate dirty=false
       // evidence that would conflict with the launcher's real check.
       if (worktreeConfig) {
-        try { await persistFinal(() => worktreeGuard.recordPostSessionValidation(worktreeConfig)); }
-        catch (error) { diagnosticFailure ??= error; }
+        try {
+          await persistFinal(() => worktreeGuard.recordPostSessionValidation(worktreeConfig));
+        } catch (error) {
+          diagnosticFailure ??= error;
+        }
       }
       if (context.signal && this.abortListener) {
         context.signal.removeEventListener('abort', this.abortListener);
@@ -840,11 +1184,16 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
       // Always close session
       if (ownedSession && this.sessionMachine === ownedSession) {
         // An unconfirmed exit invalidates success, even after a complete frame.
-        try { await this.closeSession(ownedSession.id); }
-        catch (shutdownError) {
-          if (!executionError) executionError = shutdownError instanceof Error ? shutdownError
-            : new BridgeAdapterError('unknown', 'Bridge shutdown failed');
-          if (executionError instanceof BridgeAdapterError) executionError.shutdownEvidence = { exit: this.processExitReceipt, clean: false };
+        try {
+          await this.closeSession(ownedSession.id);
+        } catch (shutdownError) {
+          if (!executionError)
+            executionError =
+              shutdownError instanceof Error
+                ? shutdownError
+                : new BridgeAdapterError('unknown', 'Bridge shutdown failed');
+          if (executionError instanceof BridgeAdapterError)
+            executionError.shutdownEvidence = { exit: this.processExitReceipt, clean: false };
         }
         // Explicit caller cancellation invalidates every provider's success,
         // including one whose complete frame arrived before clean EOF. Internal
@@ -852,28 +1201,48 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
         const cancelled = callerSignal?.aborted === true;
         // Governed callers reserve cleanup inside their outer lifetime; an
         // already accepted complete may cross the inner business cutoff only.
-        const expired = this.options.confirmProcessExit && context.executionDeadline === undefined &&
+        const expired =
+          this.options.confirmProcessExit &&
+          context.executionDeadline === undefined &&
           (deadline?.aborted || performance.now() >= executionDeadline);
         if (!executionError && (cancelled || expired)) {
-          const error = new BridgeAdapterError(cancelled ? 'unknown' : 'timeout',
-            cancelled ? 'Bridge invocation cancelled during shutdown' : 'Bridge total deadline exceeded during shutdown',
-            undefined, { cause: cancelled ? callerSignal?.reason : deadline?.reason });
+          const error = new BridgeAdapterError(
+            cancelled ? 'unknown' : 'timeout',
+            cancelled
+              ? 'Bridge invocation cancelled during shutdown'
+              : 'Bridge total deadline exceeded during shutdown',
+            undefined,
+            { cause: cancelled ? callerSignal?.reason : deadline?.reason },
+          );
           error.shutdownEvidence = { exit: this.processExitReceipt, clean: true };
           executionError = error;
         }
       }
       if (diagnosticFailure !== undefined) {
-        if (!executionError) executionError = new BridgeAdapterError('unknown', 'Required Bridge evidence persistence failed', undefined, { cause: diagnosticFailure });
-        if (executionError instanceof BridgeAdapterError) executionError.diagnosticPersistenceFailed = true;
+        if (!executionError)
+          executionError = new BridgeAdapterError(
+            'unknown',
+            'Required Bridge evidence persistence failed',
+            undefined,
+            { cause: diagnosticFailure },
+          );
+        if (executionError instanceof BridgeAdapterError)
+          executionError.diagnosticPersistenceFailed = true;
       }
       if (executionError) throw executionError;
       // A completed lifecycle record must never precede strict stdout EOF and
       // the provider's exit policy. Failed persistence cannot create success.
       if (successfulSummary) {
         const summary = successfulSummary;
-        try { await persistFinal(() => lifecycle.onSessionClose(summary)); }
-        catch (error) {
-          const failure = new BridgeAdapterError('unknown', 'Required Bridge completion evidence persistence failed', undefined, { cause: error });
+        try {
+          await persistFinal(() => lifecycle.onSessionClose(summary));
+        } catch (error) {
+          const failure = new BridgeAdapterError(
+            'unknown',
+            'Required Bridge completion evidence persistence failed',
+            undefined,
+            { cause: error },
+          );
           failure.diagnosticPersistenceFailed = true;
           throw failure;
         }
@@ -905,7 +1274,8 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
     return new Promise((resolve, reject) => {
       this.assertExecutionWindow();
       const restriction = this.assertStartEligibility();
-      if (restriction && restriction.runId !== config.runId) throw new BridgeAdapterError('permission_denied', 'Harness start belongs to another run');
+      if (restriction && restriction.runId !== config.runId)
+        throw new BridgeAdapterError('permission_denied', 'Harness start belongs to another run');
       const args = [...configuredArgs];
       if (restriction) args.push('--start-eligibility-json', JSON.stringify(restriction));
       // Materializing argv/transport restrictions is synchronous work, but it
@@ -924,20 +1294,38 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
       });
 
       this.process.on('error', (err) => {
-        const error = new BridgeAdapterError('process_crash', 'Failed to spawn bridge process', undefined, { cause: err });
+        const error = new BridgeAdapterError(
+          'process_crash',
+          'Failed to spawn bridge process',
+          undefined,
+          { cause: err },
+        );
         reject(error);
         if (this.process === child) this.rejectInbound(error);
       });
       // A broken pipe is a transport outcome, never an unhandled host-process error.
       child.stdin?.on('error', (error: Error) => {
         if (this.process !== child || this.processExited) return;
-        if (spawnSignal?.aborted) this.recordSecondaryPipeFailure(this.invocationAbortError ?? spawnSignal.reason, error);
-        else this.rejectInbound(new BridgeAdapterError('process_crash', 'Bridge stdin transport failed', undefined, { cause: error }));
+        if (spawnSignal?.aborted)
+          this.recordSecondaryPipeFailure(this.invocationAbortError ?? spawnSignal.reason, error);
+        else
+          this.rejectInbound(
+            new BridgeAdapterError('process_crash', 'Bridge stdin transport failed', undefined, {
+              cause: error,
+            }),
+          );
       });
 
       this.process.on('spawn', () => {
-        if (this.process !== child) { reject(new BridgeAdapterError('session_unavailable', 'Bridge spawn owner changed')); return; }
-        if (this.activeSignal?.aborted) { this.requestPeerStop(); reject(this.activeSignal.reason); return; }
+        if (this.process !== child) {
+          reject(new BridgeAdapterError('session_unavailable', 'Bridge spawn owner changed'));
+          return;
+        }
+        if (this.activeSignal?.aborted) {
+          this.requestPeerStop();
+          reject(this.activeSignal.reason);
+          return;
+        }
         resolve();
       });
 
@@ -964,19 +1352,26 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
             if (this.supervisorBuffer.trim()) throw new Error('Truncated supervisor frame');
           }
           if (this.responseBuffer.trim()) {
-            this.inboundFailure ??= new BridgeAdapterError('envelope_malformed', 'Truncated Bridge frame');
+            this.inboundFailure ??= new BridgeAdapterError(
+              'envelope_malformed',
+              'Truncated Bridge frame',
+            );
           }
         } catch {
-          this.inboundFailure ??= new BridgeAdapterError('envelope_malformed', 'Invalid UTF-8 or truncated Bridge output');
+          this.inboundFailure ??= new BridgeAdapterError(
+            'envelope_malformed',
+            'Invalid UTF-8 or truncated Bridge output',
+          );
         }
         this.processExited = true;
         if (this.pendingReject) {
           this.pendingReject(
-            this.inboundFailure ?? new BridgeAdapterError(
-              'process_crash',
-              `Bridge process exited with code ${code}, signal ${signal}`,
-              this.getStderrSummary(),
-            ),
+            this.inboundFailure ??
+              new BridgeAdapterError(
+                'process_crash',
+                `Bridge process exited with code ${code}, signal ${signal}`,
+                this.getStderrSummary(),
+              ),
           );
           this.pendingResponse = null;
           this.pendingReject = null;
@@ -992,7 +1387,9 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
     const handshakeEnvelope = buildBridgeEnvelope(sessionId, config.runId, 'handshake_request', {
       protocolVersion: BRIDGE_PROTOCOL_VERSION,
       requestedCapabilities: config.permissionProfile.allowedTools.map((tool) => ({ name: tool })),
-      ...(this.options.wireExtensions?.length ? { extensions: [...this.options.wireExtensions] } : {}),
+      ...(this.options.wireExtensions?.length
+        ? { extensions: [...this.options.wireExtensions] }
+        : {}),
     });
 
     await this.sendEnvelope(sessionId, handshakeEnvelope);
@@ -1003,7 +1400,11 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
     );
 
     const validation = validateBridgeEnvelope(response);
-    if (!validation.valid || response.sessionId !== sessionId || response.correlationId !== config.runId) {
+    if (
+      !validation.valid ||
+      response.sessionId !== sessionId ||
+      response.correlationId !== config.runId
+    ) {
       throw new BridgeAdapterError('handshake_failed', 'Bridge handshake identity mismatch');
     }
 
@@ -1014,16 +1415,29 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
       );
     }
 
-    const payload = response.payload as { accepted: boolean; reason?: string; extensions?: unknown };
+    const payload = response.payload as {
+      accepted: boolean;
+      reason?: string;
+      extensions?: unknown;
+    };
     if (!payload.accepted) {
       throw new BridgeAdapterError(
         'handshake_failed',
         payload.reason ?? 'Handshake rejected by bridge runtime',
       );
     }
-    if (payload.extensions !== undefined && (!Array.isArray(payload.extensions) ||
-      payload.extensions.some(value => value !== BRIDGE_CHUNK_EXTENSION || !this.options.wireExtensions?.includes(value)))) {
-      throw new BridgeAdapterError('handshake_failed', 'Peer advertised an unrequested Bridge extension');
+    if (
+      payload.extensions !== undefined &&
+      (!Array.isArray(payload.extensions) ||
+        payload.extensions.some(
+          (value) =>
+            value !== BRIDGE_CHUNK_EXTENSION || !this.options.wireExtensions?.includes(value),
+        ))
+    ) {
+      throw new BridgeAdapterError(
+        'handshake_failed',
+        'Peer advertised an unrequested Bridge extension',
+      );
     }
     const negotiated = (payload.extensions ?? []) as string[];
     this.wireEncoder.setExtensions(negotiated);
@@ -1034,20 +1448,40 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
     // The first malformed stream already forbids success. Drain/discard further
     // child bytes without growing a buffer while a live authority port settles.
     if (this.inboundFailure) return;
-    try { this.responseBuffer += this.responseDecoder.decode(chunk, { stream: true }); }
-    catch { this.rejectInbound(new BridgeAdapterError('envelope_malformed', 'Invalid UTF-8 Bridge output')); return; }
+    try {
+      this.responseBuffer += this.responseDecoder.decode(chunk, { stream: true });
+    } catch {
+      this.rejectInbound(
+        new BridgeAdapterError('envelope_malformed', 'Invalid UTF-8 Bridge output'),
+      );
+      return;
+    }
     // A completed deferred message keeps its original position. Bytes already
     // delivered in this OS read stay bounded as raw input until it is dequeued.
     if (this.deferredEnvelope) {
-      if (Buffer.byteLength(this.responseBuffer) > BRIDGE_FRAME_MAX_BYTES) this.rejectInbound(new BridgeAdapterError('envelope_malformed', 'Bridge producer exceeded paused-input bounds'));
+      if (Buffer.byteLength(this.responseBuffer) > BRIDGE_FRAME_MAX_BYTES)
+        this.rejectInbound(
+          new BridgeAdapterError(
+            'envelope_malformed',
+            'Bridge producer exceeded paused-input bounds',
+          ),
+        );
       return;
     }
 
     // Process complete lines (JSONL)
     const lines = this.responseBuffer.split('\n');
     this.responseBuffer = lines.pop() ?? ''; // Keep incomplete line
-    if (Buffer.byteLength(this.responseBuffer) > Math.min(this.options.maxEnvelopeSizeBytes ?? MAX_ENVELOPE_SIZE_BYTES, BRIDGE_FRAME_MAX_BYTES)) {
-      this.rejectInbound(new BridgeAdapterError('envelope_malformed', 'Unterminated Bridge frame exceeds maximum size'));
+    if (
+      Buffer.byteLength(this.responseBuffer) >
+      Math.min(this.options.maxEnvelopeSizeBytes ?? MAX_ENVELOPE_SIZE_BYTES, BRIDGE_FRAME_MAX_BYTES)
+    ) {
+      this.rejectInbound(
+        new BridgeAdapterError(
+          'envelope_malformed',
+          'Unterminated Bridge frame exceeds maximum size',
+        ),
+      );
       return;
     }
 
@@ -1056,14 +1490,21 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
       if (!line.trim()) continue;
 
       try {
-        if (Buffer.byteLength(line) > Math.min(this.options.maxEnvelopeSizeBytes ?? MAX_ENVELOPE_SIZE_BYTES, BRIDGE_FRAME_MAX_BYTES)) {
+        if (
+          Buffer.byteLength(line) >
+          Math.min(
+            this.options.maxEnvelopeSizeBytes ?? MAX_ENVELOPE_SIZE_BYTES,
+            BRIDGE_FRAME_MAX_BYTES,
+          )
+        ) {
           throw new Error('Inbound envelope exceeds maximum size');
         }
         const decoded = this.wireDecoder.receive(line);
         if (!decoded) continue;
         const envelope = decoded as unknown as BridgeEnvelope;
         if (envelope.kind === 'heartbeat') continue;
-        if (this.terminalFrames && envelope.kind !== 'complete' && envelope.kind !== 'error') throw new Error('Bridge business frame followed a terminal envelope');
+        if (this.terminalFrames && envelope.kind !== 'complete' && envelope.kind !== 'error')
+          throw new Error('Bridge business frame followed a terminal envelope');
         if (envelope.kind === 'complete' || envelope.kind === 'error') this.terminalFrames++;
         if (this.terminalFrames > 1) throw new Error('Duplicate terminal Bridge frame');
         // Queue-based processing: if a waiter exists, resolve immediately;
@@ -1080,11 +1521,13 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
         } else {
           const bytes = Buffer.byteLength(JSON.stringify(envelope));
           if (this.queueBytes + bytes > BRIDGE_QUEUE_MAX_BYTES) {
-            if (this.deferredEnvelope) throw new Error('Bridge producer exceeded byte backpressure');
+            if (this.deferredEnvelope)
+              throw new Error('Bridge producer exceeded byte backpressure');
             this.deferredEnvelope = envelope;
             this.process?.stdout?.pause();
             const remaining = lines.slice(lineIndex + 1);
-            this.responseBuffer = (remaining.length ? remaining.join('\n') + '\n' : '') + this.responseBuffer;
+            this.responseBuffer =
+              (remaining.length ? remaining.join('\n') + '\n' : '') + this.responseBuffer;
             break;
           } else {
             this.envelopeQueue.push(envelope);
@@ -1092,7 +1535,12 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
           }
         }
       } catch (error) {
-        this.rejectInbound(new BridgeAdapterError('envelope_malformed', error instanceof Error ? error.message : 'Invalid Bridge output'));
+        this.rejectInbound(
+          new BridgeAdapterError(
+            'envelope_malformed',
+            error instanceof Error ? error.message : 'Invalid Bridge output',
+          ),
+        );
         return;
       }
     }
@@ -1103,27 +1551,56 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
       this.supervisorBuffer += this.supervisorDecoder.decode(chunk, { stream: true });
       const lines = this.supervisorBuffer.split('\n');
       this.supervisorBuffer = lines.pop() ?? '';
-      if (Buffer.byteLength(this.supervisorBuffer) > BRIDGE_FRAME_MAX_BYTES) throw new Error('Supervisor frame exceeds bound');
+      if (Buffer.byteLength(this.supervisorBuffer) > BRIDGE_FRAME_MAX_BYTES)
+        throw new Error('Supervisor frame exceeds bound');
       for (const line of lines) {
-        if (!line || Buffer.byteLength(line) > BRIDGE_FRAME_MAX_BYTES) throw new Error('Invalid supervisor frame');
+        if (!line || Buffer.byteLength(line) > BRIDGE_FRAME_MAX_BYTES)
+          throw new Error('Invalid supervisor frame');
         const value = JSON.parse(line) as Record<string, unknown>;
         const scope = this.options.supervisor!;
-        if (!value || typeof value !== 'object' || Array.isArray(value) || value.protocol !== scope.protocol ||
-          value.runId !== scope.runId || value.generation !== scope.generation || this.supervisorReceipt) throw new Error('Unrelated supervisor frame');
+        if (
+          !value ||
+          typeof value !== 'object' ||
+          Array.isArray(value) ||
+          value.protocol !== scope.protocol ||
+          value.runId !== scope.runId ||
+          value.generation !== scope.generation ||
+          this.supervisorReceipt
+        )
+          throw new Error('Unrelated supervisor frame');
         if (value.kind === 'spawned') {
-          if (this.supervisorPid || Object.keys(value).sort().join(',') !== 'generation,kind,pid,protocol,runId' ||
-            !Number.isSafeInteger(value.pid) || (value.pid as number) <= 0) throw new Error('Invalid supervisor spawn receipt');
+          if (
+            this.supervisorPid ||
+            Object.keys(value).sort().join(',') !== 'generation,kind,pid,protocol,runId' ||
+            !Number.isSafeInteger(value.pid) ||
+            (value.pid as number) <= 0
+          )
+            throw new Error('Invalid supervisor spawn receipt');
           this.supervisorPid = value.pid as number;
         } else if (value.kind === 'bridge-bytes') {
-          if (!this.supervisorPid || Object.keys(value).sort().join(',') !== 'data,generation,kind,protocol,runId' ||
-            typeof value.data !== 'string' || value.data.length > Math.ceil(65536 / 3) * 4 || !/^[A-Za-z0-9+/]*={0,2}$/.test(value.data)) throw new Error('Invalid supervised byte frame');
+          if (
+            !this.supervisorPid ||
+            Object.keys(value).sort().join(',') !== 'data,generation,kind,protocol,runId' ||
+            typeof value.data !== 'string' ||
+            value.data.length > Math.ceil(65536 / 3) * 4 ||
+            !/^[A-Za-z0-9+/]*={0,2}$/.test(value.data)
+          )
+            throw new Error('Invalid supervised byte frame');
           const bytes = Buffer.from(value.data, 'base64');
-          if (!bytes.length || bytes.length > 65536 || bytes.toString('base64') !== value.data) throw new Error('Invalid supervised Base64 bytes');
+          if (!bytes.length || bytes.length > 65536 || bytes.toString('base64') !== value.data)
+            throw new Error('Invalid supervised Base64 bytes');
           this.handleStdoutChunk(bytes);
         } else if (value.kind === 'exit-receipt') {
-          if (!this.supervisorPid || value.pid !== this.supervisorPid ||
-            Object.keys(value).sort().join(',') !== 'generation,graceful,jobEmpty,kind,pid,protocol,rootExitCode,runId,streamsDrained,terminationRequested,timedOut' ||
-            !Number.isSafeInteger(value.rootExitCode) || ['jobEmpty', 'streamsDrained', 'terminationRequested', 'graceful', 'timedOut'].some(key => typeof value[key] !== 'boolean')) {
+          if (
+            !this.supervisorPid ||
+            value.pid !== this.supervisorPid ||
+            Object.keys(value).sort().join(',') !==
+              'generation,graceful,jobEmpty,kind,pid,protocol,rootExitCode,runId,streamsDrained,terminationRequested,timedOut' ||
+            !Number.isSafeInteger(value.rootExitCode) ||
+            ['jobEmpty', 'streamsDrained', 'terminationRequested', 'graceful', 'timedOut'].some(
+              (key) => typeof value[key] !== 'boolean',
+            )
+          ) {
             throw new Error('Invalid supervisor exit receipt');
           }
           this.supervisorReceipt = value as unknown as NonNullable<typeof this.supervisorReceipt>;
@@ -1131,7 +1608,12 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
       }
     } catch (error) {
       this.supervisorBuffer = '';
-      this.rejectInbound(new BridgeAdapterError('process_crash', error instanceof Error ? error.message : 'Supervisor observation failed'));
+      this.rejectInbound(
+        new BridgeAdapterError(
+          'process_crash',
+          error instanceof Error ? error.message : 'Supervisor observation failed',
+        ),
+      );
     }
   }
 
@@ -1159,7 +1641,8 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
       if (this.deferredEnvelope) {
         const bytes = Buffer.byteLength(JSON.stringify(this.deferredEnvelope));
         if (this.queueBytes + bytes <= BRIDGE_QUEUE_MAX_BYTES) {
-          this.envelopeQueue.push(this.deferredEnvelope); this.queueBytes += bytes;
+          this.envelopeQueue.push(this.deferredEnvelope);
+          this.queueBytes += bytes;
           this.deferredEnvelope = undefined;
           this.handleStdoutChunk(Buffer.alloc(0));
           if (!this.deferredEnvelope) this.process?.stdout?.resume();
@@ -1179,7 +1662,10 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
     }
 
     return new Promise((resolve, reject) => {
-      if (this.activeSignal?.aborted) { reject(this.invocationAbortError ?? this.activeSignal.reason); return; }
+      if (this.activeSignal?.aborted) {
+        reject(this.invocationAbortError ?? this.activeSignal.reason);
+        return;
+      }
       this.pendingResponse = resolve;
       this.pendingReject = reject;
 
@@ -1231,7 +1717,9 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
       try {
         return await Promise.race([
           exited.then(() => true),
-          new Promise<boolean>((resolve) => { timer = setTimeout(() => resolve(false), remaining); }),
+          new Promise<boolean>((resolve) => {
+            timer = setTimeout(() => resolve(false), remaining);
+          }),
         ]);
       } finally {
         if (timer) clearTimeout(timer);
@@ -1241,45 +1729,81 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
     // The native helper owns its 25s+5s ladder. The host never grants a new
     // grace after the first EOF, nor a second 30s window after killing it.
     if (this.options.supervisor) {
-      if (!await wait(deadline)) {
+      if (!(await wait(deadline))) {
         child.kill('SIGKILL');
-        throw new BridgeAdapterError('process_crash', 'Supervisor cleanup deadline exceeded; process-tree exit remains unknown');
+        throw new BridgeAdapterError(
+          'process_crash',
+          'Supervisor cleanup deadline exceeded; process-tree exit remains unknown',
+        );
       }
-    } else if (!await wait(started + (deadline - started) * 5 / 6)) {
+    } else if (!(await wait(started + ((deadline - started) * 5) / 6))) {
       forced = true;
       // Windows signals are forceful: only the owned Job helper may coordinate descendants.
       child.kill(this.options.supervisor || process.platform === 'win32' ? 'SIGKILL' : 'SIGTERM');
-      if (!await wait(started + (deadline - started) * 11 / 12)) {
+      if (!(await wait(started + ((deadline - started) * 11) / 12))) {
         child.kill('SIGKILL');
-        if (!await wait(deadline)) {
-          throw new BridgeAdapterError('process_crash', 'Bridge exit and side effects remain unknown');
+        if (!(await wait(deadline))) {
+          throw new BridgeAdapterError(
+            'process_crash',
+            'Bridge exit and side effects remain unknown',
+          );
         }
       }
     }
     this.process = null;
     if (this.inboundFailure) throw this.inboundFailure;
     const receipt = this.supervisorReceipt;
-    if (this.options.supervisor && (!receipt || !receipt.jobEmpty || !receipt.streamsDrained || receipt.rootExitCode !== 0 ||
-      receipt.terminationRequested || !receipt.graceful || receipt.timedOut)) {
-      throw new BridgeAdapterError('process_crash', 'Windows owned process-tree shutdown is unconfirmed or forced');
+    if (
+      this.options.supervisor &&
+      (!receipt ||
+        !receipt.jobEmpty ||
+        !receipt.streamsDrained ||
+        receipt.rootExitCode !== 0 ||
+        receipt.terminationRequested ||
+        !receipt.graceful ||
+        receipt.timedOut)
+    ) {
+      throw new BridgeAdapterError(
+        'process_crash',
+        'Windows owned process-tree shutdown is unconfirmed or forced',
+      );
     }
-    if (this.options.confirmProcessExit && (forced || performance.now() > deadline || this.exitReceipt?.code !== 0 || this.exitReceipt.signal !== null)) {
-      throw new BridgeAdapterError('process_crash', 'Bridge did not confirm a clean owned shutdown');
+    if (
+      this.options.confirmProcessExit &&
+      (forced ||
+        performance.now() > deadline ||
+        this.exitReceipt?.code !== 0 ||
+        this.exitReceipt.signal !== null)
+    ) {
+      throw new BridgeAdapterError(
+        'process_crash',
+        'Bridge did not confirm a clean owned shutdown',
+      );
     }
   }
 
-  private async authorizePeerTool(context: AdapterExecutionContext, toolName: string, input: unknown): Promise<void | HarnessToolEligibility> {
+  private async authorizePeerTool(
+    context: AdapterExecutionContext,
+    toolName: string,
+    input: unknown,
+  ): Promise<void | HarnessToolEligibility> {
     const signal = context.signal;
     let aborted: (() => void) | undefined;
     try {
       signal?.throwIfAborted();
       const check = this.options.authorizeTool!(context, toolName, input);
       if (!signal) return await check;
-      return await Promise.race([check, new Promise<never>((_resolve, reject) => {
-        if (signal.aborted) { reject(signal.reason); return; }
-        aborted = () => reject(signal.reason);
-        signal.addEventListener('abort', aborted, { once: true });
-      })]);
+      return await Promise.race([
+        check,
+        new Promise<never>((_resolve, reject) => {
+          if (signal.aborted) {
+            reject(signal.reason);
+            return;
+          }
+          aborted = () => reject(signal.reason);
+          signal.addEventListener('abort', aborted, { once: true });
+        }),
+      ]);
     } finally {
       if (signal && aborted) signal.removeEventListener('abort', aborted);
     }
@@ -1287,8 +1811,12 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
 
   private assertExecutionWindow(): void {
     this.assertInvocationSignal();
-    if ((this.activeExecutionDeadline !== undefined && performance.now() >= this.activeExecutionDeadline) ||
-      (this.activeUtcExecutionDeadline !== undefined && Date.now() >= this.activeUtcExecutionDeadline)) {
+    if (
+      (this.activeExecutionDeadline !== undefined &&
+        performance.now() >= this.activeExecutionDeadline) ||
+      (this.activeUtcExecutionDeadline !== undefined &&
+        Date.now() >= this.activeUtcExecutionDeadline)
+    ) {
       throw new BridgeAdapterError('timeout', 'Bridge execution cutoff exceeded');
     }
   }
@@ -1297,17 +1825,28 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
     if (this.activeSignal?.aborted) throw this.invocationAbortError ?? this.activeSignal.reason;
   }
 
-  private assertStartEligibility(): Readonly<{ runId: string; generation: string; restriction: HarnessEligibilityRestriction }> | undefined {
+  private assertStartEligibility():
+    | Readonly<{ runId: string; generation: string; restriction: HarnessEligibilityRestriction }>
+    | undefined {
     if (!this.options.requireToolEvidence) return undefined;
     try {
       if (!this.startEligibilityCheck) throw new Error('Missing nominal start observation');
       return this.startEligibilityCheck();
     } catch (cause) {
-      throw new BridgeAdapterError('permission_denied', 'Known Harness start eligibility is missing, mismatched or its lease expired', undefined, { cause });
+      throw new BridgeAdapterError(
+        'permission_denied',
+        'Known Harness start eligibility is missing, mismatched or its lease expired',
+        undefined,
+        { cause },
+      );
     }
   }
 
-  private awaitSendBoundary(work: Promise<void>, signal: AbortSignal | undefined, cancellation: () => unknown): Promise<void> {
+  private awaitSendBoundary(
+    work: Promise<void>,
+    signal: AbortSignal | undefined,
+    cancellation: () => unknown,
+  ): Promise<void> {
     if (!signal) return work;
     return new Promise((resolve, reject) => {
       let settled = false;
@@ -1315,11 +1854,15 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
         if (settled) return;
         settled = true;
         signal.removeEventListener('abort', aborted);
-        if (error) reject(error.value); else resolve();
+        if (error) reject(error.value);
+        else resolve();
       };
       const aborted = () => finish({ value: cancellation() });
       // Always consume work's eventual failure, including after cancellation.
-      work.then(() => finish(), error => finish({ value: error }));
+      work.then(
+        () => finish(),
+        (error) => finish({ value: error }),
+      );
       signal.addEventListener('abort', aborted, { once: true });
       if (signal.aborted) aborted();
     });
@@ -1329,9 +1872,13 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
     if (!(primary instanceof BridgeAdapterError)) return;
     try {
       const code: unknown = Object.getOwnPropertyDescriptor(error, 'code')?.value;
-      primary.secondaryTransportFailure ??= Object.freeze({ kind: 'process_crash',
-        ...(typeof code === 'string' && /^[A-Z][A-Z0-9_]{0,63}$/.test(code) ? { code } : {}) });
-    } catch { /* Secondary evidence never replaces the cancellation or throws from an event listener. */ }
+      primary.secondaryTransportFailure ??= Object.freeze({
+        kind: 'process_crash',
+        ...(typeof code === 'string' && /^[A-Z][A-Z0-9_]{0,63}$/.test(code) ? { code } : {}),
+      });
+    } catch {
+      /* Secondary evidence never replaces the cancellation or throws from an event listener. */
+    }
   }
 
   private killProcess(): void {
@@ -1344,7 +1891,10 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
   private requestPeerStop(): void {
     if (this.cleanupDeadline === undefined) {
       this.cleanupStartedAt = performance.now();
-      const budget = this.options.requireToolEvidence || this.options.supervisor ? HARNESS_CLEANUP_BUDGET.totalMs : this.options.exitGraceMs ?? 5_000;
+      const budget =
+        this.options.requireToolEvidence || this.options.supervisor
+          ? HARNESS_CLEANUP_BUDGET.totalMs
+          : (this.options.exitGraceMs ?? 5_000);
       this.cleanupDeadline = this.cleanupStartedAt + budget;
     }
     this.process?.stdin?.end();
@@ -1358,7 +1908,10 @@ export class BridgeAdapterError extends Error {
   readonly kind: BridgeErrorKind;
   readonly stderrSummary?: string;
   /** Orthogonal exit facts retained without replacing the original failure. */
-  shutdownEvidence?: { exit: { code: number | null; signal: NodeJS.Signals | null } | null; clean: boolean };
+  shutdownEvidence?: {
+    exit: { code: number | null; signal: NodeJS.Signals | null } | null;
+    clean: boolean;
+  };
   /** Orthogonal deadline fact; it never overwrites an already captured primary failure kind. */
   deadlineExceeded?: boolean;
   /** Evidence failures remain orthogonal to an earlier transport/permission error. */
@@ -1366,7 +1919,12 @@ export class BridgeAdapterError extends Error {
   /** A late pipe failure is secondary to the already captured invocation cancellation. */
   secondaryTransportFailure?: Readonly<{ kind: 'process_crash'; code?: string }>;
 
-  constructor(kind: BridgeErrorKind, message: string, stderrSummary?: string, options?: ErrorOptions) {
+  constructor(
+    kind: BridgeErrorKind,
+    message: string,
+    stderrSummary?: string,
+    options?: ErrorOptions,
+  ) {
     super(message, options);
     this.name = 'BridgeAdapterError';
     this.kind = kind;
